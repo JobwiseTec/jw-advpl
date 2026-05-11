@@ -122,3 +122,41 @@ class TestApplyMigrations:
             assert count > 20
         finally:
             conn.close()
+
+
+class TestMeta:
+    def test_init_meta_writes_defaults(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, get_meta, init_meta
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            init_meta(conn, project_root=str(tmp_path), cli_version="0.1.0")
+            assert get_meta(conn, "schema_version") == SCHEMA_VERSION
+            assert get_meta(conn, "plugadvpl_version") == "0.1.0"
+            assert get_meta(conn, "project_root") == str(tmp_path)
+            assert get_meta(conn, "encoding_policy") == "preserve"
+        finally:
+            conn.close()
+
+    def test_get_meta_returns_none_for_missing(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, get_meta
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            assert get_meta(conn, "nonexistent") is None
+        finally:
+            conn.close()
+
+    def test_set_meta_upserts(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, get_meta, set_meta
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            set_meta(conn, "test_key", "value1")
+            set_meta(conn, "test_key", "value2")  # upsert
+            assert get_meta(conn, "test_key") == "value2"
+        finally:
+            conn.close()

@@ -86,3 +86,46 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
         sql = sql_file.read_text(encoding="utf-8")
         conn.executescript(sql)
     conn.commit()
+
+
+def init_meta(
+    conn: sqlite3.Connection, *, project_root: str, cli_version: str
+) -> None:
+    """Grava as linhas obrigatórias em ``meta`` (idempotente via UPSERT).
+
+    Linhas escritas:
+
+    - ``schema_version``: :data:`SCHEMA_VERSION` (incrementa quando migrations rodam).
+    - ``plugadvpl_version``: ``cli_version`` informado pelo chamador.
+    - ``project_root``: caminho absoluto da raiz do projeto cliente.
+    - ``encoding_policy``: ``'preserve'`` (default, cf. spec §4.2).
+    """
+    defaults: dict[str, str] = {
+        "schema_version": SCHEMA_VERSION,
+        "plugadvpl_version": cli_version,
+        "project_root": project_root,
+        "encoding_policy": "preserve",
+    }
+    for k, v in defaults.items():
+        set_meta(conn, k, v)
+
+
+def get_meta(conn: sqlite3.Connection, chave: str) -> str | None:
+    """Retorna ``meta.valor`` para ``chave``, ou ``None`` se ausente."""
+    row = conn.execute(
+        "SELECT valor FROM meta WHERE chave=?", (chave,)
+    ).fetchone()
+    if row is None:
+        return None
+    valor: str = row[0]
+    return valor
+
+
+def set_meta(conn: sqlite3.Connection, chave: str, valor: str) -> None:
+    """Insere ou atualiza ``meta[chave] = valor`` (UPSERT atômico + commit)."""
+    conn.execute(
+        "INSERT INTO meta (chave, valor) VALUES (?, ?) "
+        "ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+        (chave, valor),
+    )
+    conn.commit()
