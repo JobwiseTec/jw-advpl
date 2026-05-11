@@ -25,6 +25,7 @@ from plugadvpl.parsing.parser import (
     extract_perguntas,
     extract_rest_endpoints,
     extract_tables,
+    extract_ws_structures,
     read_file,
 )
 
@@ -473,6 +474,47 @@ class TestExtractMvcHooks:
         names = [c["destino"] for c in result]
         assert "bCancel" in names
         assert "bCommit" not in names
+
+
+class TestExtractWsStructures:
+    def test_wsstruct(self) -> None:
+        src = (
+            "WSSTRUCT Cliente\n"
+            "  WSDATA codigo AS String\n"
+            "  WSDATA nome AS String\n"
+            "ENDWSSTRUCT\n"
+        )
+        result = extract_ws_structures(src)
+        assert any(
+            s["nome"] == "Cliente"
+            and {"nome": "codigo", "tipo": "String"} in s["campos"]
+            and {"nome": "nome", "tipo": "String"} in s["campos"]
+            for s in result["ws_structs"]
+        )
+
+    def test_wsservice(self) -> None:
+        src = (
+            "WSSERVICE Vendas\n"
+            "  WSMETHOD listar\n"
+            "  WSMETHOD criar\n"
+            "ENDWSSERVICE\n"
+        )
+        result = extract_ws_structures(src)
+        assert any(
+            sv["nome"] == "Vendas" and "listar" in sv["metodos"] and "criar" in sv["metodos"]
+            for sv in result["ws_services"]
+        )
+
+    def test_wsmethod_full(self) -> None:
+        src = "WSMETHOD criar WSRECEIVE Cliente WSSEND Resposta WSSERVICE Vendas\nReturn"
+        result = extract_ws_structures(src)
+        assert any(
+            mm["nome"] == "criar"
+            and mm["receive"] == "Cliente"
+            and mm["send"] == "Resposta"
+            and mm["service"] == "Vendas"
+            for mm in result["ws_methods"]
+        )
 
 
 class TestParseSource:

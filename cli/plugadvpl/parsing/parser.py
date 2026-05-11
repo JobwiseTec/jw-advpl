@@ -112,6 +112,37 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# WebService structures: WSSTRUCT / WSSERVICE / WSDATA / WSMETHOD
+_WSSTRUCT_HEADER_RE = re.compile(r"^[ \t]*WSSTRUCT[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
+_WSSERVICE_HEADER_RE = re.compile(
+    r"^[ \t]*WSSERVICE[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE
+)
+_WSDATA_FIELD_RE = re.compile(
+    r"^[ \t]*WSDATA[ \t]+(\w+)[ \t]+AS[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE
+)
+_WSMETHOD_BARE_RE = re.compile(r"^[ \t]*WSMETHOD[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
+_WSMETHOD_FULL_RE = re.compile(
+    r"\bWSMETHOD[ \t]+(\w+)[ \t]+WSRECEIVE[ \t]+(\w+)"
+    r"[ \t]+WSSEND[ \t]+(\w+)[ \t]+WSSERVICE[ \t]+(\w+)",
+    re.IGNORECASE,
+)
+_END_WSSTRUCT_RE = re.compile(
+    r"^[ \t]*(?:ENDWSSTRUCT|END[ \t]+WSSTRUCT)", re.IGNORECASE | re.MULTILINE
+)
+_END_WSSERVICE_RE = re.compile(
+    r"^[ \t]*(?:ENDWSSERVICE|END[ \t]+WSSERVICE)", re.IGNORECASE | re.MULTILINE
+)
+_WS_RESERVED = {
+    "WSSTRUCT",
+    "WSSERVICE",
+    "WSMETHOD",
+    "WSDATA",
+    "WSRECEIVE",
+    "WSSEND",
+    "ENDWSSERVICE",
+    "ENDWSSTRUCT",
+}
+
 # MVC hooks: bCommit/bCancel/bTudoOk/bLineOk/bPosVld/bPreVld/bWhen/bValid/bLoad
 # Reconhecidos como atribuição (`:=` ou `=`) — o RHS é tipicamente um code block.
 _MVC_HOOK_RE = re.compile(
@@ -847,6 +878,82 @@ def extract_mvc_hooks(content: str) -> list[dict[str, Any]]:
     Strip-first remove strings/comentários.
     """
     return _extract_mvc_hooks_from_stripped(strip_advpl(content))
+
+
+def _next_end_offset(content: str, start: int, end_re: re.Pattern[str]) -> int:
+    """Encontra offset do próximo END a partir de start; senão end-of-content."""
+    m = end_re.search(content, start)
+    return m.start() if m else len(content)
+
+
+def _extract_ws_structures_from_stripped(
+    stripped_keep_strings: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Core: extrai WSSTRUCT/WSSERVICE/WSMETHOD com WSDATA fields.
+
+    Mimetiza Protheus/backend/services/parser_source.py linhas 124-179.
+    Lê WSDATA dentro da janela de cada struct/service (até próximo END).
+
+    TODO MVP: parser não verifica aninhamento; structs declarados dentro de
+    services podem ser duplicados — aceitável no MVP onde o foco é detecção.
+    """
+    result: dict[str, list[dict[str, Any]]] = {
+        "ws_structs": [],
+        "ws_services": [],
+        "ws_methods": [],
+    }
+
+    # WSSTRUCT blocks
+    for m in _WSSTRUCT_HEADER_RE.finditer(stripped_keep_strings):
+        name = m.group(1)
+        if name.upper() in _WS_RESERVED:
+            continue
+        end = _next_end_offset(stripped_keep_strings, m.end(), _END_WSSTRUCT_RE)
+        body = stripped_keep_strings[m.end() : end]
+        fields = [
+            {"nome": fm.group(1), "tipo": fm.group(2)}
+            for fm in _WSDATA_FIELD_RE.finditer(body)
+        ]
+        result["ws_structs"].append({"nome": name, "campos": fields})
+
+    # WSSERVICE blocks (com WSMETHOD declarations e WSDATA fields)
+    for m in _WSSERVICE_HEADER_RE.finditer(stripped_keep_strings):
+        name = m.group(1)
+        if name.upper() in _WS_RESERVED:
+            continue
+        end = _next_end_offset(stripped_keep_strings, m.end(), _END_WSSERVICE_RE)
+        body = stripped_keep_strings[m.end() : end]
+        metodos = [mm.group(1) for mm in _WSMETHOD_BARE_RE.finditer(body)]
+        dados = [
+            {"nome": dm.group(1), "tipo": dm.group(2)}
+            for dm in _WSDATA_FIELD_RE.finditer(body)
+        ]
+        result["ws_services"].append({"nome": name, "metodos": metodos, "dados": dados})
+
+    # WSMETHOD com full signature (receive/send/service)
+    for m in _WSMETHOD_FULL_RE.finditer(stripped_keep_strings):
+        result["ws_methods"].append(
+            {
+                "nome": m.group(1),
+                "receive": m.group(2),
+                "send": m.group(3),
+                "service": m.group(4),
+            }
+        )
+
+    return result
+
+
+def extract_ws_structures(content: str) -> dict[str, list[dict[str, Any]]]:
+    """Extrai WSSTRUCT/WSSERVICE/WSMETHOD declarações.
+
+    Retorna: {ws_structs, ws_services, ws_methods}.
+    ws_structs: [{nome, campos:[{nome, tipo}]}].
+    ws_services: [{nome, metodos:[...], dados:[{nome, tipo}]}].
+    ws_methods: [{nome, receive, send, service}].
+    Usa strip_strings=False (declarações têm WSDATA tipo as String literais).
+    """
+    return _extract_ws_structures_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:
