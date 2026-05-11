@@ -1,6 +1,7 @@
 """Banco de dados SQLite — abertura, PRAGMAs, migrations, network share detection."""
 from __future__ import annotations
 
+import importlib.resources as ir
 import sqlite3
 from pathlib import Path
 
@@ -64,3 +65,24 @@ def open_db(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout = 5000")
 
     return conn
+
+
+def apply_migrations(conn: sqlite3.Connection) -> None:
+    """Aplica todas as migrations da pasta ``migrations/`` em ordem alfabética.
+
+    Migrations são arquivos ``.sql`` numerados (``001_initial.sql``,
+    ``002_xxx.sql``, ...). Cada arquivo deve ser idempotente (usa
+    ``CREATE TABLE IF NOT EXISTS`` etc.) para permitir reaplicação segura.
+
+    Carrega via :mod:`importlib.resources` para funcionar igual em
+    desenvolvimento (source tree) e em wheel instalado.
+    """
+    migrations_dir = ir.files("plugadvpl") / "migrations"
+    sql_files = sorted(
+        (f for f in migrations_dir.iterdir() if f.name.endswith(".sql")),
+        key=lambda f: f.name,
+    )
+    for sql_file in sql_files:
+        sql = sql_file.read_text(encoding="utf-8")
+        conn.executescript(sql)
+    conn.commit()
