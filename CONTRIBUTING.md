@@ -21,11 +21,19 @@ claude --plugin-dir .
 
 ## Fixtures locais (`pytest -m local`)
 
-Os testes E2E em `cli/tests/e2e_local/` esperam pastas que existem só na máquina do autor (`customizados-local`). Em CI são pulados automaticamente. Se você é o autor e quer rodar:
+Os testes E2E em `cli/tests/e2e_local/` validam o ingest contra um diretório real de fontes ADVPL. Em CI esses testes são pulados automaticamente (marker `local` excluído via `addopts`). Para rodar localmente:
 
 ```bash
-uv run pytest -m local -v
+# Aponte para um diretório com .prw/.tlpp
+export PLUGADVPL_E2E_FONTES_DIR=/caminho/para/seus/fontes
+
+# Opcional: baseline DB para parity test
+export PLUGADVPL_E2E_BASELINE_DB=/caminho/para/baseline.db
+
+uv run pytest -m local
 ```
+
+Se as variáveis não estiverem definidas, os testes locais são skipados gracefully.
 
 ## Estilo
 

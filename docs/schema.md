@@ -1,6 +1,6 @@
 # plugadvpl — Schema SQLite
 
-Este documento descreve o schema do `.plugadvpl/index.db` na versão MVP v0.1.0. O schema é **espelhado** do `extrairpo.db` (banco interno do projeto Protheus do autor, validado em 24.592 fontes padrão TOTVS) + deltas necessários para uso como plugin local Claude Code.
+Este documento descreve o schema do `.plugadvpl/index.db` na versão MVP v0.1.0. O schema é **baseado** em projeto interno anterior do autor (validado em ampla base de fontes ADVPL) + deltas necessários para uso como plugin local Claude Code.
 
 ## Visão geral
 
@@ -256,7 +256,7 @@ Docstrings/comentários estruturados extraídos de cabeçalhos de função.
 
 ## Nível 2 — Extrações novas (5 tabelas)
 
-Extrações além do `extrairpo.db` original, valiosas para análise moderna.
+Extrações novas (não estavam no baseline interno), valiosas para análise moderna.
 
 ### `rest_endpoints`
 
@@ -345,7 +345,7 @@ Key-value store para metadados do índice.
 schema_version    -> "001"
 cli_version       -> "0.1.0"
 parser_version    -> "p1.0.0"
-project_root      -> "customizados-local"
+project_root      -> "/caminho/do/projeto"
 ingested_at       -> "2026-05-11T13:00:00Z"
 ```
 

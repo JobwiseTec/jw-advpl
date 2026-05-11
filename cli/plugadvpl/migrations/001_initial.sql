@@ -1,5 +1,5 @@
 -- plugadvpl — migration 001 (initial schema, MVP v0.1.0)
--- Schema espelhado do extrairpo.db do projeto Protheus + deltas para uso como plugin local.
+-- Schema baseado em projeto interno anterior do autor + deltas para uso como plugin local.
 -- Total: 23 tabelas (22 dados + 1 auxiliar normalizada fonte_tabela) + 2 FTS5 virtuais.
 -- As 17 tabelas reservadas para Universo 2/3/aux
 -- são criadas via migrations futuras (002+, v0.2+).

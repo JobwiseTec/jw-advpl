@@ -97,14 +97,14 @@ plugadvpl ingest [--workers N] [--incremental/--no-incremental]
 ┌──────────────┬─────┬─────────┬────────┬────────┬───────────┬───────────────┬─────────────┐
 │ arquivos_total│ ok  │ skipped │ failed │ chunks │ chamadas  │ lint_findings │ duration_ms │
 ├──────────────┼─────┼─────────┼────────┼────────┼───────────┼───────────────┼─────────────┤
-│ 1990         │1987 │ 0       │ 3      │ 11243  │ 47892     │ 412           │ 38214       │
+│ 2000         │1997 │ 0       │ 3      │ 11243  │ 47892     │ 412           │ 38214       │
 └──────────────┴─────┴─────────┴────────┴────────┴───────────┴───────────────┴─────────────┘
 ```
 
 **Output (json --compact):**
 
 ```json
-[{"arquivos_total":1990,"ok":1987,"skipped":0,"failed":3,"chunks":11243,"chamadas":47892,"lint_findings":412,"duration_ms":38214}]
+[{"arquivos_total":2000,"ok":1997,"skipped":0,"failed":3,"chunks":11243,"chamadas":47892,"lint_findings":412,"duration_ms":38214}]
 ```
 
 ---
@@ -146,7 +146,7 @@ plugadvpl status [--check-stale]
 │ chunks           │ 11243                    │
 │ chamadas         │ 47892                    │
 │ lint_findings    │ 412                      │
-│ project_root     │ customizados-local │
+│ project_root     │ /caminho/do/projeto      │
 └──────────────────┴──────────────────────────┘
 ```
 

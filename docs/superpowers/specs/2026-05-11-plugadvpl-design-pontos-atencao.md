@@ -269,7 +269,7 @@ Ou converter temporariamente para journal mode adequado antes de empacotar. Tamb
 
 ### P2 — Dependência de caminhos locais reduz reprodutibilidade
 
-**Problema:** a spec cita `D:/IA/Projetos/advpl-specialist-main`, `customizados-local` e parser de projeto privado. Isso é útil para o autor, mas não é reprodutível para contributors.
+**Problema:** a spec cita `D:/IA/Projetos/advpl-specialist-main`, caminhos locais de fixtures e parser de projeto privado. Isso é útil para o autor, mas não é reprodutível para contributors.
 
 **Recomendação:** manter esses caminhos apenas como nota interna. Para o repo público, incluir fixtures sintéticas, snapshot de subset autorizado e script de geração. No `NOTICE`, creditar origem e licença sem depender de path local.
 

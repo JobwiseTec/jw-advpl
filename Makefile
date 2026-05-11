@@ -1,4 +1,4 @@
-.PHONY: help test test-fast bench lint format type validate ingest-real install-dev
+.PHONY: help test test-fast bench lint format type validate ingest-local install-dev
 
 help:
 	@echo "plugadvpl — comandos dev"
@@ -9,7 +9,7 @@ help:
 	@echo "  format       — ruff format"
 	@echo "  type         — mypy --strict"
 	@echo "  validate     — lint + type + test + bench"
-	@echo "  ingest-real  — ingest em customizados-local (local only)"
+	@echo "  ingest-local — ingest em \$$PLUGADVPL_E2E_FONTES_DIR (local only)"
 	@echo "  install-dev  — uv sync"
 
 install-dev:
@@ -37,5 +37,5 @@ type:
 validate: lint type test bench
 	cd cli && uv run pytest tests/unit tests/integration --cov=plugadvpl --cov-branch --cov-fail-under=80
 
-ingest-real:
-	cd cli && uv run plugadvpl ingest customizados-local --workers 8
+ingest-local:
+	cd cli && uv run plugadvpl ingest $$PLUGADVPL_E2E_FONTES_DIR --workers 8

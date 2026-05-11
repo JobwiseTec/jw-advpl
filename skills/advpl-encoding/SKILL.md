@@ -37,7 +37,7 @@ Comentários `// Atualizacao` viram `// AtualizaÃ§Ã£o` quando lidos errado. 
 
 ## Como o parser plugadvpl detecta
 
-Algoritmo (rápido, validado em 24.592 fontes):
+Algoritmo (rápido, validado em ampla base de fontes ADVPL):
 
 1. **Fast-path**: tenta decodificar como cp1252 → sucesso? grava `encoding='cp1252'` em `sources.encoding`.
 2. **Fallback**: se cp1252 falhar (caracteres não-mapeáveis no header), tenta UTF-8.

@@ -25,7 +25,7 @@ O fluxo de uso típico: dev clona/baixa fontes do cliente → instala o plugin n
 
 | Decisão | Escolha | Justificativa |
 |---|---|---|
-| Runtime do indexador | **Python 3.11+** | Reaproveita 100% do `parser_source.py` (753 linhas) do projeto Protheus do autor, já validado em 24.592 fontes padrão TOTVS + 1.990 do tenant ativo |
+| Runtime do indexador | **Python 3.11+** | Reaproveita 100% do parser interno anterior do autor (~750 linhas), já validado em aproximadamente 2.000 fontes ADVPL |
 | Tipo de busca | **SQLite + FTS5 (lexical)** | Zero dependência de embeddings/API key. Offline. ~90% dos casos de análise resolvidos por metadados estruturados; "semântica" vem do parser inteligente, não de embeddings |
 | Workflow de ingestão | **Slash commands manuais** | Sem hooks auto-indexando a cada edit. Previsível, sem surpresas, dev tem controle |
 | Distribuição da CLI | **uvx (uv) — zero install** | Comandos chamam `uvx plugadvpl ...`. uv resolve e cacheia automaticamente. Funciona igual em Win/Mac/Linux, isolado, sem poluir Python global |
@@ -35,7 +35,7 @@ O fluxo de uso típico: dev clona/baixa fontes do cliente → instala o plugin n
 | Pin de versão CLI | **`uvx plugadvpl@<v>` nos wrappers** | Sem pin, plugin v0.1 pode chamar CLI v0.2 com schema/flags incompatíveis. Wrapper inclui versão exata; upgrade é coordenado. Sintaxe `pkg@v` é mais curta que `--from pkg==v` quando nome do pacote == nome do executável. **Devs que rodam muito devem usar `uv tool install plugadvpl@<v>`** (PATH global, sem cold start de `uvx`) — documentado no README |
 | Política de encoding | **`preserve-by-default`** | Spec não impõe cp1252 como dogma. Detecta encoding por arquivo, preserva em edição. Bloqueia escrita se detection ambígua. Cliente decide via `--encoding-policy {cp1252\|preserve\|utf8-warn}`. Default conservador para projetos legado (preserve com hint de cp1252) |
 | Licença | **MIT** | Mesma do `advpl-specialist`. Padrão de fato do ecossistema Protheus open-source. Permite uso comercial sem fricção (consultorias) |
-| Atribuição | Créditos explícitos no `NOTICE` | Parser portado do projeto Protheus do autor + lookup tables (funções nativas, restritas, lint rules, SQL macros, módulos ERP, PEs catalogados) extraídas do `advpl-specialist` com crédito ao Thalys Augusto |
+| Atribuição | Créditos explícitos no `NOTICE` | Parser portado de projeto interno anterior do autor + lookup tables (funções nativas, restritas, lint rules, SQL macros, módulos ERP, PEs catalogados) extraídas do `advpl-specialist` com crédito ao Thalys Augusto |
 
 ## 3. Arquitetura geral
 
@@ -169,7 +169,7 @@ plugadvpl/
 
 Localização: `<projeto-cliente>/.plugadvpl/index.db`.
 
-**Princípio:** espelhar o schema do `extrairpo.db` do tenant ativo em produção (validado em 1.990 fontes reais), e adicionar deltas mínimos para uso como plugin local. **MVP cria apenas as 22 tabelas necessárias.** As 17 tabelas de Universo 2/3/auxiliares são criadas via migrations em v0.2+ quando a feature entrar (evita congelar contrato).
+**Princípio:** basear o schema em projeto interno anterior do autor (validado em aproximadamente 2.000 fontes ADVPL), e adicionar deltas mínimos para uso como plugin local. **MVP cria apenas as 22 tabelas necessárias.** As 17 tabelas de Universo 2/3/auxiliares são criadas via migrations em v0.2+ quando a feature entrar (evita congelar contrato).
 
 ### 4.1 PRAGMAs
 
@@ -916,7 +916,7 @@ editados fora do Claude, rode `/plugadvpl:reindex <arquivo>` ou
 
 ## 11. Performance e ingestão rápida
 
-### 11.1 Técnicas portadas do Protheus (validadas em 24.592 fontes)
+### 11.1 Técnicas portadas (validadas em ampla base de fontes ADVPL)
 
 1. PRAGMAs durante ingest: `journal_mode=WAL`, `synchronous=NORMAL`, `cache_size=-20000`
 2. `executemany` para todos os INSERTs em batch
@@ -1081,8 +1081,8 @@ def ingest(root: Path, *, workers: int = 0, incremental: bool = True) -> dict:
 
 ```
                   ┌──────────────────────┐
-                  │  E2E manual (local)  │  ← test_real_client_*.py
-                  │  fixture: 1990 prw   │     compara com extrairpo.db
+                  │  E2E manual (local)  │  ← test_e2e_local_*.py
+                  │  fixture: ~2.000 prw │     compara com baseline interno
                   └──────────────────────┘
                 ┌──────────────────────────┐
                 │  Integration (CI)        │  ← test_ingest_synthetic.py
@@ -1125,7 +1125,7 @@ cli/tests/
 │   │   ├── multi_filial.prw
 │   │   └── pubvars.prw               # lint MOD-002
 │   ├── expected/                     # snapshots JSON do parsing
-│   └── extrairpo_snippet.db          # subset 50 fontes (gerado uma vez)
+│   └── baseline_snippet.db           # subset 50 fontes (gerado uma vez)
 ├── unit/                             # 13+ arquivos
 ├── integration/                      # 8 arquivos
 ├── bench/                            # pytest-benchmark
@@ -1149,25 +1149,26 @@ def test_ingest_synthetic_full(tmp_path, synthetic_fixtures):
     assert conn.execute("SELECT COUNT(*) FROM parametros_uso WHERE parametro='MV_LOCALIZA'").fetchone()[0] >= 1
 ```
 
-**`test_real_client_parity`** (local-only):
+**`test_e2e_local_parity`** (local-only):
 ```python
 @pytest.mark.local
-@pytest.mark.skipif(not Path("customizados-local").exists(),
+@pytest.mark.skipif(not Path(os.environ.get("PLUGADVPL_E2E_FONTES_DIR", "")).exists(),
                     reason="local fixture only")
-def test_parity_with_protheus_extrairpo():
-    """Garante paridade ≤10% com extrairpo.db do mesmo cliente."""
-    counters = ingest(Path("customizados-local"), workers=8)
+def test_parity_with_baseline():
+    """Garante paridade ≤10% com baseline interno (mesma base de fontes)."""
+    fontes_dir = Path(os.environ["PLUGADVPL_E2E_FONTES_DIR"])
+    counters = ingest(fontes_dir, workers=8)
 
-    plug = sqlite3.connect("customizados-local/.plugadvpl/index.db")
-    prod = sqlite3.connect(EXTRAIRPO_PATH_TENANT_ATIVO)
+    plug = sqlite3.connect(fontes_dir / ".plugadvpl/index.db")
+    baseline = sqlite3.connect(os.environ["PLUGADVPL_E2E_BASELINE_DB"])
 
     for table in ["fontes", "fonte_chunks", "chamadas_funcao",
                   "parametros_uso", "perguntas_uso",
                   "operacoes_escrita", "sql_embedado"]:
         plug_n = plug.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        prod_n = prod.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        delta = abs(plug_n - prod_n) / max(prod_n, 1)
-        assert delta < 0.10, f"{table}: plug={plug_n} vs prod={prod_n} (Δ={delta:.1%})"
+        base_n = baseline.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        delta = abs(plug_n - base_n) / max(base_n, 1)
+        assert delta < 0.10, f"{table}: plug={plug_n} vs baseline={base_n} (Δ={delta:.1%})"
 ```
 
 **`test_ingest_2k_under_60s`** (CI com pytest-benchmark):
@@ -1393,14 +1394,14 @@ python_version = "3.11"
 ### 12.8 Comandos dev (Makefile)
 
 ```makefile
-.PHONY: test test-fast bench lint validate ingest-real
+.PHONY: test test-fast bench lint validate ingest-local
 
 test: ; pytest cli/tests/unit cli/tests/integration -v
 test-fast: ; pytest cli/tests/unit -v -x
 bench: ; pytest cli/tests/bench --benchmark-only
 lint: ; ruff check cli && python scripts/validate_plugin.py
 validate: lint test bench
-ingest-real: ; uvx --from . plugadvpl ingest customizados-local --workers 8
+ingest-local: ; uvx --from . plugadvpl ingest $$PLUGADVPL_E2E_FONTES_DIR --workers 8
 ```
 
 ## 13. Fluxos canônicos
@@ -1484,8 +1485,8 @@ O índice contém **nomes de tabelas, regras de negócio, endpoints, SQL e poten
 
 - [ ] `uvx --from plugadvpl==0.1.0 plugadvpl --help` funciona em Windows/Mac/Linux
 - [ ] `init` cria `.plugadvpl/index.db` com **22 tabelas físicas** (MVP) + FTS5 external content. Aplica `PRAGMA page_size=8192` + `journal_mode=WAL`. Escreve fragmento idempotente no CLAUDE.md. Adiciona `.plugadvpl/` ao `.gitignore` se não existir
-- [ ] `ingest` em `customizados-local` (1.990 fontes — fixture local-only, ver CONTRIBUTING.md) completa em <60s com `--workers 8`
-- [ ] **Parity test:** contagens das **7 tabelas** comparáveis (`fontes`, `fonte_chunks`, `chamadas_funcao`, `parametros_uso`, `perguntas_uso`, `operacoes_escrita`, `sql_embedado`) ficam ≤10% das do `extrairpo.db` do mesmo cliente. **Critério é row count, não comparação coluna-a-coluna** — colunas-delta do plugin (`mtime_ns`, `size_bytes`, `indexed_at`, `namespace`, `tipo_arquivo`) não entram na comparação. `funcao_docs` fica de fora da parity test (Protheus não popula em produção, plugin popula — não há baseline)
+- [ ] `ingest` em fixture local (~2.000 fontes — local-only, ver CONTRIBUTING.md) completa em <60s com `--workers 8`
+- [ ] **Parity test:** contagens das **7 tabelas** comparáveis (`fontes`, `fonte_chunks`, `chamadas_funcao`, `parametros_uso`, `perguntas_uso`, `operacoes_escrita`, `sql_embedado`) ficam ≤10% das do baseline interno (mesma base de fontes). **Critério é row count, não comparação coluna-a-coluna** — colunas-delta do plugin (`mtime_ns`, `size_bytes`, `indexed_at`, `namespace`, `tipo_arquivo`) não entram na comparação. `funcao_docs` fica de fora da parity test (baseline não popula, plugin popula — não há referência)
 - [ ] FTS5 populada e funcionando (`grep "RecLock" → top-N hits <300ms`)
 - [ ] Os 5 smoke tests passam (`arch`, `callers`, `tables`, `param`, `grep`)
 - [ ] **Token-budget test (manual):** consulta "explique FATA050" no Claude Code consome ≤2.000 tokens com o plugin ativo (medido via header `x-anthropic-output-tokens` ou contagem manual de chamadas). Sem o plugin, a mesma consulta consome >10.000 tokens. Razão alvo ≥5×.
@@ -1513,7 +1514,7 @@ Nenhuma — todas as decisões arquiteturais foram tomadas durante a fase de bra
 
 ## 17. Atribuições
 
-- **Parser de fontes ADVPL:** portado do projeto Protheus do autor (`backend/services/parser_source.py`, 753 linhas) — schema e técnicas de ingestão validadas em 24.592 fontes padrão TOTVS e 1.990 fontes do tenant ativo.
+- **Parser de fontes ADVPL:** portado de projeto interno anterior do autor (~750 linhas) — schema e técnicas de ingestão validadas em aproximadamente 2.000 fontes ADVPL.
 - **Lookup tables embarcadas:** funções nativas, funções restritas (195), regras de code-review (24), macros SQL, módulos ERP (8), PEs catalogados — extraídas com crédito de `advpl-specialist` (autor: Thalys Augusto, MIT) em `D:/IA/Projetos/advpl-specialist-main`.
 - **Skills temáticas:** estilo/estrutura inspirados em `advpl-specialist`, conteúdo original adaptado ao escopo deste plugin.
 - **Revisão crítica externa (2026-05-11):** revisão de IA independente trouxe 30+ pontos de atenção em P0/P1/P2 — aceitos 25, modificados 2 (P0-1, P0-4), mantidos sob justificativa 3 (P1-1 escopo, P0-1 PK, P2-4 paths). Registrados em `2026-05-11-plugadvpl-design-pontos-atencao.md`. Mudanças aplicadas: caminho_relativo UNIQUE, linha_inicio/linha_fim em fonte_chunks, pin uvx --from, encoding preserve-by-default, skills/ em vez de commands/, hooks.json literal, parser_version/lookup_bundle_hash invalidação incremental, COLLATE NOCASE, FTS5 external content, grep 3 modos, output budget, reindex transacional, release em 2 etapas, seções de ambientes restritos e segurança, remoção das 17 tabelas vazias do MVP.

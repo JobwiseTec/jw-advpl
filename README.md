@@ -13,7 +13,7 @@
 ## Por que plugadvpl
 
 - **Economia de tokens.** Um `.prw` médio tem 1.000 a 10.000 linhas. Abrir cru custa de 5k a 50k tokens. Com plugadvpl, a mesma pergunta é respondida via metadados estruturados — **~16× menos contexto** em projetos reais.
-- **Parser provado em campo.** O extrator de funções, tabelas, SQL embarcado e call graph foi portado de um parser interno validado em **24.592 fontes padrão TOTVS** + **1.990 fontes de cliente real**. Não é um experimento de fim de semana.
+- **Parser provado em campo.** O extrator de funções, tabelas, SQL embarcado e call graph foi portado de um parser interno do autor, validado em aproximadamente **2.000 fontes ADVPL**. Não é um experimento de fim de semana.
 - **MIT, sem telemetria, 100% local.** Índice SQLite mora em `.plugadvpl/index.db` dentro do seu repo. Nenhum dado sai da máquina. Funciona offline.
 
 ---
@@ -145,8 +145,8 @@ Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma q
 - 14 subcomandos, 24 skills, 4 agents, 1 hook
 - 22 tabelas físicas + 2 FTS5 + 6 lookups (Universo 1 — Fontes — completo)
 - 239 testes (unit + integration), 87% coverage de linha + branch
-- Parity test em cliente real: 1.990 fontes ingestados em < 60s com `--workers 8`
-- Schema espelhado do `extrairpo.db` validado em produção
+- Bench em ~2.000 fontes ADVPL: ingest completo < 60s com `--workers 8`
+- Schema baseado em projeto interno anterior do autor
 
 **Roadmap.**
 
@@ -170,7 +170,7 @@ Detalhes em `docs/superpowers/specs/2026-05-11-plugadvpl-design.md` (§15 — Ro
 
 ## Créditos
 
-- **Parser de fontes** portado do projeto Protheus interno do autor (`parser_source.py`, ~750 linhas, validado em 24.592 fontes padrão TOTVS + 1.990 fontes de cliente).
+- **Parser de fontes** portado de projeto interno anterior do autor (~750 linhas, validado em aproximadamente 2.000 fontes ADVPL).
 - **Lookup catalogs** (funções nativas, restritas, lint rules, SQL macros, módulos ERP, PEs) extraídos de [advpl-specialist](https://github.com/thalysjuvenal/advpl-specialist) por **Thalys Augusto** (MIT) — crédito em [NOTICE](NOTICE).
 - Construído pela e para a comunidade **Protheus/ADVPL brasileira**. PRs são muito bem-vindos.
 

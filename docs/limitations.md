@@ -10,7 +10,7 @@ Use como referência antes de abrir bugs e como roadmap implícito de v0.2.
   (encadeamento, ambiguidade entre acesso a campo e chamada de método).
 - SQL string-concatenado (`cQry := "SELECT" + cFiltro`) não é detectado — apenas
   literais contíguos passam pela heurística de extração.
-- Parity test contra Protheus `extrairpo.db`: counters de `parametros_uso`,
+- Parity test contra baseline interno: counters de `parametros_uso`,
   `perguntas_uso`, `sql_embedado` e `fonte_chunks` divergem ~40-80% — o parser
   do plugadvpl é mais conservador que o gerador original. `chamadas_funcao` e
   `fontes` ficam dentro de ±10%. Investigação refinada planejada para v0.2.

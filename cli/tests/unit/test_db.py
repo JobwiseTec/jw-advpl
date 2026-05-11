@@ -22,7 +22,7 @@ from plugadvpl.db import (
 class TestIsNetworkShare:
     def test_local_drive_windows(self) -> None:
         assert _is_network_share(Path("C:/Users/foo")) is False
-        assert _is_network_share(Path("customizados-local")) is False
+        assert _is_network_share(Path("C:/Users/user/proj")) is False
 
     def test_unc_path_windows(self) -> None:
         assert _is_network_share(Path(r"\\server\share\folder")) is True

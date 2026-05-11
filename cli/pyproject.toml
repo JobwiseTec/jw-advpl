@@ -113,6 +113,6 @@ addopts = [
     "--cov-report=xml",   # para Codecov upload em CI
 ]
 markers = [
-    "local: testes que precisam de fixtures locais (customizados-local, extrairpo.db). Excluídos em CI.",
+    "local: testes que precisam de fixtures locais não distribuídas. Excluídos em CI. Veja CONTRIBUTING.md.",
     "slow: testes que demoram >1s. Rodar com -m slow para incluir.",
 ]

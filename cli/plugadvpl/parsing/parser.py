@@ -1,7 +1,7 @@
 """Parser ADVPL — extrações por regex sobre conteúdo strip-first.
 
-Portado e adaptado de Protheus/backend/services/parser_source.py
-(parser de produção validado em 24.592 fontes padrão + 1.990 cliente real).
+Portado e adaptado de parser interno anterior do autor
+(validado em aproximadamente 2.000 fontes ADVPL).
 """
 from __future__ import annotations
 
@@ -925,7 +925,7 @@ def _extract_ws_structures_from_stripped(
 ) -> dict[str, list[dict[str, Any]]]:
     """Core: extrai WSSTRUCT/WSSERVICE/WSMETHOD com WSDATA fields.
 
-    Mimetiza Protheus/backend/services/parser_source.py linhas 124-179.
+    Mimetiza parser interno do autor (lógica equivalente para WS structures).
     Lê WSDATA dentro da janela de cada struct/service (até próximo END).
 
     TODO MVP: parser não verifica aninhamento; structs declarados dentro de

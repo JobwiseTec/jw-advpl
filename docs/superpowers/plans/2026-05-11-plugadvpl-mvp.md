@@ -130,17 +130,16 @@ plugadvpl — Plugin Claude Code + CLI Python para análise de fontes ADVPL/TLPP
 
 This product includes:
 
-1. Parser de fontes ADVPL portado do projeto Protheus do autor
-   (parser_source.py, ~750 linhas, validado em 24.592 fontes padrão TOTVS
-    e 1.990 fontes de cliente real).
+1. Parser de fontes ADVPL portado de projeto interno anterior do autor
+   (~750 linhas, validado em aproximadamente 2.000 fontes ADVPL).
 
 2. Lookup tables (funcoes_nativas, funcoes_restritas, lint_rules, sql_macros,
    modulos_erp, pontos_entrada_padrao) com origem no projeto advpl-specialist
    (https://github.com/thalysjuvenal/advpl-specialist) por Thalys Augusto,
    licença MIT. Conteúdo extraído e adaptado com crédito explícito.
 
-3. Padrões de schema SQLite espelhados do extrairpo.db do projeto Protheus
-   do autor — schema validado em produção com tenant real.
+3. Padrões de schema SQLite baseados em projeto interno anterior do autor —
+   schema validado em uso interno.
 
 Todas as fontes acima estão sob licença MIT compatível.
 ```
@@ -223,10 +222,12 @@ claude --plugin-dir .
 
 ## Fixtures locais (`pytest -m local`)
 
-Os testes E2E em `cli/tests/e2e_local/` esperam pastas que existem só na máquina do autor (`customizados-local`). Em CI são pulados automaticamente. Se você é o autor e quer rodar:
+Os testes E2E em `cli/tests/e2e_local/` validam o ingest contra um diretório real de fontes ADVPL. Em CI esses testes são pulados automaticamente (marker `local` excluído via `addopts`). Para rodar localmente:
 
 ```bash
-uv run pytest -m local -v
+export PLUGADVPL_E2E_FONTES_DIR=/caminho/para/seus/fontes
+export PLUGADVPL_E2E_BASELINE_DB=/caminho/para/baseline.db  # opcional
+uv run pytest -m local
 ```
 
 ## Estilo
@@ -454,7 +455,7 @@ addopts = [
     "--cov-report=xml",   # para Codecov upload em CI
 ]
 markers = [
-    "local: testes que precisam de fixtures locais (customizados-local, extrairpo.db). Excluídos em CI.",
+    "local: testes que precisam de fixtures locais não distribuídas. Excluídos em CI. Veja CONTRIBUTING.md.",
     "slow: testes que demoram >1s. Rodar com -m slow para incluir.",
 ]
 ```
@@ -575,7 +576,7 @@ git commit -m "feat(cli): scaffold typer CLI with hatch-vcs version (stub)"
 - [ ] **Step 1: Criar `Makefile` na raiz**
 
 ```makefile
-.PHONY: help test test-fast bench lint format type validate ingest-real install-dev
+.PHONY: help test test-fast bench lint format type validate ingest-local install-dev
 
 help:
 	@echo "plugadvpl — comandos dev"
@@ -586,7 +587,7 @@ help:
 	@echo "  format       — ruff format"
 	@echo "  type         — mypy --strict"
 	@echo "  validate     — lint + type + test + bench"
-	@echo "  ingest-real  — ingest em customizados-local (local only)"
+	@echo "  ingest-local — ingest em \$$PLUGADVPL_E2E_FONTES_DIR (local only)"
 	@echo "  install-dev  — uv sync"
 
 install-dev:
@@ -613,8 +614,8 @@ type:
 
 validate: lint type test bench
 
-ingest-real:
-	cd cli && uv run plugadvpl ingest customizados-local --workers 8
+ingest-local:
+	cd cli && uv run plugadvpl ingest $$PLUGADVPL_E2E_FONTES_DIR --workers 8
 ```
 
 - [ ] **Step 2: Commit**
@@ -659,7 +660,7 @@ Conteúdo: copiar literalmente as definições da Seção 4 do spec (`docs/super
 Header do arquivo:
 ```sql
 -- plugadvpl — migration 001 (initial schema, MVP v0.1.0)
--- Schema espelhado do extrairpo.db do projeto Protheus + deltas para uso como plugin local.
+-- Schema baseado em projeto interno anterior do autor + deltas para uso como plugin local.
 -- Total: 22 tabelas + 2 FTS5 virtuais. As 17 tabelas reservadas para Universo 2/3/aux
 -- são criadas via migrations futuras (002+, v0.2+).
 ```
@@ -740,7 +741,7 @@ from plugadvpl.db import _is_network_share
 class TestIsNetworkShare:
     def test_local_drive_windows(self) -> None:
         assert _is_network_share(Path("C:/Users/foo")) is False
-        assert _is_network_share(Path("customizados-local")) is False
+        assert _is_network_share(Path("C:/Users/user/proj")) is False
 
     def test_unc_path_windows(self) -> None:
         assert _is_network_share(Path(r"\\server\share\folder")) is True
@@ -1150,7 +1151,7 @@ git commit -m "feat(db): add close_db with optimize + wal_checkpoint"
 
 ## Chunk 3: Parser core (strip-first + extrações de fontes)
 
-**Objetivo:** Implementar `parsing/stripper.py` (mini-tokenizer que substitui comentários e strings por espaços) e `parsing/parser.py` com as extrações fundamentais portadas do `parser_source.py` do Protheus: funções, tabelas (read/write/reclock), campos, MV_, SX1, includes, calls (U_, ExecBlock, MsExecAuto, FWLoadModel, FWExecView, METHOD). Cada extração tem suite unitária com fixtures sintéticas.
+**Objetivo:** Implementar `parsing/stripper.py` (mini-tokenizer que substitui comentários e strings por espaços) e `parsing/parser.py` com as extrações fundamentais portadas do parser interno anterior do autor: funções, tabelas (read/write/reclock), campos, MV_, SX1, includes, calls (U_, ExecBlock, MsExecAuto, FWLoadModel, FWExecView, METHOD). Cada extração tem suite unitária com fixtures sintéticas.
 
 **Files:**
 - Create: `cli/plugadvpl/parsing/__init__.py`
@@ -1382,8 +1383,8 @@ class TestReadFile:
 ```python
 """Parser ADVPL — extrações por regex sobre conteúdo strip-first.
 
-Portado e adaptado de Protheus/backend/services/parser_source.py
-(parser de produção validado em 24.592 fontes padrão + 1.990 cliente real).
+Portado e adaptado de parser interno anterior do autor
+(validado em aproximadamente 2.000 fontes ADVPL).
 """
 from __future__ import annotations
 
@@ -2429,7 +2430,7 @@ Cobre:
 - **Property-based tests com hypothesis** (1 por extractor): garante que parser não crasha com inputs adversariais e que `strip_advpl` preserva offsets em qualquer string.
 - Suite integration em `cli/tests/integration/` (test_ingest_synthetic, test_incremental, test_reindex_single, test_idempotency, test_cli_commands, test_claude_md_fragment, test_doctor, test_schema_create)
 - Suite bench em `cli/tests/bench/` (test_perf_ingest, test_perf_queries) com `pytest-benchmark` + persistência via `github-action-benchmark` em CI
-- Suite e2e_local em `cli/tests/e2e_local/` (test_real_client_ingest, test_real_client_parity, test_real_client_smoke)
+- Suite e2e_local em `cli/tests/e2e_local/` (test_e2e_local_ingest, test_e2e_local_parity, test_e2e_local_smoke)
 - conftest.py com fixtures comuns
 - **Coverage threshold ≥80%** via `pytest-cov`, configurado no `pyproject.toml`. CI sobe XML para Codecov (free para OSS) para diff coverage por PR
 
@@ -2558,8 +2559,8 @@ Após completar os 14 chunks, validar contra os critérios da Seção 14 do spec
 
 - [ ] `uvx plugadvpl@0.1.0 --help` funciona em Windows/Mac/Linux
 - [ ] `init` cria DB com 22 tabelas + FTS5, escreve fragmento CLAUDE.md, adiciona .plugadvpl/ ao .gitignore
-- [ ] `ingest` em `customizados-local` (1.990 fontes) completa em <60s com `--workers 8`
-- [ ] Parity test ≤10% nas 7 tabelas comparáveis com extrairpo.db
+- [ ] `ingest` em fixture local (~2.000 fontes) completa em <60s com `--workers 8`
+- [ ] Parity test ≤10% nas 7 tabelas comparáveis com baseline interno
 - [ ] FTS5 com 3 modos (`--fts`, `--literal`, `--identifier`) testado em `SA1->A1_COD`, `%xfilial%`, `U_FATA050`, `::New`, `PARAMIXB[1]`
 - [ ] Reindex × 3 mantém DB consistente (idempotência)
 - [ ] `status --check-stale` detecta stale por mtime/size **e** versões
@@ -2585,6 +2586,6 @@ Após completar os 14 chunks, validar contra os critérios da Seção 14 do spec
 - **Commits pequenos e frequentes:** uma feature = um ou mais commits, não acumular.
 - **Skip work que viola YAGNI:** se um critério parece "nice to have" mas não está nos acceptance criteria, pule.
 - **Não adicione recursos não solicitados:** o spec é a fonte da verdade. Se achar que falta algo, pergunte antes de implementar.
-- **Preserve encoding cp1252** em fixtures sintéticas que precisam representar fontes reais.
+- **Preserve encoding cp1252** em fixtures sintéticas que precisam representar fontes ADVPL típicas.
 - **Use `uv run` para tudo:** `uv run pytest`, `uv run plugadvpl`, `uv run ruff check`.
 - **Reference spec sections em commits:** `git commit -m "feat(db): add fonte_tabela for reverse lookup (spec §4.2)"`.
