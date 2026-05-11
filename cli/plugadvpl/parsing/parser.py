@@ -112,6 +112,9 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# #DEFINE preprocessor directive: capture nome + restante da linha como valor.
+_DEFINE_RE = re.compile(r"^[ \t]*#DEFINE[ \t]+(\w+)[ \t]+(.+)$", re.IGNORECASE | re.MULTILINE)
+
 # Log calls: FwLogMsg(...) e ConOut(...)
 _FWLOGMSG_OPEN_RE = re.compile(r"\bFwLogMsg\s*\(", re.IGNORECASE)
 _CONOUT_OPEN_RE = re.compile(r"\bConOut\s*\(", re.IGNORECASE)
@@ -768,6 +771,31 @@ def extract_log_calls(content: str) -> list[dict[str, Any]]:
     Usa strip_strings=False porque níveis/categorias são literais.
     """
     return _extract_log_calls_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+def _extract_defines_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai #DEFINE NOME valor — pega valor cumulativo até fim de linha."""
+    result: list[dict[str, Any]] = []
+    for m in _DEFINE_RE.finditer(stripped_keep_strings):
+        result.append(
+            {
+                "nome": m.group(1),
+                "valor": m.group(2).strip(),
+                "linha": _line_at(stripped_keep_strings, m.start()),
+            }
+        )
+    return result
+
+
+def extract_defines(content: str) -> list[dict[str, Any]]:
+    """Extrai diretivas #DEFINE NOME valor — valor pode ser literal string.
+
+    Retorna lista de dicts: {nome, valor, linha}.
+    Usa strip_strings=False porque defines podem ter literal string como valor.
+    """
+    return _extract_defines_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

@@ -13,6 +13,7 @@ from plugadvpl.parsing.parser import (
     extract_calls_fwloadmodel,
     extract_calls_method,
     extract_calls_user_func,
+    extract_defines,
     extract_env_openers,
     extract_fields_ref,
     extract_functions,
@@ -420,6 +421,32 @@ class TestExtractLogCalls:
         src = '// ConOut("fake")\nConOut("real")'
         result = extract_log_calls(src)
         assert len(result) == 1
+
+
+class TestExtractDefines:
+    def test_simple_define(self) -> None:
+        src = "#DEFINE MAX_ITEMS 100\n"
+        result = extract_defines(src)
+        assert any(d["nome"] == "MAX_ITEMS" and d["valor"] == "100" for d in result)
+
+    def test_define_string_value(self) -> None:
+        src = '#DEFINE PREFIX "PRF_"\n'
+        result = extract_defines(src)
+        assert any(d["nome"] == "PREFIX" and '"PRF_"' in d["valor"] for d in result)
+
+    def test_define_records_line(self) -> None:
+        src = "// comment\n#DEFINE X 1\n#DEFINE Y 2\n"
+        result = extract_defines(src)
+        by_name = {d["nome"]: d for d in result}
+        assert by_name["X"]["linha"] == 2
+        assert by_name["Y"]["linha"] == 3
+
+    def test_ignores_in_comment(self) -> None:
+        src = "// #DEFINE FAKE 99\n#DEFINE REAL 1\n"
+        result = extract_defines(src)
+        names = {d["nome"] for d in result}
+        assert "REAL" in names
+        assert "FAKE" not in names
 
 
 class TestParseSource:
