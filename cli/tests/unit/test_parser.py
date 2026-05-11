@@ -567,6 +567,101 @@ class TestExtractSqlEmbedado:
         assert len(result[0]["snippet"]) <= 300
 
 
+class TestDeriveCapabilities:
+    def _empty_parsed(self) -> dict[str, object]:
+        return {
+            "funcoes": [],
+            "namespace": "",
+            "rest_endpoints": [],
+            "http_calls": [],
+            "env_openers": [],
+            "log_calls": [],
+            "defines": [],
+            "ws_structures": {"ws_structs": [], "ws_services": [], "ws_methods": []},
+            "sql_embedado": [],
+            "chamadas": [],
+            "campos_ref": [],
+            "tabelas_ref": {"read": [], "write": [], "reclock": []},
+            "raw_content": "",
+        }
+
+    def test_mvc_from_hook(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["chamadas"] = [{"destino": "bCommit", "tipo": "mvc_hook"}]
+        caps = derive_capabilities(p)
+        assert "MVC" in caps
+
+    def test_ws_rest_and_soap(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p_rest = self._empty_parsed()
+        p_rest["rest_endpoints"] = [
+            {"verbo": "GET", "path": "/x", "annotation_style": "@verb_tlpp"}
+        ]
+        assert "WS-REST" in derive_capabilities(p_rest)
+
+        p_soap = self._empty_parsed()
+        p_soap["rest_endpoints"] = [
+            {"verbo": "GET", "path": "", "annotation_style": "wsmethod_classico"}
+        ]
+        assert "WS-SOAP" in derive_capabilities(p_soap)
+
+    def test_job_requires_main_and_rpc(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["funcoes"] = [{"nome": "JobX", "kind": "main_function"}]
+        p["env_openers"] = [{"empresa": "01", "filial": "01"}]
+        caps = derive_capabilities(p)
+        assert "JOB" in caps
+        assert "RPC" in caps
+        assert "ENV_OPENER" in caps
+
+    def test_rest_client_only(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["http_calls"] = [{"metodo": "HttpPost", "url_literal": "http://x.com"}]
+        caps = derive_capabilities(p)
+        assert "REST_CLIENT" in caps
+
+    def test_pe_user_function_pattern(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["funcoes"] = [{"nome": "MT410GRV", "kind": "user_function"}]
+        caps = derive_capabilities(p)
+        assert "PE" in caps
+
+    def test_compatibilizador_u_upd(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["funcoes"] = [{"nome": "U_UPDFIN", "kind": "user_function"}]
+        caps = derive_capabilities(p)
+        assert "COMPATIBILIZADOR" in caps
+
+    def test_dialog_browse_workflow_json_multifilial(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        # Content-driven caps need raw_content set
+        p["raw_content"] = (
+            "oDlg := MsDialog():New()\n"
+            "oBrw := FWFormBrowse():New()\n"
+            "WFPrepEnv()\n"
+            "oJson := JsonObject():New()\n"
+            "cFil := xFilial('SA1')\n"
+        )
+        caps = derive_capabilities(p)
+        assert "DIALOG" in caps
+        assert "BROWSE" in caps
+        assert "WORKFLOW" in caps
+        assert "JSON_AWARE" in caps
+        assert "MULTI_FILIAL" in caps
+
+    def test_exec_auto_caller(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+        p = self._empty_parsed()
+        p["chamadas"] = [{"destino": "MATA410", "tipo": "execauto"}]
+        assert "EXEC_AUTO_CALLER" in derive_capabilities(p)
+
+
 class TestParseSource:
     def test_parse_returns_dict_with_all_fields(self, tmp_path: Path) -> None:
         f = tmp_path / "FATA050.prw"

@@ -1073,6 +1073,218 @@ def extract_sql_embedado(content: str) -> list[dict[str, Any]]:
     return _extract_sql_embedado_from_stripped(strip_advpl(content, strip_strings=False))
 
 
+# --- Capabilities & source_type ------------------------------------------------
+#
+# Os checks abaixo combinam (a) campos já extraídos pelo parser e (b) padrões no
+# conteúdo já strippado de comentários (mas com strings preservadas).
+# Para acesso ao conteúdo: parsed["raw_content"] (set por parse_source).
+
+# Protheus PE pattern: ^[A-Z]{2,4}\d{2,4}[A-Z_]{2,}$ — User Functions Point of Entry.
+_PE_NAME_RE = re.compile(r"^[A-Z]{2,4}\d{2,4}[A-Z_]{2,}$")
+_COMPATIB_NAME_RE = re.compile(r"^U_UPD", re.IGNORECASE)
+_TESTE_UNIT_ANNOTATION_RE = re.compile(r"@Test\b", re.IGNORECASE)
+_FW_BROWSE_RE = re.compile(r"\b(?:FWFormBrowse|FWBrowse)\b", re.IGNORECASE)
+_DIALOG_RE = re.compile(r"\b(?:MsDialog|TDialog|FwDialogModal)\b", re.IGNORECASE)
+_MODEL_DEF_RE = re.compile(r"\b(?:MODELDEF|VIEWDEF)\b", re.IGNORECASE)
+_SCHEDULE_RE = re.compile(r"\b(?:FWSchedule|StartSchedTask)\b", re.IGNORECASE)
+_WORKFLOW_RE = re.compile(r"\b(?:WFPrepEnv|MsWorkflow|MailAuto)\b", re.IGNORECASE)
+_WEBVIEW_RE = re.compile(r"\b(?:TWebEngine|TWebChannel)\b", re.IGNORECASE)
+_REPORT_TR_RE = re.compile(r"\bTReport\s*\(\s*\)\s*:\s*New|oReport\s*:\s*Print", re.IGNORECASE)
+_UPD_VAR_RE = re.compile(r"\b__cUpdName\b", re.IGNORECASE)
+_JSON_AWARE_RE = re.compile(
+    r"\bJsonObject\s*\(\s*\)\s*:\s*New|\bFWJsonSerialize|\bFWJsonDeserialize",
+    re.IGNORECASE,
+)
+_MULTI_FILIAL_RE = re.compile(
+    r"\b(?:xFilial|FwxFilial|cFilAnt|cEmpAnt)\b", re.IGNORECASE
+)
+_TLPP_UNIT_RE = re.compile(r"tlpp\.unit\.suite|tlpp\.unit\b", re.IGNORECASE)
+
+
+def _derive_capabilities(parsed: dict[str, Any]) -> list[str]:
+    """Deriva lista ordenada e única de capabilities a partir do parsed completo.
+
+    Mapeamento das ~20 capabilities da spec §4.4. Cada check é independente —
+    podem coexistir múltiplas capabilities por fonte. Retorna lista ordenada.
+    """
+    caps: set[str] = set()
+    content: str = parsed.get("raw_content", "") or ""
+    funcoes: list[dict[str, Any]] = parsed.get("funcoes", []) or []
+    chamadas: list[dict[str, Any]] = parsed.get("chamadas", []) or []
+    rest_endpoints: list[dict[str, Any]] = parsed.get("rest_endpoints", []) or []
+    http_calls: list[dict[str, Any]] = parsed.get("http_calls", []) or []
+    env_openers: list[dict[str, Any]] = parsed.get("env_openers", []) or []
+    ws_structures: dict[str, Any] = parsed.get("ws_structures") or {
+        "ws_structs": [],
+        "ws_services": [],
+        "ws_methods": [],
+    }
+    namespace: str = parsed.get("namespace", "") or ""
+
+    has_mvc_hook = any(
+        c.get("tipo") == "mvc_hook"
+        and c.get("destino") in ("bCommit", "bTudoOk", "bLineOk")
+        for c in chamadas
+    )
+    has_modeldef_or_viewdef = bool(_MODEL_DEF_RE.search(content)) or any(
+        f.get("nome", "").upper() in ("MODELDEF", "VIEWDEF") for f in funcoes
+    )
+    # MVC
+    if has_mvc_hook or has_modeldef_or_viewdef:
+        caps.add("MVC")
+
+    # BROWSE
+    if _FW_BROWSE_RE.search(content):
+        caps.add("BROWSE")
+
+    # DIALOG (qualquer presença)
+    has_dialog = bool(_DIALOG_RE.search(content))
+    if has_dialog:
+        caps.add("DIALOG")
+
+    # TELA_CLASSICA: Dialog sem MVC
+    if has_dialog and not has_modeldef_or_viewdef:
+        caps.add("TELA_CLASSICA")
+
+    # ENV_OPENER / RPC
+    if env_openers:
+        caps.add("ENV_OPENER")
+        caps.add("RPC")
+
+    # JOB: main_function + RPC
+    has_main = any(f.get("kind") == "main_function" for f in funcoes)
+    if has_main and env_openers:
+        caps.add("JOB")
+
+    # WS-REST / WS-SOAP
+    for ep in rest_endpoints:
+        style = ep.get("annotation_style", "")
+        if style == "@verb_tlpp":
+            caps.add("WS-REST")
+        elif style == "wsmethod_classico":
+            caps.add("WS-SOAP")
+    if ws_structures.get("ws_services"):
+        caps.add("WS-SOAP")
+
+    # PE: User Functions com nome em padrão Protheus PE
+    for f in funcoes:
+        if f.get("kind") != "user_function":
+            continue
+        nome = f.get("nome", "").upper()
+        if _PE_NAME_RE.match(nome):
+            caps.add("PE")
+            break
+
+    # SCHEDULE
+    if _SCHEDULE_RE.search(content):
+        caps.add("SCHEDULE")
+
+    # WORKFLOW
+    if _WORKFLOW_RE.search(content):
+        caps.add("WORKFLOW")
+
+    # COMPATIBILIZADOR: ^U_UPD OR __cUpdName
+    is_compatib = bool(_UPD_VAR_RE.search(content))
+    if not is_compatib:
+        for f in funcoes:
+            if _COMPATIB_NAME_RE.match(f.get("nome", "")):
+                is_compatib = True
+                break
+    if is_compatib:
+        caps.add("COMPATIBILIZADOR")
+
+    # TESTE_UNITARIO: @Test annotation OR tlpp.unit.suite import
+    if _TESTE_UNIT_ANNOTATION_RE.search(content) or _TLPP_UNIT_RE.search(content):
+        caps.add("TESTE_UNITARIO")
+
+    # WEBVIEW
+    if _WEBVIEW_RE.search(content):
+        caps.add("WEBVIEW")
+
+    # REPORT_TR
+    if _REPORT_TR_RE.search(content):
+        caps.add("REPORT_TR")
+
+    # REST_CLIENT: http_calls e NÃO serve REST endpoints
+    if http_calls and not rest_endpoints:
+        caps.add("REST_CLIENT")
+
+    # EXEC_AUTO_CALLER
+    if any(c.get("tipo") == "execauto" for c in chamadas):
+        caps.add("EXEC_AUTO_CALLER")
+
+    # JSON_AWARE
+    if _JSON_AWARE_RE.search(content):
+        caps.add("JSON_AWARE")
+
+    # MULTI_FILIAL
+    if _MULTI_FILIAL_RE.search(content):
+        caps.add("MULTI_FILIAL")
+
+    # namespace check para MVC (caso TLPP module-style)
+    if namespace and any(
+        f.get("nome", "").upper() in ("MODELDEF", "VIEWDEF") for f in funcoes
+    ):
+        caps.add("MVC")
+
+    return sorted(caps)
+
+
+def derive_capabilities(parsed: dict[str, Any]) -> list[str]:
+    """Deriva capabilities da spec §4.4 a partir do dict parsed completo.
+
+    parsed deve conter pelo menos: funcoes, chamadas, rest_endpoints, http_calls,
+    env_openers, ws_structures, namespace, raw_content (conteúdo stripped com
+    strings preservadas, para os checks baseados em pattern matching no fonte).
+
+    Retorna lista ordenada de strings (capabilities da spec §4.4).
+    """
+    return _derive_capabilities(parsed)
+
+
+def _derive_source_type(parsed: dict[str, Any]) -> str:
+    """Deriva source_type da spec §4.2: user_function|main_function|static_function|
+    webservice|class|mvc|pe|outro.
+
+    Ordem de precedência (do mais específico para o mais genérico):
+    1. webservice — rest_endpoints OR ws_services não vazios
+    2. mvc — capabilities inclui MVC
+    3. pe — capabilities inclui PE
+    4. main_function — função kind=main_function presente
+    5. user_function — função kind=user_function presente
+    6. static_function — função kind=static_function presente
+    7. class — METHOD declarado (kind=method)
+    8. outro
+    """
+    funcoes: list[dict[str, Any]] = parsed.get("funcoes", []) or []
+    capabilities: list[str] = parsed.get("capabilities", []) or []
+    rest_endpoints: list[dict[str, Any]] = parsed.get("rest_endpoints", []) or []
+    ws_structures: dict[str, Any] = parsed.get("ws_structures") or {}
+
+    if rest_endpoints or ws_structures.get("ws_services"):
+        return "webservice"
+    if "MVC" in capabilities:
+        return "mvc"
+    if "PE" in capabilities:
+        return "pe"
+
+    kinds = {f.get("kind") for f in funcoes}
+    if "main_function" in kinds:
+        return "main_function"
+    if "user_function" in kinds:
+        return "user_function"
+    if "static_function" in kinds:
+        return "static_function"
+    if "method" in kinds:
+        return "class"
+    return "outro"
+
+
+def derive_source_type(parsed: dict[str, Any]) -> str:
+    """Deriva source_type single-value a partir do parsed completo. Ver spec §4.2."""
+    return _derive_source_type(parsed)
+
+
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:
     """Resultado de parse_source para arquivos vazios."""
     return {
