@@ -1,6 +1,7 @@
 """Banco de dados SQLite — abertura, PRAGMAs, migrations, network share detection."""
 from __future__ import annotations
 
+import contextlib
 import importlib.resources as ir
 import sqlite3
 from typing import TYPE_CHECKING
@@ -71,11 +72,16 @@ def open_db(db_path: Path) -> sqlite3.Connection:
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
-    """Aplica todas as migrations da pasta ``migrations/`` em ordem alfabética.
+    """Aplica migrations em ordem (.sql files numerados em migrations/).
+
+    Tracks aplicações em ``_migrations`` para skip idempotente. Atualiza
+    ``meta.schema_version`` para refletir a última migration aplicada.
 
     Migrations são arquivos ``.sql`` numerados (``001_initial.sql``,
-    ``002_xxx.sql``, ...). Cada arquivo deve ser idempotente (usa
-    ``CREATE TABLE IF NOT EXISTS`` etc.) para permitir reaplicação segura.
+    ``002_xxx.sql``, ...). A primeira migration cria a tabela ``_migrations``;
+    a partir da segunda, somente migrations cujo filename NÃO consta em
+    ``_migrations`` são executadas. Isso é importante a partir da migration
+    002 quando ALTER TABLE entra em jogo (não-idempotente).
 
     Carrega via :mod:`importlib.resources` para funcionar igual em
     desenvolvimento (source tree) e em wheel instalado.
@@ -85,9 +91,45 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
         (f for f in migrations_dir.iterdir() if f.name.endswith(".sql")),
         key=lambda f: f.name,
     )
+
+    # Bootstrap: a primeira migration cria _migrations. Tente ler — se falhar,
+    # é DB virgem e aplicamos 001 sempre.
+    try:
+        applied: set[str] = {
+            row[0] for row in conn.execute("SELECT filename FROM _migrations")
+        }
+    except sqlite3.OperationalError:
+        applied = set()
+
+    last_version = "0"
     for sql_file in sql_files:
+        if sql_file.name in applied:
+            # Migration já aplicada; mas ainda devemos atualizar last_version
+            # para que schema_version reflita a mais recente conhecida.
+            num = sql_file.name.split("_")[0].lstrip("0") or "0"
+            last_version = num
+            continue
         sql = sql_file.read_text(encoding="utf-8")
         conn.executescript(sql)
+        conn.execute(
+            "INSERT OR IGNORE INTO _migrations (filename) VALUES (?)",
+            (sql_file.name,),
+        )
+        # Extrai número do filename "001_initial.sql" → "1"
+        num = sql_file.name.split("_")[0].lstrip("0") or "0"
+        last_version = num
+
+    if last_version != "0":
+        # Atualiza schema_version no meta (se meta já existe). Em DBs muito
+        # antigos onde 001 ainda não criou meta a tabela pode faltar — toleramos
+        # silenciosamente (raríssimo; apenas defensivo).
+        with contextlib.suppress(sqlite3.OperationalError):
+            conn.execute(
+                "INSERT INTO meta (chave, valor) VALUES (?, ?) "
+                "ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+                ("schema_version", last_version),
+            )
+
     conn.commit()
 
 
@@ -98,13 +140,15 @@ def init_meta(
 
     Linhas escritas:
 
-    - ``schema_version``: :data:`SCHEMA_VERSION` (incrementa quando migrations rodam).
     - ``plugadvpl_version``: ``cli_version`` informado pelo chamador.
     - ``project_root``: caminho absoluto da raiz do projeto cliente.
     - ``encoding_policy``: ``'preserve'`` (default, cf. spec §4.2).
+
+    Nota: ``schema_version`` NÃO é gravado aqui — :func:`apply_migrations`
+    deriva o valor a partir do filename da última migration aplicada e
+    grava em ``meta.schema_version`` após o sucesso da aplicação.
     """
     defaults: dict[str, str] = {
-        "schema_version": SCHEMA_VERSION,
         "plugadvpl_version": cli_version,
         "project_root": project_root,
         "encoding_policy": "preserve",
@@ -139,19 +183,20 @@ def close_db(conn: sqlite3.Connection) -> None:
 
     Sequência (cf. spec §4.1, recomendação oficial SQLite >=3.46):
 
-    1. ``PRAGMA optimize`` — coleta estatísticas e atualiza índices
+    1. ``commit`` — flush writes pendentes ANTES do checkpoint
+       (``wal_checkpoint(TRUNCATE)`` não roda com write transaction aberta).
+    2. ``PRAGMA optimize`` — coleta estatísticas e atualiza índices
        (https://sqlite.org/pragma.html#pragma_optimize).
-    2. Se ``journal_mode == 'wal'``: ``PRAGMA wal_checkpoint(TRUNCATE)``
+    3. Se ``journal_mode == 'wal'``: ``PRAGMA wal_checkpoint(TRUNCATE)``
        — força sync e zera ``.db-wal`` para liberar disco.
-    3. ``commit`` para garantir persistência.
     4. ``close`` em bloco ``finally`` mesmo se houver erro nas otimizações
        (evita vazar conexão).
     """
     try:
+        conn.commit()  # flush pending writes ANTES do checkpoint
         conn.execute("PRAGMA optimize")
         mode_row = conn.execute("PRAGMA journal_mode").fetchone()
         if mode_row is not None and mode_row[0] == "wal":
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        conn.commit()
     finally:
         conn.close()

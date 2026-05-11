@@ -1,11 +1,21 @@
 """Testes de cli/plugadvpl/db.py."""
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from plugadvpl.db import SCHEMA_VERSION, _is_network_share, open_db
+from plugadvpl.db import (
+    SCHEMA_VERSION,
+    _is_network_share,
+    apply_migrations,
+    close_db,
+    get_meta,
+    init_meta,
+    open_db,
+    set_meta,
+)
 
 
 class TestIsNetworkShare:
@@ -67,7 +77,6 @@ class TestOpenDb:
 
 class TestApplyMigrations:
     def test_apply_migrations_creates_tables(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -94,7 +103,6 @@ class TestApplyMigrations:
             conn.close()
 
     def test_apply_migrations_creates_fts5(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -110,7 +118,6 @@ class TestApplyMigrations:
             conn.close()
 
     def test_apply_migrations_is_idempotent(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -119,28 +126,70 @@ class TestApplyMigrations:
             count = conn.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
             ).fetchone()[0]
-            assert count > 20
+            # Sabemos que há exatamente 23 tabelas de dados; FTS5 cria shadow tables
+            # (>= permite essas extras).
+            assert count >= 23
         finally:
             conn.close()
+
+    def test_apply_migrations_skips_already_applied(self, tmp_path: Path) -> None:
+        """2ª chamada não deve reexecutar SQL (registrado em _migrations)."""
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            applied_first = list(conn.execute("SELECT filename FROM _migrations"))
+            apply_migrations(conn)
+            applied_second = list(conn.execute("SELECT filename FROM _migrations"))
+            assert applied_first == applied_second
+            assert ("001_initial.sql",) in applied_first
+        finally:
+            close_db(conn)
+
+    def test_apply_migrations_sets_schema_version_in_meta(self, tmp_path: Path) -> None:
+        """meta.schema_version deve refletir última migration aplicada."""
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            version = conn.execute(
+                "SELECT valor FROM meta WHERE chave='schema_version'"
+            ).fetchone()
+            assert version == ("1",)
+        finally:
+            close_db(conn)
 
 
 class TestMeta:
     def test_init_meta_writes_defaults(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations, get_meta, init_meta
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
             apply_migrations(conn)
             init_meta(conn, project_root=str(tmp_path), cli_version="0.1.0")
-            assert get_meta(conn, "schema_version") == SCHEMA_VERSION
             assert get_meta(conn, "plugadvpl_version") == "0.1.0"
             assert get_meta(conn, "project_root") == str(tmp_path)
             assert get_meta(conn, "encoding_policy") == "preserve"
         finally:
             conn.close()
 
+    def test_schema_version_after_apply_migrations_and_init_meta(
+        self, tmp_path: Path
+    ) -> None:
+        """Após apply_migrations + init_meta, schema_version deve ser '1'
+        (gravado por apply_migrations, NÃO por init_meta)."""
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            init_meta(conn, project_root=str(tmp_path), cli_version="0.1.0")
+            assert get_meta(conn, "schema_version") == "1"
+            # SCHEMA_VERSION (constante informacional) ainda existe e bate.
+            assert SCHEMA_VERSION == "1"
+        finally:
+            conn.close()
+
     def test_get_meta_returns_none_for_missing(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations, get_meta
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -150,7 +199,6 @@ class TestMeta:
             conn.close()
 
     def test_set_meta_upserts(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations, get_meta, set_meta
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -164,7 +212,6 @@ class TestMeta:
 
 class TestCloseDb:
     def test_close_db_truncates_wal(self, tmp_path: Path) -> None:
-        from plugadvpl.db import apply_migrations, close_db
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
@@ -180,3 +227,25 @@ class TestCloseDb:
         wal_path = db_path.with_suffix(".db-wal")
         if wal_path.exists():
             assert wal_path.stat().st_size < 100  # apenas header (ou zero)
+
+    def test_close_db_does_not_raise_with_uncommitted_writes(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: close_db must commit pending writes before WAL checkpoint."""
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            # Insert mas NÃO commit
+            conn.execute(
+                "INSERT INTO meta (chave, valor) VALUES ('uncommitted', 'data')"
+            )
+        finally:
+            close_db(conn)  # deve não levantar OperationalError
+        # Verifica que o INSERT foi persistido (close_db committed before truncate)
+        conn2 = sqlite3.connect(str(db_path))
+        val = conn2.execute(
+            "SELECT valor FROM meta WHERE chave='uncommitted'"
+        ).fetchone()
+        conn2.close()
+        assert val == ("data",)
