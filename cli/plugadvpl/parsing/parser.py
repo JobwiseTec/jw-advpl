@@ -79,6 +79,10 @@ _FWEXECVIEW_RE = re.compile(r'FWExecView\s*\([^,)]+,\s*["\'](\w+)["\']', re.IGNO
 _METHOD_OBJ_RE = re.compile(r"\b(\w+:\w+)\s*\(", re.IGNORECASE)
 _METHOD_SELF_RE = re.compile(r"::(\w+)\s*\(", re.IGNORECASE)
 
+# Campos (alias->FIELD, Replace FIELD)
+_FIELD_ARROW_RE = re.compile(r"\w{2,3}->([A-Z][A-Z0-9]_\w+)", re.IGNORECASE)
+_FIELD_REPLACE_RE = re.compile(r"\bReplace\s+([A-Z][A-Z0-9]_\w+)", re.IGNORECASE)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -347,6 +351,21 @@ def extract_calls_fwexecview(content: str) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def extract_fields_ref(content: str) -> list[str]:
+    """Extrai nomes de campos Protheus referenciados (alias->FIELD ou Replace FIELD).
+
+    Padrão XX_NOME (ex.: A1_NOME, C5_NUM, ZA1_FOO). Filtra por regex que exige
+    primeira letra + alfanumérico + underscore + sufixo.
+    """
+    stripped = strip_advpl(content)
+    fields: set[str] = set()
+    for m in _FIELD_ARROW_RE.finditer(stripped):
+        fields.add(m.group(1).upper())
+    for m in _FIELD_REPLACE_RE.finditer(stripped):
+        fields.add(m.group(1).upper())
+    return sorted(fields)
 
 
 def extract_calls_method(content: str) -> list[dict[str, Any]]:

@@ -11,6 +11,7 @@ from plugadvpl.parsing.parser import (
     extract_calls_fwloadmodel,
     extract_calls_method,
     extract_calls_user_func,
+    extract_fields_ref,
     extract_functions,
     extract_includes,
     extract_params,
@@ -258,3 +259,17 @@ class TestExtractCallsMethod:
         src = "::Init()"
         result = extract_calls_method(src)
         assert any("Init" in c["destino"] for c in result)
+
+
+class TestExtractFieldsRef:
+    def test_alias_arrow_field(self) -> None:
+        src = "cNome := SA1->A1_NOME"
+        assert "A1_NOME" in extract_fields_ref(src)
+
+    def test_replace_field(self) -> None:
+        src = 'Replace A1_NOME With "X"'
+        assert "A1_NOME" in extract_fields_ref(src)
+
+    def test_ignores_invalid_field_pattern(self) -> None:
+        src = "x := abc_def"  # não é padrão XX_NOME ADVPL
+        assert "ABC_DEF" not in extract_fields_ref(src)
