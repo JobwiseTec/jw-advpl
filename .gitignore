@@ -29,3 +29,6 @@ cli/coverage.xml
 
 # Claude Code local artifacts
 .claude/
+
+# hatch-vcs auto-generated version file
+cli/plugadvpl/_version.py
