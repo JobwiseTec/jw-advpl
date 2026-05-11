@@ -35,6 +35,7 @@ type:
 	cd cli && uv run mypy plugadvpl/
 
 validate: lint type test bench
+	cd cli && uv run pytest tests/unit tests/integration --cov=plugadvpl --cov-branch --cov-fail-under=80
 
 ingest-real:
 	cd cli && uv run plugadvpl ingest customizados-local --workers 8

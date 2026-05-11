@@ -3,7 +3,8 @@ name = "plugadvpl"
 dynamic = ["version"]
 description = "CLI que indexa fontes ADVPL/Protheus em SQLite com FTS5 para análise por LLM (companheiro do plugin Claude Code plugadvpl)"
 readme = "README.md"
-license-files = ["../LICENSE", "../NOTICE"]
+# License file lives in monorepo root (see ../LICENSE). PEP 639 SPDX expression below is the canonical declaration.
+license = "MIT"
 authors = [{ name = "plugadvpl-org", email = "plugadvpl-org@example.com" }]
 requires-python = ">=3.11"
 keywords = ["advpl", "tlpp", "protheus", "totvs", "sqlite", "fts5", "claude-code"]
@@ -98,7 +99,6 @@ addopts = [
     "--strict-markers",
     "--cov=plugadvpl",
     "--cov-branch",
-    "--cov-fail-under=80",
     "--cov-report=term-missing",
     "--cov-report=xml",   # para Codecov upload em CI
 ]
