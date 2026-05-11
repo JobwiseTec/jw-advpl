@@ -112,6 +112,19 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Embedded SQL: BeginSql ... EndSql, TCQuery, TCSqlExec
+_BEGINSQL_BLOCK_RE = re.compile(
+    r"\bBeginSql\b(?:\s+Alias\s+['\"]?\w+['\"]?)?\s*(.*?)\bEndSql\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_TCQUERY_RE = re.compile(r'\bTCQuery\s*\(\s*["\']([^"\']+)["\']', re.IGNORECASE)
+_TCSQLEXEC_RE = re.compile(r'\bTCSqlExec\s*\(\s*["\']([^"\']+)["\']', re.IGNORECASE)
+_SQL_TABLE_FROM_RE = re.compile(r"\bFROM\s+(\w+)", re.IGNORECASE)
+_SQL_TABLE_JOIN_RE = re.compile(r"\bJOIN\s+(\w+)", re.IGNORECASE)
+_SQL_TABLE_INTO_RE = re.compile(r"\bINTO\s+(\w+)", re.IGNORECASE)
+_SQL_TABLE_UPDATE_RE = re.compile(r"\bUPDATE\s+(\w+)", re.IGNORECASE)
+_SQL_TABLE_DELETE_RE = re.compile(r"\bDELETE\s+FROM\s+(\w+)", re.IGNORECASE)
+
 # TLPP Namespace: "Namespace x.y.z"
 _NAMESPACE_RE = re.compile(
     r"^[ \t]*Namespace[ \t]+([A-Za-z_][\w.]*)", re.IGNORECASE | re.MULTILINE
@@ -973,6 +986,91 @@ def extract_namespace(content: str) -> str:
     Strip-first remove strings/comentários (ignora namespace em literais).
     """
     return _extract_namespace_from_stripped(strip_advpl(content))
+
+
+_SQL_SNIPPET_MAX = 300
+
+
+def _infer_sql_operation(sql: str) -> str:
+    """Inferir tipo de operação SQL pela primeira palavra-chave significativa."""
+    s = sql.lstrip().upper()
+    for op in ("SELECT", "UPDATE", "INSERT", "DELETE"):
+        if s.startswith(op):
+            return op.lower()
+    # Fallback: procura primeira ocorrência
+    for op in ("SELECT", "UPDATE", "INSERT", "DELETE"):
+        if op in s:
+            return op.lower()
+    return ""
+
+
+def _extract_sql_tables(sql: str) -> list[str]:
+    """Extrai nomes de tabelas referenciadas em SQL via FROM/JOIN/INTO/UPDATE/DELETE FROM."""
+    tables: set[str] = set()
+    for pat in (
+        _SQL_TABLE_FROM_RE,
+        _SQL_TABLE_JOIN_RE,
+        _SQL_TABLE_INTO_RE,
+        _SQL_TABLE_UPDATE_RE,
+        _SQL_TABLE_DELETE_RE,
+    ):
+        for m in pat.finditer(sql):
+            tables.add(m.group(1).upper())
+    return sorted(tables)
+
+
+def _extract_sql_embedado_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai SQL embedado (BeginSql/EndSql, TCQuery, TCSqlExec).
+
+    Para cada match: operacao (select/update/insert/delete), tabelas (lista),
+    snippet (primeiros 300 chars). Tabelas extraídas via regex sobre o SQL.
+    """
+    result: list[dict[str, Any]] = []
+    for m in _BEGINSQL_BLOCK_RE.finditer(stripped_keep_strings):
+        sql = m.group(1).strip()
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "operacao": _infer_sql_operation(sql),
+                "tabelas": _extract_sql_tables(sql),
+                "snippet": sql[:_SQL_SNIPPET_MAX],
+            }
+        )
+    for m in _TCQUERY_RE.finditer(stripped_keep_strings):
+        sql = m.group(1)
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "operacao": _infer_sql_operation(sql),
+                "tabelas": _extract_sql_tables(sql),
+                "snippet": sql[:_SQL_SNIPPET_MAX],
+            }
+        )
+    for m in _TCSQLEXEC_RE.finditer(stripped_keep_strings):
+        sql = m.group(1)
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "operacao": _infer_sql_operation(sql),
+                "tabelas": _extract_sql_tables(sql),
+                "snippet": sql[:_SQL_SNIPPET_MAX],
+            }
+        )
+    return result
+
+
+def extract_sql_embedado(content: str) -> list[dict[str, Any]]:
+    """Extrai SQL embedado: BeginSql/EndSql, TCQuery, TCSqlExec.
+
+    Retorna lista de dicts: {funcao, linha, operacao, tabelas, snippet}.
+    Snippet limitado a 300 chars. Usa strip_strings=False (SQL é literal).
+    """
+    return _extract_sql_embedado_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

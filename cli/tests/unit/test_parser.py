@@ -25,6 +25,7 @@ from plugadvpl.parsing.parser import (
     extract_params,
     extract_perguntas,
     extract_rest_endpoints,
+    extract_sql_embedado,
     extract_tables,
     extract_ws_structures,
     read_file,
@@ -531,6 +532,39 @@ class TestExtractNamespace:
         # Strip-strings=True, então namespace dentro de string não deveria contar
         src = 'cMsg := "Namespace fake.x"\nNamespace real.module'
         assert extract_namespace(src) == "real.module"
+
+
+class TestExtractSqlEmbedado:
+    def test_beginsql_select(self) -> None:
+        src = (
+            "BeginSql Alias 'TRB'\n"
+            "  SELECT A1_COD FROM SA1010\n"
+            "  WHERE A1_FILIAL = 'FIL'\n"
+            "EndSql\n"
+        )
+        result = extract_sql_embedado(src)
+        assert len(result) == 1
+        e = result[0]
+        assert e["operacao"] == "select"
+        assert "SA1010" in e["tabelas"]
+        assert "SELECT" in e["snippet"].upper()
+
+    def test_tcquery(self) -> None:
+        src = "TCQuery(\"SELECT * FROM SA1010 WHERE A1_FILIAL = '01'\", aArea, 'TRB')"
+        result = extract_sql_embedado(src)
+        assert any(e["operacao"] == "select" and "SA1010" in e["tabelas"] for e in result)
+
+    def test_tcsqlexec_update(self) -> None:
+        src = "TCSqlExec(\"UPDATE SA1010 SET A1_NOME = 'X' WHERE A1_COD = '001'\")"
+        result = extract_sql_embedado(src)
+        assert any(e["operacao"] == "update" and "SA1010" in e["tabelas"] for e in result)
+
+    def test_snippet_capped(self) -> None:
+        long_sql = "SELECT * FROM SA1010 WHERE " + ("X = 'a' AND " * 100)
+        src = f'TCQuery("{long_sql}")'
+        result = extract_sql_embedado(src)
+        assert len(result) == 1
+        assert len(result[0]["snippet"]) <= 300
 
 
 class TestParseSource:
