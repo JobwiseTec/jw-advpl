@@ -2,7 +2,7 @@
 
 ## Reportando uma vulnerabilidade
 
-Email: plugadvpl-org@example.com (substitua antes do release).
+Email: jonipraiaoficial@gmail.com
 
 Não abra issue público para vulnerabilidades. Resposta esperada: 7 dias úteis.
 

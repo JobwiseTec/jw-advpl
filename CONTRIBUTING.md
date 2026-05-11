@@ -3,7 +3,7 @@
 ## Setup local
 
 ```bash
-git clone https://github.com/plugadvpl-org/plugadvpl
+git clone https://github.com/JoniPraia/plugadvpl
 cd plugadvpl
 
 # Instalar uv (https://docs.astral.sh/uv/)

@@ -1,7 +1,7 @@
 """plugadvpl — CLI Python para indexar fontes ADVPL/TLPP do Protheus.
 
 Companheiro do plugin Claude Code de mesmo nome. Ver:
-https://github.com/plugadvpl-org/plugadvpl
+https://github.com/JoniPraia/plugadvpl
 """
 
 try:

@@ -1,6 +1,6 @@
 {
   "name": "plugadvpl-marketplace",
-  "owner": { "name": "plugadvpl-org" },
+  "owner": { "name": "JoniPraia" },
   "plugins": [
     {
       "name": "plugadvpl",
