@@ -28,6 +28,18 @@ _METHOD_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Tabelas Protheus
+_DBSELECT_RE = re.compile(r'DbSelectArea\s*\(\s*["\'](\w{2,3})["\']', re.IGNORECASE)
+_XFILIAL_RE = re.compile(
+    r'(?:xFilial|FwxFilial|Posicione|MsSeek|dbSetOrder|ChkFile)\s*\(\s*["\'](\w{2,3})["\']',
+    re.IGNORECASE,
+)
+_ALIAS_ARROW_RE = re.compile(r"\b([SZQNDM][A-Z][0-9A-Z])\s*->", re.IGNORECASE)
+_RECLOCK_RE = re.compile(r'RecLock\s*\(\s*["\'](\w{2,3})["\']', re.IGNORECASE)
+_RECLOCK_ALIAS_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*RecLock", re.IGNORECASE)
+_DBAPPEND_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbAppend", re.IGNORECASE)
+_DBDELETE_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbDelete", re.IGNORECASE)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -136,3 +148,49 @@ def add_function_ranges(funcs: list[dict[str, Any]], content: str) -> list[dict[
             f["linha_fim"] = total_lines
         f.pop("_offset", None)
     return funcs
+
+
+def _is_valid_protheus_table(name: str) -> bool:
+    """Códigos válidos: 3 chars, [SZNQD] + letra + alfanumérico (SA1, ZA1, NDF, ...)."""
+    if len(name) != 3:
+        return False
+    return name[0] in "SZNQD" and name[1].isalpha()
+
+
+def extract_tables(content: str) -> dict[str, list[str]]:
+    """Extrai tabelas referenciadas, separadas por modo (read/write/reclock).
+
+    'write' inclui reclock (todas as escritas). 'reclock' é subconjunto (apenas RecLock).
+    Usa strip_strings=False porque precisamos ler argumentos literais ("SA1", 'ZA1').
+    Comentários são removidos para evitar capturar tabelas em código comentado.
+    """
+    stripped = strip_advpl(content, strip_strings=False)
+    read: set[str] = set()
+    write: set[str] = set()
+    reclock: set[str] = set()
+
+    for m in _DBSELECT_RE.finditer(stripped):
+        read.add(m.group(1).upper())
+    for m in _XFILIAL_RE.finditer(stripped):
+        read.add(m.group(1).upper())
+    for m in _ALIAS_ARROW_RE.finditer(stripped):
+        read.add(m.group(1).upper())
+
+    for m in _RECLOCK_RE.finditer(stripped):
+        t = m.group(1).upper()
+        reclock.add(t)
+        write.add(t)
+    for m in _RECLOCK_ALIAS_RE.finditer(stripped):
+        t = m.group(1).upper()
+        reclock.add(t)
+        write.add(t)
+    for m in _DBAPPEND_RE.finditer(stripped):
+        write.add(m.group(1).upper())
+    for m in _DBDELETE_RE.finditer(stripped):
+        write.add(m.group(1).upper())
+
+    return {
+        "read": sorted(t for t in read if _is_valid_protheus_table(t)),
+        "write": sorted(t for t in write if _is_valid_protheus_table(t)),
+        "reclock": sorted(t for t in reclock if _is_valid_protheus_table(t)),
+    }

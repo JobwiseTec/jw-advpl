@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from plugadvpl.parsing.parser import add_function_ranges, extract_functions, read_file
+from plugadvpl.parsing.parser import (
+    add_function_ranges,
+    extract_functions,
+    extract_tables,
+    read_file,
+)
 
 
 class TestReadFile:
@@ -93,3 +98,41 @@ class TestAddFunctionRanges:
         assert by_name["A"]["linha_fim"] == 4  # antes do header de B
         assert by_name["B"]["linha_inicio"] == 5
         assert by_name["B"]["linha_fim"] == 6  # última linha do arquivo
+
+
+class TestExtractTables:
+    def test_dbselectarea(self) -> None:
+        src = 'DbSelectArea("SA1")'
+        tables = extract_tables(src)
+        assert "SA1" in tables["read"]
+
+    def test_alias_arrow_read(self) -> None:
+        src = "cNome := SA1->A1_NOME"
+        tables = extract_tables(src)
+        assert "SA1" in tables["read"]
+
+    def test_xfilial_read(self) -> None:
+        src = 'cFil := xFilial("SC5")'
+        tables = extract_tables(src)
+        assert "SC5" in tables["read"]
+
+    def test_reclock_write(self) -> None:
+        src = 'RecLock("SA1", .T.)\nReplace A1_NOME With "X"\nMsUnlock()'
+        tables = extract_tables(src)
+        assert "SA1" in tables["reclock"]
+        assert "SA1" in tables["write"]
+
+    def test_dbappend_write(self) -> None:
+        src = "SA1->(dbAppend())"
+        tables = extract_tables(src)
+        assert "SA1" in tables["write"]
+
+    def test_custom_table_za1(self) -> None:
+        src = "DbSelectArea('ZA1')"
+        tables = extract_tables(src)
+        assert "ZA1" in tables["read"]
+
+    def test_ignores_invalid_table_codes(self) -> None:
+        src = 'cFoo := "ABC"->bar'
+        tables = extract_tables(src)
+        assert "ABC" not in tables["read"]  # ABC não é código Protheus válido
