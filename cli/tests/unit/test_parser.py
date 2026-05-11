@@ -18,6 +18,7 @@ from plugadvpl.parsing.parser import (
     extract_includes,
     extract_params,
     extract_perguntas,
+    extract_rest_endpoints,
     extract_tables,
     read_file,
 )
@@ -292,6 +293,48 @@ class TestExtractFieldsRef:
     def test_ignores_invalid_field_pattern(self) -> None:
         src = "x := abc_def"  # não é padrão XX_NOME ADVPL
         assert "ABC_DEF" not in extract_fields_ref(src)
+
+
+class TestExtractRestEndpoints:
+    def test_wsmethod_classic(self) -> None:
+        src = "WSMETHOD GET clientes WSSERVICE Vendas\nReturn"
+        result = extract_rest_endpoints(src)
+        assert any(
+            e["verbo"] == "GET"
+            and e["funcao"] == "clientes"
+            and e["classe"] == "Vendas"
+            and e["annotation_style"] == "wsmethod_classico"
+            for e in result
+        )
+
+    def test_wsmethod_post(self) -> None:
+        src = "WSMETHOD POST criar WSSERVICE Pedidos\nReturn"
+        result = extract_rest_endpoints(src)
+        assert any(
+            e["verbo"] == "POST" and e["funcao"] == "criar" and e["classe"] == "Pedidos"
+            for e in result
+        )
+
+    def test_tlpp_annotation(self) -> None:
+        src = (
+            '@Get("/api/clientes")\n'
+            'Function getClientes()\n'
+            'Return\n'
+        )
+        result = extract_rest_endpoints(src)
+        assert any(
+            e["verbo"] == "GET"
+            and e["path"] == "/api/clientes"
+            and e["annotation_style"] == "@verb_tlpp"
+            for e in result
+        )
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// @Get("/api/fake")\n@Post("/api/real")\nFunction x()\nReturn'
+        result = extract_rest_endpoints(src)
+        paths = [e["path"] for e in result]
+        assert "/api/real" in paths
+        assert "/api/fake" not in paths
 
 
 class TestParseSource:

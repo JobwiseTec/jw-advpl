@@ -93,6 +93,18 @@ _METHOD_SELF_RE = re.compile(r"::([A-Za-z_]\w*)\s*\(", re.IGNORECASE)
 _FIELD_ARROW_RE = re.compile(r"\w{2,3}->([A-Z][A-Z0-9]_\w+)", re.IGNORECASE)
 _FIELD_REPLACE_RE = re.compile(r"\bReplace\s+([A-Z][A-Z0-9]_\w+)", re.IGNORECASE)
 
+# REST endpoints
+# WSMETHOD clássico: "WSMETHOD GET clientes WSSERVICE Vendas"
+_WSMETHOD_REST_RE = re.compile(
+    r"^[ \t]*WSMETHOD[ \t]+(GET|POST|PUT|DELETE|PATCH)[ \t]+(\w+)[ \t]+WSSERVICE[ \t]+(\w+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Anotação TLPP: @Get("/api/path") em linha própria
+_TLPP_ANNOTATION_RE = re.compile(
+    r'^[ \t]*@(Get|Post|Put|Delete|Patch)\s*\(\s*["\']([^"\']+)["\']',
+    re.IGNORECASE | re.MULTILINE,
+)
+
 
 def _decode_bytes(raw: bytes) -> tuple[str, str]:
     """Decodifica bytes ADVPL aplicando a mesma estratégia de read_file.
@@ -505,6 +517,47 @@ def extract_calls_method(content: str) -> list[dict[str, Any]]:
     do destino. Não tenta resolver classe — apenas registra o uso.
     """
     return _extract_calls_method_from_stripped(strip_advpl(content))
+
+
+def _extract_rest_endpoints_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai REST endpoints (WSMETHOD clássico + @Get/@Post TLPP)."""
+    result: list[dict[str, Any]] = []
+    # WSMETHOD clássico
+    for m in _WSMETHOD_REST_RE.finditer(stripped_keep_strings):
+        result.append(
+            {
+                "classe": m.group(3),
+                "funcao": m.group(2),
+                "verbo": m.group(1).upper(),
+                "path": "",
+                "annotation_style": "wsmethod_classico",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+            }
+        )
+    # Anotação TLPP
+    for m in _TLPP_ANNOTATION_RE.finditer(stripped_keep_strings):
+        result.append(
+            {
+                "classe": "",
+                "funcao": "",
+                "verbo": m.group(1).upper(),
+                "path": m.group(2),
+                "annotation_style": "@verb_tlpp",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+            }
+        )
+    return result
+
+
+def extract_rest_endpoints(content: str) -> list[dict[str, Any]]:
+    """Extrai REST endpoints declarados (WSMETHOD clássico e @Verb TLPP).
+
+    Retorna lista de dicts: {classe, funcao, verbo, path, annotation_style, linha}.
+    Usa strip_strings=False porque path do endpoint vem em literal string.
+    """
+    return _extract_rest_endpoints_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:
