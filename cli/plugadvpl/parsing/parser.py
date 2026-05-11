@@ -69,6 +69,10 @@ _INCLUDE_RE = re.compile(r'^\s*#Include\s+["\']([^"\']+)["\']', re.IGNORECASE | 
 
 # Calls
 _CALL_U_RE = re.compile(r"\bU_(\w+)\s*\(", re.IGNORECASE)
+_EXECAUTO_RE = re.compile(
+    r"MsExecAuto\s*\(\s*\{\s*\|[^|]*\|\s*(\w+)\s*\(",
+    re.IGNORECASE,
+)
 
 
 def read_file(file_path: Path) -> tuple[str, str]:
@@ -269,6 +273,22 @@ def extract_calls_user_func(content: str) -> list[dict[str, Any]]:
             {
                 "destino": m.group(1).upper(),
                 "tipo": "user_func",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
+
+
+def extract_calls_execauto(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas MsExecAuto({|x,y,z| ROTINA(x,y,z)}, ...) capturando ROTINA."""
+    stripped = strip_advpl(content)
+    result: list[dict[str, Any]] = []
+    for m in _EXECAUTO_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": m.group(1).upper(),
+                "tipo": "execauto",
                 "linha_origem": _line_at(stripped, m.start()),
                 "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
             }

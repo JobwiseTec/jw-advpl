@@ -5,6 +5,7 @@ from pathlib import Path
 
 from plugadvpl.parsing.parser import (
     add_function_ranges,
+    extract_calls_execauto,
     extract_calls_user_func,
     extract_functions,
     extract_includes,
@@ -213,3 +214,10 @@ class TestExtractCallsUserFunc:
     def test_ignores_in_string(self) -> None:
         src = 'cMsg := "U_FAKE() blocked"'
         assert extract_calls_user_func(src) == []
+
+
+class TestExtractCallsExecAuto:
+    def test_execauto_with_rotina(self) -> None:
+        src = 'MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCabec, aItens, 3)'
+        result = extract_calls_execauto(src)
+        assert any(c["destino"] == "MATA410" for c in result)
