@@ -7,6 +7,7 @@ from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_functions,
     extract_params,
+    extract_perguntas,
     extract_tables,
     read_file,
 )
@@ -163,3 +164,19 @@ class TestExtractParams:
         params = extract_params(src)
         names = {(p["nome"], p["modo"]) for p in params}
         assert ("MV_X", "write") in names
+
+
+class TestExtractPerguntas:
+    def test_pergunte(self) -> None:
+        src = 'Pergunte("FAT050", .F.)'
+        assert "FAT050" in extract_perguntas(src)
+
+    def test_fwgetsx1(self) -> None:
+        src = 'aGrp := FWGetSX1("FIN001")'
+        assert "FIN001" in extract_perguntas(src)
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// Pergunte("FAKE")\nPergunte("REAL", .F.)'
+        result = extract_perguntas(src)
+        assert "REAL" in result
+        assert "FAKE" not in result

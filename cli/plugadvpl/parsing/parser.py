@@ -58,6 +58,12 @@ _MV_WRITE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Perguntas SX1
+_PERGUNTE_RE = re.compile(
+    r'(?:Pergunte|FWGetSX1)\s*\(\s*["\'](\w+)["\']',
+    re.IGNORECASE,
+)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -234,3 +240,9 @@ def extract_params(content: str) -> list[dict[str, Any]]:
         else:
             by_name[nome] = {"nome": nome, "modo": "write", "default_decl": ""}
     return list(by_name.values())
+
+
+def extract_perguntas(content: str) -> list[str]:
+    """Extrai grupos de perguntas SX1 referenciados (Pergunte, FWGetSX1)."""
+    stripped = strip_advpl(content, strip_strings=False)
+    return sorted({m.group(1).upper() for m in _PERGUNTE_RE.finditer(stripped)})
