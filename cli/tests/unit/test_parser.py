@@ -18,6 +18,7 @@ from plugadvpl.parsing.parser import (
     extract_functions,
     extract_http_calls,
     extract_includes,
+    extract_log_calls,
     extract_params,
     extract_perguntas,
     extract_rest_endpoints,
@@ -397,6 +398,28 @@ class TestExtractEnvOpeners:
         result = extract_env_openers(src)
         assert len(result) == 1
         assert result[0]["empresa"] == "01"
+
+
+class TestExtractLogCalls:
+    def test_fwlogmsg_info(self) -> None:
+        src = 'FwLogMsg("INFO", "msg here", "service-x", "categ-y", 100)'
+        result = extract_log_calls(src)
+        assert any(c["nivel"] == "INFO" and c["categoria"] == "categ-y" for c in result)
+
+    def test_fwlogmsg_error_no_categ(self) -> None:
+        src = 'FwLogMsg("ERROR", "fail")'
+        result = extract_log_calls(src)
+        assert any(c["nivel"] == "ERROR" and c["categoria"] == "" for c in result)
+
+    def test_conout(self) -> None:
+        src = 'ConOut("debug here")'
+        result = extract_log_calls(src)
+        assert any(c["nivel"] == "conout" for c in result)
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// ConOut("fake")\nConOut("real")'
+        result = extract_log_calls(src)
+        assert len(result) == 1
 
 
 class TestParseSource:

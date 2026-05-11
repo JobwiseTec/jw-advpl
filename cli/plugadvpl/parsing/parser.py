@@ -112,6 +112,10 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Log calls: FwLogMsg(...) e ConOut(...)
+_FWLOGMSG_OPEN_RE = re.compile(r"\bFwLogMsg\s*\(", re.IGNORECASE)
+_CONOUT_OPEN_RE = re.compile(r"\bConOut\s*\(", re.IGNORECASE)
+
 # RpcSetEnv: abre call e captura argumentos crus até o fechamento balanceado.
 # Args podem ser literais ("01") ou variáveis (cEmp). Parsing fino é feito em Python.
 _RPCSETENV_OPEN_RE = re.compile(r"\bRpcSetEnv\s*\(", re.IGNORECASE)
@@ -717,6 +721,53 @@ def extract_env_openers(content: str) -> list[dict[str, Any]]:
     Usa strip_strings=False porque os valores vêm em literais.
     """
     return _extract_env_openers_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+def _extract_log_calls_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai chamadas de log (FwLogMsg, ConOut).
+
+    FwLogMsg("nivel", "msg", "service", "categoria", ...) → nível=arg0 literal,
+    categoria=arg3 literal (4º arg). Variáveis viram strings vazias.
+    ConOut("...") → nível="conout", categoria="".
+    """
+    result: list[dict[str, Any]] = []
+    for m in _FWLOGMSG_OPEN_RE.finditer(stripped_keep_strings):
+        captured = _capture_call_args(stripped_keep_strings, m.end())
+        if captured is None:
+            continue
+        args_text, _close = captured
+        args = _split_top_level_args(args_text)
+        nivel = _arg_literal_or_empty(args[0]) if args else ""
+        categoria = _arg_literal_or_empty(args[3]) if len(args) > 3 else ""
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "nivel": nivel,
+                "categoria": categoria,
+            }
+        )
+    for m in _CONOUT_OPEN_RE.finditer(stripped_keep_strings):
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "nivel": "conout",
+                "categoria": "",
+            }
+        )
+    return result
+
+
+def extract_log_calls(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas de log: FwLogMsg(nivel, msg, ...) e ConOut(...).
+
+    Retorna lista de dicts: {funcao, linha, nivel, categoria}.
+    Usa strip_strings=False porque níveis/categorias são literais.
+    """
+    return _extract_log_calls_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:
