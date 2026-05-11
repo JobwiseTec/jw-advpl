@@ -22,31 +22,84 @@ v0.1.0 schema (migration 001_initial.sql):
 
 ## ER overview
 
+```mermaid
+erDiagram
+    fontes ||--o{ fonte_chunks         : "1:N CASCADE"
+    fontes ||--o{ fonte_tabela         : "1:N CASCADE"
+    fontes ||--o{ funcao_docs          : "1:N logical"
+    fontes ||--o{ chamadas_funcao      : "arquivo_origem"
+    fontes ||--o{ parametros_uso       : "MV_* usage"
+    fontes ||--o{ perguntas_uso        : "SX1 groups"
+    fontes ||--o{ operacoes_escrita    : "RecLock/SQL DML"
+    fontes ||--o{ sql_embedado         : "BeginSql/TCQuery"
+    fontes ||--o{ rest_endpoints       : "WSSERVICE/@Get"
+    fontes ||--o{ http_calls           : "HttpGet outbound"
+    fontes ||--o{ env_openers          : "RpcSetEnv/Open"
+    fontes ||--o{ log_calls            : "FwLogMsg/conout"
+    fontes ||--o{ defines              : "#DEFINE"
+    fontes ||--o{ lint_findings        : "BP/SEC/PERF/MOD"
+    fonte_chunks ||--|| fonte_chunks_fts     : "external content"
+    fonte_chunks ||--|| fonte_chunks_fts_tri : "trigram view"
+
+    fontes {
+        TEXT arquivo PK
+        TEXT caminho_relativo UK
+        TEXT modulo
+        TEXT capabilities
+        INTEGER mtime_ns
+        TEXT encoding
+    }
+    fonte_chunks {
+        TEXT id PK
+        TEXT arquivo FK
+        TEXT funcao
+        TEXT funcao_norm
+        INTEGER linha_inicio
+        INTEGER linha_fim
+        TEXT content
+    }
+    chamadas_funcao {
+        INTEGER id PK
+        TEXT arquivo_origem
+        TEXT funcao_origem
+        TEXT destino
+        TEXT destino_norm
+        TEXT tipo
+    }
+    fonte_tabela {
+        TEXT arquivo PK
+        TEXT tabela PK
+        TEXT modo PK
+    }
+```
+
+Resumo textual:
+
 ```
                             +----------------+
                             |     fontes     | (PRIMARY KEY: arquivo)
                             +----------------+
                                     ^
                             FK CASCADE ON DELETE
-                ┌───────────────────┼───────────────────┐
+                |-------------------|-------------------|
                 |                   |                   |
-        +───────────────+   +───────────────+   +───────────────+
+        +---------------+   +---------------+   +---------------+
         | fonte_chunks  |   | fonte_tabela  |   |  funcao_docs  |
-        +───────────────+   +───────────────+   +───────────────+
+        +---------------+   +---------------+   +---------------+
                 |
                 | (content='fonte_chunks', content_rowid='rowid')
                 v
-        +─────────────────────+
-        |  fonte_chunks_fts   | (FTS5 — unicode61 + tokenchars '_-')
-        |  fonte_chunks_fts_tri| (FTS5 — trigram para substring exata)
-        +─────────────────────+
+        +---------------------+
+        |  fonte_chunks_fts   | (FTS5 - unicode61 + tokenchars '_-')
+        | fonte_chunks_fts_tri| (FTS5 - trigram para substring exata)
+        +---------------------+
 
-  Tabelas-satélite (FK lógica via arquivo, sem CASCADE):
+  Tabelas-satelite (FK logica via arquivo, sem CASCADE):
     chamadas_funcao, parametros_uso, perguntas_uso, operacoes_escrita,
     sql_embedado, rest_endpoints, http_calls, env_openers, log_calls,
     defines, lint_findings
 
-  Lookups embarcadas (WITHOUT ROWID, pré-populadas no init):
+  Lookups embarcadas (WITHOUT ROWID, pre-populadas no init):
     funcoes_nativas, funcoes_restritas, lint_rules,
     sql_macros, modulos_erp, pontos_entrada_padrao
 
@@ -400,3 +453,127 @@ Schema futuro (não implementado na migration 001):
 - `impacto_campo` (cruza com sx3_campos para análise field-level)
 
 Detalhes em `docs/superpowers/specs/2026-05-11-plugadvpl-design.md` §11–§13.
+
+---
+
+## Queries úteis
+
+Exemplos prontos para colar em `sqlite3 .plugadvpl/index.db` ou em scripts ad-hoc. Estes mesmos padrões alimentam internamente os subcomandos do CLI.
+
+### Quem chama uma função (call graph reverso)
+
+```sql
+-- Equivalente a: plugadvpl callers MaFisRef
+SELECT arquivo_origem, funcao_origem, linha_origem, tipo
+FROM chamadas_funcao
+WHERE destino_norm = UPPER('MaFisRef')
+ORDER BY arquivo_origem, linha_origem;
+```
+
+### Quais fontes leem/gravam uma tabela
+
+```sql
+-- Equivalente a: plugadvpl tables SA1 --mode read
+SELECT arquivo, modo
+FROM fonte_tabela
+WHERE tabela = 'SA1' COLLATE NOCASE
+ORDER BY modo, arquivo;
+
+-- Apenas RecLock (escrita posicionada — costuma indicar negócio crítico)
+SELECT arquivo FROM fonte_tabela
+WHERE tabela = 'SA1' AND modo = 'reclock';
+```
+
+### Top 10 funções mais chamadas
+
+```sql
+SELECT destino_norm AS funcao, COUNT(*) AS n_chamadas
+FROM chamadas_funcao
+GROUP BY destino_norm
+ORDER BY n_chamadas DESC
+LIMIT 10;
+```
+
+### Fontes com mais lint findings críticos
+
+```sql
+SELECT arquivo, COUNT(*) AS n_critical
+FROM lint_findings
+WHERE severidade = 'critical'
+GROUP BY arquivo
+ORDER BY n_critical DESC
+LIMIT 20;
+```
+
+### REST endpoints expostos no projeto
+
+```sql
+SELECT arquivo, classe, funcao, verbo, path, annotation_style
+FROM rest_endpoints
+ORDER BY verbo, path;
+```
+
+### SQL embarcado com UPDATE/DELETE em tabela específica
+
+```sql
+SELECT arquivo, funcao, linha, operacao, snippet
+FROM sql_embedado
+WHERE operacao IN ('update','delete')
+  AND tabelas LIKE '%"SC5"%'
+ORDER BY arquivo, linha;
+```
+
+### Onde um parâmetro MV é lido
+
+```sql
+SELECT arquivo, modo, default_decl
+FROM parametros_uso
+WHERE parametro = 'MV_LOCALIZA'
+ORDER BY arquivo;
+```
+
+### Cruzar findings com regra catalogada
+
+```sql
+SELECT lf.arquivo, lf.linha, lf.regra_id, lr.titulo, lr.severidade, lr.fix_guidance
+FROM lint_findings lf
+JOIN lint_rules lr USING (regra_id)
+WHERE lf.severidade = 'critical'
+ORDER BY lf.arquivo, lf.linha;
+```
+
+### FTS5 — busca textual ponderada
+
+```sql
+-- Índice lógico (tokens com '_' e '-')
+SELECT arquivo, funcao, snippet(fonte_chunks_fts, 2, '«', '»', '…', 10) AS hit
+FROM fonte_chunks_fts
+WHERE fonte_chunks_fts MATCH 'MaFisRef OR FATA050'
+ORDER BY rank
+LIMIT 20;
+
+-- Trigram (substring exata com pontuação ADVPL)
+SELECT fc.arquivo, fc.funcao
+FROM fonte_chunks_fts_tri t
+JOIN fonte_chunks fc ON fc.rowid = t.rowid
+WHERE t.content MATCH '"SA1->A1_COD"'
+LIMIT 20;
+```
+
+### Sanity check do índice
+
+```sql
+-- Conferir versões e contadores (também via: plugadvpl status)
+SELECT chave, valor FROM meta;
+
+-- FTS sincronizado com fonte_chunks?
+SELECT
+  (SELECT COUNT(*) FROM fonte_chunks)            AS chunks,
+  (SELECT COUNT(*) FROM fonte_chunks_fts)        AS fts_unicode,
+  (SELECT COUNT(*) FROM fonte_chunks_fts_tri)    AS fts_trigram;
+
+-- Órfãos (chamadas para arquivo que não foi ingestado)
+SELECT DISTINCT arquivo_origem
+FROM chamadas_funcao
+WHERE arquivo_origem NOT IN (SELECT arquivo FROM fontes);
+```

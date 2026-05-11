@@ -25,6 +25,7 @@ dist/
 .DS_Store
 Thumbs.db
 coverage.xml
+cli/coverage.xml
 
 # Claude Code local artifacts
 .claude/
