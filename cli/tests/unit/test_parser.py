@@ -7,6 +7,7 @@ from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_calls_execauto,
     extract_calls_execblock,
+    extract_calls_fwloadmodel,
     extract_calls_user_func,
     extract_functions,
     extract_includes,
@@ -229,3 +230,10 @@ class TestExtractCallsExecBlock:
         src = 'ExecBlock("MT410GRV", .F., .F.)'
         result = extract_calls_execblock(src)
         assert any(c["destino"] == "MT410GRV" for c in result)
+
+
+class TestExtractCallsFWLoadModel:
+    def test_fwloadmodel(self) -> None:
+        src = 'oModel := FWLoadModel("MATA010")'
+        result = extract_calls_fwloadmodel(src)
+        assert any(c["destino"] == "MATA010" for c in result)
