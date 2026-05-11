@@ -112,6 +112,14 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# MVC hooks: bCommit/bCancel/bTudoOk/bLineOk/bPosVld/bPreVld/bWhen/bValid/bLoad
+# Reconhecidos como atribuição (`:=` ou `=`) — o RHS é tipicamente um code block.
+_MVC_HOOK_RE = re.compile(
+    r"\b(bCommit|bCancel|bTudoOk|bLineOk|bPosVld|bPreVld|bWhen|bValid|bLoad)"
+    r"\s*:?=\s*",
+    re.IGNORECASE,
+)
+
 # #DEFINE preprocessor directive: capture nome + restante da linha como valor.
 _DEFINE_RE = re.compile(r"^[ \t]*#DEFINE[ \t]+(\w+)[ \t]+(.+)$", re.IGNORECASE | re.MULTILINE)
 
@@ -796,6 +804,49 @@ def extract_defines(content: str) -> list[dict[str, Any]]:
     Usa strip_strings=False porque defines podem ter literal string como valor.
     """
     return _extract_defines_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+_MVC_HOOK_CANONICAL = {
+    "bcommit": "bCommit",
+    "bcancel": "bCancel",
+    "btudook": "bTudoOk",
+    "blineok": "bLineOk",
+    "bposvld": "bPosVld",
+    "bprevld": "bPreVld",
+    "bwhen": "bWhen",
+    "bvalid": "bValid",
+    "bload": "bLoad",
+}
+
+
+def _extract_mvc_hooks_from_stripped(stripped: str) -> list[dict[str, Any]]:
+    """Core: extrai hooks MVC (bCommit/bCancel/...) atribuídos via := ou =.
+
+    Retorna como chamadas com tipo='mvc_hook'; nome canonizado para destino.
+    Roda sobre stripped_strict (strings removidas) para não capturar hooks
+    declarados dentro de strings literais.
+    """
+    result: list[dict[str, Any]] = []
+    for m in _MVC_HOOK_RE.finditer(stripped):
+        nome = _MVC_HOOK_CANONICAL[m.group(1).lower()]
+        result.append(
+            {
+                "destino": nome,
+                "tipo": "mvc_hook",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
+
+
+def extract_mvc_hooks(content: str) -> list[dict[str, Any]]:
+    """Extrai atribuições a hooks MVC (bCommit, bCancel, bTudoOk, bLineOk, etc.).
+
+    Retorna lista no formato de chamadas: {destino, tipo='mvc_hook', linha_origem, contexto}.
+    Strip-first remove strings/comentários.
+    """
+    return _extract_mvc_hooks_from_stripped(strip_advpl(content))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

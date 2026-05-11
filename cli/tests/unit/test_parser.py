@@ -20,6 +20,7 @@ from plugadvpl.parsing.parser import (
     extract_http_calls,
     extract_includes,
     extract_log_calls,
+    extract_mvc_hooks,
     extract_params,
     extract_perguntas,
     extract_rest_endpoints,
@@ -447,6 +448,31 @@ class TestExtractDefines:
         names = {d["nome"] for d in result}
         assert "REAL" in names
         assert "FAKE" not in names
+
+
+class TestExtractMvcHooks:
+    def test_bcommit_hook(self) -> None:
+        src = "bCommit := {|| MyCommit()}"
+        result = extract_mvc_hooks(src)
+        assert any(c["destino"] == "bCommit" and c["tipo"] == "mvc_hook" for c in result)
+
+    def test_btudook_hook(self) -> None:
+        src = "bTudoOk := { || ValidaTudo() }"
+        result = extract_mvc_hooks(src)
+        assert any(c["destino"] == "bTudoOk" for c in result)
+
+    def test_blineok_with_equals(self) -> None:
+        # Aceita := e = (atribuição clássica e short)
+        src = "bLineOk = {|| .T.}"
+        result = extract_mvc_hooks(src)
+        assert any(c["destino"] == "bLineOk" for c in result)
+
+    def test_ignores_in_comment(self) -> None:
+        src = "// bCommit := { || .T. }\nbCancel := { || .F. }"
+        result = extract_mvc_hooks(src)
+        names = [c["destino"] for c in result]
+        assert "bCancel" in names
+        assert "bCommit" not in names
 
 
 class TestParseSource:
