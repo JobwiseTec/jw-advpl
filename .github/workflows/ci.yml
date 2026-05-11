@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.1.0
       - name: Validate plugin structure
         run: python scripts/validate_plugin.py
 
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           python-version: ${{ matrix.python }}
       - run: cd cli && uv sync --frozen
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.1.0
       - run: cd cli && uv sync --frozen
       - run: cd cli && uv run pytest tests/bench --benchmark-only --benchmark-json=output.json
       - uses: benchmark-action/github-action-benchmark@v1
@@ -64,6 +64,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.1.0
       - run: uvx --from ./cli plugadvpl version
       - run: uvx --from ./cli plugadvpl --help
