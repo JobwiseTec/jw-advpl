@@ -6,6 +6,7 @@ from pathlib import Path
 from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_functions,
+    extract_params,
     extract_tables,
     read_file,
 )
@@ -136,3 +137,29 @@ class TestExtractTables:
         src = 'cFoo := "ABC"->bar'
         tables = extract_tables(src)
         assert "ABC" not in tables["read"]  # ABC não é código Protheus válido
+
+
+class TestExtractParams:
+    def test_supergetmv(self) -> None:
+        src = 'cVal := SuperGetMV("MV_LOCALIZA", .F., "01")'
+        params = extract_params(src)
+        names = {(p["nome"], p["modo"]) for p in params}
+        assert ("MV_LOCALIZA", "read") in names
+
+    def test_getmv(self) -> None:
+        src = 'cMoeda := GetMv("MV_SIMB1")'
+        params = extract_params(src)
+        names = {p["nome"] for p in params}
+        assert "MV_SIMB1" in names
+
+    def test_getnewpar(self) -> None:
+        src = 'cVal := GetNewPar("MV_FOO", "default")'
+        params = extract_params(src)
+        names = {(p["nome"], p["default_decl"]) for p in params}
+        assert ("MV_FOO", "default") in names
+
+    def test_putmv_write(self) -> None:
+        src = 'PutMV("MV_X", "newvalue")'
+        params = extract_params(src)
+        names = {(p["nome"], p["modo"]) for p in params}
+        assert ("MV_X", "write") in names

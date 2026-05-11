@@ -40,6 +40,24 @@ _RECLOCK_ALIAS_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*RecLock", re.IGNORECASE)
 _DBAPPEND_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbAppend", re.IGNORECASE)
 _DBDELETE_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbDelete", re.IGNORECASE)
 
+# MV_* parâmetros
+# Default arg pode estar em posição 2 (GetNewPar(nome, default)) ou posição 3
+# (SuperGetMV(nome, lUseDef, default)). Grupo 2: default em pos 2 (sem vírgula extra),
+# Grupo 3: default em pos 3 (vírgula+arg+vírgula+string).
+_MV_READ_RE = re.compile(
+    r'(?:SuperGetMV|GetMv|GetNewPar|GetMVDef|FWMVPar)\s*\(\s*["\'](MV_\w+)["\']'
+    r'(?:'
+    r'\s*,\s*["\']([^"\']*)["\']\s*\)'  # default na pos 2: ("MV_X", "default")
+    r'|'
+    r'\s*,\s*[^,)]+\s*,\s*["\']([^"\']*)["\']'  # default na pos 3: ("MV_X", lDef, "default")
+    r')?',
+    re.IGNORECASE,
+)
+_MV_WRITE_RE = re.compile(
+    r'(?:PutMV|PutMvFil)\s*\(\s*["\'](MV_\w+)["\']',
+    re.IGNORECASE,
+)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -194,3 +212,25 @@ def extract_tables(content: str) -> dict[str, list[str]]:
         "write": sorted(t for t in write if _is_valid_protheus_table(t)),
         "reclock": sorted(t for t in reclock if _is_valid_protheus_table(t)),
     }
+
+
+def extract_params(content: str) -> list[dict[str, Any]]:
+    """Extrai usos de parâmetros MV_*. Retorna [{nome, modo, default_decl}].
+
+    Usa strip_strings=False porque o nome do parâmetro vem em literal string.
+    """
+    stripped = strip_advpl(content, strip_strings=False)
+    by_name: dict[str, dict[str, Any]] = {}
+    for m in _MV_READ_RE.finditer(stripped):
+        nome = m.group(1).upper()
+        default = m.group(2) or m.group(3) or ""
+        entry = by_name.setdefault(nome, {"nome": nome, "modo": "read", "default_decl": ""})
+        if default and not entry["default_decl"]:
+            entry["default_decl"] = default
+    for m in _MV_WRITE_RE.finditer(stripped):
+        nome = m.group(1).upper()
+        if nome in by_name:
+            by_name[nome]["modo"] = "read_write"
+        else:
+            by_name[nome] = {"nome": nome, "modo": "write", "default_decl": ""}
+    return list(by_name.values())
