@@ -76,6 +76,8 @@ _EXECAUTO_RE = re.compile(
 _EXECBLOCK_RE = re.compile(r'ExecBlock\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWLOADMODEL_RE = re.compile(r'FWLoadModel\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWEXECVIEW_RE = re.compile(r'FWExecView\s*\([^,)]+,\s*["\'](\w+)["\']', re.IGNORECASE)
+_METHOD_OBJ_RE = re.compile(r"\b(\w+:\w+)\s*\(", re.IGNORECASE)
+_METHOD_SELF_RE = re.compile(r"::(\w+)\s*\(", re.IGNORECASE)
 
 
 def read_file(file_path: Path) -> tuple[str, str]:
@@ -340,6 +342,35 @@ def extract_calls_fwexecview(content: str) -> list[dict[str, Any]]:
             {
                 "destino": m.group(1).upper(),
                 "tipo": "fwexecview",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
+
+
+def extract_calls_method(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas de métodos (obj:method(...) e ::method(...)).
+
+    Atenção: padrão tem MUITO false-positive (qualquer 'a:b(' casa). Preserva case
+    do destino. Não tenta resolver classe — apenas registra o uso.
+    """
+    stripped = strip_advpl(content)
+    result: list[dict[str, Any]] = []
+    for m in _METHOD_OBJ_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": m.group(1),
+                "tipo": "method",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    for m in _METHOD_SELF_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": f"::{m.group(1)}",
+                "tipo": "method",
                 "linha_origem": _line_at(stripped, m.start()),
                 "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
             }
