@@ -6,6 +6,7 @@ from pathlib import Path
 from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_calls_execauto,
+    extract_calls_execblock,
     extract_calls_user_func,
     extract_functions,
     extract_includes,
@@ -221,3 +222,10 @@ class TestExtractCallsExecAuto:
         src = 'MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCabec, aItens, 3)'
         result = extract_calls_execauto(src)
         assert any(c["destino"] == "MATA410" for c in result)
+
+
+class TestExtractCallsExecBlock:
+    def test_execblock(self) -> None:
+        src = 'ExecBlock("MT410GRV", .F., .F.)'
+        result = extract_calls_execblock(src)
+        assert any(c["destino"] == "MT410GRV" for c in result)

@@ -73,6 +73,7 @@ _EXECAUTO_RE = re.compile(
     r"MsExecAuto\s*\(\s*\{\s*\|[^|]*\|\s*(\w+)\s*\(",
     re.IGNORECASE,
 )
+_EXECBLOCK_RE = re.compile(r'ExecBlock\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 
 
 def read_file(file_path: Path) -> tuple[str, str]:
@@ -289,6 +290,22 @@ def extract_calls_execauto(content: str) -> list[dict[str, Any]]:
             {
                 "destino": m.group(1).upper(),
                 "tipo": "execauto",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
+
+
+def extract_calls_execblock(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas ExecBlock("PE_NAME", ...) — nome de PE em string literal."""
+    stripped = strip_advpl(content, strip_strings=False)
+    result: list[dict[str, Any]] = []
+    for m in _EXECBLOCK_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": m.group(1).upper(),
+                "tipo": "execblock",
                 "linha_origem": _line_at(stripped, m.start()),
                 "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
             }
