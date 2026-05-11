@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS rest_endpoints (
     funcao          TEXT NOT NULL,
     verbo           TEXT NOT NULL,              -- GET|POST|PUT|DELETE
     path            TEXT DEFAULT '',
-    annotation_style TEXT NOT NULL              -- 'wsmethod_clássico'|'@verb_tlpp'
+    annotation_style TEXT NOT NULL              -- 'wsmethod_classico'|'@verb_tlpp'
 );
 CREATE INDEX IF NOT EXISTS idx_rest_verb ON rest_endpoints(verbo);
 CREATE INDEX IF NOT EXISTS idx_rest_path ON rest_endpoints(path);

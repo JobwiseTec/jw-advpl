@@ -1093,7 +1093,8 @@ def extract_sql_embedado(content: str) -> list[dict[str, Any]]:
 #
 # Os checks abaixo combinam (a) campos já extraídos pelo parser e (b) padrões no
 # conteúdo já strippado de comentários (mas com strings preservadas).
-# Para acesso ao conteúdo: parsed["raw_content"] (set por parse_source).
+# O conteúdo é passado como parâmetro explícito `content` para evitar injetar
+# campos transitórios no dict parsed.
 
 # Protheus PE pattern: ^[A-Z]{2,4}\d{2,4}[A-Z_]{2,}$ — User Functions Point of Entry.
 _PE_NAME_RE = re.compile(r"^[A-Z]{2,4}\d{2,4}[A-Z_]{2,}$")
@@ -1117,14 +1118,18 @@ _MULTI_FILIAL_RE = re.compile(
 _TLPP_UNIT_RE = re.compile(r"tlpp\.unit\.suite|tlpp\.unit\b", re.IGNORECASE)
 
 
-def _derive_capabilities(parsed: dict[str, Any]) -> list[str]:  # noqa: PLR0912, PLR0915
+def _derive_capabilities(parsed: dict[str, Any], content: str) -> list[str]:  # noqa: PLR0912, PLR0915
     """Deriva lista ordenada e única de capabilities a partir do parsed completo.
 
     Mapeamento das ~20 capabilities da spec §4.4. Cada check é independente —
     podem coexistir múltiplas capabilities por fonte. Retorna lista ordenada.
+
+    Args:
+        parsed: dict com campos extraídos (funcoes, chamadas, rest_endpoints, ...).
+        content: fonte stripped (comentários removidos, strings preservadas) usado
+            para checks via pattern matching.
     """
     caps: set[str] = set()
-    content: str = parsed.get("raw_content", "") or ""
     funcoes: list[dict[str, Any]] = parsed.get("funcoes", []) or []
     chamadas: list[dict[str, Any]] = parsed.get("chamadas", []) or []
     rest_endpoints: list[dict[str, Any]] = parsed.get("rest_endpoints", []) or []
@@ -1246,16 +1251,24 @@ def _derive_capabilities(parsed: dict[str, Any]) -> list[str]:  # noqa: PLR0912,
     return sorted(caps)
 
 
-def derive_capabilities(parsed: dict[str, Any]) -> list[str]:
+def derive_capabilities(parsed: dict[str, Any], content: str | None = None) -> list[str]:
     """Deriva capabilities da spec §4.4 a partir do dict parsed completo.
 
     parsed deve conter pelo menos: funcoes, chamadas, rest_endpoints, http_calls,
-    env_openers, ws_structures, namespace, raw_content (conteúdo stripped com
-    strings preservadas, para os checks baseados em pattern matching no fonte).
+    env_openers, ws_structures, namespace.
+
+    Args:
+        parsed: dict com campos extraídos pelo parser.
+        content: conteúdo stripped (comentários removidos, strings preservadas)
+            para checks via pattern matching. Se None, checks baseados em pattern
+            matching no fonte são pulados — apenas capabilities derivadas dos
+            campos do parsed serão detectadas.
 
     Retorna lista ordenada de strings (capabilities da spec §4.4).
     """
-    return _derive_capabilities(parsed)
+    if content is None:
+        content = ""
+    return _derive_capabilities(parsed, content)
 
 
 def _derive_source_type(parsed: dict[str, Any]) -> str:  # noqa: PLR0911
@@ -1390,11 +1403,8 @@ def parse_source(file_path: Path) -> dict[str, Any]:
         # SHA-1 não é uso criptográfico — apenas content-addressed hash para stale detection.
         "hash": hashlib.sha1(raw).hexdigest() if raw else "",
     }
-    # raw_content (stripped, strings preservadas) é injetado temporariamente para
-    # que derive_capabilities possa pattern-matching sobre o fonte. Removido antes
-    # de retornar para não inflar o dict (DB-bound consumers não precisam).
-    result["raw_content"] = stripped_keep_strings
-    result["capabilities"] = _derive_capabilities(result)
+    # capabilities e source_type derivados a partir dos campos já extraídos +
+    # conteúdo stripped (passado explicitamente, sem mutar o result dict).
+    result["capabilities"] = _derive_capabilities(result, stripped_keep_strings)
     result["source_type"] = _derive_source_type(result)
-    del result["raw_content"]
     return result

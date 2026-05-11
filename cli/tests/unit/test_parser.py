@@ -582,14 +582,13 @@ class TestDeriveCapabilities:
             "chamadas": [],
             "campos_ref": [],
             "tabelas_ref": {"read": [], "write": [], "reclock": []},
-            "raw_content": "",
         }
 
     def test_mvc_from_hook(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["chamadas"] = [{"destino": "bCommit", "tipo": "mvc_hook"}]
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, "")
         assert "MVC" in caps
 
     def test_ws_rest_and_soap(self) -> None:
@@ -598,20 +597,20 @@ class TestDeriveCapabilities:
         p_rest["rest_endpoints"] = [
             {"verbo": "GET", "path": "/x", "annotation_style": "@verb_tlpp"}
         ]
-        assert "WS-REST" in derive_capabilities(p_rest)
+        assert "WS-REST" in derive_capabilities(p_rest, "")
 
         p_soap = self._empty_parsed()
         p_soap["rest_endpoints"] = [
             {"verbo": "GET", "path": "", "annotation_style": "wsmethod_classico"}
         ]
-        assert "WS-SOAP" in derive_capabilities(p_soap)
+        assert "WS-SOAP" in derive_capabilities(p_soap, "")
 
     def test_job_requires_main_and_rpc(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["funcoes"] = [{"nome": "JobX", "kind": "main_function"}]
         p["env_openers"] = [{"empresa": "01", "filial": "01"}]
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, "")
         assert "JOB" in caps
         assert "RPC" in caps
         assert "ENV_OPENER" in caps
@@ -620,35 +619,35 @@ class TestDeriveCapabilities:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["http_calls"] = [{"metodo": "HttpPost", "url_literal": "http://x.com"}]
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, "")
         assert "REST_CLIENT" in caps
 
     def test_pe_user_function_pattern(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["funcoes"] = [{"nome": "MT410GRV", "kind": "user_function"}]
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, "")
         assert "PE" in caps
 
     def test_compatibilizador_u_upd(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["funcoes"] = [{"nome": "U_UPDFIN", "kind": "user_function"}]
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, "")
         assert "COMPATIBILIZADOR" in caps
 
     def test_dialog_browse_workflow_json_multifilial(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
-        # Content-driven caps need raw_content set
-        p["raw_content"] = (
+        # Content-driven caps need content passed explicitly
+        content = (
             "oDlg := MsDialog():New()\n"
             "oBrw := FWFormBrowse():New()\n"
             "WFPrepEnv()\n"
             "oJson := JsonObject():New()\n"
             "cFil := xFilial('SA1')\n"
         )
-        caps = derive_capabilities(p)
+        caps = derive_capabilities(p, content)
         assert "DIALOG" in caps
         assert "BROWSE" in caps
         assert "WORKFLOW" in caps
@@ -659,7 +658,7 @@ class TestDeriveCapabilities:
         from plugadvpl.parsing.parser import derive_capabilities
         p = self._empty_parsed()
         p["chamadas"] = [{"destino": "MATA410", "tipo": "execauto"}]
-        assert "EXEC_AUTO_CALLER" in derive_capabilities(p)
+        assert "EXEC_AUTO_CALLER" in derive_capabilities(p, "")
 
 
 class TestParseSource:
