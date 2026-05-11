@@ -105,6 +105,13 @@ _TLPP_ANNOTATION_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# HTTP outbound calls: HttpPost/HttpGet/HttpsPost/HttpsGet/MsAGetUrl
+# Captura nome do método (preservando case) e URL literal do 1º argumento.
+_HTTP_CALL_RE = re.compile(
+    r'\b(HttpPost|HttpGet|HttpsPost|HttpsGet|MsAGetUrl)\s*\(\s*["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+
 
 def _decode_bytes(raw: bytes) -> tuple[str, str]:
     """Decodifica bytes ADVPL aplicando a mesma estratégia de read_file.
@@ -558,6 +565,42 @@ def extract_rest_endpoints(content: str) -> list[dict[str, Any]]:
     Usa strip_strings=False porque path do endpoint vem em literal string.
     """
     return _extract_rest_endpoints_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+_HTTP_METHOD_CANONICAL = {
+    "httppost": "HttpPost",
+    "httpget": "HttpGet",
+    "httpspost": "HttpsPost",
+    "httpsget": "HttpsGet",
+    "msageturl": "MsAGetUrl",
+}
+
+
+def _extract_http_calls_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai chamadas HTTP outbound (HttpPost/HttpGet/HttpsPost/HttpsGet/MsAGetUrl)."""
+    result: list[dict[str, Any]] = []
+    for m in _HTTP_CALL_RE.finditer(stripped_keep_strings):
+        metodo_raw = m.group(1).lower()
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "metodo": _HTTP_METHOD_CANONICAL[metodo_raw],
+                "url_literal": m.group(2),
+            }
+        )
+    return result
+
+
+def extract_http_calls(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas HTTP outbound (HttpPost/HttpGet/HttpsPost/HttpsGet/MsAGetUrl).
+
+    Retorna lista de dicts: {funcao, linha, metodo, url_literal}.
+    Usa strip_strings=False porque a URL é literal string.
+    """
+    return _extract_http_calls_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

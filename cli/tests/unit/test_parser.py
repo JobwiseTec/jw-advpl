@@ -15,6 +15,7 @@ from plugadvpl.parsing.parser import (
     extract_calls_user_func,
     extract_fields_ref,
     extract_functions,
+    extract_http_calls,
     extract_includes,
     extract_params,
     extract_perguntas,
@@ -335,6 +336,37 @@ class TestExtractRestEndpoints:
         paths = [e["path"] for e in result]
         assert "/api/real" in paths
         assert "/api/fake" not in paths
+
+
+class TestExtractHttpCalls:
+    def test_httppost(self) -> None:
+        src = 'HttpPost("https://api.example.com/v1/x", "", cBody, 30, aHeaders, @cRet)'
+        result = extract_http_calls(src)
+        assert any(
+            c["metodo"] == "HttpPost"
+            and c["url_literal"] == "https://api.example.com/v1/x"
+            for c in result
+        )
+
+    def test_httpsget(self) -> None:
+        src = 'cRet := HttpsGet("https://api.x.com/y")'
+        result = extract_http_calls(src)
+        assert any(
+            c["metodo"] == "HttpsGet" and c["url_literal"] == "https://api.x.com/y"
+            for c in result
+        )
+
+    def test_msageturl(self) -> None:
+        src = 'cRet := MsAGetUrl("http://server/data.txt")'
+        result = extract_http_calls(src)
+        assert any(c["metodo"] == "MsAGetUrl" for c in result)
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// HttpPost("http://fake.com", "")\nHttpGet("http://real.com")'
+        result = extract_http_calls(src)
+        urls = [c["url_literal"] for c in result]
+        assert "http://real.com" in urls
+        assert "http://fake.com" not in urls
 
 
 class TestParseSource:
