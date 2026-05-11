@@ -112,6 +112,11 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# TLPP Namespace: "Namespace x.y.z"
+_NAMESPACE_RE = re.compile(
+    r"^[ \t]*Namespace[ \t]+([A-Za-z_][\w.]*)", re.IGNORECASE | re.MULTILINE
+)
+
 # WebService structures: WSSTRUCT / WSSERVICE / WSDATA / WSMETHOD
 _WSSTRUCT_HEADER_RE = re.compile(r"^[ \t]*WSSTRUCT[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
 _WSSERVICE_HEADER_RE = re.compile(
@@ -954,6 +959,20 @@ def extract_ws_structures(content: str) -> dict[str, list[dict[str, Any]]]:
     Usa strip_strings=False (declarações têm WSDATA tipo as String literais).
     """
     return _extract_ws_structures_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+def _extract_namespace_from_stripped(stripped: str) -> str:
+    """Core: retorna primeiro match de `Namespace x.y.z`. String vazia se não houver."""
+    m = _NAMESPACE_RE.search(stripped)
+    return m.group(1) if m else ""
+
+
+def extract_namespace(content: str) -> str:
+    """Extrai a declaração TLPP `Namespace x.y.z`. Vazio se não houver.
+
+    Strip-first remove strings/comentários (ignora namespace em literais).
+    """
+    return _extract_namespace_from_stripped(strip_advpl(content))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

@@ -21,6 +21,7 @@ from plugadvpl.parsing.parser import (
     extract_includes,
     extract_log_calls,
     extract_mvc_hooks,
+    extract_namespace,
     extract_params,
     extract_perguntas,
     extract_rest_endpoints,
@@ -515,6 +516,21 @@ class TestExtractWsStructures:
             and mm["service"] == "Vendas"
             for mm in result["ws_methods"]
         )
+
+
+class TestExtractNamespace:
+    def test_basic_namespace(self) -> None:
+        src = "Namespace com.empresa.modulo\nFunction X()\nReturn"
+        assert extract_namespace(src) == "com.empresa.modulo"
+
+    def test_no_namespace_returns_empty(self) -> None:
+        src = "Function X()\nReturn"
+        assert extract_namespace(src) == ""
+
+    def test_first_match_wins(self) -> None:
+        # Strip-strings=True, então namespace dentro de string não deveria contar
+        src = 'cMsg := "Namespace fake.x"\nNamespace real.module'
+        assert extract_namespace(src) == "real.module"
 
 
 class TestParseSource:
