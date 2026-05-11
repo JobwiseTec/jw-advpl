@@ -64,6 +64,9 @@ _PERGUNTE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Includes
+_INCLUDE_RE = re.compile(r'^\s*#Include\s+["\']([^"\']+)["\']', re.IGNORECASE | re.MULTILINE)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -246,3 +249,9 @@ def extract_perguntas(content: str) -> list[str]:
     """Extrai grupos de perguntas SX1 referenciados (Pergunte, FWGetSX1)."""
     stripped = strip_advpl(content, strip_strings=False)
     return sorted({m.group(1).upper() for m in _PERGUNTE_RE.finditer(stripped)})
+
+
+def extract_includes(content: str) -> list[str]:
+    """Extrai paths de #Include declarados no fonte (preserva case do nome do header)."""
+    stripped = strip_advpl(content, strip_strings=False)
+    return sorted({m.group(1) for m in _INCLUDE_RE.finditer(stripped)})

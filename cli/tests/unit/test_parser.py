@@ -6,6 +6,7 @@ from pathlib import Path
 from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_functions,
+    extract_includes,
     extract_params,
     extract_perguntas,
     extract_tables,
@@ -180,3 +181,17 @@ class TestExtractPerguntas:
         result = extract_perguntas(src)
         assert "REAL" in result
         assert "FAKE" not in result
+
+
+class TestExtractIncludes:
+    def test_basic_include(self) -> None:
+        src = '#Include "protheus.ch"\n#include \'topconn.ch\''
+        result = extract_includes(src)
+        assert "protheus.ch" in result
+        assert "topconn.ch" in result
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// #Include "fake.ch"\n#Include "real.ch"'
+        result = extract_includes(src)
+        assert "real.ch" in result
+        assert "fake.ch" not in result
