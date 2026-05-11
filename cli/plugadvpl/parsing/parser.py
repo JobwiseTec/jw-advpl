@@ -5,13 +5,19 @@ Portado e adaptado de Protheus/backend/services/parser_source.py
 """
 from __future__ import annotations
 
+import hashlib
 import re
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import chardet
 
 from plugadvpl.parsing.stripper import strip_advpl
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+# Códigos de tabela Protheus têm exatamente 3 chars (SA1, ZA1, NDF, etc).
+_TABLE_CODE_LEN = 3
 
 # Regexes pre-compilados em module-level (workers do ProcessPool podem importar).
 # Usa [ \t]* (não \s*) para indentação para que MULTILINE ^ não cruze newlines.
@@ -87,18 +93,23 @@ _FIELD_REPLACE_RE = re.compile(r"\bReplace\s+([A-Z][A-Z0-9]_\w+)", re.IGNORECASE
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
 
-    Estratégia: tenta utf-8 strict primeiro (rejeita bytes cp1252 inválidos como utf-8 →
-    falha cedo); só então tenta cp1252 (fast path para 99% dos fontes Protheus); finalmente
-    chardet/latin-1.
+    Estratégia:
+    1. ASCII-only → reporta "cp1252" (default Protheus, ASCII é subconjunto)
+    2. UTF-8 strict válido (tem multi-byte chars) → "utf-8"
+    3. cp1252 (fast path para 99% dos fontes Protheus com chars latinos)
+    4. chardet/latin-1 fallback
 
-    Por que utf-8 primeiro: cp1252 só tem 5 bytes indefinidos (0x81/8D/8F/90/9D), então
-    cp1252 misdecoda silenciosamente bytes utf-8 multi-byte como sequência de chars latinos
-    sem nunca lançar UnicodeDecodeError. utf-8 strict, ao contrário, rejeita bytes cp1252
-    típicos (e.g. 'ã' = 0xE3 sozinho não forma sequência utf-8 válida).
+    Por que utf-8 antes de cp1252 (após ASCII check): cp1252 só tem 5 bytes indefinidos
+    (0x81/8D/8F/90/9D), então cp1252 misdecoda silenciosamente bytes utf-8 multi-byte
+    como sequência de chars latinos. utf-8 strict rejeita bytes cp1252 típicos (e.g.
+    'ã' = 0xE3 sozinho não forma sequência utf-8 válida).
     """
     raw = file_path.read_bytes()
     if not raw:
         return "", "cp1252"
+    # ASCII-only: padrão Protheus é cp1252; ASCII é subset, então reporta cp1252.
+    if raw.isascii():
+        return raw.decode("ascii"), "cp1252"
     try:
         return raw.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
@@ -195,7 +206,7 @@ def add_function_ranges(funcs: list[dict[str, Any]], content: str) -> list[dict[
 
 def _is_valid_protheus_table(name: str) -> bool:
     """Códigos válidos: 3 chars, [SZNQD] + letra + alfanumérico (SA1, ZA1, NDF, ...)."""
-    if len(name) != 3:
+    if len(name) != _TABLE_CODE_LEN:
         return False
     return name[0] in "SZNQD" and name[1].isalpha()
 
@@ -351,6 +362,60 @@ def extract_calls_fwexecview(content: str) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def parse_source(file_path: Path) -> dict[str, Any]:
+    """Orquestra todas as extrações sobre um fonte. Retorna dict completo.
+
+    Output:
+        arquivo, caminho, encoding, lines_of_code, funcoes, tabelas_ref,
+        parametros_uso, perguntas_uso, includes, chamadas, campos_ref, hash.
+
+    Hash é SHA-1 dos bytes decodificados (40 char hex). Usado para stale
+    detection no ingest incremental (spec §11.2 #23).
+    """
+    content, encoding = read_file(file_path)
+    if not content:
+        return {
+            "arquivo": file_path.name,
+            "caminho": str(file_path),
+            "encoding": encoding,
+            "lines_of_code": 0,
+            "funcoes": [],
+            "tabelas_ref": {"read": [], "write": [], "reclock": []},
+            "parametros_uso": [],
+            "perguntas_uso": [],
+            "includes": [],
+            "chamadas": [],
+            "campos_ref": [],
+            "hash": "",
+        }
+
+    funcs = extract_functions(content)
+    funcs = add_function_ranges(funcs, content)
+
+    return {
+        "arquivo": file_path.name,
+        "caminho": str(file_path),
+        "encoding": encoding,
+        "lines_of_code": content.count("\n") + 1,
+        "funcoes": funcs,
+        "tabelas_ref": extract_tables(content),
+        "parametros_uso": extract_params(content),
+        "perguntas_uso": extract_perguntas(content),
+        "includes": extract_includes(content),
+        "chamadas": (
+            extract_calls_user_func(content)
+            + extract_calls_execauto(content)
+            + extract_calls_execblock(content)
+            + extract_calls_fwloadmodel(content)
+            + extract_calls_fwexecview(content)
+            + extract_calls_method(content)
+        ),
+        "campos_ref": extract_fields_ref(content),
+        # SHA-1 não é uso criptográfico — apenas content-addressed hash para stale detection.
+        "hash": hashlib.sha1(content.encode(encoding, errors="replace")).hexdigest(),
+    }
 
 
 def extract_fields_ref(content: str) -> list[str]:

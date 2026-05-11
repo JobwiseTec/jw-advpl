@@ -273,3 +273,52 @@ class TestExtractFieldsRef:
     def test_ignores_invalid_field_pattern(self) -> None:
         src = "x := abc_def"  # não é padrão XX_NOME ADVPL
         assert "ABC_DEF" not in extract_fields_ref(src)
+
+
+class TestParseSource:
+    def test_parse_returns_dict_with_all_fields(self, tmp_path: Path) -> None:
+        f = tmp_path / "FATA050.prw"
+        f.write_bytes(
+            b'#Include "protheus.ch"\n'
+            b'User Function FATA050()\n'
+            b'  Local cMV := SuperGetMV("MV_LOCALIZA", .F., "")\n'
+            b'  DbSelectArea("SC5")\n'
+            b'  RecLock("SC5", .T.)\n'
+            b'  Replace C5_NUM With "001"\n'
+            b'  MsUnlock()\n'
+            b'  U_FATA060()\n'
+            b'Return .T.'
+        )
+        from plugadvpl.parsing.parser import parse_source
+        result = parse_source(f)
+        assert result["arquivo"] == "FATA050.prw"
+        assert result["encoding"] == "cp1252"
+        assert "FATA050" in [fn["nome"] for fn in result["funcoes"]]
+        assert "SC5" in result["tabelas_ref"]["read"]
+        assert "SC5" in result["tabelas_ref"]["write"]
+        assert "MV_LOCALIZA" in [p["nome"] for p in result["parametros_uso"]]
+        assert any(c["destino"] == "FATA060" for c in result["chamadas"])
+        assert "protheus.ch" in result["includes"]
+        # Hash deve estar populado (usado para stale detection — spec §11.2 #23)
+        assert result["hash"]
+        assert len(result["hash"]) == 40  # SHA-1 hex
+
+    def test_hash_is_stable_for_same_content(self, tmp_path: Path) -> None:
+        """Mesmo bytes → mesmo hash (necessário para incremental e UPSERT WHERE hash != old)."""
+        from plugadvpl.parsing.parser import parse_source
+        f1 = tmp_path / "a.prw"
+        f2 = tmp_path / "b.prw"
+        bytes_ = b'User Function X()\nReturn .T.'
+        f1.write_bytes(bytes_)
+        f2.write_bytes(bytes_)
+        r1 = parse_source(f1)
+        r2 = parse_source(f2)
+        assert r1["hash"] == r2["hash"]
+
+    def test_hash_differs_for_different_content(self, tmp_path: Path) -> None:
+        from plugadvpl.parsing.parser import parse_source
+        f1 = tmp_path / "a.prw"
+        f2 = tmp_path / "b.prw"
+        f1.write_bytes(b"User Function A()\nReturn")
+        f2.write_bytes(b"User Function B()\nReturn")
+        assert parse_source(f1)["hash"] != parse_source(f2)["hash"]

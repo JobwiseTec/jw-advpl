@@ -87,6 +87,8 @@ ignore = ["E501", "PLR0913"]  # line-length pelo formatter; PLR0913=too-many-arg
     "PLC0415",  # imports inside functions are OK in tests (TDD pattern)
     "PLR2004",  # magic values in assertions are OK
     "TC002",    # type-only imports for monkeypatch.MonkeyPatch is fine
+    "TC003",    # type-only imports for pathlib.Path in fixtures is fine
+    "RUF059",   # unused unpacked variable in tests (`content, _enc = ...`) is fine
 ]
 
 [tool.ruff.format]

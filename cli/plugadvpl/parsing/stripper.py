@@ -6,7 +6,9 @@ ou dentro de strings literais. Padrão da indústria (ProLeap COBOL faz idem).
 from __future__ import annotations
 
 
-def strip_advpl(content: str, *, strip_strings: bool = True) -> str:
+def strip_advpl(  # noqa: PLR0912, PLR0915
+    content: str, *, strip_strings: bool = True
+) -> str:
     """Retorna content com comentários (// e /* */) e, opcionalmente, strings substituídos por espaços.
 
     Preserva:
