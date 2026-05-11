@@ -160,3 +160,23 @@ class TestMeta:
             assert get_meta(conn, "test_key") == "value2"
         finally:
             conn.close()
+
+
+class TestCloseDb:
+    def test_close_db_truncates_wal(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, close_db
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            conn.execute(
+                "INSERT INTO meta (chave, valor) VALUES ('test', 'data')"
+            )
+            conn.commit()
+        finally:
+            close_db(conn)
+        # Depois de fechar com checkpoint TRUNCATE, .db-wal deve estar
+        # pequeno ou ausente
+        wal_path = db_path.with_suffix(".db-wal")
+        if wal_path.exists():
+            assert wal_path.stat().st_size < 100  # apenas header (ou zero)

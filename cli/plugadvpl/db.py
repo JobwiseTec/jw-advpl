@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import importlib.resources as ir
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 SCHEMA_VERSION = "1"
 
@@ -129,3 +132,26 @@ def set_meta(conn: sqlite3.Connection, chave: str, valor: str) -> None:
         (chave, valor),
     )
     conn.commit()
+
+
+def close_db(conn: sqlite3.Connection) -> None:
+    """Fecha conexão SQLite executando otimizações finais.
+
+    Sequência (cf. spec §4.1, recomendação oficial SQLite >=3.46):
+
+    1. ``PRAGMA optimize`` — coleta estatísticas e atualiza índices
+       (https://sqlite.org/pragma.html#pragma_optimize).
+    2. Se ``journal_mode == 'wal'``: ``PRAGMA wal_checkpoint(TRUNCATE)``
+       — força sync e zera ``.db-wal`` para liberar disco.
+    3. ``commit`` para garantir persistência.
+    4. ``close`` em bloco ``finally`` mesmo se houver erro nas otimizações
+       (evita vazar conexão).
+    """
+    try:
+        conn.execute("PRAGMA optimize")
+        mode_row = conn.execute("PRAGMA journal_mode").fetchone()
+        if mode_row is not None and mode_row[0] == "wal":
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    finally:
+        conn.close()
