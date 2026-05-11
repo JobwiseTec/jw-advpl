@@ -7,6 +7,7 @@ from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_calls_execauto,
     extract_calls_execblock,
+    extract_calls_fwexecview,
     extract_calls_fwloadmodel,
     extract_calls_user_func,
     extract_functions,
@@ -236,4 +237,11 @@ class TestExtractCallsFWLoadModel:
     def test_fwloadmodel(self) -> None:
         src = 'oModel := FWLoadModel("MATA010")'
         result = extract_calls_fwloadmodel(src)
+        assert any(c["destino"] == "MATA010" for c in result)
+
+
+class TestExtractCallsFWExecView:
+    def test_fwexecview(self) -> None:
+        src = 'FWExecView("Cadastro Cliente", "MATA010", MODEL_OPERATION_INSERT, , {})'
+        result = extract_calls_fwexecview(src)
         assert any(c["destino"] == "MATA010" for c in result)

@@ -75,6 +75,7 @@ _EXECAUTO_RE = re.compile(
 )
 _EXECBLOCK_RE = re.compile(r'ExecBlock\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWLOADMODEL_RE = re.compile(r'FWLoadModel\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
+_FWEXECVIEW_RE = re.compile(r'FWExecView\s*\([^,)]+,\s*["\'](\w+)["\']', re.IGNORECASE)
 
 
 def read_file(file_path: Path) -> tuple[str, str]:
@@ -323,6 +324,22 @@ def extract_calls_fwloadmodel(content: str) -> list[dict[str, Any]]:
             {
                 "destino": m.group(1).upper(),
                 "tipo": "fwloadmodel",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
+
+
+def extract_calls_fwexecview(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas FWExecView("Titulo", "MODEL_ID", ...) — captura o 2º arg."""
+    stripped = strip_advpl(content, strip_strings=False)
+    result: list[dict[str, Any]] = []
+    for m in _FWEXECVIEW_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": m.group(1).upper(),
+                "tipo": "fwexecview",
                 "linha_origem": _line_at(stripped, m.start()),
                 "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
             }
