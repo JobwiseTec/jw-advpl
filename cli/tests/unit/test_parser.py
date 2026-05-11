@@ -5,6 +5,7 @@ from pathlib import Path
 
 from plugadvpl.parsing.parser import (
     add_function_ranges,
+    extract_calls_user_func,
     extract_functions,
     extract_includes,
     extract_params,
@@ -195,3 +196,20 @@ class TestExtractIncludes:
         result = extract_includes(src)
         assert "real.ch" in result
         assert "fake.ch" not in result
+
+
+class TestExtractCallsUserFunc:
+    def test_basic_call(self) -> None:
+        src = "U_FATA060()"
+        calls = extract_calls_user_func(src)
+        names = [c["destino"] for c in calls]
+        assert "FATA060" in names
+
+    def test_records_line(self) -> None:
+        src = "Function X()\n  U_FOO()\nReturn"
+        calls = extract_calls_user_func(src)
+        assert calls[0]["linha_origem"] == 2
+
+    def test_ignores_in_string(self) -> None:
+        src = 'cMsg := "U_FAKE() blocked"'
+        assert extract_calls_user_func(src) == []

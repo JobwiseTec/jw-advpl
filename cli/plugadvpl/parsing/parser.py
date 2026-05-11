@@ -67,6 +67,9 @@ _PERGUNTE_RE = re.compile(
 # Includes
 _INCLUDE_RE = re.compile(r'^\s*#Include\s+["\']([^"\']+)["\']', re.IGNORECASE | re.MULTILINE)
 
+# Calls
+_CALL_U_RE = re.compile(r"\bU_(\w+)\s*\(", re.IGNORECASE)
+
 
 def read_file(file_path: Path) -> tuple[str, str]:
     """Lê arquivo ADVPL e retorna (content, encoding_detected).
@@ -255,3 +258,19 @@ def extract_includes(content: str) -> list[str]:
     """Extrai paths de #Include declarados no fonte (preserva case do nome do header)."""
     stripped = strip_advpl(content, strip_strings=False)
     return sorted({m.group(1) for m in _INCLUDE_RE.finditer(stripped)})
+
+
+def extract_calls_user_func(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas a User Functions (U_xxx). Strip-first remove strings/comentários."""
+    stripped = strip_advpl(content)
+    result: list[dict[str, Any]] = []
+    for m in _CALL_U_RE.finditer(stripped):
+        result.append(
+            {
+                "destino": m.group(1).upper(),
+                "tipo": "user_func",
+                "linha_origem": _line_at(stripped, m.start()),
+                "contexto": stripped[max(0, m.start() - 30) : m.end() + 30][:200],
+            }
+        )
+    return result
