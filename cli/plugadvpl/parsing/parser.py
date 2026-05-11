@@ -112,6 +112,12 @@ _HTTP_CALL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# RpcSetEnv: abre call e captura argumentos crus até o fechamento balanceado.
+# Args podem ser literais ("01") ou variáveis (cEmp). Parsing fino é feito em Python.
+_RPCSETENV_OPEN_RE = re.compile(r"\bRpcSetEnv\s*\(", re.IGNORECASE)
+# Reconhece token literal entre aspas (sem aspas escapadas — simples para MVP)
+_QUOTED_ARG_RE = re.compile(r'^["\']([^"\']*)["\']$')
+
 
 def _decode_bytes(raw: bytes) -> tuple[str, str]:
     """Decodifica bytes ADVPL aplicando a mesma estratégia de read_file.
@@ -601,6 +607,116 @@ def extract_http_calls(content: str) -> list[dict[str, Any]]:
     Usa strip_strings=False porque a URL é literal string.
     """
     return _extract_http_calls_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+def _split_top_level_args(args_text: str) -> list[str]:
+    """Divide string de argumentos por vírgulas top-level (ignora vírgulas em strings/parens).
+
+    Helper para parsing fino de chamadas onde precisamos mapear argumentos
+    posicionais (RpcSetEnv, FwLogMsg, etc.). Não suporta strings com aspas
+    escapadas — adequado para MVP onde literais ADVPL são simples.
+    """
+    parts: list[str] = []
+    depth = 0
+    in_quote: str | None = None
+    current: list[str] = []
+    for ch in args_text:
+        if in_quote:
+            current.append(ch)
+            if ch == in_quote:
+                in_quote = None
+            continue
+        if ch in ('"', "'"):
+            in_quote = ch
+            current.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+            current.append(ch)
+            continue
+        if ch in ")]}":
+            depth -= 1
+            current.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+        current.append(ch)
+    tail = "".join(current).strip()
+    if tail or parts:
+        parts.append(tail)
+    return parts
+
+
+def _arg_literal_or_empty(arg: str) -> str:
+    """Retorna o conteúdo literal se arg for string entre aspas; senão "" (variável)."""
+    m = _QUOTED_ARG_RE.match(arg)
+    return m.group(1) if m else ""
+
+
+def _capture_call_args(content: str, open_end: int) -> tuple[str, int] | None:
+    """A partir do offset open_end (logo após '('), captura conteúdo até o ')' balanceado.
+
+    Retorna (args_text, close_offset) ou None se não encontrou fechamento.
+    """
+    depth = 1
+    in_quote: str | None = None
+    i = open_end
+    n = len(content)
+    while i < n:
+        ch = content[i]
+        if in_quote:
+            if ch == in_quote:
+                in_quote = None
+        elif ch in ('"', "'"):
+            in_quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return content[open_end:i], i
+        i += 1
+    return None
+
+
+def _extract_env_openers_from_stripped(
+    stripped_keep_strings: str,
+) -> list[dict[str, Any]]:
+    """Core: extrai chamadas RpcSetEnv. Variáveis (não literais) viram strings vazias."""
+    result: list[dict[str, Any]] = []
+    for m in _RPCSETENV_OPEN_RE.finditer(stripped_keep_strings):
+        captured = _capture_call_args(stripped_keep_strings, m.end())
+        if captured is None:
+            continue
+        args_text, _close = captured
+        args = _split_top_level_args(args_text)
+        # Posições: 1=empresa, 2=filial, 3=user, 4=pwd, 5=env, 6=modulo
+        def get(i: int) -> str:
+            return _arg_literal_or_empty(args[i]) if i < len(args) else ""
+
+        result.append(
+            {
+                "funcao": "",
+                "linha": _line_at(stripped_keep_strings, m.start()),
+                "empresa": get(0),
+                "filial": get(1),
+                "environment": get(4),
+                "modulo": get(5),
+            }
+        )
+    return result
+
+
+def extract_env_openers(content: str) -> list[dict[str, Any]]:
+    """Extrai chamadas RpcSetEnv com empresa/filial/environment/modulo.
+
+    Retorna lista de dicts: {funcao, linha, empresa, filial, environment, modulo}.
+    Argumentos que são variáveis (não literais) viram strings vazias.
+    Usa strip_strings=False porque os valores vêm em literais.
+    """
+    return _extract_env_openers_from_stripped(strip_advpl(content, strip_strings=False))
 
 
 def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:

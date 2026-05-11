@@ -13,6 +13,7 @@ from plugadvpl.parsing.parser import (
     extract_calls_fwloadmodel,
     extract_calls_method,
     extract_calls_user_func,
+    extract_env_openers,
     extract_fields_ref,
     extract_functions,
     extract_http_calls,
@@ -367,6 +368,35 @@ class TestExtractHttpCalls:
         urls = [c["url_literal"] for c in result]
         assert "http://real.com" in urls
         assert "http://fake.com" not in urls
+
+
+class TestExtractEnvOpeners:
+    def test_rpcsetenv_all_literals(self) -> None:
+        src = 'RpcSetEnv("01", "01", "user", "pwd", "PRODUCAO", "FIN")'
+        result = extract_env_openers(src)
+        assert len(result) == 1
+        e = result[0]
+        assert e["empresa"] == "01"
+        assert e["filial"] == "01"
+        assert e["environment"] == "PRODUCAO"
+        assert e["modulo"] == "FIN"
+
+    def test_rpcsetenv_with_variables(self) -> None:
+        src = 'RpcSetEnv(cEmp, cFil, "user", "pwd", "PROD", cMod)'
+        result = extract_env_openers(src)
+        assert len(result) == 1
+        e = result[0]
+        # Variáveis viram string vazia, literais preservados
+        assert e["empresa"] == ""
+        assert e["filial"] == ""
+        assert e["environment"] == "PROD"
+        assert e["modulo"] == ""
+
+    def test_ignores_in_comment(self) -> None:
+        src = '// RpcSetEnv("99", "99")\nRpcSetEnv("01", "01", "x", "y", "P", "F")'
+        result = extract_env_openers(src)
+        assert len(result) == 1
+        assert result[0]["empresa"] == "01"
 
 
 class TestParseSource:
