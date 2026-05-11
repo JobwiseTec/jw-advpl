@@ -710,6 +710,33 @@ class TestParseSource:
         f2.write_bytes(b"User Function B()\nReturn")
         assert parse_source(f1)["hash"] != parse_source(f2)["hash"]
 
+    def test_parse_source_includes_advanced_extractors(self, tmp_path: Path) -> None:
+        from plugadvpl.parsing.parser import parse_source
+        f = tmp_path / "MVCExemplo.prw"
+        f.write_bytes(
+            b"User Function MVCExemplo()\n"
+            b"Local bCommit := {|| .T.}\n"
+            b"Return .T.\n"
+        )
+        result = parse_source(f)
+        assert "namespace" in result
+        assert "rest_endpoints" in result
+        assert "http_calls" in result
+        assert "env_openers" in result
+        assert "log_calls" in result
+        assert "defines" in result
+        assert "ws_structures" in result
+        assert "sql_embedado" in result
+        assert "capabilities" in result
+        assert "source_type" in result
+        # mvc_hook bCommit detectado
+        assert any(
+            c.get("tipo") == "mvc_hook" and c["destino"] == "bCommit"
+            for c in result["chamadas"]
+        )
+        # capabilities includes MVC (porque tem hook)
+        assert "MVC" in result["capabilities"]
+
     def test_parse_source_avoids_redundant_stripping(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

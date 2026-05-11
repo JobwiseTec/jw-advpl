@@ -175,10 +175,17 @@ _DEFINE_RE = re.compile(r"^[ \t]*#DEFINE[ \t]+(\w+)[ \t]+(.+)$", re.IGNORECASE |
 # Log calls: FwLogMsg(...) e ConOut(...)
 _FWLOGMSG_OPEN_RE = re.compile(r"\bFwLogMsg\s*\(", re.IGNORECASE)
 _CONOUT_OPEN_RE = re.compile(r"\bConOut\s*\(", re.IGNORECASE)
+# 4º argumento posicional (índice 3) é o nome da categoria em FwLogMsg.
+_FWLOGMSG_CATEGORY_ARG_IDX = 3
 
 # RpcSetEnv: abre call e captura argumentos crus até o fechamento balanceado.
 # Args podem ser literais ("01") ou variáveis (cEmp). Parsing fino é feito em Python.
 _RPCSETENV_OPEN_RE = re.compile(r"\bRpcSetEnv\s*\(", re.IGNORECASE)
+# Posições de argumentos do RpcSetEnv:
+_RPC_EMPRESA_IDX = 0
+_RPC_FILIAL_IDX = 1
+_RPC_ENV_IDX = 4
+_RPC_MODULO_IDX = 5
 # Reconhece token literal entre aspas (sem aspas escapadas — simples para MVP)
 _QUOTED_ARG_RE = re.compile(r'^["\']([^"\']*)["\']$')
 
@@ -756,18 +763,23 @@ def _extract_env_openers_from_stripped(
             continue
         args_text, _close = captured
         args = _split_top_level_args(args_text)
-        # Posições: 1=empresa, 2=filial, 3=user, 4=pwd, 5=env, 6=modulo
-        def get(i: int) -> str:
-            return _arg_literal_or_empty(args[i]) if i < len(args) else ""
-
+        # Posições: 0=empresa, 1=filial, 2=user, 3=pwd, 4=env, 5=modulo
         result.append(
             {
                 "funcao": "",
                 "linha": _line_at(stripped_keep_strings, m.start()),
-                "empresa": get(0),
-                "filial": get(1),
-                "environment": get(4),
-                "modulo": get(5),
+                "empresa": _arg_literal_or_empty(args[_RPC_EMPRESA_IDX])
+                if len(args) > _RPC_EMPRESA_IDX
+                else "",
+                "filial": _arg_literal_or_empty(args[_RPC_FILIAL_IDX])
+                if len(args) > _RPC_FILIAL_IDX
+                else "",
+                "environment": _arg_literal_or_empty(args[_RPC_ENV_IDX])
+                if len(args) > _RPC_ENV_IDX
+                else "",
+                "modulo": _arg_literal_or_empty(args[_RPC_MODULO_IDX])
+                if len(args) > _RPC_MODULO_IDX
+                else "",
             }
         )
     return result
@@ -800,7 +812,11 @@ def _extract_log_calls_from_stripped(
         args_text, _close = captured
         args = _split_top_level_args(args_text)
         nivel = _arg_literal_or_empty(args[0]) if args else ""
-        categoria = _arg_literal_or_empty(args[3]) if len(args) > 3 else ""
+        categoria = (
+            _arg_literal_or_empty(args[_FWLOGMSG_CATEGORY_ARG_IDX])
+            if len(args) > _FWLOGMSG_CATEGORY_ARG_IDX
+            else ""
+        )
         result.append(
             {
                 "funcao": "",
@@ -1101,7 +1117,7 @@ _MULTI_FILIAL_RE = re.compile(
 _TLPP_UNIT_RE = re.compile(r"tlpp\.unit\.suite|tlpp\.unit\b", re.IGNORECASE)
 
 
-def _derive_capabilities(parsed: dict[str, Any]) -> list[str]:
+def _derive_capabilities(parsed: dict[str, Any]) -> list[str]:  # noqa: PLR0912, PLR0915
     """Deriva lista ordenada e única de capabilities a partir do parsed completo.
 
     Mapeamento das ~20 capabilities da spec §4.4. Cada check é independente —
@@ -1242,7 +1258,7 @@ def derive_capabilities(parsed: dict[str, Any]) -> list[str]:
     return _derive_capabilities(parsed)
 
 
-def _derive_source_type(parsed: dict[str, Any]) -> str:
+def _derive_source_type(parsed: dict[str, Any]) -> str:  # noqa: PLR0911
     """Deriva source_type da spec §4.2: user_function|main_function|static_function|
     webservice|class|mvc|pe|outro.
 
@@ -1299,6 +1315,16 @@ def _empty_result(file_path: Path, encoding: str) -> dict[str, Any]:
         "includes": [],
         "chamadas": [],
         "campos_ref": [],
+        "namespace": "",
+        "rest_endpoints": [],
+        "http_calls": [],
+        "env_openers": [],
+        "log_calls": [],
+        "defines": [],
+        "ws_structures": {"ws_structs": [], "ws_services": [], "ws_methods": []},
+        "sql_embedado": [],
+        "capabilities": [],
+        "source_type": "outro",
         "hash": "",
     }
 
@@ -1330,7 +1356,18 @@ def parse_source(file_path: Path) -> dict[str, Any]:
     funcs = _extract_functions_from_stripped(stripped_strict)
     funcs = _add_function_ranges(funcs, content)
 
-    return {
+    # Chamadas: extractors core + mvc_hooks (anexado ao mesmo conjunto)
+    chamadas = (
+        _extract_calls_user_func_from_stripped(stripped_strict)
+        + _extract_calls_execauto_from_stripped(stripped_strict)
+        + _extract_calls_execblock_from_stripped(stripped_keep_strings)
+        + _extract_calls_fwloadmodel_from_stripped(stripped_keep_strings)
+        + _extract_calls_fwexecview_from_stripped(stripped_keep_strings)
+        + _extract_calls_method_from_stripped(stripped_strict)
+        + _extract_mvc_hooks_from_stripped(stripped_strict)
+    )
+
+    result: dict[str, Any] = {
         "arquivo": file_path.name,
         "caminho": str(file_path),
         "encoding": encoding,
@@ -1340,15 +1377,24 @@ def parse_source(file_path: Path) -> dict[str, Any]:
         "parametros_uso": _extract_params_from_stripped(stripped_keep_strings),
         "perguntas_uso": _extract_perguntas_from_stripped(stripped_keep_strings),
         "includes": _extract_includes_from_stripped(stripped_keep_strings),
-        "chamadas": (
-            _extract_calls_user_func_from_stripped(stripped_strict)
-            + _extract_calls_execauto_from_stripped(stripped_strict)
-            + _extract_calls_execblock_from_stripped(stripped_keep_strings)
-            + _extract_calls_fwloadmodel_from_stripped(stripped_keep_strings)
-            + _extract_calls_fwexecview_from_stripped(stripped_keep_strings)
-            + _extract_calls_method_from_stripped(stripped_strict)
-        ),
+        "chamadas": chamadas,
         "campos_ref": _extract_fields_ref_from_stripped(stripped_strict),
+        "namespace": _extract_namespace_from_stripped(stripped_strict),
+        "rest_endpoints": _extract_rest_endpoints_from_stripped(stripped_keep_strings),
+        "http_calls": _extract_http_calls_from_stripped(stripped_keep_strings),
+        "env_openers": _extract_env_openers_from_stripped(stripped_keep_strings),
+        "log_calls": _extract_log_calls_from_stripped(stripped_keep_strings),
+        "defines": _extract_defines_from_stripped(stripped_keep_strings),
+        "ws_structures": _extract_ws_structures_from_stripped(stripped_keep_strings),
+        "sql_embedado": _extract_sql_embedado_from_stripped(stripped_keep_strings),
         # SHA-1 não é uso criptográfico — apenas content-addressed hash para stale detection.
         "hash": hashlib.sha1(raw).hexdigest() if raw else "",
     }
+    # raw_content (stripped, strings preservadas) é injetado temporariamente para
+    # que derive_capabilities possa pattern-matching sobre o fonte. Removido antes
+    # de retornar para não inflar o dict (DB-bound consumers não precisam).
+    result["raw_content"] = stripped_keep_strings
+    result["capabilities"] = _derive_capabilities(result)
+    result["source_type"] = _derive_source_type(result)
+    del result["raw_content"]
+    return result
