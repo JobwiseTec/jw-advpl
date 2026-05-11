@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_calls_execauto,
@@ -147,6 +149,18 @@ class TestExtractTables:
         tables = extract_tables(src)
         assert "ABC" not in tables["read"]  # ABC não é código Protheus válido
 
+    def test_table_in_string_literal_not_captured_via_alias_arrow(self) -> None:
+        """Alias->Field dentro de string literal não deve ser capturado como tabela referenciada."""
+        src = 'cMsg := "Erro ao gravar SA1->A1_NOME"'
+        tables = extract_tables(src)
+        assert "SA1" not in tables["read"]  # SA1 estava só dentro da string
+
+    def test_dbselectarea_still_captured_from_string(self) -> None:
+        """DbSelectArea("SA1") usa o nome literal — deve ser capturado mesmo em string."""
+        src = 'DbSelectArea("SA1")'
+        tables = extract_tables(src)
+        assert "SA1" in tables["read"]
+
 
 class TestExtractParams:
     def test_supergetmv(self) -> None:
@@ -260,6 +274,11 @@ class TestExtractCallsMethod:
         result = extract_calls_method(src)
         assert any("Init" in c["destino"] for c in result)
 
+    def test_method_does_not_match_digit_start(self) -> None:
+        src = "obj:9invalid()"
+        result = extract_calls_method(src)
+        assert result == []
+
 
 class TestExtractFieldsRef:
     def test_alias_arrow_field(self) -> None:
@@ -322,3 +341,26 @@ class TestParseSource:
         f1.write_bytes(b"User Function A()\nReturn")
         f2.write_bytes(b"User Function B()\nReturn")
         assert parse_source(f1)["hash"] != parse_source(f2)["hash"]
+
+    def test_parse_source_avoids_redundant_stripping(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """parse_source must call strip_advpl at most 2 times (one per mode)."""
+        from plugadvpl.parsing import stripper
+
+        call_count = [0]
+        original = stripper.strip_advpl
+
+        def counting_strip(content: str, *, strip_strings: bool = True) -> str:
+            call_count[0] += 1
+            return original(content, strip_strings=strip_strings)
+
+        monkeypatch.setattr("plugadvpl.parsing.parser.strip_advpl", counting_strip)
+
+        f = tmp_path / "test.prw"
+        f.write_bytes(b"User Function X()\nReturn .T.")
+        from plugadvpl.parsing.parser import parse_source
+        parse_source(f)
+        assert call_count[0] <= 2, (
+            f"strip_advpl called {call_count[0]} times, expected <=2"
+        )
