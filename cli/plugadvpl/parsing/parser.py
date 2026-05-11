@@ -116,3 +116,23 @@ def extract_functions(content: str) -> list[dict[str, Any]]:
 
     result.sort(key=lambda f: int(f["_offset"]))
     return result
+
+
+def add_function_ranges(funcs: list[dict[str, Any]], content: str) -> list[dict[str, Any]]:
+    """Preenche linha_fim para cada função baseado no offset da próxima.
+
+    Padrão: fim = linha do header da próxima função - 1. Para a última,
+    fim = última linha do arquivo.
+    """
+    if not funcs:
+        return funcs
+    # Conta linhas: número de newlines (se acaba em \n) ou +1 (se não acaba em \n).
+    total_lines = content.count("\n") if content.endswith("\n") else content.count("\n") + 1
+    for i, f in enumerate(funcs):
+        if i + 1 < len(funcs):
+            next_line = funcs[i + 1]["linha_inicio"]
+            f["linha_fim"] = max(f["linha_inicio"], next_line - 1)
+        else:
+            f["linha_fim"] = total_lines
+        f.pop("_offset", None)
+    return funcs

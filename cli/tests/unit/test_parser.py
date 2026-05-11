@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from plugadvpl.parsing.parser import extract_functions, read_file
+from plugadvpl.parsing.parser import add_function_ranges, extract_functions, read_file
 
 
 class TestReadFile:
@@ -74,3 +74,22 @@ class TestExtractFunctions:
         by_name = {f["nome"]: f for f in result}
         assert by_name["Foo"]["linha_inicio"] == 2
         assert by_name["Bar"]["linha_inicio"] == 5
+
+
+class TestAddFunctionRanges:
+    def test_ranges_set_from_next_function(self) -> None:
+        src = (
+            "User Function A()\n"        # linha 1
+            "  Local x := 1\n"            # 2
+            "Return x\n"                  # 3
+            "\n"                          # 4
+            "User Function B()\n"        # 5
+            "Return .T.\n"                # 6
+        )
+        funcs = extract_functions(src)
+        funcs = add_function_ranges(funcs, src)
+        by_name = {f["nome"]: f for f in funcs}
+        assert by_name["A"]["linha_inicio"] == 1
+        assert by_name["A"]["linha_fim"] == 4  # antes do header de B
+        assert by_name["B"]["linha_inicio"] == 5
+        assert by_name["B"]["linha_fim"] == 6  # última linha do arquivo
