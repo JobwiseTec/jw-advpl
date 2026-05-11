@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.resources as ir
+import json
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -10,6 +12,44 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 SCHEMA_VERSION = "1"
+
+
+# Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
+# A primeira coluna de cada lista é a PRIMARY KEY (target do ON CONFLICT).
+# Mantenha sincronizado com migration 001_initial.sql (seção Lookups).
+_LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
+    "funcoes_nativas.json": (
+        "funcoes_nativas",
+        [
+            "nome", "categoria", "assinatura", "params_count",
+            "requer_unlock", "requer_close_area", "deprecated",
+            "alternativa", "descricao",
+        ],
+    ),
+    "funcoes_restritas.json": (
+        "funcoes_restritas",
+        ["nome", "categoria", "bloqueada_desde", "alternativa"],
+    ),
+    "lint_rules.json": (
+        "lint_rules",
+        [
+            "regra_id", "titulo", "severidade", "categoria", "descricao",
+            "fix_guidance", "detection_kind",
+        ],
+    ),
+    "sql_macros.json": (
+        "sql_macros",
+        ["macro", "descricao", "exemplo", "output_type", "safe_for_injection"],
+    ),
+    "modulos_erp.json": (
+        "modulos_erp",
+        ["codigo", "nome", "prefixos_tabelas", "prefixos_funcoes", "rotinas_principais"],
+    ),
+    "pontos_entrada_padrao.json": (
+        "pontos_entrada_padrao",
+        ["nome", "descricao", "modulo", "paramixb_count", "retorno_tipo", "link_tdn"],
+    ),
+}
 
 
 def _is_network_share(path: Path) -> bool:
@@ -176,6 +216,76 @@ def set_meta(conn: sqlite3.Connection, chave: str, valor: str) -> None:
         (chave, valor),
     )
     conn.commit()
+
+
+def seed_lookups(
+    conn: sqlite3.Connection, lookup_dir: Path | None = None
+) -> dict[str, int]:
+    """Carrega os 6 JSONs de ``lookups/`` e popula as tabelas ``WITHOUT ROWID``.
+
+    Idempotente — usa ``INSERT ... ON CONFLICT(<PK>) DO UPDATE`` (UPSERT). As
+    colunas tipo JSON list (``prefixos_tabelas``, ``prefixos_funcoes``,
+    ``rotinas_principais``) são serializadas como strings JSON antes do bind.
+
+    Após popular todas as 6 tabelas, calcula SHA-256 do bundle (concatenação
+    dos arquivos JSON na ordem de :data:`_LOOKUP_FILES`) e grava em
+    ``meta.lookup_bundle_hash``. Isso permite detectar drift entre o bundle
+    embarcado no wheel e o estado do DB.
+
+    Carrega via :mod:`importlib.resources` para funcionar igual em dev tree
+    e em wheel instalado. Aceita ``lookup_dir`` explícito (``pathlib.Path``)
+    para testes que precisam isolar o conjunto de dados.
+
+    Retorna ``{table_name: rows_inserted}``.
+    """
+    bundle_hasher = hashlib.sha256()
+    counts: dict[str, int] = {}
+
+    for filename, (table, cols) in _LOOKUP_FILES.items():
+        if lookup_dir is None:
+            resource = ir.files("plugadvpl").joinpath("lookups", filename)
+            raw = resource.read_text(encoding="utf-8")
+        else:
+            raw = (lookup_dir / filename).read_text(encoding="utf-8")
+        bundle_hasher.update(raw.encode("utf-8"))
+
+        items: list[dict[str, object]] = json.loads(raw)
+
+        placeholders = ",".join("?" * len(cols))
+        cols_sql = ",".join(cols)
+        # Primeira coluna é PK; demais entram no DO UPDATE.
+        pk = cols[0]
+        update_cols = [c for c in cols if c != pk]
+        if update_cols:
+            updates = ",".join(f"{c}=excluded.{c}" for c in update_cols)
+            sql = (
+                f"INSERT INTO {table} ({cols_sql}) VALUES ({placeholders}) "
+                f"ON CONFLICT({pk}) DO UPDATE SET {updates}"
+            )
+        else:
+            sql = (
+                f"INSERT INTO {table} ({cols_sql}) VALUES ({placeholders}) "
+                f"ON CONFLICT({pk}) DO NOTHING"
+            )
+
+        rows: list[tuple[object, ...]] = []
+        for item in items:
+            row: list[object] = []
+            for c in cols:
+                val: object = item.get(c, "")
+                # Colunas tipo list[str] são gravadas como JSON string.
+                if isinstance(val, list):
+                    val = json.dumps(val, ensure_ascii=False)
+                row.append(val)
+            rows.append(tuple(row))
+
+        if rows:
+            conn.executemany(sql, rows)
+        counts[table] = len(rows)
+
+    conn.commit()
+    set_meta(conn, "lookup_bundle_hash", bundle_hasher.hexdigest())
+    return counts
 
 
 def close_db(conn: sqlite3.Connection) -> None:

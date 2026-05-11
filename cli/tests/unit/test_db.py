@@ -14,6 +14,7 @@ from plugadvpl.db import (
     get_meta,
     init_meta,
     open_db,
+    seed_lookups,
     set_meta,
 )
 
@@ -208,6 +209,107 @@ class TestMeta:
             assert get_meta(conn, "test_key") == "value2"
         finally:
             conn.close()
+
+
+class TestSeedLookups:
+    def test_seed_lookups_populates_all_six_tables(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            counts = seed_lookups(conn)
+            assert counts["funcoes_nativas"] > 0
+            assert counts["funcoes_restritas"] > 0
+            assert counts["lint_rules"] > 0
+            assert counts["sql_macros"] > 0
+            assert counts["modulos_erp"] > 0
+            assert counts["pontos_entrada_padrao"] > 0
+            # E os dados realmente foram persistidos
+            for table in (
+                "funcoes_nativas", "funcoes_restritas", "lint_rules",
+                "sql_macros", "modulos_erp", "pontos_entrada_padrao",
+            ):
+                n = conn.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0]
+                assert n > 0, f"{table} should have rows"
+        finally:
+            close_db(conn)
+
+    def test_seed_lookups_is_idempotent(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            seed_lookups(conn)
+            count_first = conn.execute(
+                "SELECT COUNT(*) FROM funcoes_restritas"
+            ).fetchone()[0]
+            seed_lookups(conn)  # 2x — UPSERT idempotente
+            count_second = conn.execute(
+                "SELECT COUNT(*) FROM funcoes_restritas"
+            ).fetchone()[0]
+            assert count_first == count_second
+            assert count_first > 0
+        finally:
+            close_db(conn)
+
+    def test_seed_lookups_sets_bundle_hash_in_meta(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            seed_lookups(conn)
+            bundle_hash = get_meta(conn, "lookup_bundle_hash")
+            assert bundle_hash is not None
+            assert len(bundle_hash) == 64  # SHA-256 hex
+            # Determinístico: rodar de novo dá o mesmo hash
+            seed_lookups(conn)
+            assert get_meta(conn, "lookup_bundle_hash") == bundle_hash
+        finally:
+            close_db(conn)
+
+    def test_seed_lookups_with_explicit_dir(self, tmp_path: Path) -> None:
+        """``lookup_dir`` parameter permite isolar o dataset de testes."""
+        custom_dir = tmp_path / "custom_lookups"
+        custom_dir.mkdir()
+        for fname in (
+            "funcoes_nativas.json", "funcoes_restritas.json", "lint_rules.json",
+            "sql_macros.json", "modulos_erp.json", "pontos_entrada_padrao.json",
+        ):
+            (custom_dir / fname).write_text("[]", encoding="utf-8")
+
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            counts = seed_lookups(conn, lookup_dir=custom_dir)
+            assert all(c == 0 for c in counts.values())
+            # E nenhuma linha foi inserida
+            n = conn.execute("SELECT COUNT(*) FROM funcoes_nativas").fetchone()[0]
+            assert n == 0
+        finally:
+            close_db(conn)
+
+    def test_seed_lookups_serializes_json_list_columns(
+        self, tmp_path: Path
+    ) -> None:
+        """``prefixos_tabelas`` etc. são gravadas como JSON string."""
+        db_path = tmp_path / "test.db"
+        conn = open_db(db_path)
+        try:
+            apply_migrations(conn)
+            seed_lookups(conn)
+            row = conn.execute(
+                "SELECT prefixos_tabelas FROM modulos_erp WHERE codigo='COM'"
+            ).fetchone()
+            assert row is not None
+            import json as _json
+            tabelas = _json.loads(row[0])
+            assert isinstance(tabelas, list)
+            assert "SC1" in tabelas
+        finally:
+            close_db(conn)
 
 
 class TestCloseDb:
