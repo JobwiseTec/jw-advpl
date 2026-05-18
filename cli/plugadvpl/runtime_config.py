@@ -14,10 +14,14 @@ import socket
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 
 class RuntimeConfigError(Exception):
     """Erro de validação do runtime.toml — mensagem clara, sem stacktrace ruidoso."""
+
+
+_LOCAL_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 @dataclass(frozen=True)
@@ -78,12 +82,27 @@ def _tcp_ping(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-def _require(d: dict, section: str, key: str, src: Path) -> object:
-    if section not in d or key not in d[section]:
+def _require_section(d: dict[str, object], section: str, src: Path) -> dict[str, object]:
+    """Retorna d[section] se for dict, erro claro caso contrário."""
+    if section not in d:
+        raise RuntimeConfigError(f"missing required section [{section}] in {src}")
+    val = d[section]
+    if not isinstance(val, dict):
         raise RuntimeConfigError(
-            f"missing required key [{section}].{key} in {src}"
+            f"[{section}] in {src} must be a TOML table, got {type(val).__name__}"
         )
-    return d[section][key]
+    return val
+
+
+def _require_key(
+    section_dict: dict[str, object], key: str, src: Path, section_name: str
+) -> object:
+    """Valida que key existe no dict da seção; erro com path do TOML se ausente."""
+    if key not in section_dict:
+        raise RuntimeConfigError(
+            f"missing required key [{section_name}].{key} in {src}"
+        )
+    return section_dict[key]
 
 
 def _require_env(varname: str, ref: str) -> str:
@@ -111,10 +130,12 @@ def load(root: Path) -> RuntimeConfig | None:
         raise RuntimeConfigError(f"invalid TOML in {toml_path}: {exc}") from exc
 
     # tds_ls
-    binary_str = str(_require(raw, "tds_ls", "binary", toml_path))
+    tds_raw = _require_section(raw, "tds_ls", toml_path)
+    binary_str = str(_require_key(tds_raw, "binary", toml_path, "tds_ls"))
     binary = Path(binary_str)
     if not binary.is_file():
         raise RuntimeConfigError(f"advpls not found at {binary}")
+    # resolve(strict=True) detecta symlinks quebrados / loops mesmo após is_file() OK
     try:
         resolved = binary.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
@@ -125,22 +146,22 @@ def load(root: Path) -> RuntimeConfig | None:
     tds_ls = TdsLsConfig(binary=resolved, binary_is_symlink=is_symlink)
 
     # appserver
-    asv = raw.get("appserver", {})
+    asv = _require_section(raw, "appserver", toml_path)
     appserver = AppserverConfig(
-        host=str(_require(raw, "appserver", "host", toml_path)),
-        port=int(_require(raw, "appserver", "port", toml_path)),
+        host=str(_require_key(asv, "host", toml_path, "appserver")),
+        port=int(cast(int, _require_key(asv, "port", toml_path, "appserver"))),
         secure=bool(asv.get("secure", False)),
-        build=str(_require(raw, "appserver", "build", toml_path)),
-        environment=str(_require(raw, "appserver", "environment", toml_path)),
+        build=str(_require_key(asv, "build", toml_path, "appserver")),
+        environment=str(_require_key(asv, "environment", toml_path, "appserver")),
     )
 
     # auth
-    auth_raw = raw.get("auth", {})
-    user_env = str(_require(raw, "auth", "user_env", toml_path))
-    password_env = str(_require(raw, "auth", "password_env", toml_path))
+    auth_raw = _require_section(raw, "auth", toml_path)
+    user_env = str(_require_key(auth_raw, "user_env", toml_path, "auth"))
+    password_env = str(_require_key(auth_raw, "password_env", toml_path, "auth"))
     _require_env(user_env, "auth.user_env")
     _require_env(password_env, "auth.password_env")
-    aut_file_str = str(auth_raw.get("aut_file", "") or "")
+    aut_file_str = str(auth_raw.get("aut_file", ""))
     aut_file: Path | None = None
     if aut_file_str:
         aut_file = Path(aut_file_str)
@@ -149,23 +170,30 @@ def load(root: Path) -> RuntimeConfig | None:
     auth = AuthConfig(user_env=user_env, password_env=password_env, aut_file=aut_file)
 
     # compile
-    cmp_raw = raw.get("compile", {})
+    cmp_raw = _require_section(raw, "compile", toml_path)
+    includes_raw = cmp_raw.get("includes", [])
+    if not isinstance(includes_raw, list):
+        raise RuntimeConfigError(
+            f"[compile].includes in {toml_path} must be an array, "
+            f"got {type(includes_raw).__name__}"
+        )
     compile_cfg = CompileConfig(
         recompile=bool(cmp_raw.get("recompile", True)),
-        includes=tuple(Path(p) for p in cmp_raw.get("includes", [])),
+        includes=tuple(Path(str(p)) for p in includes_raw),
         mode=str(cmp_raw.get("mode", "auto")),
-        timeout_seconds=int(cmp_raw.get("timeout_seconds", 120)),
+        timeout_seconds=int(cast(int, cmp_raw.get("timeout_seconds", 120))),
         include_warnings=bool(cmp_raw.get("include_warnings", True)),
     )
 
     # logging (optional section)
-    log_raw = raw.get("logging", {})
+    log_raw_obj = raw.get("logging", {})
+    log_raw: dict[str, object] = log_raw_obj if isinstance(log_raw_obj, dict) else {}
     logging_cfg = LoggingConfig(
         log_to_file=str(log_raw.get("log_to_file", "") or ""),
         show_console_output=bool(log_raw.get("show_console_output", True)),
     )
 
-    warn_remote = appserver.host not in {"127.0.0.1", "localhost", "::1"}
+    warn_remote = appserver.host not in _LOCAL_HOSTS
     reachable = _tcp_ping(appserver.host, appserver.port)
 
     return RuntimeConfig(
@@ -229,10 +257,10 @@ def render_template() -> str:
 
 
 def init_gitignore_entry(root: Path) -> bool:
-    """Garante ``.plugadvpl/runtime.toml`` no ``.gitignore`` (cria se ausente).
+    """Garante ``.plugadvpl/runtime.toml`` no ``.gitignore`` (se existir).
 
     Retorna True se adicionou linha, False se já estava lá ou se ``.gitignore``
-    não existe (não cria arquivo novo só por isso — usuário pode preferir commitar).
+    não existe (NÃO cria arquivo novo — usuário pode preferir commitar).
     """
     gi = root / ".gitignore"
     if not gi.is_file():

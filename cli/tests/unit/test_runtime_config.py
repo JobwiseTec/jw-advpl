@@ -1,8 +1,10 @@
 """Testes de plugadvpl.runtime_config (v0.8.0 Fase 1)."""
 from __future__ import annotations
 
+import json
 import os
 import stat
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,11 +40,12 @@ def _write_minimal_toml(root: Path, **overrides: str) -> Path:
     cfg_dir = root / ".plugadvpl"
     cfg_dir.mkdir(exist_ok=True)
     binary_path = overrides.get("binary", str(_fake_advpls_binary(root)))
-    # Path no TOML usa forward slash (TOML não escapa \ — em Windows D:\foo seria erro)
-    binary_path_toml = binary_path.replace("\\", "/")
+    # Path no TOML usa forward slash (TOML não escapa \ — em Windows D:\foo seria erro).
+    # json.dumps cuida do escaping seguro de aspas, controle chars, etc.
+    binary_path_toml = json.dumps(binary_path.replace("\\", "/"))
     content = f'''
 [tds_ls]
-binary = "{binary_path_toml}"
+binary = {binary_path_toml}
 
 [appserver]
 host = "127.0.0.1"
@@ -108,7 +111,8 @@ class TestLoadInvalid:
         cfg_dir = tmp_path / ".plugadvpl"
         cfg_dir.mkdir()
         (cfg_dir / "runtime.toml").write_text("[appserver]\nhost = '127.0.0.1'\n", encoding="utf-8")
-        with pytest.raises(RuntimeConfigError, match="missing required key"):
+        # Sem [tds_ls] → falha em _require_section antes de chegar em qualquer key.
+        with pytest.raises(RuntimeConfigError, match=r"missing required section \[tds_ls\]"):
             load(tmp_path)
 
     def test_binary_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,7 +132,6 @@ class TestLoadInvalid:
     def test_aut_file_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PROTHEUS_USER", "x")
         monkeypatch.setenv("PROTHEUS_PASS", "y")
-        cfg_dir = tmp_path / ".plugadvpl"
         toml_path = _write_minimal_toml(tmp_path)
         toml = toml_path.read_text(encoding="utf-8").replace(
             'aut_file = ""', 'aut_file = "/nope/chave.aut"'
@@ -173,7 +176,6 @@ class TestRenderTemplate:
             assert section in text
 
     def test_template_is_valid_toml(self) -> None:
-        import tomllib
         parsed = tomllib.loads(render_template())
         assert "tds_ls" in parsed
         assert "appserver" in parsed
