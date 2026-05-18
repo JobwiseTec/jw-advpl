@@ -22,7 +22,7 @@ Diagnostica ambiente e indice plugadvpl. Util para troubleshooting.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.4.8 doctor $ARGUMENTS
+uvx plugadvpl@0.4.9 doctor $ARGUMENTS
 ```
 
 ## Checks

@@ -572,6 +572,49 @@ class TestDoctor:
         assert checks["funcs_commented_out"]["count"] >= 1
         assert checks["funcs_commented_out"]["status"] == "info"
 
+    def test_doctor_check_funcs_detail_table_friendly_fields(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.9: rows funcs_detail tem count + detail string preenchidos
+        pra render table mostrar info util (nao colunas vazias).
+
+        Antes: table renderer so conhecia 4 colunas (check/status/count/detail)
+        e as rows detail tinham count/detail vazios pq dados estavam em
+        arquivo/grep_raw/grep_code/parser/classificacao. JSON OK, table inutil.
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "FnA.prw").write_bytes(
+            b'User Function FnA()\nReturn\n'
+            b'/*\nStatic Function FnAOld()\nReturn\n*/\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(src), "--format", "json",
+                "doctor", "--check-funcs", "--detail",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        detail_rows = [r for r in payload["rows"] if r.get("check") == "funcs_detail"]
+        assert detail_rows
+        for r in detail_rows:
+            # Colunas estruturais (pra JSON) continuam
+            assert "arquivo" in r
+            assert "grep_raw" in r
+            assert "classificacao" in r
+            # NOVAS: count + detail (pra table render)
+            assert "count" in r, f"row detail sem count: {r}"
+            assert "detail" in r, f"row detail sem detail: {r}"
+            # count = delta (raw - parser)
+            assert r["count"] == r["grep_raw"] - r["parser"]
+            # detail string deve conter arquivo + classificacao
+            assert r["arquivo"] in r["detail"]
+            assert r["classificacao"] in r["detail"]
+
     def test_doctor_check_funcs_detail_returns_row_per_file(
         self, tmp_path: Path, runner: CliRunner
     ) -> None:

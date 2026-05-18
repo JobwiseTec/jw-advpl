@@ -4,6 +4,40 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-05-18
+
+### 🎨 `doctor --check-funcs --detail` agora útil em render table
+
+Reporter pegou cosmético no v0.4.8: as rows `funcs_detail` apareciam com
+colunas `count`/`detail` vazias no render `table` (default) porque o renderer
+só conhece schema `(check, status, count, detail)` — colunas estruturais
+`arquivo/grep_raw/grep_code/parser/classificacao` só apareciam em JSON. Pra
+ver no terminal humano o usuário precisava trocar pra `--format json`.
+
+### Fixed
+- **Rows `funcs_detail` preenchem `count` + `detail` string** pra render table
+  mostrar info útil. Schema de doctor mantido consistente (todas rows têm
+  `count/detail`), colunas estruturais continuam pra JSON.
+  ```
+  funcs_detail | info | 1 | FnA.prw: grep_raw=2 grep_code=1 parser=1 class=commented_out
+  ```
+  Onde:
+  - `count = grep_raw - parser` (delta)
+  - `detail` = string compacta com todas as métricas + classificação
+
+### Tests
+- **+1 teste integration**:
+  `test_doctor_check_funcs_detail_table_friendly_fields` valida que rows
+  `funcs_detail` têm count/detail preenchidos + colunas estruturais
+  preservadas em JSON.
+- **511 testes verde**.
+
+### Notes
+- Best-of-both: table view legível + JSON estruturado para consumo programático.
+- Alternativa considerada (e descartada): renderer detectar sub-tipo e trocar
+  esquema de colunas. Mais invasivo no `output.py`, abre precedente que cobra
+  manutenção em features futuras.
+
 ## [0.4.8] - 2026-05-18
 
 ### 🔍 Detector `--check-funcs` aceita TLPP `Function` puro + lowercase

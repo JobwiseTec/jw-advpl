@@ -447,9 +447,17 @@ def doctor_func_count_check(
     if detail:
         for arquivo, raw, code, parser in sorted(real_bug_rows + commented_rows):
             classificacao = "real_bug" if (arquivo, raw, code, parser) in real_bug_rows else "commented_out"
+            # v0.4.9: preenche count + detail string pra render table mostrar
+            # info util (renderer so conhece schema check/status/count/detail).
+            # Colunas estruturais (arquivo/grep_raw/...) continuam pra JSON.
             rows.append({
                 "check": "funcs_detail",
                 "status": "warn" if classificacao == "real_bug" else "info",
+                "count": raw - parser,
+                "detail": (
+                    f"{arquivo}: grep_raw={raw} grep_code={code} "
+                    f"parser={parser} class={classificacao}"
+                ),
                 "arquivo": arquivo,
                 "grep_raw": raw,
                 "grep_code": code,
