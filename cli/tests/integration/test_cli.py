@@ -765,6 +765,22 @@ class TestWorkflow:
         assert len(rows) == 1
         assert rows[0]["kind"] == "schedule"
 
+    def test_workflow_rejects_invalid_kind(
+        self, triggers_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.4 (UX #4): --kind invalido rejeitado com mensagem clara."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(triggers_project),
+                "workflow", "--kind", "tipoinexistente",
+            ],
+        )
+        assert result.exit_code != 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        # Mensagem deve listar opcoes validas
+        assert "workflow" in combined.lower() and "schedule" in combined.lower()
+
     def test_workflow_persisted_in_db(
         self, triggers_project: Path
     ) -> None:
@@ -948,6 +964,27 @@ class TestExecauto:
             f"filtro com valor inexistente NAO deve sugerir reingest "
             f"(estava sugerindo desnecessariamente). stderr: {result.stderr!r}"
         )
+
+    def test_execauto_rejects_invalid_op(
+        self, execauto_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.4 (UX #4): --op invalida deve ser rejeitada com mensagem
+        clara antes de chegar na query (vs antes que retornava vazio sem
+        aviso).
+        """
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(execauto_project),
+                "execauto", "--op", "invalida",
+            ],
+        )
+        # Typer Enum violation → exit code 2 e mensagem listando opcoes
+        assert result.exit_code != 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "invalida" in combined.lower() or "invalid" in combined.lower()
+        # Mensagem deve listar opcoes validas
+        assert "inc" in combined.lower()
 
     def test_execauto_persisted_in_db(self, execauto_project: Path) -> None:
         """Sanity: tabela execauto_calls existe e tem rows."""

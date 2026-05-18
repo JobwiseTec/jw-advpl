@@ -115,6 +115,29 @@ class TableMode(StrEnum):
     reclock = "reclock"
 
 
+# v0.4.4 (UX #4): Enums pros filtros enumeráveis dos comandos Universo 3.
+# Typer rejeita valores fora do enum antes de chegar na query (com mensagem
+# clara listando as opções válidas) — substitui o comportamento antigo de
+# silenciosamente retornar vazio em `--op invalida` / `--kind tipoinexistente`.
+
+
+class WorkflowKind(StrEnum):
+    """Kinds do comando ``workflow`` (Universo 3 Feature A)."""
+
+    workflow = "workflow"
+    schedule = "schedule"
+    job_standalone = "job_standalone"
+    mail_send = "mail_send"
+
+
+class ExecAutoOp(StrEnum):
+    """Operações do filtro ``--op`` em ``execauto`` (Universo 3 Feature B)."""
+
+    inc = "inc"
+    alt = "alt"
+    exc = "exc"
+
+
 # ---------------------------------------------------------------------------
 # Callback global — popula ctx.obj com flags compartilhadas.
 # ---------------------------------------------------------------------------
@@ -1163,11 +1186,12 @@ def sx_status_cmd(ctx: typer.Context) -> None:
 def workflow(
     ctx: typer.Context,
     kind: Annotated[
-        str | None,
+        WorkflowKind | None,
         typer.Option(
             "--kind",
             "-k",
             help="Filtra por tipo: workflow|schedule|job_standalone|mail_send",
+            case_sensitive=False,
         ),
     ] = None,
     target: Annotated[
@@ -1247,8 +1271,13 @@ def execauto(
         typer.Option("--arquivo", "-a", help="Filtra por arquivo (basename, case-insensitive)."),
     ] = None,
     op: Annotated[
-        str | None,
-        typer.Option("--op", "-o", help="Filtra por operação: inc|alt|exc (op_code 3/4/5)."),
+        ExecAutoOp | None,
+        typer.Option(
+            "--op",
+            "-o",
+            help="Filtra por operação: inc|alt|exc (op_code 3/4/5).",
+            case_sensitive=False,
+        ),
     ] = None,
     dynamic: Annotated[
         bool | None,
