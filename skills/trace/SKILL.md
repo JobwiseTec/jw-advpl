@@ -31,20 +31,24 @@ plugadvpl trace A1_COD                   # ~800 tokens, tudo agregado
 ## Uso
 
 ```
-/plugadvpl:trace <entidade> [--tipo campo|funcao|tabela]
-                           [--depth 1..3] [--universo 1,2,3]
-                           [--max-per-edge N]
+/plugadvpl:trace <entidade>
+                [--tipo campo|funcao|tabela|arquivo|parametro|pergunte]
+                [--depth 1..3] [--universo 1,2,3]
+                [--max-per-edge N]
 ```
 
 ## Auto-detect de tipo
 
 | Padrão da entrada | Detectado como |
 |-------------------|----------------|
-| `SA1`, `SC5`, `ZA1`, `ND0` (3 chars [SZNQD]+letra+alfanum) | **tabela** |
-| `A1_COD`, `C5_NUM` (letra+dígito+_+nome) | **campo** |
-| Qualquer outro (`MaFisRef`, `U_MyFn`, `MATA410`, `FINA050`) | **funcao** |
+| Termina em `.prw`/`.tlpp`/`.prx`/`.apw` | **arquivo** (v0.5.3) |
+| Começa com `MV_` (`MV_LOCALIZA`) | **parametro** (v0.5.3) |
+| Letra + 1-2 alfanum + `_` + nome (`A1_COD`, `EE7_ZSUBEX`) | **campo** |
+| 3 chars uppercase (`SA1`/`SC5`/`EE7`/`DAI`/`GV4`) | **tabela** (lookup DB primeiro) |
+| Lookup em `perguntas.grupo` (`MTA010`, `ABCCOM12`) | **pergunte** (v0.5.3) |
+| Qualquer outro (`MaFisRef`, `U_MyFn`, `MATA410`) | **funcao** |
 
-Override: `--tipo campo` (ou `funcao`/`tabela`) força quando a heurística erra.
+Override: `--tipo arquivo` (ou outros) força quando a heurística erra.
 
 ## Opções
 
@@ -57,7 +61,7 @@ Override: `--tipo campo` (ou `funcao`/`tabela`) força quando a heurística erra
 ## Execução
 
 ```bash
-uvx plugadvpl@0.5.2 --format md trace $ARGUMENTS
+uvx plugadvpl@0.5.3 --format md trace $ARGUMENTS
 ```
 
 ## Saída — schema unificado
@@ -91,6 +95,19 @@ Cada hit é uma **aresta** entre a entidade-alvo e algo. Schema flat:
 - **U2**: `table_definition` (SX2) | `n_fields` (count campos SX3) | `indexed_by` (SIX) | `in_relationship` (SX9) | `trigger_on_table` (SX7)
 - **U3**: `touched_via_execauto` (tables_resolved de MsExecAuto) | `documented_in` (`@table` em Protheus.doc)
 
+### Arquivo (`ABCCOM01.prw`) — v0.5.3
+- **U1**: `arch_summary` (módulo + capabilities + LOC) | `defines_function` (funções do fonte) | `lint_finding` (top severidade)
+- **U3**: `calls_execauto` (MsExecAuto desse fonte) | `has_trigger` (workflow/schedule/job/mail) | `has_protheus_doc` (docs do fonte)
+
+### Parâmetro (`MV_LOCALIZA`) — v0.5.3
+- **U1**: `used_read` / `used_write` (parametros_uso por fonte)
+- **U2**: `param_definition` (SX6: tipo, default, descrição) | `in_pergunte_default` (SX1 que usa MV como default)
+
+### Pergunte (`MTA010`) — v0.5.3
+- **U1**: `uses_pergunte` (fontes que invocam o grupo)
+- **U2**: `pergunta_definition` (cada pergunta do grupo: variável, tipo, validação)
+- **U3**: `scheduled_with_pergunte` (schedule que dispara com esse pergunte SX1)
+
 ## Exemplos
 
 - `/plugadvpl:trace A1_COD` — auto-detect campo, todos universos, depth 2
@@ -100,6 +117,9 @@ Cada hit é uma **aresta** entre a entidade-alvo e algo. Schema flat:
 - `/plugadvpl:trace SA1 --tipo funcao` — força função (se há fonte chamado SA1)
 - `/plugadvpl:trace A1_FILIAL --max-per-edge 5` — campo super-comum, limita explosão
 - `/plugadvpl:trace U_MyFn --depth 3` — profundidade maior em gatilhos
+- `/plugadvpl:trace ABCCOM01.prw` — **(v0.5.3)** trace por arquivo (arch + docs + execauto)
+- `/plugadvpl:trace MV_LOCALIZA` — **(v0.5.3)** trace por parâmetro MV (uso + SX6)
+- `/plugadvpl:trace MTA010 --tipo pergunte` — **(v0.5.3)** trace por pergunte SX1
 
 ## Casos de uso
 
@@ -132,7 +152,7 @@ Cada hit é uma **aresta** entre a entidade-alvo e algo. Schema flat:
 
 - **Não traça macro substitution** (`&cVar`). Mesma limitação dos universos.
 - **Não detecta DDL dinâmico** (`FW_AlterTable`).
-- **MVP só 3 tipos** (campo/funcao/tabela). Bonus (parametro MV_*, pergunte SX1, arquivo, rotina) em release dot futura.
+- **6 tipos suportados** (v0.5.3): campo/funcao/tabela/arquivo/parametro/pergunte. `rotina:MATA*` ainda é tratado como função (use `execauto --routine` pra detalhe específico).
 - **Snapshot do índice** — pra ver mudanças recentes, `plugadvpl ingest --no-incremental` antes.
 
 ## Próximos passos sugeridos

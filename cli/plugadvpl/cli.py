@@ -145,12 +145,16 @@ class ExecAutoOp(StrEnum):
 
 
 # v0.5.0 (Universo 4 / Feature A): tipo do `trace` quando auto-detect erra.
+# v0.5.3 (A.2): +3 entidades — arquivo/parametro/pergunte.
 class TraceTipo(StrEnum):
     """Tipos de entidade aceitos pelo ``trace`` (Universo 4 Feature A)."""
 
     campo = "campo"
     funcao = "funcao"
     tabela = "tabela"
+    arquivo = "arquivo"
+    parametro = "parametro"
+    pergunte = "pergunte"
 
 
 # ---------------------------------------------------------------------------
@@ -1748,7 +1752,7 @@ def _trace_empty_hints(ctx: typer.Context, entidade: str) -> list[str]:
 
 
 def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
-    """v0.5.0: sugere próximo comando baseado no tipo detectado."""
+    """v0.5.0+: sugere próximo comando baseado no tipo detectado."""
     if tipo == "campo":
         return ["  plugadvpl impacto <campo>   # análise detalhada SX (depth maior)"]
     if tipo == "funcao":
@@ -1756,6 +1760,16 @@ def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
         return [f"  plugadvpl arch {arq}" for arq in fns][:3]
     if tipo == "tabela":
         return [f"  plugadvpl tables {rows[0]['alvo']} --mode write  # detalhe write"]
+    if tipo == "arquivo":
+        # v0.5.3 (A.2): arch dá visão consolidada, lint detalhe
+        return [
+            f"  plugadvpl arch {rows[0]['arquivo']}    # capabilities/tabelas detalhado",
+            f"  plugadvpl lint --arquivo {rows[0]['arquivo']}   # findings completos",
+        ]
+    if tipo == "parametro":
+        return ["  plugadvpl param <MV_*>     # uso detalhado por fonte"]
+    if tipo == "pergunte":
+        return ["  plugadvpl impacto <campo>  # se pergunte referencia campo SX3"]
     return []
 
 

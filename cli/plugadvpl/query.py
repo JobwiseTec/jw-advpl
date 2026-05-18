@@ -1459,23 +1459,32 @@ _TABLE_RE = re.compile(r"^[A-Z][A-Z0-9]{2}$", re.IGNORECASE)
 # Antes `[A-Z]\d_...` forçava letra+dígito (só 2 chars). Agora aceita
 # `EE7_ZSUBEX`/`DAI_NFISCA` (3 chars: letra + 2 alfanum).
 _CAMPO_RE = re.compile(r"^[A-Z][A-Z0-9]{1,2}_[A-Z0-9_]+$", re.IGNORECASE)
+# v0.5.3 (A.2): novas entidades suportadas no trace.
+_ARQUIVO_RE = re.compile(r"\.(prw|tlpp|prx|apw|ptm|aph)$", re.IGNORECASE)
+_PARAMETRO_RE = re.compile(r"^MV_[A-Z0-9_]+$", re.IGNORECASE)
 
 
 def _detect_entity_type(value: str) -> str:
     """Auto-detect tipo de entidade pra ``trace_query`` (v0.5.0+).
 
     Heurística por regex (fallback quando não há lookup no DB):
+      - termina em ``.prw``/``.tlpp``/``.prx``/``.apw`` → ``arquivo`` (v0.5.3)
+      - começa com ``MV_`` → ``parametro`` (v0.5.3)
       - ``<letra>+<1-2 alfanum>_<nome>`` (``A1_COD``, ``EE7_ZSUBEX``) → ``campo``
-        — checado PRIMEIRO porque tabela tem regex mais permissivo agora
+        — checado antes de tabela (regex de tabela mais permissivo agora)
       - 3 chars uppercase (``SA1``/``EE7``/``DAI``/``GV4``) → ``tabela``
       - Fallback: ``funcao``
 
     Use :func:`_detect_entity_type_db` quando ``conn`` disponível — lookup
     direto no índice é mais robusto que regex pra entidades específicas
-    do codebase do cliente.
+    do codebase do cliente (cobre ``pergunte:GRUPO`` que não tem padrão regex).
 
     Override via ``--tipo`` no CLI quando heurística erra.
     """
+    if _ARQUIVO_RE.search(value):
+        return "arquivo"
+    if _PARAMETRO_RE.match(value):
+        return "parametro"
     if _CAMPO_RE.match(value):
         return "campo"
     if _TABLE_RE.match(value):
@@ -1500,6 +1509,11 @@ def _detect_entity_type_db(
       - Auto-adapta a tabelas custom do cliente (sem regex hardcoded)
       - Cobre tabelas TOTVS de qualquer módulo (EE*/DA*/GV*/etc) sem manter lista
     """
+    # v0.5.3 (A.2): checa regex primeiro pra arquivo/parametro (extensão/prefix MV_).
+    # Esses padrões são determinísticos — não precisa DB lookup.
+    rg_type = _detect_entity_type(value)
+    if rg_type in ("arquivo", "parametro"):
+        return rg_type
     value_u = value.upper()
     # 1. SX2 indexado
     row = conn.execute(
@@ -1526,8 +1540,22 @@ def _detect_entity_type_db(
     ).fetchone()
     if row:
         return "tabela"
-    # 5. Fallback: regex
-    return _detect_entity_type(value)
+    # 5. v0.5.3 (A.2): pergunte SX1 (grupo) — só identificável por DB lookup
+    # (sem padrão regex; nomes tipo `MTA010`/`AFA110` confundem com função).
+    row = conn.execute(
+        "SELECT 1 FROM perguntas WHERE upper(grupo) = ? LIMIT 1", (value_u,)
+    ).fetchone()
+    if row:
+        return "pergunte"
+    # 6. v0.5.3 (A.2): parametro SX6 — se nao bateu no regex `MV_*` mas existe
+    # em parametros.variavel (raro: parametros sem prefixo MV_).
+    row = conn.execute(
+        "SELECT 1 FROM parametros WHERE upper(variavel) = ? LIMIT 1", (value_u,)
+    ).fetchone()
+    if row:
+        return "parametro"
+    # 7. Fallback: regex (resulta em 'funcao' se não casar com nada acima)
+    return rg_type
 
 
 # v0.5.1 (#5): edges informativos vão pro topo do output (priority menor =
@@ -2024,6 +2052,244 @@ def _trace_campo(
     return hits
 
 
+def _trace_arquivo(
+    conn: sqlite3.Connection,
+    arquivo: str,
+    *,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """v0.5.3 (A.2): trace por arquivo agregando arch + workflow + execauto + docs."""
+    hits: list[dict[str, Any]] = []
+
+    # U1: arch metadata (capabilities, módulo, namespace, lines_of_code)
+    sql = (
+        "SELECT modulo, capabilities, lines_of_code, namespace, tipo_arquivo "
+        "FROM fontes WHERE arquivo = ? COLLATE NOCASE LIMIT 1"
+    )
+    row = conn.execute(sql, (arquivo,)).fetchone()
+    if row:
+        mod, caps_json, loc, ns, tipo_arq = row
+        caps = _json_or_default(caps_json, [])
+        ctx_parts: list[str] = []
+        cdict: dict[str, Any] = {}
+        if mod:
+            ctx_parts.append(f"modulo={mod}")
+            cdict["modulo"] = mod
+        if loc:
+            ctx_parts.append(f"loc={loc}")
+            cdict["loc"] = int(loc)
+        if ns:
+            ctx_parts.append(f"ns={ns}")
+            cdict["namespace"] = ns
+        if tipo_arq:
+            cdict["tipo"] = tipo_arq
+        if caps:
+            cdict["capabilities"] = caps
+            ctx_parts.append(f"caps={len(caps)}")
+        hits.append(_trace_hit(
+            1, "arch_summary", arquivo=arquivo, alvo=arquivo,
+            contexto=" ".join(ctx_parts) or "fonte",
+            contexto_dict=cdict,
+        ))
+
+    # U1: funções definidas no fonte
+    sql = (
+        "SELECT funcao, linha_inicio, tipo_simbolo "
+        "FROM fonte_chunks WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
+    )
+    for fn, ln, kind in conn.execute(sql, (arquivo, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "defines_function", arquivo=arquivo, funcao=fn or "",
+            linha=int(ln or 0), alvo=fn or "",
+            contexto=kind or "function",
+            contexto_dict={"kind": kind or "function"},
+        ))
+
+    # U1: lint findings (top severidade)
+    sql = (
+        "SELECT regra_id, severidade, linha, snippet, COUNT(*) OVER (PARTITION BY regra_id) AS dup "
+        "FROM lint_findings WHERE arquivo = ? COLLATE NOCASE "
+        "ORDER BY CASE severidade "
+        "WHEN 'critical' THEN 1 WHEN 'error' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END "
+        "LIMIT ?"
+    )
+    for regra, sev, ln, snip, _dup in conn.execute(sql, (arquivo, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "lint_finding", arquivo=arquivo, linha=int(ln or 0),
+            alvo=regra, contexto=f"sev={sev}",
+            contexto_dict={"regra": regra, "severidade": sev},
+            snippet=snip or "",
+        ))
+
+    # U3: execauto calls do fonte
+    sql = (
+        "SELECT funcao, linha, routine, module, op_label "
+        "FROM execauto_calls WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
+    )
+    for fn, ln, rt, mod, oplbl in conn.execute(sql, (arquivo, max_per_edge)):
+        hits.append(_trace_hit(
+            3, "calls_execauto", arquivo=arquivo, funcao=fn or "",
+            linha=int(ln or 0), alvo=rt or "(dynamic)",
+            contexto=f"module={mod or '?'} op={oplbl or '?'}",
+            contexto_dict={"routine": rt or "", "module": mod or "", "op": oplbl or ""},
+        ))
+
+    # U3: execution_triggers do fonte
+    sql = (
+        "SELECT funcao, linha, kind, target "
+        "FROM execution_triggers WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
+    )
+    for fn, ln, kind, target in conn.execute(sql, (arquivo, max_per_edge)):
+        hits.append(_trace_hit(
+            3, "has_trigger", arquivo=arquivo, funcao=fn or "",
+            linha=int(ln or 0), alvo=target or "",
+            contexto=f"kind={kind}",
+            contexto_dict={"kind": kind, "target": target or ""},
+        ))
+
+    # U3: protheus_docs do fonte
+    sql = (
+        "SELECT funcao, linha_funcao, tipo, author, deprecated, summary "
+        "FROM protheus_docs WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
+    )
+    for fn, ln, tipo_doc, author, dep, summ in conn.execute(sql, (arquivo, max_per_edge)):
+        cdict: dict[str, Any] = {"tipo": tipo_doc or ""}
+        if author:
+            cdict["author"] = author
+        if dep:
+            cdict["deprecated"] = True
+        hits.append(_trace_hit(
+            3, "has_protheus_doc", arquivo=arquivo, funcao=fn or "",
+            linha=int(ln or 0), alvo=fn or "",
+            contexto=f"tipo={tipo_doc or '?'}" + (" DEPRECATED" if dep else ""),
+            contexto_dict=cdict,
+            snippet=(summ or "")[:120],
+        ))
+
+    return hits
+
+
+def _trace_parametro(
+    conn: sqlite3.Connection,
+    parametro: str,
+    *,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """v0.5.3 (A.2): trace por parametro MV_* agregando uso + SX6."""
+    hits: list[dict[str, Any]] = []
+    param_u = parametro.upper()
+
+    # U1: uso em código (parametros_uso)
+    sql = (
+        "SELECT arquivo, modo, COUNT(*) FROM parametros_uso "
+        "WHERE upper(parametro) = ? GROUP BY arquivo, modo LIMIT ?"
+    )
+    for arq, modo, n in conn.execute(sql, (param_u, max_per_edge)):
+        hits.append(_trace_hit(
+            1, f"used_{modo}" if modo else "used", arquivo=arq, alvo=parametro,
+            contexto=f"n={int(n)} mode={modo or '?'}",
+            contexto_dict={"n_usos": int(n), "mode": modo or ""},
+        ))
+
+    # U2: definição SX6
+    sql = (
+        "SELECT filial, tipo, descricao, conteudo, proprietario "
+        "FROM parametros WHERE upper(variavel) = ? LIMIT 1"
+    )
+    for fil, tp, descr, cont, prop in conn.execute(sql, (param_u,)):
+        ctx_parts = [f"tipo={tp}"]
+        cdict: dict[str, Any] = {"tipo": tp or ""}
+        if fil:
+            ctx_parts.append(f"filial={fil}")
+            cdict["filial"] = fil
+        if cont:
+            cdict["default"] = cont
+        if prop:
+            cdict["proprietario"] = prop
+        hits.append(_trace_hit(
+            2, "param_definition", alvo=parametro,
+            contexto=" ".join(ctx_parts),
+            contexto_dict=cdict,
+            snippet=(descr or "")[:120],
+        ))
+
+    # U2: SX1 que usa o MV como default (X1_DEF01 LIKE %MV%)
+    sql = (
+        "SELECT grupo, ordem, pergunta, variavel "
+        "FROM perguntas WHERE upper(conteudo_padrao) LIKE ? LIMIT ?"
+    )
+    for grp, ord_, perg, var in conn.execute(sql, (f"%{param_u}%", max_per_edge)):
+        hits.append(_trace_hit(
+            2, "in_pergunte_default", alvo=f"{grp}.{ord_}",
+            contexto=f"variavel={var}",
+            contexto_dict={"grupo": grp, "ordem": ord_, "variavel": var},
+            snippet=perg or "",
+        ))
+
+    return hits
+
+
+def _trace_pergunte(
+    conn: sqlite3.Connection,
+    grupo: str,
+    *,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """v0.5.3 (A.2): trace por pergunte (grupo SX1) agregando uso + perguntas + schedules."""
+    hits: list[dict[str, Any]] = []
+    grupo_u = grupo.upper()
+
+    # U1: uso em código (perguntas_uso)
+    sql = (
+        "SELECT arquivo, COUNT(*) FROM perguntas_uso "
+        "WHERE upper(grupo) = ? GROUP BY arquivo LIMIT ?"
+    )
+    for arq, n in conn.execute(sql, (grupo_u, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "uses_pergunte", arquivo=arq, alvo=grupo,
+            contexto=f"n={int(n)}",
+            contexto_dict={"n_usos": int(n)},
+        ))
+
+    # U2: perguntas SX1 do grupo
+    sql = (
+        "SELECT ordem, pergunta, variavel, tipo, validacao "
+        "FROM perguntas WHERE upper(grupo) = ? ORDER BY ordem LIMIT ?"
+    )
+    for ord_, perg, var, tp, val in conn.execute(sql, (grupo_u, max_per_edge)):
+        cdict: dict[str, Any] = {"ordem": ord_, "variavel": var or "", "tipo": tp or ""}
+        if val:
+            cdict["validacao"] = val
+        hits.append(_trace_hit(
+            2, "pergunta_definition", alvo=f"{grupo}.{ord_}",
+            contexto=f"variavel={var or '?'} tipo={tp or '?'}",
+            contexto_dict=cdict,
+            snippet=perg or "",
+        ))
+
+    # U3: schedules que apontam pra esse pergunte (metadata.pergunte)
+    sql = (
+        "SELECT arquivo, funcao, linha, metadata_json "
+        "FROM execution_triggers WHERE kind = 'schedule' "
+        "AND metadata_json LIKE ? LIMIT ?"
+    )
+    for arq, fn, ln, meta_json in conn.execute(
+        sql, (f'%"pergunte": "{grupo_u}"%', max_per_edge)
+    ):
+        from plugadvpl.parsing.triggers import parse_metadata
+        meta = parse_metadata(meta_json or "{}")
+        if (meta.get("pergunte") or "").upper() != grupo_u:
+            continue
+        hits.append(_trace_hit(
+            3, "scheduled_with_pergunte", arquivo=arq, funcao=fn or "",
+            linha=int(ln or 0), alvo=grupo,
+            contexto=f"sched_type={meta.get('sched_type', '?')}",
+            contexto_dict={"sched_type": meta.get("sched_type", "")},
+        ))
+
+    return hits
+
+
 def trace_query(
     conn: sqlite3.Connection,
     entidade: str,
@@ -2060,6 +2326,12 @@ def trace_query(
         hits = _trace_funcao(conn, entidade, max_per_edge=max_per_edge)
     elif tipo == "tabela":
         hits = _trace_tabela(conn, entidade, max_per_edge=max_per_edge)
+    elif tipo == "arquivo":
+        hits = _trace_arquivo(conn, entidade, max_per_edge=max_per_edge)
+    elif tipo == "parametro":
+        hits = _trace_parametro(conn, entidade, max_per_edge=max_per_edge)
+    elif tipo == "pergunte":
+        hits = _trace_pergunte(conn, entidade, max_per_edge=max_per_edge)
     else:
         return []
 

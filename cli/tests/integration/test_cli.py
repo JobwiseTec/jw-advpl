@@ -1635,6 +1635,36 @@ class TestTrace:
         assert result.exit_code == 0
         # SA1 nao eh funcao definida; resultado provavelmente vazio (mas exit 0)
 
+    def test_trace_arquivo_aggregates_arch_doc_execauto(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.5.3 (A.2): trace de arquivo agrega arch_summary + defines_function
+        + has_protheus_doc + calls_execauto."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "MyCmp.prw"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        edges = {r["edge"] for r in rows}
+        # MyCmp.prw tem Protheus.doc + chama MsExecAuto MATA410 + define U_MyCmp
+        assert "arch_summary" in edges or "defines_function" in edges, f"edges={edges}"
+        assert "calls_execauto" in edges, f"edges={edges}"
+        assert "has_protheus_doc" in edges, f"edges={edges}"
+
+    def test_trace_arquivo_auto_detect_by_extension(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """trace MyCmp.prw deve detectar como tipo=arquivo automaticamente."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "trace", "MyCmp.prw"],
+        )
+        assert result.exit_code == 0
+        # Title menciona tipo=arquivo
+        out = (result.stdout or "") + (result.stderr or "")
+        assert "tipo=arquivo" in out, f"out={out[:300]!r}"
+
     def test_trace_contexto_dict_structured_in_json(
         self, trace_project: Path, runner: CliRunner
     ) -> None:

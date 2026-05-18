@@ -4,6 +4,61 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-05-18
+
+### 🔌 Trace estendido — +3 tipos de entidade (Universo 4 Feature A.2)
+
+`trace` ganha 3 tipos novos de entidade (`arquivo`, `parametro`, `pergunte`),
+saindo de 3 → **6 tipos suportados**. Reaproveita 100% das queries existentes
+(sem schema migration novo). Cobre os casos faltantes do MVP v0.5.0:
+"trace um arquivo inteiro", "trace um MV_*", "trace um grupo SX1".
+
+### Added
+- **`arquivo:X.prw`** (auto-detect por extensão `.prw`/`.tlpp`/`.prx`/`.apw`).
+  Edges:
+  - **U1**: `arch_summary` (módulo + capabilities + LOC + namespace) |
+    `defines_function` (cada função do fonte) | `lint_finding` (top severidade)
+  - **U3**: `calls_execauto` (todas chamadas MsExecAuto do fonte) |
+    `has_trigger` (workflow/schedule/job/mail) | `has_protheus_doc`
+- **`parametro:MV_*`** (auto-detect por prefixo `MV_`).
+  Edges:
+  - **U1**: `used_read`/`used_write` (parametros_uso agrupado por fonte+modo)
+  - **U2**: `param_definition` (SX6: tipo/default/descrição) |
+    `in_pergunte_default` (SX1 que usa MV como conteúdo padrão)
+- **`pergunte:GRUPO`** (auto-detect via lookup em `perguntas.grupo`).
+  Edges:
+  - **U1**: `uses_pergunte` (fontes que invocam o grupo via PutSx1)
+  - **U2**: `pergunta_definition` (cada pergunta do grupo: variável/tipo/validação)
+  - **U3**: `scheduled_with_pergunte` (schedule SX1 que dispara com esse grupo)
+
+### Changed
+- **`_detect_entity_type` ordem atualizada**: arquivo → parametro → campo →
+  tabela → função (fallback). Padrões mais específicos primeiro.
+- **`_detect_entity_type_db` extended** — lookup pra `perguntas.grupo` e
+  `parametros.variavel` (sem prefixo MV_). Reordena pra checar regex
+  arquivo/parametro PRIMEIRO (determinístico, dispensa DB hit).
+- **`TraceTipo` enum** ganha 3 valores novos: `arquivo`, `parametro`, `pergunte`.
+- **`_trace_next_steps`** sugere comandos contextualmente:
+  - `arquivo` → sugere `arch` + `lint --arquivo`
+  - `parametro` → sugere `param <MV>`
+  - `pergunte` → sugere `impacto <campo>` (se cruza com SX3)
+
+### Tests
+- **+2 testes unit** (`test_trace.py::TestAutoDetect`):
+  arquivo por extensão (5 cases) + parametro MV_ prefix (3 cases)
+- **+2 testes integration** (`test_cli.py::TestTrace`):
+  trace de arquivo agrega arch/doc/execauto + auto-detect por extensão
+- **537 testes verde** (era 533).
+
+### Notes
+- **Zero schema migration** — reaproveita 100% das tabelas existentes
+  (fontes, parametros_uso, perguntas_uso, parametros, perguntas, etc.).
+- **Skill atualizada** com casos de uso pros 3 tipos novos.
+- **Fecha o MVP-out do trace v0.5.0**: agora cobre os 6 tipos que eram
+  candidatos no spec original (campo/funcao/tabela + arquivo/parametro/pergunte).
+- **`rotina:MATA410` continua tratado como `funcao`** (já cobre — quem chama
+  via MsExecAuto aparece em `via_execauto`).
+
 ## [0.5.2] - 2026-05-18
 
 ### 📦 `trace` ganha `contexto_dict` estruturado (fecha #4 do bug report)

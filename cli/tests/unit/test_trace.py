@@ -27,6 +27,21 @@ class TestAutoDetect:
         assert _detect_entity_type("MATA410") == "funcao"
         assert _detect_entity_type("ValidaCampo") == "funcao"
 
+    def test_arquivo_by_extension(self) -> None:
+        """v0.5.3 (A.2): arquivos por extensão .prw/.tlpp/.prx/.apw."""
+        assert _detect_entity_type("ABCCOM01.prw") == "arquivo"
+        assert _detect_entity_type("MyWS.tlpp") == "arquivo"
+        assert _detect_entity_type("Legacy.prx") == "arquivo"
+        assert _detect_entity_type("HTTP.apw") == "arquivo"
+        # case-insensitive na extensão
+        assert _detect_entity_type("MATA410.PRW") == "arquivo"
+
+    def test_parametro_mv_prefix(self) -> None:
+        """v0.5.3 (A.2): MV_* vira parametro (SX6)."""
+        assert _detect_entity_type("MV_LOCALIZA") == "parametro"
+        assert _detect_entity_type("MV_PAR01") == "parametro"
+        assert _detect_entity_type("MV_GFE83F") == "parametro"
+
     def test_ambiguous_uppercase_fallback_funcao(self) -> None:
         """4+ chars uppercase (rotinas TOTVS) NÃO viram tabela."""
         assert _detect_entity_type("FINA050") == "funcao"
