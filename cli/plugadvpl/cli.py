@@ -59,6 +59,7 @@ from plugadvpl.query import (
     doctor_diagnostics,
     doctor_func_count_check,
     execauto_calls_query,
+    execauto_top_modulos,
     execution_triggers_duplicates,
     execution_triggers_query,
     find_any,
@@ -66,6 +67,7 @@ from plugadvpl.query import (
     protheus_doc_show,
     protheus_docs_orphans,
     protheus_docs_query,
+    protheus_docs_top_modulos,
     render_pdoc_markdown,
     gatilho_query,
     grep_fts,
@@ -1424,12 +1426,25 @@ def execauto(
             else _empty_result_hints(
                 bool(routine or modulo or arquivo or op or dynamic is not None),
                 table_label="execauto call",
-                extra_when_filtered=[
+                extra_when_filtered=_execauto_modulo_hints(ctx, modulo) + [
                     "  plugadvpl execauto --dynamic     # ver calls não-resolvíveis",
                 ],
             )
         ),
     )
+
+
+def _execauto_modulo_hints(
+    ctx: typer.Context, modulo_filter: str | None
+) -> list[str]:
+    """v0.4.6 (E): se filtro --modulo X foi usado e nao deu match, sugere
+    os top-5 modulos disponiveis no indice."""
+    if not modulo_filter:
+        return []
+    available = _with_ro_db(ctx, lambda c: execauto_top_modulos(c, 5))
+    if not available:
+        return []
+    return [f"  Módulos disponíveis: {', '.join(available)}"]
 
 
 # ---------------------------------------------------------------------------
@@ -1565,12 +1580,25 @@ def docs(
             else _empty_result_hints(
                 bool(modulo or author or funcao or arquivo or deprecated is not None or tipo),
                 table_label="Protheus.doc",
-                extra_when_filtered=[
+                extra_when_filtered=_docs_modulo_hints(ctx, modulo) + [
                     "  plugadvpl docs --orphans         # funções sem header (BP-007)",
                 ],
             )
         ),
     )
+
+
+def _docs_modulo_hints(
+    ctx: typer.Context, modulo_filter: str | None
+) -> list[str]:
+    """v0.4.6 (E): se filtro [modulo] foi usado e não deu match, sugere
+    os top-5 módulos disponíveis no índice de protheus_docs."""
+    if not modulo_filter:
+        return []
+    available = _with_ro_db(ctx, lambda c: protheus_docs_top_modulos(c, 5))
+    if not available:
+        return []
+    return [f"  Módulos disponíveis: {', '.join(available)}"]
 
 
 # ---------------------------------------------------------------------------

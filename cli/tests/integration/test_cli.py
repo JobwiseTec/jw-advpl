@@ -1022,6 +1022,27 @@ class TestExecauto:
         row = json.loads(result.stdout)["rows"][0]
         assert row.get("tabelas_via_execauto_resolvidas", []) == []
 
+    def test_execauto_empty_modulo_suggests_available_modules(
+        self, execauto_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.6 (E): --modulo SIGAINEXISTENTE NAO existe no indice deve
+        sugerir os modulos disponiveis nos next_steps.
+        """
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(execauto_project),
+                "execauto", "--modulo", "SIGAINEXISTENTE",
+            ],
+        )
+        assert result.exit_code == 0
+        stderr = result.stderr or ""
+        # Stderr (next_steps) deve mencionar modulos reais (SIGAFAT/SIGAFIN
+        # estao no fixture execauto_project)
+        assert "SIGAFAT" in stderr or "SIGAFIN" in stderr, (
+            f"esperado sugestao de modulos disponiveis. stderr={stderr!r}"
+        )
+
     def test_execauto_empty_with_filter_does_not_suggest_ingest(
         self, execauto_project: Path, runner: CliRunner
     ) -> None:

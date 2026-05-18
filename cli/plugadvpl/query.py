@@ -914,6 +914,31 @@ _EXEC_TRIGGER_KINDS = {
 }  # v0.4.6 (F): wf_callback separado de workflow
 
 
+def execauto_top_modulos(conn: sqlite3.Connection, n: int = 5) -> list[str]:
+    """v0.4.6 (E): top-N módulos no índice execauto_calls (mais usados).
+
+    Usado pra sugerir alternativas quando filtro ``--modulo`` retorna vazio.
+    """
+    rows = conn.execute(
+        "SELECT module, COUNT(*) AS c FROM execauto_calls "
+        "WHERE module IS NOT NULL AND module != '' "
+        "GROUP BY module ORDER BY c DESC LIMIT ?",
+        (n,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def protheus_docs_top_modulos(conn: sqlite3.Connection, n: int = 5) -> list[str]:
+    """v0.4.6 (E): top-N módulos no índice protheus_docs."""
+    rows = conn.execute(
+        "SELECT module_inferido, COUNT(*) AS c FROM protheus_docs "
+        "WHERE module_inferido IS NOT NULL AND module_inferido != '' "
+        "GROUP BY module_inferido ORDER BY c DESC LIMIT ?",
+        (n,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def execution_triggers_duplicates(
     conn: sqlite3.Connection,
     *,
