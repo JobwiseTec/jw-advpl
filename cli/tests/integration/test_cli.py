@@ -486,6 +486,49 @@ class TestDoctor:
         checks = {r["check"] for r in payload["rows"]}
         assert "fts_sync" in checks
 
+    def test_doctor_check_funcs_regex_matches_tlpp_bare_function(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.8: detector aceita TLPP `Function` puro (sem prefixo) — antes
+        regex exigia (Static|User|Main) e contava menos que o parser,
+        gerando funcs_real_bug FALSO POSITIVO (parser correto, detector erra).
+
+        Repro: 1 fonte com 4 declaracoes (cobertura case + bare):
+          1. Bare `Function U_X(...)` (TLPP-style)
+          2. lowercase `static function Y()`
+          3. CamelCase `Static Function Z()`
+          4. lowercase `function W()`
+        Parser pega todas 4. Detector deve pegar 4 tambem -> 0 real_bug.
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "Sample.tlpp").write_bytes(
+            b'Function U_Sample(cArg as character)\n'
+            b'Return\n'
+            b'\n'
+            b'static function helperA()\n'
+            b'Return\n'
+            b'\n'
+            b'Static Function HelperB()\n'
+            b'Return\n'
+            b'\n'
+            b'function helperC()\n'
+            b'Return\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "doctor", "--check-funcs"],
+        )
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        checks = {r["check"]: r for r in payload["rows"]}
+        # ZERO funcs_real_bug — detector reconhece as 4 declaracoes (parser tb)
+        assert checks["funcs_real_bug"]["count"] == 0, (
+            f"detector ainda perde fn. detail={checks['funcs_real_bug']['detail']!r}"
+        )
+
     def test_doctor_check_funcs_classifies_commented_vs_real_bug(
         self, tmp_path: Path, runner: CliRunner
     ) -> None:

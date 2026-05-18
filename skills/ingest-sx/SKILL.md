@@ -29,7 +29,7 @@ Pré-requisito: rodar `/plugadvpl:init` antes (cria `.plugadvpl/index.db`).
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.4.7 ingest-sx $ARGUMENTS
+uvx plugadvpl@0.4.8 ingest-sx $ARGUMENTS
 ```
 
 ## Exemplos

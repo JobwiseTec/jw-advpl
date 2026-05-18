@@ -349,8 +349,12 @@ def stale_files(
     return out
 
 
+# v0.4.8: prefix (Static|User|Main) eh OPCIONAL — alinha com parser._FUNCTION_RE.
+# Antes regex exigia prefixo e perdia TLPP-style `Function FooBar(...)` puro,
+# causando funcs_real_bug FALSO POSITIVO (parser indexa correto, detector
+# que estava contando menos).
 _FN_RE_DOCTOR = re.compile(
-    r"^[ \t]*(?:Static|User|Main)[ \t]+Function[ \t]+\w+",
+    r"^[ \t]*(?:(?:Static|User|Main)[ \t]+)?Function[ \t]+\w+",
     re.IGNORECASE | re.MULTILINE,
 )
 

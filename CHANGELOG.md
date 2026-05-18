@@ -4,6 +4,52 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-05-18
+
+### 🔍 Detector `--check-funcs` aceita TLPP `Function` puro + lowercase
+
+Adendo 2 da bug report do v0.4.7 identificou 2 `funcs_real_bug` remanescentes
+no corpus do reporter — todos **falsos positivos do DETECTOR**, não do parser.
+Causa: regex do detector exigia prefixo `(Static|User|Main)`, perdendo:
+- TLPP-style `Function U_Foo(cArg as character)` (sem prefixo)
+- Lowercase `static function`, `function` (ambos válidos no compilador AppServer)
+
+O parser real (`parsing/parser.py::_FUNCTION_RE`) já tinha o prefixo opcional
+e contava certo. Só o detector de validação (`query.py::_FN_RE_DOCTOR`) estava
+descalibrado.
+
+### Fixed
+- **`_FN_RE_DOCTOR` agora alinha com `_FUNCTION_RE` do parser**.
+  Antes: `^[ \t]*(?:Static|User|Main)[ \t]+Function[ \t]+\w+` (prefixo obrigatório).
+  Agora: `^[ \t]*(?:(?:Static|User|Main)[ \t]+)?Function[ \t]+\w+` (prefixo opcional).
+  Já era `re.IGNORECASE`, então lowercase também passa a casar.
+
+### Impact (medido no corpus real do reporter)
+- **`funcs_real_bug`**: 2 → **0**.
+- **`funcs_commented_out`**: 36 (inalterado — segregação intencional do v0.4.7).
+- Critério #2 do Adendo 2 (B6) ✅ atendido: ciclo bug-report → fix → reteste fecha
+  com **0 funções perdidas pelo parser de indexação no codebase do Cliente X**.
+
+### Tests
+- **+1 teste integration**:
+  `test_doctor_check_funcs_regex_matches_tlpp_bare_function` cobre 4 variantes
+  (bare `Function`, lowercase `function`, lowercase `static function`,
+  CamelCase `Static Function`).
+- **510 testes verde**.
+
+### Notes
+- Boa pegada do reporter: parser estava correto desde v0.4.5, só o detector de
+  validação tinha gap. Sem essa observação, falsos positivos ficariam reportados
+  como warnings indefinidamente.
+- **Estado final do ciclo deste bug** (4 releases, 2 adendos):
+  | Versão | Marco |
+  |--------|-------|
+  | 0.4.4 | Bug original descoberto |
+  | 0.4.5 | Fix parser (string mal-formada engolia funções) |
+  | 0.4.6 | `doctor --check-funcs` adicionado (sugestão #5) |
+  | 0.4.7 | Split em `funcs_real_bug` vs `funcs_commented_out` |
+  | **0.4.8** | **Detector regex alinhado com parser → 0 false positives** |
+
 ## [0.4.7] - 2026-05-18
 
 ### 🩺 `doctor --check-funcs` refinado — separa real bug vs commented-out + sem truncagem
