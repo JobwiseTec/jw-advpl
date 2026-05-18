@@ -244,6 +244,41 @@ def _with_ro_db(
         conn.close()
 
 
+def _empty_result_hints(
+    filters_applied: bool,
+    *,
+    table_label: str,
+    extra_when_filtered: list[str] | None = None,
+) -> list[str]:
+    """Sugestões para resultado vazio (v0.4.4 UX #3).
+
+    Diferencia 2 cenários:
+
+    - ``filters_applied=True``: filtro semanticamente vazio (ex.: --arquivo
+      inexistente) → sugere verificar o filtro, NÃO sugere reingest caro.
+    - ``filters_applied=False``: tabela realmente vazia → sugere reingest.
+
+    Args:
+        filters_applied: True se o usuário passou pelo menos 1 filtro.
+        table_label: rótulo amigável da tabela (ex.: "triggers", "calls").
+        extra_when_filtered: hints adicionais úteis quando filtrado
+            (ex.: ``--dynamic`` pra execauto).
+    """
+    if filters_applied:
+        hints = [
+            "Filtro retornou vazio. Verifique se os argumentos batem com o índice:",
+            "  plugadvpl find <termo>           # confirma nome",
+            "  plugadvpl status                  # ver contadores",
+        ]
+        if extra_when_filtered:
+            hints.extend(extra_when_filtered)
+        return hints
+    return [
+        f"Nenhum {table_label} no índice. Rode:",
+        "  plugadvpl ingest --no-incremental",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # version
 # ---------------------------------------------------------------------------
@@ -1181,9 +1216,12 @@ def workflow(
             + (f" (arquivo={arquivo})" if arquivo else "")
         ),
         next_steps=(
-            [f"plugadvpl find {target}" for target in {r["target"] for r in rows[:3] if r["target"]}]
+            [f"plugadvpl find {t}" for t in {r["target"] for r in rows[:3] if r["target"]}]
             if rows
-            else ["plugadvpl ingest --no-incremental  # se nada detectado"]
+            else _empty_result_hints(
+                bool(kind or target or arquivo),
+                table_label="execution trigger",
+            )
         ),
     )
 
@@ -1267,10 +1305,13 @@ def execauto(
                 for arq in {r["arquivo"] for r in rows[:3]}
             ]
             if rows
-            else [
-                "plugadvpl ingest --no-incremental  # se esperava findings",
-                "plugadvpl execauto --dynamic       # ver calls não-resolvíveis",
-            ]
+            else _empty_result_hints(
+                bool(routine or modulo or arquivo or op or dynamic is not None),
+                table_label="execauto call",
+                extra_when_filtered=[
+                    "  plugadvpl execauto --dynamic     # ver calls não-resolvíveis",
+                ],
+            )
         ),
     )
 
@@ -1404,10 +1445,13 @@ def docs(
                 for r in rows[:3] if r.get("funcao")
             ]
             if rows
-            else [
-                "plugadvpl docs --orphans  # funções sem header",
-                "plugadvpl ingest --no-incremental  # se esperava docs",
-            ]
+            else _empty_result_hints(
+                bool(modulo or author or funcao or arquivo or deprecated is not None or tipo),
+                table_label="Protheus.doc",
+                extra_when_filtered=[
+                    "  plugadvpl docs --orphans         # funções sem header (BP-007)",
+                ],
+            )
         ),
     )
 

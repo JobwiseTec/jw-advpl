@@ -928,6 +928,27 @@ class TestExecauto:
         row = json.loads(result.stdout)["rows"][0]
         assert row.get("tabelas_via_execauto_resolvidas", []) == []
 
+    def test_execauto_empty_with_filter_does_not_suggest_ingest(
+        self, execauto_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.4 (UX #3): filtro vazio (--arquivo inexistente) NAO deve sugerir
+        ingest --no-incremental. Deve sugerir verificar o filtro.
+
+        next_steps sao impressos em stderr (LLM hints).
+        """
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(execauto_project),
+                "execauto", "--arquivo", "NAOEXISTE.prw",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "ingest --no-incremental" not in (result.stderr or ""), (
+            f"filtro com valor inexistente NAO deve sugerir reingest "
+            f"(estava sugerindo desnecessariamente). stderr: {result.stderr!r}"
+        )
+
     def test_execauto_persisted_in_db(self, execauto_project: Path) -> None:
         """Sanity: tabela execauto_calls existe e tem rows."""
         db = execauto_project / ".plugadvpl" / "index.db"
