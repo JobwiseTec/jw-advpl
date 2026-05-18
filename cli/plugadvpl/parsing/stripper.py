@@ -120,6 +120,17 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 out.append(" ")
         elif state in ("str_dq", "str_sq"):
             quote = '"' if state == "str_dq" else "'"
+            # v0.4.5 (bug critico): ADVPL nao permite strings multi-linha.
+            # String nao-fechada (erro sintatico ou codigo morto/legado)
+            # antes consumia ate o proximo `\"`/`'` no arquivo — engolindo
+            # declaracoes Function silenciosamente. Agora `\n` encerra a
+            # string e volta a code state.
+            if c == "\n":
+                state = "code"
+                out.append("\n")
+                at_start_of_line = True
+                i += 1
+                continue
             if c == "\\" and i + 1 < n:
                 out.append("  ")
                 i += 2
@@ -128,9 +139,16 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 state = "code"
                 out.append(" ")
             else:
-                out.append(" " if c != "\n" else "\n")
+                out.append(" ")
         elif state in ("str_dq_keep", "str_sq_keep"):
             quote = '"' if state == "str_dq_keep" else "'"
+            # v0.4.5: idem para modo keep — fecha string ao encontrar `\n`.
+            if c == "\n":
+                state = "code"
+                out.append("\n")
+                at_start_of_line = True
+                i += 1
+                continue
             if c == "\\" and i + 1 < n:
                 # Preserva escape e próximo char (não interpreta)
                 out.append(c)

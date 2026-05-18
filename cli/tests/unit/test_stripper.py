@@ -58,6 +58,36 @@ class TestStrings:
         assert "SA1" not in out  # estava dentro de string single-quoted
         assert "DbSelectArea" in out
 
+    def test_unclosed_double_quote_does_not_cross_newline(self) -> None:
+        """v0.4.5 (bug crítico): string nao-fechada NAO pode consumir as
+        linhas subsequentes ate achar um `\"`. ADVPL nao permite strings
+        multi-linha — codigo legado/morto pode ter strings mal-formadas
+        que antes faziam o stripper engolir centenas de linhas (incluindo
+        declaracoes Function), causando perda silenciosa de funcoes no indice.
+        """
+        src = (
+            'cQuery += " unclosed\n'  # string aberta, nao fecha
+            'Static Function Engolida()\n'  # NAO pode ser engolida
+            '   Return\n'
+            'Return\n'
+        )
+        out = strip_advpl(src)
+        # A declaracao da Function deve aparecer no stripped
+        assert "Static Function Engolida" in out, (
+            f"declaracao Function foi engolida por string mal-formada; "
+            f"stripped={out!r}"
+        )
+
+    def test_unclosed_single_quote_does_not_cross_newline(self) -> None:
+        """Mesmo cenario com aspas simples."""
+        src = (
+            "cQuery := 'unclosed\n"
+            "Static Function Engolida()\n"
+            "Return\n"
+        )
+        out = strip_advpl(src)
+        assert "Static Function Engolida" in out
+
 
 class TestNoFalsePositives:
     def test_reclock_in_comment_disappears(self) -> None:

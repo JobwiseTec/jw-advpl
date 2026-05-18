@@ -4,6 +4,68 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-05-18
+
+### 🚨 Bug crítico — stripper engolia declarações Function após string mal-formada
+
+Usuário em produção reportou que `Static Function` declarada não aparecia
+no índice (`arch.funcoes` listava 4 de 5 funções declaradas no source).
+Investigação revelou que o problema afetava **~9% dos fontes reais**
+inspecionados (182 de ~2000), com perda silenciosa de funções inteiras
+do índice.
+
+### Fixed
+- **Stripper agora encerra string ao encontrar `\n`** ([parsing/stripper.py:121-143](cli/plugadvpl/parsing/stripper.py)).
+  Antes: ao encontrar string não-fechada na mesma linha (ex.: SQL
+  concatenação com aspas duplas faltando o close), o stripper entrava em
+  state `str_dq`/`str_sq` e consumia caracteres incluindo `\n` até achar
+  o próximo `"`/`'` no arquivo — engolindo dezenas ou centenas de linhas,
+  incluindo declarações `User/Static/Main Function` do meio.
+
+  ADVPL não permite strings multi-linha. O fix encerra a string ao
+  encontrar `\n` (volta a `code` state), preservando declarações
+  subsequentes.
+
+  Aplicado em ambos os modos do stripper:
+  - `strip_strings=True` (default — comportamento padrão)
+  - `strip_strings=False` (mode keep — usado por extratores de strings literais)
+
+### Impact (medido em corpus real)
+- **80.2% de redução** em fontes com discrepância: de 182 → 36 fontes.
+- Comandos afetados que agora veem funções antes perdidas: `arch`, `find`,
+  `callers`, `callees`, `docs --orphans`, lint cross-file (BP-007), todos
+  que dependem do índice de funções.
+- Sem necessidade de schema migration. Reindex (`plugadvpl ingest
+  --no-incremental`) é recomendado pra colher as funções antes perdidas.
+
+### Tests
+- **+3 testes novos**:
+  - `test_stripper.py::TestStrings::test_unclosed_double_quote_does_not_cross_newline`
+  - `test_stripper.py::TestStrings::test_unclosed_single_quote_does_not_cross_newline`
+  - `test_parser.py::TestExtractFunctions::test_unclosed_string_does_not_swallow_subsequent_functions`
+- **499 testes verde** (era 498 — note que test_stripper.py exige `hypothesis`
+  como dep dev e fica fora do CI padrão; os 2 novos rodam via test_parser).
+
+### Limitações conhecidas (defer pra release dot futura)
+- **Block comment `/* ... */` não-fechado** ainda pode engolir funções
+  (~36 fontes remanescentes na corpus real). Diferente do caso string,
+  ADVPL permite block comment multi-linha legitimamente (devs comentam
+  funções inteiras dessa forma) — não dá pra fechar agressivamente sem
+  quebrar uso intencional. Heurística defensiva (cap de N linhas, ou
+  detectar `Function` em linha-própria dentro de comment) candidato pra
+  v0.4.6.
+- **Doctor check de discrepância func-count** (sugerido como defesa em
+  profundidade na issue): defer pra v0.4.6. Implementação requer ou novo
+  schema (coluna `funcoes_raw` em `fontes`) ou root path acessível ao
+  comando `doctor`. Escopo maior — fica pra release dedicada.
+
+### Notes
+- Bug aberto desde v0.1.x — sempre esteve lá, só foi pego agora porque
+  usuário com corpus real cross-referenciou docs manualmente com saída do
+  `arch`.
+- Padrão a manter: dogfooding com usuário em produção pega bugs que
+  fixtures sintéticas não cobrem.
+
 ## [0.4.4] - 2026-05-18
 
 ### 🛡️ QA pack — fecha 2 bugs médios + 2 UX reportados em uso real

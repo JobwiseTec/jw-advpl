@@ -101,6 +101,36 @@ class TestExtractFunctions:
         assert by_name["Foo"]["linha_inicio"] == 2
         assert by_name["Bar"]["linha_inicio"] == 5
 
+    def test_unclosed_string_does_not_swallow_subsequent_functions(self) -> None:
+        """v0.4.5 (bug crítico): string mal-formada (não fechada na mesma
+        linha) antes consumia tudo até o próximo `\"` no arquivo, engolindo
+        declaracoes Function silenciosamente. Causava perda de funcoes do
+        indice em ~9% dos fontes reais inspecionados.
+
+        Test garante que as 3 funcoes sao detectadas mesmo com string mal-
+        formada na funcao do meio.
+        """
+        src = (
+            'User Function FnAntes()\n'
+            'Return\n'
+            '\n'
+            'Static Function FnComBug()\n'
+            '   cQuery := " WHERE X = \'a\'\n'  # string nao-fechada (5 aspas duplas no fonte inteiro)
+            '   ConOut("ok")\n'
+            'Return\n'
+            '\n'
+            'Static Function FnDepois()\n'  # antes era engolida
+            '   ConOut("deveria estar no indice")\n'
+            'Return\n'
+        )
+        names = [f["nome"] for f in extract_functions(src)]
+        assert "FnAntes" in names
+        assert "FnComBug" in names
+        assert "FnDepois" in names, (
+            f"FnDepois foi engolida pela string nao-fechada de FnComBug. "
+            f"names={names}"
+        )
+
 
 class TestAddFunctionRanges:
     def test_ranges_set_from_next_function(self) -> None:
