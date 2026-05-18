@@ -38,9 +38,13 @@ _PDOC_BLOCK_RE = re.compile(
 )
 
 # Próxima decl de função/método após o fechamento.
+# v0.4.4 (BUG #2): inclui construtos de Web Service (WSSTRUCT/WSSERVICE/
+# WSRESTFUL/WSMETHOD) que não têm parens. Antes ficavam órfãos e
+# `docs --funcao`/`docs --show` não encontrava.
 _NEXT_DECL_RE = re.compile(
     r"^\s*(?:User\s+|Static\s+|Main\s+)?Function\s+(\w+)\s*\("
-    r"|^\s*Method\s+(\w+)\s*\(",
+    r"|^\s*Method\s+(\w+)\s*\("
+    r"|^\s*WS(?:STRUCT|SERVICE|RESTFUL|METHOD)\s+(\w+)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -221,7 +225,8 @@ def _resolve_next_decl(
     decl_line = _line_at(content, m.start())
     if decl_line - block_end_line > _PDOC_ORPHAN_LINE_CAP:
         return None, None
-    name = m.group(1) or m.group(2)
+    # v0.4.4 (BUG #2): grupo 3 cobre WS constructs (WSSTRUCT/WSSERVICE/etc).
+    name = m.group(1) or m.group(2) or m.group(3)
     return name, decl_line
 
 

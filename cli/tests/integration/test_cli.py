@@ -1120,6 +1120,48 @@ class TestDocs:
         assert result2.exit_code == 0
         assert "Beto" in result2.stdout
 
+    def test_docs_show_ws_constructs_end_to_end(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.4 (BUG #2): docs --funcao e --show funcionam pra
+        WSSTRUCT/WSSERVICE/WSMETHOD (antes ficavam órfãos)."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "MyWS.tlpp").write_bytes(
+            b'/*/{Protheus.doc} WSXDATA\n@type property\n/*/\n'
+            b'WSSTRUCT WSXDATA\n'
+            b'   WSDATA cId AS STRING\n'
+            b'ENDWSSTRUCT\n'
+            b'\n'
+            b'/*/{Protheus.doc} MyWS\n@type class\n/*/\n'
+            b'WSSERVICE MyWS DESCRIPTION "Servico"\n'
+            b'\n'
+            b'/*/{Protheus.doc} GravData\n@type method\n/*/\n'
+            b'WSMETHOD GravData DESCRIPTION "Grava" WSSERVICE MyWS\n'
+            b'   Local lOk := .T.\n'
+            b'Return lOk\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+
+        # --funcao pra cada um dos 3 deve retornar 1 row
+        for nome in ("WSXDATA", "MyWS", "GravData"):
+            r = runner.invoke(
+                app,
+                ["--root", str(src), "--format", "json", "docs", "--funcao", nome],
+            )
+            assert r.exit_code == 0, r.stderr
+            rows = json.loads(r.stdout)["rows"]
+            assert len(rows) == 1, f"esperado 1 row pra {nome}, recebi {len(rows)}"
+
+        # --show formatado
+        r = runner.invoke(
+            app, ["--root", str(src), "docs", "--show", "GravData"]
+        )
+        assert r.exit_code == 0, r.stderr
+        assert "## GravData" in r.stdout
+        assert "@type method" in r.stdout
+
     def test_docs_persisted_in_db(self, docs_project: Path) -> None:
         """Sanity: tabela protheus_docs existe e tem 2 rows."""
         db = docs_project / ".plugadvpl" / "index.db"

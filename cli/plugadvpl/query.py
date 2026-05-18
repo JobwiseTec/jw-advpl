@@ -1088,8 +1088,11 @@ def protheus_docs_query(
         where.append("author LIKE ? COLLATE NOCASE")
         params.append(f"%{author}%")
     if funcao:
-        where.append("funcao = ? COLLATE NOCASE")
-        params.append(funcao)
+        # v0.4.4 (BUG #2): fallback pra funcao_id quando a coluna funcao
+        # ficou NULL (ex.: bloco órfão, ou DB indexado em versão antiga
+        # que não conhecia WSSTRUCT/WSSERVICE/etc).
+        where.append("(funcao = ? COLLATE NOCASE OR funcao_id = ? COLLATE NOCASE)")
+        params.extend([funcao, funcao])
     if arquivo:
         where.append("arquivo = ? COLLATE NOCASE")
         params.append(arquivo)
@@ -1142,9 +1145,16 @@ def protheus_doc_show(
     v0.4.3 (I2): aceita ``arquivo`` opcional pra desambiguar quando há
     homônimos. Caller pode usar :func:`protheus_doc_homonyms` antes pra
     detectar e listar opções.
+
+    v0.4.4 (BUG #2): match também via ``funcao_id`` quando coluna ``funcao``
+    está NULL (DBs antigos com WSSTRUCT/WSSERVICE não-resolvidos, ou
+    blocos órfãos cuja decl seguinte ficou > 80 linhas adiante).
     """
-    sql = f"SELECT {_PDOC_COLUMNS} FROM protheus_docs WHERE funcao = ? COLLATE NOCASE"
-    params: list[Any] = [funcao]
+    sql = (
+        f"SELECT {_PDOC_COLUMNS} FROM protheus_docs "
+        "WHERE (funcao = ? COLLATE NOCASE OR funcao_id = ? COLLATE NOCASE)"
+    )
+    params: list[Any] = [funcao, funcao]
     if arquivo:
         sql += " AND arquivo = ? COLLATE NOCASE"
         params.append(arquivo)
@@ -1162,11 +1172,15 @@ def protheus_doc_homonyms(
 
     Usado por `docs --show` pra avisar quando há ambiguidade. Retorna lista
     ordenada de basenames.
+
+    v0.4.4 (BUG #2): match também via ``funcao_id`` (cobertura de blocos
+    órfãos e WS constructs em DBs antigos).
     """
     rows = conn.execute(
         "SELECT DISTINCT arquivo FROM protheus_docs "
-        "WHERE funcao = ? COLLATE NOCASE ORDER BY arquivo",
-        (funcao,),
+        "WHERE funcao = ? COLLATE NOCASE OR funcao_id = ? COLLATE NOCASE "
+        "ORDER BY arquivo",
+        (funcao, funcao),
     ).fetchall()
     return [r[0] for r in rows]
 

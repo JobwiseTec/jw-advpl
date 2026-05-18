@@ -405,3 +405,48 @@ class TestFunctionResolution:
         d = extract_protheus_docs(src)[0]
         assert d["funcao_id"] == "OldName"
         assert d["funcao"] == "NewName"
+
+    def test_funcao_resolved_for_wsstruct(self) -> None:
+        """v0.4.4 (BUG #2): WSSTRUCT é construto top-level com header doc.
+
+        Antes: _NEXT_DECL_RE só matchava Function/Method com parens — WSSTRUCT
+        (sem parens) ficava com funcao=None, e --funcao/--show falhava.
+        """
+        src = (
+            '/*/{Protheus.doc} WSXDATA\n@type property\n/*/\n'
+            'WSSTRUCT WSXDATA\n'
+            '   WSDATA cId AS STRING\n'
+            '   WSDATA cName AS STRING\n'
+            'ENDWSSTRUCT\n'
+        )
+        d = extract_protheus_docs(src)[0]
+        assert d["funcao"] == "WSXDATA", (
+            f"WSSTRUCT deveria ser resolvido como funcao; recebeu {d['funcao']!r}"
+        )
+
+    def test_funcao_resolved_for_wsservice(self) -> None:
+        """WSSERVICE com DESCRIPTION + NAMESPACE."""
+        src = (
+            '/*/{Protheus.doc} MyWS\n@type class\n/*/\n'
+            'WSSERVICE MyWS DESCRIPTION "Servico SOAP" NAMESPACE "http://x"\n'
+        )
+        d = extract_protheus_docs(src)[0]
+        assert d["funcao"] == "MyWS"
+
+    def test_funcao_resolved_for_wsrestful(self) -> None:
+        """WSRESTFUL com DESCRIPTION."""
+        src = (
+            '/*/{Protheus.doc} MyREST\n@type class\n/*/\n'
+            'WSRESTFUL MyREST DESCRIPTION "Servico REST"\n'
+        )
+        d = extract_protheus_docs(src)[0]
+        assert d["funcao"] == "MyREST"
+
+    def test_funcao_resolved_for_wsmethod(self) -> None:
+        """WSMETHOD com DESCRIPTION."""
+        src = (
+            '/*/{Protheus.doc} GravarDados\n@type method\n/*/\n'
+            'WSMETHOD GravarDados DESCRIPTION "Grava" WSSERVICE MyWS\n'
+        )
+        d = extract_protheus_docs(src)[0]
+        assert d["funcao"] == "GravarDados"
