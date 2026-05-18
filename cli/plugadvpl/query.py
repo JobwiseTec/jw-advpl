@@ -914,6 +914,48 @@ _EXEC_TRIGGER_KINDS = {
 }  # v0.4.6 (F): wf_callback separado de workflow
 
 
+def execution_triggers_duplicates(
+    conn: sqlite3.Connection,
+    *,
+    kind: str | None = None,
+) -> list[dict[str, Any]]:
+    """v0.4.6 (K): lista targets compartilhados entre fontes diferentes.
+
+    Útil pra detectar erros de design — ex.: 2 TWFProcess em fontes
+    distintos com mesmo process_id. Sem trigger duplicates a colisão fica
+    silenciosa no índice; aqui ela vira finding explícito.
+
+    Returns:
+        Lista de dicts ordenada por count desc:
+        ``{kind, target, count, arquivos: list[str]}``.
+        Só inclui rows com count >= 2 e target não-vazio.
+    """
+    sql = (
+        "SELECT kind, target, COUNT(DISTINCT arquivo) AS n, "
+        "GROUP_CONCAT(DISTINCT arquivo) AS arqs "
+        "FROM execution_triggers "
+        "WHERE target IS NOT NULL AND target != ''"
+    )
+    params: list[Any] = []
+    if kind:
+        if kind not in _EXEC_TRIGGER_KINDS:
+            return []
+        sql += " AND kind = ?"
+        params.append(kind)
+    sql += " GROUP BY kind, target HAVING n >= 2 ORDER BY n DESC, kind, target"
+    rows = conn.execute(sql, params).fetchall()
+    out: list[dict[str, Any]] = []
+    for k, tgt, n, arqs in rows:
+        arquivos_list = sorted((arqs or "").split(",")) if arqs else []
+        out.append({
+            "kind": k,
+            "target": tgt,
+            "count": int(n),
+            "arquivos": arquivos_list,
+        })
+    return out
+
+
 def execution_triggers_query(
     conn: sqlite3.Connection,
     *,

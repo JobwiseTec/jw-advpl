@@ -59,6 +59,7 @@ from plugadvpl.query import (
     doctor_diagnostics,
     doctor_func_count_check,
     execauto_calls_query,
+    execution_triggers_duplicates,
     execution_triggers_query,
     find_any,
     protheus_doc_homonyms,
@@ -1243,6 +1244,14 @@ def workflow(
         str | None,
         typer.Option("--arquivo", "-a", help="Filtra por arquivo (basename)."),
     ] = None,
+    duplicates: Annotated[
+        bool,
+        typer.Option(
+            "--duplicates",
+            help="v0.4.6 (K): lista targets (process_id/Main/pergunte) compartilhados "
+            "entre 2+ fontes — detecta erros de design (mesmo Process ID reusado).",
+        ),
+    ] = False,
 ) -> None:
     """Lista execution_triggers indexados (Universo 3 / Feature A).
 
@@ -1254,7 +1263,33 @@ def workflow(
     - ``mail_send``      — MailAuto / SEND MAIL UDC / TMailManager
 
     Sem filtros: lista tudo. Com ``--kind`` mostra só uma categoria.
+    Com ``--duplicates`` mostra apenas targets em conflito.
     """
+    if duplicates:
+        dup_rows = _with_ro_db(
+            ctx, lambda c: execution_triggers_duplicates(c, kind=kind),
+        )
+        display_dup = [
+            {
+                "kind": r["kind"],
+                "target": r["target"],
+                "count": r["count"],
+                "arquivos": ", ".join(r["arquivos"]),
+            }
+            for r in dup_rows
+        ]
+        _render_from_ctx(
+            ctx,
+            display_dup,
+            columns=["kind", "target", "count", "arquivos"],
+            title=f"Workflow targets duplicados{f' (kind={kind})' if kind else ''}",
+            next_steps=(
+                [f"plugadvpl workflow --target {dup_rows[0]['target']}"]
+                if dup_rows
+                else None
+            ),
+        )
+        return
     rows = _with_ro_db(
         ctx, lambda c: execution_triggers_query(c, kind=kind, target=target, arquivo=arquivo),
     )

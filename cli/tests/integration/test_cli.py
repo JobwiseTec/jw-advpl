@@ -821,6 +821,44 @@ class TestWorkflow:
         # Mensagem deve listar opcoes validas
         assert "workflow" in combined.lower() and "schedule" in combined.lower()
 
+    def test_workflow_duplicates_detects_shared_target(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.6 (K): --duplicates lista targets compartilhados entre
+        fontes diferentes (vitoria do plugin: detecta erros de design
+        onde dev reusou Process ID/Main name por engano).
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        # 2 fontes com mesmo process_id 'CONFLITO' (real bug pattern)
+        (src / "WfA.prw").write_bytes(
+            b'User Function WfA()\n'
+            b'   oWF := TWFProcess():New("CONFLITO", "Workflow A")\n'
+            b'   oWF:Start()\n'
+            b'Return\n'
+        )
+        (src / "WfB.prw").write_bytes(
+            b'User Function WfB()\n'
+            b'   oWF := TWFProcess():New("CONFLITO", "Workflow B (diferente)")\n'
+            b'   oWF:Start()\n'
+            b'Return\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "workflow", "--duplicates"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert len(rows) >= 1
+        # row deve conter target compartilhado + count >= 2
+        conflito = next((r for r in rows if r["target"] == "CONFLITO"), None)
+        assert conflito is not None, f"esperado target CONFLITO em rows={rows}"
+        assert conflito["count"] >= 2
+        assert "WfA.prw" in conflito["arquivos"]
+        assert "WfB.prw" in conflito["arquivos"]
+
     def test_workflow_persisted_in_db(
         self, triggers_project: Path
     ) -> None:
