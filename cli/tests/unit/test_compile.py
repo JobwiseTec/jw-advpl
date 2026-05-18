@@ -55,3 +55,24 @@ class TestChangedSince:
         from plugadvpl.compile import _resolve_changed_since
         with pytest.raises(RuntimeError, match="git"):
             _resolve_changed_since("HEAD", tmp_path)
+
+
+class TestPickMode:
+    def test_explicit_mode_wins(self) -> None:
+        from plugadvpl.compile import pick_mode
+        assert pick_mode("cli", runtime_cfg=None) == "cli"
+        assert pick_mode("appre", runtime_cfg=None) == "appre"
+
+    def test_auto_no_runtime_cfg_picks_appre(self) -> None:
+        from plugadvpl.compile import pick_mode
+        assert pick_mode("auto", runtime_cfg=None) == "appre"
+
+    def test_auto_with_reachable_picks_cli(self) -> None:
+        from plugadvpl.compile import pick_mode
+        cfg = MagicMock(appserver_reachable=True)
+        assert pick_mode("auto", runtime_cfg=cfg) == "cli"
+
+    def test_auto_with_unreachable_picks_appre(self) -> None:
+        from plugadvpl.compile import pick_mode
+        cfg = MagicMock(appserver_reachable=False)
+        assert pick_mode("auto", runtime_cfg=cfg) == "appre"

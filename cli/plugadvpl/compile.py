@@ -85,6 +85,14 @@ def _resolve_changed_since(ref: str, root: Path) -> list[Path]:
     return [root / line for line in proc.stdout.splitlines() if line.strip()]
 
 
+def pick_mode(requested: str, runtime_cfg: RuntimeConfig | None) -> str:
+    if requested in ("cli", "appre"):
+        return requested
+    if runtime_cfg is not None and runtime_cfg.appserver_reachable:
+        return "cli"
+    return "appre"
+
+
 def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) -> CompileResult:
     """Entry point — orquestra todas as etapas e devolve resultado."""
     raise NotImplementedError("modo appre vem no Step 4.5; cli na Task 5")
