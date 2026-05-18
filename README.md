@@ -290,11 +290,11 @@ Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma q
 
 ## Status
 
-**v0.7.0 — Fase 0 (Quick Wins runtime/encoding/webservice) entregue.**
+**v0.8.0 — Fase 1 (compile wrapper TDS-LS) entregue.**
 
-- **24 subcomandos** (incluindo `edit-prw {check,open,save}`), **40 skills**, 4 agents, 1 hook
+- **25 subcomandos** (incluindo `compile` com `--init-config`), **40 skills**, 4 agents, 1 hook
 - **27 tabelas físicas** (22 fontes/SX + 3 Universo 3 + 1 Universo 4 + 1 lint) + 2 FTS5 + 7 lookups
-- **622 testes verde** (unit + integration + bench + e2e_local)
+- **702 testes verde** (unit + integration + bench + e2e_local)
 - Bench em ~2.000 fontes: ingest <60s com `--workers 8`; ingest-sx
   do dicionário completo (~420k rows) <30s
 - Schema v10 — migrations 005-007 (Universo 3) + 008 (índices polish) + 010 (Universo 4 métricas)
@@ -309,9 +309,10 @@ Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma q
 - **v0.4** *(shipped)* — Universo 3 (Rastreabilidade): execução não-direta (`workflow`/schedule/job/mail), ExecAuto chain (`execauto`), Protheus.doc agregada (`docs`).
 - **v0.5/v0.6** *(shipped)* — Universo 4 (Trace unificado + Qualidade & métricas): `trace`, `metrics`, `hotspots`, `cobertura-doc`. Schema v10 (`fonte_metrics`).
 - **v0.7** *(shipped)* — Fase 0 (Quick Wins): lint rules WS-001/002/003 + XF-001 + ENC-001, comando `edit-prw`, contract doc `U_EXEC` + reference impl MIT.
-- **Fases 1-5** *(planejado)* — runtime ADVPL completo: `compile` (TDS-LS), `exec` (cliente U_EXEC), `deploy` (hot-swap RPO), `smoke`+`test`, hooks Claude Code.
+- **v0.8** *(shipped)* — Fase 1 (compile wrapper TDS-LS): `plugadvpl compile` com modos `appre`/`cli`, `--init-config`, schema JSON estável, lint patterns externalizados, 140+ novos testes.
+- **Fases 2-5** *(planejado)* — runtime ADVPL completo: `exec` (cliente U_EXEC), `deploy` (hot-swap RPO), `smoke`+`test`, hooks Claude Code.
 
-Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo3/`, `docs/universo4/`, `docs/fase0/`.
+Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo3/`, `docs/universo4/`, `docs/fase0/`, `docs/fase1/`.
 
 ---
 

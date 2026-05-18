@@ -112,13 +112,28 @@ Detalhes em [`docs/fase0/quick-wins.md`](fase0/quick-wins.md):
 
 622 testes verde. Zero dependência externa.
 
+## ✅ v0.8.0 — Fase 1: plugadvpl compile (wrapper TDS-LS) (2026-05-18)
+
+Primeiro passo do roadmap de runtime ADVPL — wrapper Python sobre o binário
+oficial `advpls` (TOTVS) com saída JSON estruturada. Detalhes em
+[`docs/fase1/compile-design.md`](fase1/compile-design.md).
+
+- **`plugadvpl compile <fonte...>`** com modos `appre` (local) e `cli` (full
+  via AppServer TCP), auto-detect.
+- **`plugadvpl compile --init-config`** gera template `runtime.toml`.
+- **Schema JSON estável** + 5 lint patterns externalizados em
+  `lookups/compile_patterns.json` + 6 redact patterns em
+  `lookups/redact_patterns.json`.
+- **140+ novos testes** (702 verde total). 5 testes de no-credential-leak.
+- **4 módulos novos** isolados: runtime_config, compile_parser, compile, cli.
+
+Pavimenta Fase 2 (`plugadvpl exec` — cliente HTTP do contrato U_EXEC).
+
 ## 🟡 Próximas Fases — Runtime ADVPL completo (sem ETA fixa)
 
-Roadmap de 5 fases para fechar o ciclo "indexar → compilar → executar →
+Roadmap restante para fechar o ciclo "indexar → compilar → executar →
 testar → deployar" sem precisar abrir TDS:
 
-- **Fase 1 — `plugadvpl compile`**: wrapper TDS-LS (`advpls`) para compilar
-  sob demanda. Reporta erros em formato JSON estruturado.
 - **Fase 2 — `plugadvpl exec`**: cliente HTTP nativo que consome o contrato
   `U_EXEC` (v0.7.0). Executa função arbitrária com args via CLI.
 - **Fase 3 — `plugadvpl deploy`**: hot-swap RPO (strategies a definir).

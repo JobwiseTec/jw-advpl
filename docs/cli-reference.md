@@ -331,6 +331,58 @@ Exit codes:
 - `1` — check mismatch ou erro de conversão (`--from` inválido)
 - `2` — arquivo não encontrado
 
+### <a id="compile"></a>`compile <fonte...>` (v0.8.0 Fase 1)
+
+Compila fontes ADVPL via wrapper sobre o binário `advpls` (TOTVS). Dois modos:
+`appre` (pré-processador local, sem AppServer) ou `cli` (full compile via
+AppServer TCP, requer `runtime.toml`).
+
+```
+plugadvpl compile <fontes...> [--mode auto|appre|cli]
+                              [--changed-since <git-ref>]
+                              [--no-warnings] [--timeout <seg>]
+                              [--no-security-warning] [--includes <path>]
+plugadvpl compile --init-config [--force]
+```
+
+**Setup uma vez por projeto:**
+```bash
+plugadvpl compile --init-config     # gera .plugadvpl/runtime.toml comentado
+# Edita o TOML preenchendo binary, host, port, environment, build, env vars
+export PROTHEUS_USER=admin
+export PROTHEUS_PASS='<senha>'
+```
+
+**Uso:**
+```bash
+plugadvpl compile foo.prw bar.prw           # full compile via AppServer
+plugadvpl compile foo.prw --mode appre      # só pré-processador local
+plugadvpl compile --changed-since HEAD~1    # tudo que mudou no commit
+plugadvpl compile foo.prw --format json     # output estruturado p/ CI
+```
+
+**Exit codes:**
+- `0` — sucesso (zero errors)
+- `1` — compile encontrou error
+- `2` — config/setup inválido (runtime.toml ausente em --mode cli, env var
+  faltando, binary não encontrado, etc.)
+- `130` — `KeyboardInterrupt` (POSIX 128+SIGINT)
+
+**Schema JSON** (`--format json`):
+```json
+{"rows":[{"arquivo","ok","mode","duration_ms","exit_code",
+ "counts":{"error","warning","info","unknown"},"diagnostics":[...]}]}
+```
+
+Cada `diagnostic` tem 7 campos: `severidade`, `arquivo`, `linha`, `coluna`,
+`mensagem`, `codigo`, `raw`. Bucket `__unmatched__` para diagnostics com
+arquivo fora dos requested.
+
+**Security warning**: em `--mode cli` com host remoto, imprime warning no
+stderr recomendando SSH tunnel local. Suprime com `--no-security-warning`.
+
+Spec completa: [`docs/fase1/compile-design.md`](fase1/compile-design.md).
+
 ---
 
 ## <a id="universo-2"></a>Universo 2 — Dicionário SX (v0.3)

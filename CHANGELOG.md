@@ -4,6 +4,98 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-18
+
+### 🚀 Fase 1 — `plugadvpl compile` (wrapper TDS-LS)
+
+Novo subcomando que invoca o binário oficial `advpls` (TOTVS) como subprocess
+e devolve resultado **estruturado em JSON**. Fecha o primeiro passo do ciclo
+"indexar → compilar → executar → testar → deployar" sem precisar abrir TDS-VSCode.
+
+Spec completa em [`docs/fase1/compile-design.md`](docs/fase1/compile-design.md).
+Plano de implementação em [`docs/superpowers/plans/2026-05-18-fase1-compile.md`](docs/superpowers/plans/2026-05-18-fase1-compile.md).
+
+### Added
+
+- **`plugadvpl compile <fonte...>`** — compila fontes ADVPL via wrapper sobre `advpls`.
+  - `--mode auto|appre|cli` — `appre` (pré-processador local, sem AppServer) ou
+    `cli` (full compile via AppServer TCP). Auto detecta se AppServer responde.
+  - `--changed-since <git-ref>` — filtra por `git diff --name-only` (CI-friendly).
+  - `--no-warnings` filtra warnings no output. `--timeout <seg>` mata subprocess.
+  - `--includes <path>` override. `--no-security-warning` suprime alerta de host remoto.
+- **`plugadvpl compile --init-config`** — gera template `<root>/.plugadvpl/runtime.toml`
+  + adiciona ao `.gitignore` automaticamente (`--force` sobrescreve).
+- **Schema JSON estável** (`--format json`):
+  ```json
+  {"rows":[{"arquivo","ok","mode","duration_ms","exit_code",
+   "counts":{"error","warning","info","unknown"},"diagnostics":[...]}]}
+  ```
+  Cada diagnostic tem 7 campos (severidade, arquivo, linha, coluna, mensagem,
+  codigo, raw). Bucket `__unmatched__` para diagnostics com arquivo fora dos
+  requested.
+- **`runtime.toml` opt-in** com 5 seções (`[tds_ls]`, `[appserver]`, `[auth]`,
+  `[compile]`, `[logging]`) mapeadas 1:1 ao `.ini` real do advpls. Credenciais
+  via env var (nome no TOML, valor no ambiente).
+- **Auto-detect de modo**: se `runtime.toml` ausente OU AppServer não responde,
+  fallback transparente para `appre`. Mode `cli` explícito sem config → exit 2.
+- **Security warning para host remoto**: imprime aviso + comando `ssh -L` no
+  stderr quando `appserver.host` ≠ `127.0.0.1`. Sem sleep (princípio "fail
+  visivelmente"). Suprime com `--no-security-warning`.
+- **Encoding boundary robusta**:
+  - Script `.ini` gerado sempre em CP1252 (reusa `edit_prw.encode_cp1252_bytes`).
+  - Output do advpls: detecta BOM UTF-16 LE/BE + UTF-8 + fallback CP1252.
+- **Lifecycle subprocess defensivo**: `stdin=DEVNULL`, captura bytes (não text),
+  `TimeoutExpired` → terminate + wait(5) + kill + diagnostic sintético,
+  `KeyboardInterrupt` → terminate + wait(5) + kill + re-raise (CLI converte em
+  exit 130 POSIX). Tempfile `.ini` em tempdir `mkdtemp(prefix='plugadvpl-')`
+  com permission 0o600 (POSIX) — limpo no `finally` em TODOS os caminhos.
+- **`lookups/compile_patterns.json`** — 5 patterns iniciais (en + pt-BR + any)
+  com schema `{id, lang, pattern, ordem, severidade_group|severidade_fixed}`.
+  Tie-break determinístico: dois patterns com mesma `ordem` → vence primeiro
+  do JSON. Extensível via PR de 1 linha.
+- **`lookups/redact_patterns.json`** — 6 patterns de mascaramento de credencial
+  (password/psw/senha/pwd/hex_keys/aut_file) aplicados em `diagnostic.raw` E
+  `diagnostic.mensagem`. Garante zero leak no output estruturado.
+
+### Tests
+
+- **+140 testes** (run_config 14 + compile_parser 12 + compile 27 + edit_prw +2 +
+  catalog 13 + integration CLI 8 + smoke scaffolding 2).
+- **702+ testes verde** (era 562 no v0.7.0).
+- 5 testes específicos de **no-credential-leak** confirmando regex
+  `(?i)(password|psw|senha|pwd)\s*[:=]\s*\S+` ausente em stdout/stderr/
+  diagnostic.raw em cenários típicos.
+- Catalog consistency tests garantem que `compile_patterns.json` e
+  `redact_patterns.json` mantêm schema estável (pattern compila, severidade
+  XOR, ids únicos, groups válidos).
+- Schema JSON contract test em integration.
+- Smoke real scaffolding (`tests/smoke/test_compile_real.py`) — skip por
+  default, ativa com `PLUGADVPL_SMOKE=1`. Loop iterativo documentado
+  (rodar smoke → coletar output → sanitizar → fixture → ajustar patterns).
+
+### Architecture
+
+- **4 módulos novos**: `runtime_config.py` (config TOML, função pura),
+  `compile_parser.py` (regex parser, função pura), `compile.py` (orchestrator
+  — único módulo com side effects de subprocess + fs), `cli.py` (subcomando
+  typer aninhado).
+- **Isolamento estrito**: parser e config não tocam subprocess. Orchestrator
+  recebe ambos como input. Cada módulo testável em isolamento.
+- **Paridade conceitual com TDS-VSCode**: `--init-config` ≈ wizard de server,
+  `runtime.toml` ≈ `servers.json`, env var ≈ SecretStorage, `compile foo.prw`
+  ≈ F9, `--changed-since` ≈ Compile All, `--format json` ≈ tab Problems.
+
+### Notes
+
+- **Pavimenta Fase 2** (`plugadvpl exec` — cliente HTTP do contrato U_EXEC da
+  Fase 0) e **Fase 3** (`plugadvpl deploy` — hot-swap RPO).
+- Princípios mantidos: sem IP TOTVS, opt-in via runtime.toml, sem assumir
+  Docker/Cloudflare, JSON estruturado, credenciais via env var, fail
+  visivelmente sem retry mágico, sem sleep em warnings.
+- Loop de revisão automatizada (spec + code quality reviewers) usado em todas
+  as 7 tasks de implementação. Plano de spec + implementação documentados em
+  `docs/fase1/`.
+
 ## [0.7.0] - 2026-05-18
 
 ### 🎁 Fase 0 — Quick Wins (Runtime/Encoding/Webservice)
