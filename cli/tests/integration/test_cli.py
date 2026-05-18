@@ -1635,6 +1635,48 @@ class TestTrace:
         assert result.exit_code == 0
         # SA1 nao eh funcao definida; resultado provavelmente vazio (mas exit 0)
 
+    def test_trace_contexto_dict_structured_in_json(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.5.2 (#4): JSON output inclui contexto_dict (chave/valor
+        estruturado) alem da string contexto. Consumidor programatico evita
+        parse manual de 'tabela=EE7 tipo=C(3) ...'.
+
+        Aditivo: contexto (string) inalterado pra nao quebrar consumers
+        existentes; contexto_dict (dict) novo.
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "U_MyCmp"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert rows
+        # Todas as rows tem o campo (mesmo que dict vazio)
+        for r in rows:
+            assert "contexto" in r, f"contexto (string) ausente: {r}"
+            assert "contexto_dict" in r, f"contexto_dict ausente: {r}"
+            assert isinstance(r["contexto_dict"], dict)
+        # Pelo menos uma row com contexto estruturado (defined_in tem 'kind')
+        defined = [r for r in rows if r["edge"] == "defined_in"]
+        assert defined
+        # defined_in tem contexto tipo "user_function" — pode ser dict {"kind": "user_function"}
+        # ou string atomic. Se for atomic, dict pode ser {} ou {"text": "user_function"}.
+        # Aqui só confirma que o campo existe — formato exato fica a critério do collector.
+
+    def test_trace_contexto_dict_table_render_unchanged(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """Render table NAO mostra contexto_dict — só a coluna contexto string.
+        Backward compat: layout default igual ao v0.5.1."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "trace", "U_MyCmp"],
+        )
+        assert result.exit_code == 0
+        # 'contexto_dict' NAO deve aparecer no header da tabela
+        assert "contexto_dict" not in (result.stdout or "")
+
     def test_trace_defined_in_alvo_is_funcao_name(
         self, trace_project: Path, runner: CliRunner
     ) -> None:

@@ -4,6 +4,59 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-18
+
+### 📦 `trace` ganha `contexto_dict` estruturado (fecha #4 do bug report)
+
+Reporter v0.5.0 sugeriu (#4): coluna `contexto` carrega chave=valor não-
+estruturado, exige parse manual em consumidores programáticos. v0.5.1
+deferiu por ser decisão de design. v0.5.2 entrega a versão aditiva
+(zero break em consumers existentes).
+
+### Added
+- **Campo `contexto_dict` em todas as rows de `trace_query`** — dict
+  estruturado paralelo à string `contexto`. Não muda comportamento de
+  table render (que mostra só `contexto` string), mas JSON ganha schema
+  pra consumidor programático.
+
+  Exemplos:
+  | `edge` | `contexto` (string) | `contexto_dict` (novo) |
+  |--------|---------------------|------------------------|
+  | `field_definition` | `"tabela=EE7 tipo=C(3) ctx=R"` | `{"tabela": "EE7", "tipo": "C(3)", "ctx": "R"}` |
+  | `indexed_by` | `"ord=2 nick=-"` | `{"ord": "2", "nick": "", "chave": "EE7_FILIAL"}` |
+  | `reads`/`writes` | `"mode=read"` | `{"mode": "read"}` |
+  | `called_by` | `"call type=user_func"` | `{"call_type": "user_func"}` |
+  | `validates_field` | `"X3_VALID"` | `{"slot": "X3_VALID", "tabela": "EE7", "campo": "EE7_X"}` |
+  | `via_execauto` | `"module=SIGAFAT op=inclusao"` | `{"module": "SIGAFAT", "op": "inclusao"}` |
+  | `triggered_by_*` | `"kind=workflow"` | `{"kind": "workflow"}` |
+  | `documented_in` | `"author=X since=Y"` | `{"author": "X", "since": "Y", "deprecated": true}` |
+  | `table_definition` | `"modo=E custom=0"` | `{"modo": "E", "custom": 0}` |
+  | `n_fields` | `"30 campos SX3"` | `{"n_campos": 30}` |
+  | `in_relationship` | `"id=ZA01 expr_origem=ZA1_FIL->..."` | `{"id": "ZA01", "tabela_origem": "ZA1", ...}` |
+
+### Backward compat
+- **Zero break** — campo `contexto` (string) inalterado em valor e formato
+- Table/MD render mostram apenas `contexto` (default), `contexto_dict`
+  fica oculto (não está na lista de `columns` do render)
+- JSON consumers existentes continuam funcionando (campo extra é ignorável)
+- Auto-derive: se collector passa só `contexto_dict`, `_trace_hit` deriva
+  string `"k1=v1 k2=v2"` automaticamente (não há regressão de display)
+
+### Tests
+- **+2 testes integration** (`test_cli.py::TestTrace`):
+  - `test_trace_contexto_dict_structured_in_json` valida campo aparece em JSON
+  - `test_trace_contexto_dict_table_render_unchanged` valida que table render
+    NÃO mostra `contexto_dict` (mantém layout enxuto)
+- **533 testes verde** (era 531).
+
+### Notes
+- Fecha o último item deferred do PLUGADVPL_BUGS_TRACE_AUTODETECT.md.
+  Todos os 6 itens reportados pelo reporter v0.5.0 resolvidos em 2 releases
+  (v0.5.1 com 5 itens, v0.5.2 com este).
+- `contexto_dict` ganha alguns campos extras úteis (ex.: `tabela`/`campo`
+  em `validates_field`, `tabela_origem`/`tabela_destino` em `in_relationship`)
+  que a string não tinha — programaticamente mais útil.
+
 ## [0.5.1] - 2026-05-18
 
 ### 🎯 `trace` polish — 5 itens reportados em uso real

@@ -1566,9 +1566,20 @@ def _trace_hit(
     linha: int = 0,
     alvo: str = "",
     contexto: str = "",
+    contexto_dict: dict[str, Any] | None = None,
     snippet: str = "",
 ) -> dict[str, Any]:
-    """Constrói um dict de hit do trace (schema unificado)."""
+    """Constrói um dict de hit do trace (schema unificado).
+
+    v0.5.2 (#4): aditivo ``contexto_dict`` pra consumidor JSON evitar parse
+    manual de string ``"k1=v1 k2=v2"``. Se ``contexto`` não passado mas
+    ``contexto_dict`` sim, deriva string automaticamente. Render table
+    só mostra ``contexto`` (backward compat).
+    """
+    cdict = dict(contexto_dict) if contexto_dict else {}
+    # Auto-derive string se só dict foi passado.
+    if not contexto and cdict:
+        contexto = " ".join(f"{k}={v}" for k, v in cdict.items() if v not in (None, ""))
     return {
         "universo": universo,
         "edge": edge,
@@ -1577,6 +1588,7 @@ def _trace_hit(
         "linha": int(linha or 0),
         "alvo": alvo,
         "contexto": contexto,
+        "contexto_dict": cdict,
         "snippet": (snippet or "")[:120],
     }
 
@@ -1613,11 +1625,15 @@ def _trace_funcao(
     ):
         # v0.5.1 (#6): alvo = nome da funcao (simbolo definido), nao arquivo
         # (era redundancia: alvo == arquivo). Mantém arquivo na coluna proper.
+        cdict: dict[str, Any] = {"kind": kind}
+        if classe:
+            cdict["classe"] = classe
         hits.append(_trace_hit(
             1, "defined_in", arquivo=arq, funcao=fn_real or funcao,
             linha=int(ln or 0),
             alvo=fn_real or funcao,
             contexto=f"{kind}" + (f" of {classe}" if classe else ""),
+            contexto_dict=cdict,
         ))
 
     # U1: callers
@@ -1628,7 +1644,9 @@ def _trace_funcao(
     for arq, fn, ln, tipo in conn.execute(sql, (funcao_norm, max_per_edge)):
         hits.append(_trace_hit(
             1, "called_by", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=f"{fn}@{arq}" if fn else arq, contexto=f"call type={tipo}",
+            alvo=f"{fn}@{arq}" if fn else arq,
+            contexto=f"call type={tipo}",
+            contexto_dict={"call_type": tipo},
         ))
 
     # U1: callees (o que a função chama)
@@ -1641,6 +1659,7 @@ def _trace_funcao(
         hits.append(_trace_hit(
             1, "calls", funcao=funcao, alvo=destino or "",
             contexto=f"call type={tipo}",
+            contexto_dict={"call_type": tipo},
         ))
 
     # U2: validates_field (função aparece em X3_VALID/INIT/WHEN/VLDUSER)
@@ -1662,7 +1681,9 @@ def _trace_funcao(
                 continue
             hits.append(_trace_hit(
                 2, "validates_field", alvo=f"{tabela}.{nome}",
-                contexto=f"X3_{slot}", snippet=txt,
+                contexto=f"X3_{slot}",
+                contexto_dict={"slot": f"X3_{slot}", "tabela": tabela, "campo": nome},
+                snippet=txt,
             ))
 
     # U3: via_execauto (função é rotina chamada por MsExecAuto)
@@ -1674,6 +1695,7 @@ def _trace_funcao(
         hits.append(_trace_hit(
             3, "via_execauto", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
             alvo=funcao, contexto=f"module={mod or '?'} op={oplbl or '?'}",
+            contexto_dict={"module": mod or "", "op": oplbl or ""},
             snippet=snip,
         ))
 
@@ -1693,7 +1715,9 @@ def _trace_funcao(
         hits.append(_trace_hit(
             3, edge_map.get(kind, f"triggered_by_{kind}"),
             arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=funcao, contexto=f"kind={kind}", snippet=snip,
+            alvo=funcao, contexto=f"kind={kind}",
+            contexto_dict={"kind": kind},
+            snippet=snip,
         ))
 
     # U3: documented_in (Protheus.doc da função, se houver)
@@ -1711,10 +1735,18 @@ def _trace_funcao(
             ctx_parts.append(f"since={d['since']}")
         if d["deprecated"]:
             ctx_parts.append("DEPRECATED")
+        cdict_doc: dict[str, Any] = {}
+        if d["author"]:
+            cdict_doc["author"] = d["author"]
+        if d["since"]:
+            cdict_doc["since"] = d["since"]
+        if d["deprecated"]:
+            cdict_doc["deprecated"] = True
         hits.append(_trace_hit(
             3, "documented_in", arquivo=d["arquivo"], funcao=d["funcao"] or funcao,
             linha=int(d["linha_funcao"] or 0), alvo=funcao,
             contexto=" ".join(ctx_parts) or "doc",
+            contexto_dict=cdict_doc,
             snippet=(d["summary"] or "")[:120],
         ))
 
@@ -1740,6 +1772,7 @@ def _trace_tabela(
         edge = {"read": "reads", "write": "writes", "reclock": "reclock"}.get(modo, "touches")
         hits.append(_trace_hit(
             1, edge, arquivo=arq, alvo=tabela, contexto=f"mode={modo}",
+            contexto_dict={"mode": modo},
         ))
 
     # U2: table_definition
@@ -1751,6 +1784,7 @@ def _trace_tabela(
         hits.append(_trace_hit(
             2, "table_definition", alvo=tabela,
             contexto=f"modo={modo or '?'} custom={int(custom or 0)}",
+            contexto_dict={"modo": modo or "", "custom": int(custom or 0)},
             snippet=nome or "",
         ))
 
@@ -1760,6 +1794,7 @@ def _trace_tabela(
     if n_fields:
         hits.append(_trace_hit(
             2, "n_fields", alvo=tabela, contexto=f"{int(n_fields)} campos SX3",
+            contexto_dict={"n_campos": int(n_fields)},
         ))
 
     # U2: indexed_by (SIX)
@@ -1771,6 +1806,7 @@ def _trace_tabela(
         hits.append(_trace_hit(
             2, "indexed_by", alvo=tabela,
             contexto=f"ord={ord_} nick={nick or '-'}",
+            contexto_dict={"ord": ord_, "nick": nick or "", "chave": chave or ""},
             snippet=f"chave={chave} | {descr or ''}",
         ))
 
@@ -1787,6 +1823,10 @@ def _trace_tabela(
         hits.append(_trace_hit(
             2, "in_relationship", alvo=f"{ori}<->{dest}",
             contexto=f"id={ident} {eo}->{ed}",
+            contexto_dict={
+                "id": ident, "tabela_origem": ori, "tabela_destino": dest,
+                "expr_origem": eo or "", "expr_destino": ed or "",
+            },
         ))
 
     # U2: trigger_on_table (SX7)
@@ -1798,6 +1838,7 @@ def _trace_tabela(
         hits.append(_trace_hit(
             2, "trigger_on_table", alvo=f"{tabela}.{camp}",
             contexto=f"seq={seq} -> {dest or '?'}",
+            contexto_dict={"campo_origem": camp, "seq": seq, "campo_destino": dest or ""},
             snippet=regra or "",
         ))
 
@@ -1815,6 +1856,7 @@ def _trace_tabela(
             3, "touched_via_execauto", arquivo=arq, funcao=fn or "",
             linha=int(ln or 0), alvo=tabela,
             contexto=f"routine={rt or '?'} module={mod or '?'}",
+            contexto_dict={"routine": rt or "", "module": mod or ""},
         ))
 
     # U3: documented_in (LIKE em protheus_docs.tables_json)
@@ -1829,7 +1871,9 @@ def _trace_tabela(
         hits.append(_trace_hit(
             3, "documented_in", arquivo=arq, funcao=fn or "",
             linha=int(ln or 0), alvo=tabela,
-            contexto="@table", snippet=(summ or "")[:120],
+            contexto="@table",
+            contexto_dict={"tag": "@table"},
+            snippet=(summ or "")[:120],
         ))
 
     return hits
@@ -1857,11 +1901,13 @@ def _trace_campo(
     for arq, fn, ln, snip in conn.execute(sql, (campo_u, campo_u, max_per_edge)):
         snip_up = (snip or "").upper()
         is_write = any(k in snip_up for k in _WRITE_KEYWORDS)
+        mode = "write" if is_write else "read"
         hits.append(_trace_hit(
             1, "references_field",
             arquivo=arq, funcao=fn or "", linha=int(ln or 0),
             alvo=campo,
-            contexto="write" if is_write else "read",
+            contexto=mode,
+            contexto_dict={"mode": mode},
             snippet=snip,
         ))
 
@@ -1872,13 +1918,18 @@ def _trace_campo(
     )
     for tab, descr, tp, tam, ctx, br in conn.execute(sql, (campo_u,)):
         ctx_parts = [f"tabela={tab}", f"tipo={tp}({tam})"]
+        cdict_fd: dict[str, Any] = {"tabela": tab, "tipo": f"{tp}({tam})"}
         if ctx:
             ctx_parts.append(f"ctx={ctx}")
+            cdict_fd["ctx"] = ctx
         if br:
             ctx_parts.append(f"browse={br}")
+            cdict_fd["browse"] = br
         hits.append(_trace_hit(
             2, "field_definition", alvo=campo,
-            contexto=" ".join(ctx_parts), snippet=descr or "",
+            contexto=" ".join(ctx_parts),
+            contexto_dict=cdict_fd,
+            snippet=descr or "",
         ))
 
     # U2: trigger_origin (campo dispara gatilho)
@@ -1889,7 +1940,9 @@ def _trace_campo(
     for camp, seq, dest, regra, tab in conn.execute(sql_orig, (campo_u, max_per_edge)):
         hits.append(_trace_hit(
             2, "trigger_origin", alvo=f"{tab}.{dest or '?'}",
-            contexto=f"seq={seq}", snippet=regra or "",
+            contexto=f"seq={seq}",
+            contexto_dict={"seq": seq, "campo_destino": dest or ""},
+            snippet=regra or "",
         ))
     # U2: trigger_target (campo é modificado por gatilho)
     sql_target = (
@@ -1899,7 +1952,9 @@ def _trace_campo(
     for camp, seq, regra, tab in conn.execute(sql_target, (campo_u, max_per_edge)):
         hits.append(_trace_hit(
             2, "trigger_target", alvo=f"{tab}.{camp}",
-            contexto=f"seq={seq}", snippet=regra or "",
+            contexto=f"seq={seq}",
+            contexto_dict={"seq": seq, "campo_origem": camp},
+            snippet=regra or "",
         ))
 
     # U2: in_pergunte (SX1) — match em variavel ou conteudo_padrao
@@ -1910,7 +1965,9 @@ def _trace_campo(
     for grp, ord_, perg, var in conn.execute(sql, (campo_u, max_per_edge)):
         hits.append(_trace_hit(
             2, "in_pergunte", alvo=f"{grp}.{ord_}",
-            contexto=f"variavel={var}", snippet=perg or "",
+            contexto=f"variavel={var}",
+            contexto_dict={"variavel": var, "grupo": grp, "ordem": ord_},
+            snippet=perg or "",
         ))
 
     # U2: in_relationship (SX9 expressao)
@@ -1927,6 +1984,10 @@ def _trace_campo(
         hits.append(_trace_hit(
             2, "in_relationship", alvo=f"{ori}<->{dest}",
             contexto=f"{eo}->{ed}",
+            contexto_dict={
+                "tabela_origem": ori, "tabela_destino": dest,
+                "expr_origem": eo or "", "expr_destino": ed or "",
+            },
         ))
 
     # U2: in_consulta (SXB) — match em conteudo (expressão) ou alias=campo
@@ -1939,7 +2000,9 @@ def _trace_campo(
             continue
         hits.append(_trace_hit(
             2, "in_consulta", alvo=alias,
-            contexto="F3 lookup", snippet=descr or "",
+            contexto="F3 lookup",
+            contexto_dict={"tag": "F3", "alias": alias},
+            snippet=descr or "",
         ))
 
     # U2: in_grupo_sxg
@@ -1953,7 +2016,9 @@ def _trace_campo(
             descr_row = conn.execute(sql_g, (grp.upper(),)).fetchone()
             descr = descr_row[0] if descr_row else ""
             hits.append(_trace_hit(
-                2, "in_grupo_sxg", alvo=grp, contexto="SXG", snippet=descr or "",
+                2, "in_grupo_sxg", alvo=grp, contexto="SXG",
+                contexto_dict={"grupo": grp},
+                snippet=descr or "",
             ))
 
     return hits
