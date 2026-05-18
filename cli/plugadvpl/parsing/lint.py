@@ -1783,6 +1783,43 @@ def _check_ws002_getcontent_no_decode(
     return findings
 
 
+def _check_enc001_prw_utf8(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """ENC-001 (error): .prw/.prx com encoding utf-8 — compilador appserver legado quebra acentos.
+
+    Compilador legacy le byte-a-byte como CP1252; uma 'á' salva como UTF-8
+    (0xC3 0xA1) vira "Ã¡" em runtime, quebra strings literais e gravacoes
+    PutSx*. `.tlpp` eh UTF-8 nativo (TLPP moderno) — fica de fora.
+
+    Reusa a deteccao de encoding ja feita em `parser._decode_bytes()` (chardet
+    + ordem ASCII → UTF-8 strict → CP1252 fallback). Se parser detectou
+    'utf-8' em arquivo com extensao `.prw`/`.prx`, eh evidencia direta de
+    bytes UTF-8 multi-byte presentes.
+    """
+    arquivo_lower = (arquivo or "").lower()
+    if not arquivo_lower.endswith((".prw", ".prx")):
+        return []
+    encoding = (parsed.get("encoding") or "").lower()
+    if encoding != "utf-8":
+        return []
+    return [
+        {
+            "arquivo": arquivo,
+            "funcao": "",
+            "linha": 1,
+            "regra_id": "ENC-001",
+            "severidade": "error",
+            "snippet": (content.splitlines()[0] if content else "")[:_SNIPPET_MAX],
+            "sugestao_fix": (
+                "Arquivo .prw com bytes UTF-8 — compilador appserver legado quebra acentos. "
+                "Converta para CP1252: `plugadvpl edit-prw save <arquivo>` (default `--to cp1252` "
+                "para extensao .prw)."
+            ),
+        }
+    ]
+
+
 def _check_ws003_setresponse_no_encode(
     arquivo: str, parsed: dict[str, Any], content: str
 ) -> list[dict[str, Any]]:
@@ -1863,10 +1900,11 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_mod001_conout_instead_fwlogmsg(arquivo, parsed, content))
     findings.extend(_check_mod002_public_declaration(arquivo, parsed, content))
     findings.extend(_check_mod004_legacy_cadastro(arquivo, parsed, content))
-    # v0.7.0 Fase 0: webservice rules
+    # v0.7.0 Fase 0: webservice + encoding rules
     findings.extend(_check_ws001_wsmethod_orphan(arquivo, parsed, content))
     findings.extend(_check_ws002_getcontent_no_decode(arquivo, parsed, content))
     findings.extend(_check_ws003_setresponse_no_encode(arquivo, parsed, content))
+    findings.extend(_check_enc001_prw_utf8(arquivo, parsed, content))
 
     findings.sort(key=lambda f: (int(f["linha"]), str(f["regra_id"])))
     return findings

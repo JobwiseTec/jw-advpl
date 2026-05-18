@@ -416,5 +416,16 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_ws003_setresponse_no_encode"
+  },
+  {
+    "regra_id": "ENC-001",
+    "titulo": ".prw/.prx salvo em UTF-8 quebra compilador appserver legado",
+    "severidade": "error",
+    "categoria": "best-practice",
+    "descricao": "Compilador AppServer legado lê `.prw`/`.prx` byte-a-byte como CP1252. Uma 'á' salva como UTF-8 (0xC3 0xA1) vira 'Ã¡' em runtime — quebra strings literais, gravações `PutSx*` e respostas REST. `.tlpp` é UTF-8 nativo (TLPP moderno) e fica de fora da regra. Reusa detecção de encoding feita pelo parser (chardet + ASCII → UTF-8 strict → CP1252 fallback).",
+    "fix_guidance": "Converta para CP1252: `plugadvpl edit-prw save <arquivo>` (default `--to cp1252` para extensão `.prw`). Comando faz backup `.bak` antes de gravar.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_enc001_prw_utf8"
   }
 ]

@@ -2177,3 +2177,51 @@ class TestWS003SetResponseNoEncode:
         )
         findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
         assert "WS-003" not in _ids(findings)
+
+
+# --- ENC-001: .prw com encoding UTF-8 (quebra compilador appserver legado) --
+
+
+def _parsed_with_encoding(arquivo: str, encoding: str) -> dict[str, object]:
+    """Helper: parsed dict minimo com arquivo e encoding (sem fontes/funcoes)."""
+    return {
+        "arquivo": arquivo,
+        "funcoes": [],
+        "sql_embedado": [],
+        "encoding": encoding,
+    }
+
+
+class TestENC001PrwUtf8:
+    """v0.7.0 (Fase 0): .prw com encoding UTF-8 quebra compilador appserver
+    legado (le byte-a-byte como CP1252). .tlpp eh UTF-8 nativo, sem regra.
+    """
+
+    def test_positive_prw_utf8(self) -> None:
+        parsed = _parsed_with_encoding("foo.prw", "utf-8")
+        findings = lint_source(parsed, "User Function Foo()\nReturn\n")
+        enc = [f for f in findings if f["regra_id"] == "ENC-001"]
+        assert len(enc) == 1
+        assert enc[0]["severidade"] == "error"
+
+    def test_positive_prx_utf8(self) -> None:
+        parsed = _parsed_with_encoding("foo.prx", "utf-8")
+        findings = lint_source(parsed, "User Function Foo()\nReturn\n")
+        assert "ENC-001" in _ids(findings)
+
+    def test_negative_prw_cp1252(self) -> None:
+        parsed = _parsed_with_encoding("foo.prw", "cp1252")
+        findings = lint_source(parsed, "User Function Foo()\nReturn\n")
+        assert "ENC-001" not in _ids(findings)
+
+    def test_negative_tlpp_utf8(self) -> None:
+        """.tlpp eh UTF-8 nativo — nao dispara."""
+        parsed = _parsed_with_encoding("foo.tlpp", "utf-8")
+        findings = lint_source(parsed, "User Function Foo()\nReturn\n")
+        assert "ENC-001" not in _ids(findings)
+
+    def test_negative_ch_utf8(self) -> None:
+        """.ch (header include) tambem fica de fora."""
+        parsed = _parsed_with_encoding("foo.ch", "utf-8")
+        findings = lint_source(parsed, "#define FOO 1\n")
+        assert "ENC-001" not in _ids(findings)
