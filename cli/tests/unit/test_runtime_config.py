@@ -76,3 +76,21 @@ class TestLoadAbsent:
     def test_returns_none_when_toml_missing(self, tmp_path: Path) -> None:
         """Sem runtime.toml → None (sem exceção). Modo appre funciona assim."""
         assert load(tmp_path) is None
+
+
+class TestLoadValidComplete:
+    def test_returns_dataclass_when_all_valid(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        _write_minimal_toml(tmp_path)
+        with patch("plugadvpl.runtime_config._tcp_ping", return_value=False):
+            cfg = load(tmp_path)
+        assert cfg is not None
+        assert isinstance(cfg, RuntimeConfig)
+        assert cfg.appserver.host == "127.0.0.1"
+        assert cfg.appserver.port == 1234
+        assert cfg.compile.mode == "auto"
+        assert cfg.warn_remote_host is False
+        assert cfg.appserver_reachable is False
