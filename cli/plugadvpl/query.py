@@ -1589,17 +1589,35 @@ def _trace_funcao(
 ) -> list[dict[str, Any]]:
     """Coleta arestas pra função-alvo cross-universo."""
     hits: list[dict[str, Any]] = []
-    funcao_norm = funcao.upper().lstrip("U_") if funcao.upper().startswith("U_") else funcao.upper()
+    funcao_u = funcao.upper()
+    # v0.5.1 (#6): variantes pra lookup robusto — funcao_norm às vezes tem
+    # U_ prefix preservado (inconsistência com schema comment). Testa ambos.
+    variants = {funcao_u}
+    if funcao_u.startswith("U_"):
+        variants.add(funcao_u[2:])
+    else:
+        variants.add(f"U_{funcao_u}")
+    funcao_norm = funcao_u[2:] if funcao_u.startswith("U_") else funcao_u
 
-    # U1: defined_in
+    # U1: defined_in — match via upper(funcao) IN (variantes)
+    placeholders = ",".join("?" * len(variants))
     sql = (
-        "SELECT arquivo, linha_inicio, tipo_simbolo, classe "
-        "FROM fonte_chunks WHERE funcao_norm = ? LIMIT ?"
+        f"SELECT arquivo, funcao, linha_inicio, tipo_simbolo, classe "
+        f"FROM fonte_chunks "
+        f"WHERE upper(funcao) IN ({placeholders}) OR funcao_norm IN ({placeholders}) "
+        f"LIMIT ?"
     )
-    for arq, ln, kind, classe in conn.execute(sql, (funcao_norm, max_per_edge)):
+    var_list = list(variants)
+    for arq, fn_real, ln, kind, classe in conn.execute(
+        sql, [*var_list, *var_list, max_per_edge]
+    ):
+        # v0.5.1 (#6): alvo = nome da funcao (simbolo definido), nao arquivo
+        # (era redundancia: alvo == arquivo). Mantém arquivo na coluna proper.
         hits.append(_trace_hit(
-            1, "defined_in", arquivo=arq, funcao=funcao, linha=int(ln or 0),
-            alvo=arq, contexto=f"{kind}" + (f" of {classe}" if classe else ""),
+            1, "defined_in", arquivo=arq, funcao=fn_real or funcao,
+            linha=int(ln or 0),
+            alvo=fn_real or funcao,
+            contexto=f"{kind}" + (f" of {classe}" if classe else ""),
         ))
 
     # U1: callers

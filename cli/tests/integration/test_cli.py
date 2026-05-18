@@ -1635,6 +1635,31 @@ class TestTrace:
         assert result.exit_code == 0
         # SA1 nao eh funcao definida; resultado provavelmente vazio (mas exit 0)
 
+    def test_trace_defined_in_alvo_is_funcao_name(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.5.1 (#6): edge 'defined_in' tem alvo = nome do simbolo,
+        nao redundante = arquivo. Outras edges usam alvo semanticamente
+        diferente; defined_in fica consistente com a coluna funcao
+        (mas alvo deve ser o nome do simbolo definido).
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "U_MyCmp"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        defined = [r for r in rows if r["edge"] == "defined_in"]
+        assert defined, f"esperado pelo menos 1 row defined_in. edges={[r['edge'] for r in rows]}"
+        for r in defined:
+            assert r["alvo"] != r["arquivo"], (
+                f"defined_in.alvo NAO deve ser igual a arquivo (redundante). row={r}"
+            )
+            # alvo deve ser o nome da funcao (case-insensitive)
+            assert "MYCMP" in r["alvo"].upper(), (
+                f"alvo deveria conter nome da funcao. alvo={r['alvo']!r}"
+            )
+
     def test_trace_typo_in_populated_index_suggests_find_not_reingest(
         self, trace_project: Path, runner: CliRunner
     ) -> None:
