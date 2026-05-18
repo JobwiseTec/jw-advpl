@@ -1719,12 +1719,32 @@ def trace(
         next_steps=(
             _trace_next_steps(rows, tipo_detected)
             if rows
-            else _empty_result_hints(
-                bool(tipo or universos),
-                table_label=f"hit de {tipo_detected}",
-            )
+            else _trace_empty_hints(ctx, entidade)
         ),
     )
+
+
+def _trace_empty_hints(ctx: typer.Context, entidade: str) -> list[str]:
+    """v0.5.1 (#3): hint inteligente quando trace retorna vazio.
+
+    Antes: sempre sugeria ``ingest --no-incremental``. Em índice populado
+    (caso comum), isso induzia reingest caro pra typo. Agora: detecta se
+    índice tem dados e sugere ``find``/``grep`` (caso typo) ou reingest
+    (caso índice realmente vazio).
+    """
+    n_fontes = _with_ro_db(
+        ctx, lambda c: c.execute("SELECT COUNT(*) FROM fontes").fetchone()[0]
+    )
+    if n_fontes > 0:
+        return [
+            f"Nenhum hit para '{entidade}' — pode ser typo. Verifique o nome:",
+            f"  plugadvpl find {entidade}            # busca em fontes/SX",
+            f"  plugadvpl grep {entidade} -m identifier   # match por simbolo",
+        ]
+    return [
+        "Indice vazio. Rode:",
+        "  plugadvpl ingest --no-incremental",
+    ]
 
 
 def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:

@@ -1599,6 +1599,30 @@ class TestTrace:
         assert result.exit_code == 0
         # SA1 nao eh funcao definida; resultado provavelmente vazio (mas exit 0)
 
+    def test_trace_typo_in_populated_index_suggests_find_not_reingest(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.5.1 (#3): typo em indice populado sugere find/grep, NAO reingest.
+
+        Antes: 'Nenhum hit. Rode plugadvpl ingest --no-incremental'
+        induzia reingest caro (varre 2k+ fontes) sem necessidade. Correto:
+        sugerir find/grep pra confirmar nome (provavel typo).
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "trace", "TYPOFOOXYZ"],
+        )
+        assert result.exit_code == 0
+        stderr = result.stderr or ""
+        # NAO deve sugerir reingest (indice tem fontes)
+        assert "ingest --no-incremental" not in stderr, (
+            f"typo em indice populado nao deve sugerir reingest. stderr={stderr!r}"
+        )
+        # DEVE sugerir find ou grep
+        assert "find" in stderr or "grep" in stderr, (
+            f"esperado sugestao find/grep. stderr={stderr!r}"
+        )
+
     def test_trace_invalid_universo_rejected(
         self, trace_project: Path, runner: CliRunner
     ) -> None:
