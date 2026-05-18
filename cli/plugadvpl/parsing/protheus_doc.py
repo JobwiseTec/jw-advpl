@@ -58,6 +58,86 @@ _PARAM_NAME_RE = re.compile(r"^\s*(\w+)\s*$")
 # Inferência de módulo via path: SIGAFAT/SIGAFIN/etc.
 _MODULE_PATH_RE = re.compile(r"\b(SIGA\w{3,4})\b", re.IGNORECASE)
 
+# v0.6.1 (limitação #2): inferência de módulo via prefixo do NOME DO ARQUIVO.
+# Cobre codebases flat (sem subpasta SIGA*/), que são a maioria dos clientes
+# Protheus. Reporter Cliente X usa Customizados/ABCCOM*.prw, ABCEEC*.prw, etc
+# — path-based perde 98% dos fontes; prefixo no nome resolve.
+#
+# Padrão: opcional prefixo de cliente (1-4 chars) + prefixo TOTVS standard.
+# Lista de prefixos TOTVS canônicos (ordem importa — mais específico primeiro).
+_TOTVS_MODULE_PREFIXES: list[tuple[str, str]] = [
+    # (prefixo, módulo). Ordem importa — checa em sequência.
+    ("FINA", "SIGAFIN"),
+    ("MATA125", "SIGACOM"),   # Autorização Entrega (mais específico antes de MATA)
+    ("MATA240", "SIGAEST"),   # Movimento Interno Estoque
+    ("MATA950", "SIGAFIS"),   # Fiscal
+    ("MATA", "SIGAFAT"),      # Genérico Faturamento (cuidado: MATA1xx pode ser COM/EST)
+    ("MATC", "SIGACOM"),      # Compras variante
+    ("BRWFIS", "SIGAFIS"),
+    ("CTBA", "SIGACTB"),
+    ("EECAP", "SIGAEEC"),
+    ("EECCV", "SIGAEEC"),
+    ("EECAF", "SIGAEEC"),
+    ("EEC", "SIGAEEC"),       # Exportação genérico
+    ("EE7", "SIGAEEC"),       # Tabela específica EEC
+    ("EE8", "SIGAEEC"),
+    ("EE9", "SIGAEEC"),
+    ("GFE", "SIGAGFE"),
+    ("GV4", "SIGAGFE"),
+    ("DAI", "SIGAGFE"),       # Tabela GFE
+    ("DAK", "SIGAGFE"),
+    ("OMSA", "SIGAOMS"),
+    ("TMSA", "SIGATMS"),
+    ("FATA", "SIGAFAT"),      # Faturamento helpers
+    ("FATR", "SIGAFAT"),
+    ("COM", "SIGACOM"),       # Genérico Compras
+    ("FIN", "SIGAFIN"),       # Genérico Financeiro
+    ("EST", "SIGAEST"),       # Genérico Estoque
+    ("FIS", "SIGAFIS"),       # Genérico Fiscal
+    ("CTB", "SIGACTB"),       # Genérico Contábil
+    ("FAT", "SIGAFAT"),       # Genérico Faturamento
+    ("PCP", "SIGAPCP"),       # Produção
+    ("MNT", "SIGAMNT"),       # Manutenção
+    ("ATF", "SIGAATF"),       # Ativo Fixo
+    ("CRM", "SIGACRM"),       # CRM
+    ("TAC", "SIGATAC"),       # Telefonia/Atendimento (cliente-comum)
+]
+
+
+def _module_from_filename(arquivo: str) -> str | None:
+    """v0.6.1: infere módulo a partir do nome do arquivo (basename).
+
+    Tenta 2 estratégias em ordem:
+      1. Prefixo TOTVS direto (`FINA050.prw` → SIGAFIN)
+      2. Prefixo cliente (1-4 chars) + prefixo TOTVS (`ABCCOM01.prw` → SIGACOM)
+
+    Retorna ``None`` se nenhum padrão bate.
+    """
+    if not arquivo:
+        return None
+    # Extrai basename uppercase sem extensão.
+    base = arquivo.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    base = base.rsplit(".", 1)[0].upper()
+    if not base:
+        return None
+    # Estratégia 1: prefixo TOTVS direto no início do nome.
+    for prefix, modulo in _TOTVS_MODULE_PREFIXES:
+        if base.startswith(prefix):
+            return modulo
+    # Estratégia 2: pula prefixo cliente (1-4 chars alfa) e tenta de novo.
+    # ABCCOM01 → testa COM01 → bate COM → SIGACOM
+    for client_len in (3, 2, 4, 1):
+        if len(base) <= client_len:
+            continue
+        suffix = base[client_len:]
+        # Confirma que prefixo descartado é só letras (cliente convention).
+        if not base[:client_len].isalpha():
+            continue
+        for prefix, modulo in _TOTVS_MODULE_PREFIXES:
+            if suffix.startswith(prefix):
+                return modulo
+    return None
+
 # Tags single-value (1 por bloco).
 _SINGLE_VALUE_TAGS = {
     "type", "author", "since", "version", "description",
@@ -86,16 +166,23 @@ def _execauto_routines() -> dict[str, dict[str, Any]]:
 
 
 def infer_module(arquivo: str, funcao: str | None) -> str | None:
-    """Infere módulo TOTVS a partir do path ou prefixo da função.
+    """Infere módulo TOTVS a partir do path, nome do arquivo ou prefixo da função.
 
-    Algoritmo:
+    Algoritmo (em ordem):
       1. Path-based: ``SIGA\\w{3,4}`` no path → match
-      2. Routine-prefix: prefixo da função bate com rotina do catálogo execauto
-      3. Fallback: ``None``
+      2. **Filename prefix** (v0.6.1): prefixo TOTVS no nome do arquivo
+         (`FINA050.prw` → SIGAFIN, `ABCCOM01.prw` → SIGACOM). Cobre codebases
+         flat sem hierarquia SIGA*/.
+      3. Routine-prefix: prefixo da função bate com rotina do catálogo execauto
+      4. Fallback: ``None``
     """
     m = _MODULE_PATH_RE.search(arquivo or "")
     if m:
         return m.group(1).upper()
+    # v0.6.1 (limitação #2): tentativa filename antes de routine prefix.
+    from_name = _module_from_filename(arquivo or "")
+    if from_name:
+        return from_name
     if funcao:
         idx = _execauto_routines()
         funcao_upper = funcao.upper()

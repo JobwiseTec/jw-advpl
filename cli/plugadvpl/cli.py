@@ -1952,7 +1952,12 @@ def cobertura_doc(
                 f"plugadvpl lint --regra BP-007       # raw findings",
             ]
             if rows
-            else None
+            else [
+                # v0.6.1 (UX #3): hint quando tabela vazia (consistente com `metrics`).
+                "plugadvpl ingest --no-incremental    # popular fonte_metrics (schema v10+)",
+                "plugadvpl docs --orphans              # lista bruta de funções sem header",
+                "plugadvpl lint --regra BP-007         # findings de header faltando",
+            ]
         ),
     )
 

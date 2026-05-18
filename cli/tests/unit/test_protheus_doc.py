@@ -226,6 +226,37 @@ class TestModuleInference:
         """Prefixo `FINA` mapeia 100% pra SIGAFIN — sem ambiguidade, resolve."""
         assert infer_module("X.prw", "FINA999") == "SIGAFIN"
 
+    def test_module_from_totvs_filename_prefix(self) -> None:
+        """v0.6.1 (limitação #2): prefixo TOTVS standard no nome do arquivo
+        (sem subpasta SIGA*) infere módulo. Útil pra codebases flat tipo
+        Customizados/ sem hierarquia de pastas (caso comum em customização).
+        """
+        # FINA*/E1*/E2* → SIGAFIN
+        assert infer_module("FINA050.prw", None) == "SIGAFIN"
+        # MATA125 → SIGACOM (autorização entrega)
+        assert infer_module("MATA125.prw", None) == "SIGACOM"
+        # CTBA*/CT* → SIGACTB
+        assert infer_module("CTBA300.prw", None) == "SIGACTB"
+        # GFE*/DA*/GV4* → SIGAGFE
+        assert infer_module("GFEA100.prw", None) == "SIGAGFE"
+        # EEC*/EE7*/EE8* → SIGAEEC
+        assert infer_module("EEC100.prw", None) == "SIGAEEC"
+
+    def test_module_from_client_prefix_plus_totvs(self) -> None:
+        """v0.6.1: prefixo de cliente (3 chars) + prefixo TOTVS standard.
+
+        Pattern típico: cliente prefixa fontes custom com 3 letras (ABC, ABC,
+        XYZ) seguido do prefixo TOTVS que indica módulo: ABCCOM01 = COM custom
+        do cliente = SIGACOM.
+        """
+        assert infer_module("ABCCOM01.prw", None) == "SIGACOM"
+        assert infer_module("ABCEEC93.prw", None) == "SIGAEEC"
+        assert infer_module("ABCFIN78.prw", None) == "SIGAFIN"
+        assert infer_module("ABCGFE40.prw", None) == "SIGAGFE"
+        assert infer_module("ABCCTB06.prw", None) == "SIGACTB"
+        # Cliente ABC com mesmo padrão
+        assert infer_module("ABCCOM01.prw", None) == "SIGACOM"
+
 
 # --- Edge cases -----------------------------------------------------------
 
