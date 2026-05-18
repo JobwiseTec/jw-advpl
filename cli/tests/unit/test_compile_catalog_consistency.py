@@ -75,3 +75,62 @@ def test_redact_patterns_actually_redact_sample(redact_catalog: list[dict]) -> N
         assert "REDACTED" in replaced, (
             f"{entry['id']}: '{sample}' → '{replaced}' (sem REDACTED)"
         )
+
+
+@pytest.fixture(scope="module")
+def compile_catalog() -> list[dict]:
+    text = ir.files("plugadvpl").joinpath("lookups/compile_patterns.json").read_text(
+        encoding="utf-8"
+    )
+    return json.loads(text)
+
+
+def test_compile_min_count(compile_catalog: list[dict]) -> None:
+    assert len(compile_catalog) >= 5
+
+
+def test_compile_required_fields(compile_catalog: list[dict]) -> None:
+    for entry in compile_catalog:
+        for field in ("id", "lang", "pattern", "ordem"):
+            assert field in entry, f"{entry.get('id')} missing {field}"
+
+
+def test_compile_severity_xor(compile_catalog: list[dict]) -> None:
+    for entry in compile_catalog:
+        has_group = "severidade_group" in entry
+        has_fixed = "severidade_fixed" in entry
+        assert has_group != has_fixed, (
+            f"{entry['id']}: severidade_group XOR severidade_fixed "
+            f"(got group={has_group} fixed={has_fixed})"
+        )
+
+
+def test_compile_pattern_compiles(compile_catalog: list[dict]) -> None:
+    for entry in compile_catalog:
+        try:
+            re.compile(entry["pattern"])
+        except re.error as exc:
+            pytest.fail(f"{entry['id']} pattern doesn't compile: {exc}")
+
+
+def test_compile_group_exists(compile_catalog: list[dict]) -> None:
+    for entry in compile_catalog:
+        if "severidade_group" not in entry:
+            continue
+        rx = re.compile(entry["pattern"])
+        group = entry["severidade_group"]
+        assert group in rx.groupindex, (
+            f"{entry['id']}: severidade_group='{group}' not in pattern groups "
+            f"{list(rx.groupindex)}"
+        )
+
+
+def test_compile_lang_valid(compile_catalog: list[dict]) -> None:
+    valid = {"any", "pt-BR", "en"}
+    for entry in compile_catalog:
+        assert entry["lang"] in valid, f"{entry['id']}: invalid lang"
+
+
+def test_compile_ids_unique(compile_catalog: list[dict]) -> None:
+    ids = [e["id"] for e in compile_catalog]
+    assert len(ids) == len(set(ids))
