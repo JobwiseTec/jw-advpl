@@ -94,3 +94,73 @@ class TestLoadValidComplete:
         assert cfg.compile.mode == "auto"
         assert cfg.warn_remote_host is False
         assert cfg.appserver_reachable is False
+
+
+class TestLoadInvalid:
+    def test_malformed_toml_raises(self, tmp_path: Path) -> None:
+        cfg_dir = tmp_path / ".plugadvpl"
+        cfg_dir.mkdir()
+        (cfg_dir / "runtime.toml").write_text("not = valid = toml = at = all", encoding="utf-8")
+        with pytest.raises(RuntimeConfigError, match="invalid TOML"):
+            load(tmp_path)
+
+    def test_missing_section_raises(self, tmp_path: Path) -> None:
+        cfg_dir = tmp_path / ".plugadvpl"
+        cfg_dir.mkdir()
+        (cfg_dir / "runtime.toml").write_text("[appserver]\nhost = '127.0.0.1'\n", encoding="utf-8")
+        with pytest.raises(RuntimeConfigError, match="missing required key"):
+            load(tmp_path)
+
+    def test_binary_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "x")
+        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        _write_minimal_toml(tmp_path, binary="/nope/advpls.exe")
+        with pytest.raises(RuntimeConfigError, match="advpls not found"):
+            load(tmp_path)
+
+    def test_env_var_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PROTHEUS_USER", raising=False)
+        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        _write_minimal_toml(tmp_path)
+        with pytest.raises(RuntimeConfigError, match="env var PROTHEUS_USER"):
+            load(tmp_path)
+
+    def test_aut_file_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "x")
+        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        cfg_dir = tmp_path / ".plugadvpl"
+        toml_path = _write_minimal_toml(tmp_path)
+        toml = toml_path.read_text(encoding="utf-8").replace(
+            'aut_file = ""', 'aut_file = "/nope/chave.aut"'
+        )
+        toml_path.write_text(toml, encoding="utf-8")
+        with pytest.raises(RuntimeConfigError, match="aut_file not found"):
+            load(tmp_path)
+
+
+class TestLoadFlags:
+    def test_warn_remote_host_true_for_remote(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "x")
+        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        toml_path = _write_minimal_toml(tmp_path)
+        toml = toml_path.read_text(encoding="utf-8").replace(
+            'host = "127.0.0.1"', 'host = "187.77.46.221"'
+        )
+        toml_path.write_text(toml, encoding="utf-8")
+        with patch("plugadvpl.runtime_config._tcp_ping", return_value=False):
+            cfg = load(tmp_path)
+        assert cfg is not None
+        assert cfg.warn_remote_host is True
+
+    def test_appserver_reachable_set_by_ping(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "x")
+        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        _write_minimal_toml(tmp_path)
+        with patch("plugadvpl.runtime_config._tcp_ping", return_value=True):
+            cfg = load(tmp_path)
+        assert cfg is not None
+        assert cfg.appserver_reachable is True
