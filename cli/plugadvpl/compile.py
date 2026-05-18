@@ -71,7 +71,18 @@ def resolve_files(
 
 def _resolve_changed_since(ref: str, root: Path) -> list[Path]:
     """git diff --name-only <ref> filtrado por extensões."""
-    raise NotImplementedError("implementado em Step 4.3")
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", ref, "--", "*.prw", "*.prx", "*.tlpp"],
+            cwd=root, capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"--changed-since requires a git repository at {root}: {exc.stderr.strip()}"
+        ) from exc
+    except FileNotFoundError as exc:
+        raise RuntimeError("git not found in PATH") from exc
+    return [root / line for line in proc.stdout.splitlines() if line.strip()]
 
 
 def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) -> CompileResult:

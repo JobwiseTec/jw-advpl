@@ -29,3 +29,29 @@ class TestResolveFiles:
         assert names == ["bar.tlpp", "foo.prw"]
         assert result.rejected_ext == [tmp_path / "baz.txt"]
         assert result.missing == [missing_path]
+
+
+class TestChangedSince:
+    def test_changed_since_lists_modified_advpl_only(self, tmp_path: Path) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t.t"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+        (tmp_path / "foo.prw").write_text("a", encoding="utf-8")
+        (tmp_path / "README.md").write_text("a", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+        (tmp_path / "foo.prw").write_text("ab", encoding="utf-8")
+        (tmp_path / "bar.tlpp").write_text("c", encoding="utf-8")
+        (tmp_path / "README.md").write_text("ab", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-qm", "change"], cwd=tmp_path, check=True)
+
+        from plugadvpl.compile import _resolve_changed_since
+        result = _resolve_changed_since("HEAD~1", tmp_path)
+        names = sorted(p.name for p in result)
+        assert names == ["bar.tlpp", "foo.prw"]
+
+    def test_not_a_git_repo_raises(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _resolve_changed_since
+        with pytest.raises(RuntimeError, match="git"):
+            _resolve_changed_since("HEAD", tmp_path)
