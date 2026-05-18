@@ -112,4 +112,5 @@ addopts = [
 markers = [
     "local: testes que precisam de fixtures locais não distribuídas. Excluídos em CI. Veja CONTRIBUTING.md.",
     "slow: testes que demoram >1s. Rodar com -m slow para incluir.",
+    "smoke: smoke tests that hit real advpls (require PLUGADVPL_SMOKE=1)",
 ]
