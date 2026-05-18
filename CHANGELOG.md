@@ -4,6 +4,68 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-18
+
+### 🎁 Fase 0 — Quick Wins (Runtime/Encoding/Webservice)
+
+Fase introdutória do roadmap de runtime ADVPL: 5 regras de lint, 1 comando
+CLI e 1 contrato com reference implementation MIT. Zero dependência externa
+(sem TDS-LS, sem Docker, sem RPO). Pavimenta as Fases 1+ (compile, exec,
+deploy, smoke, hooks). Spec completa em
+[`docs/fase0/quick-wins.md`](docs/fase0/quick-wins.md).
+
+### Added
+
+- **`WS-001` (error)** — `WSMETHOD <verb>` sem `WS(SERVICE|RESTFUL|REST) <Name>`.
+  Sem o trailing, método não registra na rota e vira código morto silencioso.
+  Também detecta colisão (warning): dois `WSMETHOD <verb>` no mesmo serviço
+  sem subname distinto (last-wins).
+- **`WS-002` (warning)** — em `WSRESTFUL`, padrão `cBody := ::GetContent()`
+  seguido em ≤10 linhas de `oJson:FromJson(cBody)` sem `DecodeUtf8`
+  interposto. Cliente sem header `charset=utf-8` envia body CP1252 cru →
+  FromJson grava bytes UTF-8 como CP1252 e corrompe acentos no SXX.
+  Fix guidance NÃO sugere `FwJsonDeserialize` (descontinuada pela TOTVS).
+- **`WS-003` (warning)** — `::SetResponse(...)` em `WSRESTFUL` cujo argumento
+  não passa por `EncodeUtf8` antes. Clients UTF-8 (browsers, fetch JS) vêem
+  mojibake em chars ≥ 0x80. Padrão idiomático: `::SetResponse(EncodeUtf8(
+  FwJsonSerialize(oResp, .F., .F., .T.)))`.
+- **`XF-001` (error, cross-file)** — `MsSeek/DbSeek(xFilial("XX"))` em tabela
+  com `x2_modo='E'` (exclusiva) dentro de WSRESTFUL/JOB sem `RpcSetEnv` ou
+  `PREPARE ENVIRONMENT` precedente. `cFilAnt` vazia → xFilial retorna `""` →
+  seek localiza primeiro registro de qualquer filial (corrupção cross-filial
+  silenciosa). Fix sugere `RpcSetEnv` ou `FwxFilial("XX")` moderna.
+- **`ENC-001` (error)** — `.prw`/`.prx` salvo em UTF-8 quebra compilador
+  AppServer legado (lê byte-a-byte como CP1252; "á" UTF-8 vira "Ã¡"). Reusa
+  detecção do `parser._decode_bytes`. `.tlpp`/`.ch` ficam de fora.
+- **`plugadvpl edit-prw {check,open,save}`** — conversão CP1252↔UTF-8 in-place.
+  - `check <file>` reporta detecção vs extensão esperada. Exit 1 se mismatch.
+  - `open <file>` imprime conteúdo em UTF-8 (auto-detecta origem).
+  - `save <file> [--from] [--to] [--no-backup]` converte in-place. Default
+    infere ambos por extensão + detecção. Cria `<file>.bak` por padrão.
+  - Estratégia determinística: BOM → ASCII → UTF-8 strict → CP1252 fallback.
+- **`docs/exec-contract.md`** (CC-BY-4.0) — contrato HTTP/JSON canônico
+  `POST /rest/uexec` para execução headless de função ADVPL em DEV/CI.
+  Tabela de tipos JSON↔ADVPL, status codes, encoding boundary, anti-patterns
+  e limitações conhecidas. Aviso forte: anti-pattern em produção.
+- **`docs/examples/uexec.prw`** (MIT) — reference impl ~150 linhas. WSRESTFUL
+  com `WSMETHOD POST exec`. Valida prefixo `U_`, captura exceção com
+  Begin Sequence/Recover, mapeia tipos via `ValType`, aplica
+  `DecodeUtf8`/`EncodeUtf8` nos dois lados (alinhado com WS-002/003).
+
+### Tests
+
+- **+47 testes** (6 WS-001 + 4 WS-002 + 4 WS-003 + 5 ENC-001 + 6 XF-001 +
+  22 unit `edit_prw` + 7 integration `edit-prw` + 7 contract docs guard).
+- **622 testes verde** (era 565 no v0.6.1).
+
+### Notes
+
+- Pavimenta **Fase 1** (`plugadvpl compile` — wrapper TDS-LS), **Fase 2**
+  (`plugadvpl exec` — cliente do contrato U_EXEC), **Fase 3** (`deploy` —
+  hot-swap RPO), **Fase 4** (`smoke` + `test`). Detalhes no spec.
+- **Princípios mantidos**: sem IP TOTVS, opt-in via pipeline existente, sem
+  assumir Docker/TDS, JSON estruturado, credenciais via env var.
+
 ## [0.6.1] - 2026-05-18
 
 ### 🎯 Feature B polish — 3 itens reportados em uso real (v0.6.0)

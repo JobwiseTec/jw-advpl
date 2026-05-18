@@ -86,20 +86,44 @@ Universo 3 entregue em 4 dot-releases consecutivas (3 features + polish):
   catálogo +6 rotinas + dup test, índices em `funcao` (migration 008)
 - 489 testes verde (era 478)
 
-## 🟡 v0.5.0 — Universo 4 (a definir)
+## ✅ v0.5.x / v0.6.x — Universo 4: Trace + Qualidade (2026-05)
 
-Candidatos sob avaliação (priorizar conforme demanda da comunidade):
+Universo 4 entregue em 2 features:
 
-- **Qualidade & métricas** — complexidade ciclomática por função, hot-paths
-  (top-N callers), distribuição de tamanho de fonte
-- **Ownership analytics** — quem mantém o quê (cross-ref `git blame` × parser)
-- **Cross-cliente diff** — comparar 2 índices (cliente A vs B) pra ver
-  drift de customização sobre o mesmo módulo TOTVS
-- **`expressoes_dicionario`** — parser de ADVPL embutido em SX (X3_VALID/
-  INIT/WHEN/VLDUSER, X7_REGRA, X1_VALID, X6_VALID/INIT) extraindo
-  user_funcs/funcs_padrao/tabelas_ref/campos_ref/parametros_ref
-- **`trace <campo|funcao|tabela>`** — grafo completo cross-universo
-  (rastreabilidade unificada)
+- **Feature A — Trace unificado** (`v0.5.x`): `plugadvpl trace <entidade>` que
+  agrega visão cross-universo (fontes + SX + chamadas + workflow + jobs).
+  Auto-detect de tipo (campo|funcao|tabela|arquivo|parametro|pergunte).
+- **Feature B — Qualidade & métricas** (`v0.6.x`): `plugadvpl metrics`,
+  `plugadvpl hotspots`, `plugadvpl cobertura-doc`. Complexidade ciclomática
+  McCabe, nesting, fan-out, params_count, has_doc por função. Schema v10
+  (tabela `fonte_metrics`).
+- v0.6.1 polish: 3 bugs reportados em uso real (`infer_module` filename prefix,
+  `cobertura-doc` heurística estendida, UX hint em tabela vazia).
+
+## ✅ v0.7.0 — Fase 0: Quick Wins runtime/encoding/webservice (2026-05)
+
+Fase 0 do roadmap de runtime. 5 lint rules + 1 comando + 1 contract doc.
+Detalhes em [`docs/fase0/quick-wins.md`](fase0/quick-wins.md):
+
+- **5 lint rules novas**: WS-001, WS-002, WS-003, XF-001, ENC-001
+- **`plugadvpl edit-prw {check,open,save}`** — conversão CP1252↔UTF-8 in-place
+- **`docs/exec-contract.md`** + **`docs/examples/uexec.prw`** (MIT) — contrato
+  canônico HTTP/JSON `POST /rest/uexec` para execução headless DEV/CI
+
+622 testes verde. Zero dependência externa.
+
+## 🟡 Próximas Fases — Runtime ADVPL completo (sem ETA fixa)
+
+Roadmap de 5 fases para fechar o ciclo "indexar → compilar → executar →
+testar → deployar" sem precisar abrir TDS:
+
+- **Fase 1 — `plugadvpl compile`**: wrapper TDS-LS (`advpls`) para compilar
+  sob demanda. Reporta erros em formato JSON estruturado.
+- **Fase 2 — `plugadvpl exec`**: cliente HTTP nativo que consome o contrato
+  `U_EXEC` (v0.7.0). Executa função arbitrária com args via CLI.
+- **Fase 3 — `plugadvpl deploy`**: hot-swap RPO (strategies a definir).
+- **Fase 4 — `plugadvpl smoke` + `test`**: bateria CI completa usando exec.
+- **Fase 5 — hooks + orchestrator agent**: integração nativa Claude Code.
 
 ## 🔵 Backlog (sem ETA)
 

@@ -290,24 +290,28 @@ Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma q
 
 ## Status
 
-**v0.4.3 — Universo 3 (Rastreabilidade) entregue + polish pack.**
+**v0.7.0 — Fase 0 (Quick Wins runtime/encoding/webservice) entregue.**
 
-- **21 subcomandos**, **40 skills** (18 knowledge + 21 CLI wrappers + 1 setup helper), 4 agents, 1 hook
-- **25 tabelas físicas** (22 fontes/SX + 3 Universo 3) + 2 FTS5 + 7 lookups
-- **489 testes verde** (unit + integration + bench + e2e_local)
+- **24 subcomandos** (incluindo `edit-prw {check,open,save}`), **40 skills**, 4 agents, 1 hook
+- **27 tabelas físicas** (22 fontes/SX + 3 Universo 3 + 1 Universo 4 + 1 lint) + 2 FTS5 + 7 lookups
+- **622 testes verde** (unit + integration + bench + e2e_local)
 - Bench em ~2.000 fontes: ingest <60s com `--workers 8`; ingest-sx
   do dicionário completo (~420k rows) <30s
-- Schema v8 — migrations 005/006/007 (Universo 3) + 008 (índices polish)
+- Schema v10 — migrations 005-007 (Universo 3) + 008 (índices polish) + 010 (Universo 4 métricas)
+- **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo
+  best-practice, security, performance, modernization, dicionário SX e webservice
 
 **Roadmap.**
 
 - **v0.1** *(shipped)* — Universo 1: parser de fontes, FTS5, 13 regras lint single-file, 14 subcomandos CLI.
 - **v0.2** *(shipped)* — 21k linhas de referência ADVPL/TLPP embutidas em 5 skills novas + 6 reforçadas.
 - **v0.3** *(shipped)* — Universo 2 (Dicionário SX): ingest SX1..SXG, comandos `impacto`/`gatilho`/`sx-status`, 11 regras cross-file SX-001..SX-011.
-- **v0.4** *(shipped)* — Universo 3 (Rastreabilidade): execução não-direta (`workflow`/schedule/job/mail), ExecAuto chain (`execauto`), Protheus.doc agregada (`docs`). Polish pack v0.4.3 (5 críticos + 4 importantes do code review).
-- **v0.5** *(próximo)* — Universo 4 a definir (candidatos: qualidade & métricas, complexidade ciclomática, hot-paths, ownership analytics).
+- **v0.4** *(shipped)* — Universo 3 (Rastreabilidade): execução não-direta (`workflow`/schedule/job/mail), ExecAuto chain (`execauto`), Protheus.doc agregada (`docs`).
+- **v0.5/v0.6** *(shipped)* — Universo 4 (Trace unificado + Qualidade & métricas): `trace`, `metrics`, `hotspots`, `cobertura-doc`. Schema v10 (`fonte_metrics`).
+- **v0.7** *(shipped)* — Fase 0 (Quick Wins): lint rules WS-001/002/003 + XF-001 + ENC-001, comando `edit-prw`, contract doc `U_EXEC` + reference impl MIT.
+- **Fases 1-5** *(planejado)* — runtime ADVPL completo: `compile` (TDS-LS), `exec` (cliente U_EXEC), `deploy` (hot-swap RPO), `smoke`+`test`, hooks Claude Code.
 
-Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo3/`.
+Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo3/`, `docs/universo4/`, `docs/fase0/`.
 
 ---
 

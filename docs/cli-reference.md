@@ -309,7 +309,27 @@ plugadvpl 0.4.3
 
 ### <a id="help"></a>`help`
 
-Atalho equivalente a `plugadvpl --help`. Lista todos os 21 subcomandos.
+Atalho equivalente a `plugadvpl --help`. Lista todos os subcomandos.
+
+### <a id="edit-prw"></a>`edit-prw {check,open,save} <file>` (v0.7.0)
+
+Conversão CP1252 ↔ UTF-8 in-place para fontes ADVPL/TLPP. Resolve
+divergências reportadas por **ENC-001**.
+
+```
+plugadvpl edit-prw check <file>                  # reporta encoding vs extensão (exit 1 se mismatch)
+plugadvpl edit-prw open  <file>                  # imprime conteúdo em UTF-8 puro (stdout)
+plugadvpl edit-prw save  <file> [--from CP] [--to CP] [--no-backup]
+```
+
+Default por extensão: `.prw`/`.prx` → cp1252 · `.tlpp`/`.ch` → utf-8.
+`save` cria backup `<file>.bak` por padrão. Estratégia de detecção:
+BOM → ASCII → UTF-8 strict → CP1252 fallback (determinística).
+
+Exit codes:
+- `0` — sucesso (ou check passou)
+- `1` — check mismatch ou erro de conversão (`--from` inválido)
+- `2` — arquivo não encontrado
 
 ---
 
