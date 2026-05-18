@@ -214,13 +214,16 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         stdout=stdout, stderr=stderr, mode=mode, requested_files=files,
     )
 
-    # group diagnostics by file
+    # group diagnostics by file (requested only — defensivos vão pra __unmatched__)
     by_file: dict[str, list[Diagnostic]] = {str(f): [] for f in files}
+    defensive_unmatched: list[Diagnostic] = []
     for d in matched:
         if d.arquivo in by_file:
             by_file[d.arquivo].append(d)
         else:
-            by_file.setdefault("__unknown__", []).append(d)
+            # parse_diagnostics normalmente põe em unmatched, mas defensivamente:
+            # contrato §7.8 / §11.3 — agrupa em __unmatched__ (nome estável).
+            defensive_unmatched.append(d)
 
     rows: list[dict[str, object]] = []
     for fpath, diags in by_file.items():
@@ -240,7 +243,9 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             "diagnostics": [d.to_dict() for d in diags],
         })
 
-    if unmatched:
+    # Bucket __unmatched__: unmatched do parser + defensivos do agrupamento
+    all_unmatched = defensive_unmatched + list(unmatched)
+    if all_unmatched:
         rows.append({
             "arquivo": "__unmatched__",
             "ok": False,
@@ -248,10 +253,12 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             "duration_ms": duration_ms,
             "exit_code": proc.returncode,
             "counts": {
-                "error": sum(1 for d in unmatched if d.severidade == "error"),
-                "warning": 0, "info": 0, "unknown": 0,
+                "error": sum(1 for d in all_unmatched if d.severidade == "error"),
+                "warning": sum(1 for d in all_unmatched if d.severidade == "warning"),
+                "info": sum(1 for d in all_unmatched if d.severidade == "info"),
+                "unknown": sum(1 for d in all_unmatched if d.severidade == "unknown"),
             },
-            "diagnostics": [d.to_dict() for d in unmatched],
+            "diagnostics": [d.to_dict() for d in all_unmatched],
         })
 
     total_errors = 0

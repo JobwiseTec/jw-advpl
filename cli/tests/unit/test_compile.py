@@ -138,3 +138,27 @@ class TestRunAppre:
         assert result.exit_code == 1
         assert result.summary["total_errors"] >= 1
         proc.terminate.assert_called()
+
+    def test_unmatched_diagnostic_goes_to_unmatched_bucket(self, tmp_path: Path) -> None:
+        """Spec §7.8 — diagnostic com arquivo fora de requested_files vai pra row __unmatched__."""
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        # Mock retorna erro em arquivo desconhecido (outro.prw — não solicitado)
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"outro.prw(99) error: orphan", b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        # Existe row __unmatched__ com o diagnostic
+        unmatched_rows = [r for r in result.rows if r["arquivo"] == "__unmatched__"]
+        assert len(unmatched_rows) == 1
+        assert unmatched_rows[0]["counts"]["error"] == 1
+        # NÃO existe row __unknown__ (nome antigo)
+        assert not any(r["arquivo"] == "__unknown__" for r in result.rows)
