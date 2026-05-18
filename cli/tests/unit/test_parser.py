@@ -101,6 +101,49 @@ class TestExtractFunctions:
         assert by_name["Foo"]["linha_inicio"] == 2
         assert by_name["Bar"]["linha_inicio"] == 5
 
+    def test_unclosed_block_comment_does_not_swallow_distant_function(self) -> None:
+        """v0.4.6 (A): block comment `/*` aberto sem `*/` proximo NAO deve
+        engolir funcoes distantes. Cap defensivo de 200 linhas.
+
+        ADVPL permite block comment multi-linha legitimamente (devs comentam
+        funcoes inteiras), mas ate 200 linhas eh extremamente generoso. Fonte
+        com bloco aberto sem fechar (typo: dev esqueceu o `*/`) antes engolia
+        ate o proximo `*/` no arquivo, perdendo funcoes do indice.
+        """
+        # 250 linhas dentro de /* sem fechar — passa do cap de 200
+        filler = "\n".join(["filler line"] * 250)
+        src = (
+            "User Function FnAntes()\n"
+            "Return\n"
+            "\n"
+            "/* opening comment sem fechamento\n"
+            f"{filler}\n"
+            "Static Function FnDepoisDoCap()\n"  # > 100 linhas dentro do /* aberto
+            "   Return\n"
+            "Return\n"
+        )
+        names = [f["nome"] for f in extract_functions(src)]
+        assert "FnAntes" in names
+        assert "FnDepoisDoCap" in names, (
+            f"FnDepoisDoCap engolida por block comment nao-fechado. names={names}"
+        )
+
+    def test_block_comment_short_legit_still_respected(self) -> None:
+        """Sanity: block comment legit (<200 linhas) ainda eh respeitado."""
+        src = (
+            "User Function FnAntes()\n"
+            "Return\n"
+            "\n"
+            "/* doc curta\n"
+            "  varias linhas\n"
+            "  mas fecha normal\n"
+            "*/\n"
+            "Static Function FnDepois()\n"
+            "Return\n"
+        )
+        names = [f["nome"] for f in extract_functions(src)]
+        assert names == ["FnAntes", "FnDepois"]
+
     def test_unclosed_string_does_not_swallow_subsequent_functions(self) -> None:
         """v0.4.5 (bug crítico): string mal-formada (não fechada na mesma
         linha) antes consumia tudo até o próximo `\"` no arquivo, engolindo

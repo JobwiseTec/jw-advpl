@@ -42,6 +42,13 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
     # at_start_of_line: True na BOF; depois de cada \n; permanece True enquanto só whitespace.
     # Apenas line-start markers (* e &&) usam essa flag.
     at_start_of_line = True
+    # v0.4.6 (A): cap defensivo pra block comment não-fechado. ADVPL permite
+    # block comment multi-linha legitimamente (devs comentam funções), mas
+    # 200 linhas é extremamente generoso pra qualquer caso real. Bloco que
+    # passa disso é typo (dev esqueceu `*/`) e antes engolia funções.
+    _BLOCK_COMMENT_LINE_CAP = 200
+    block_comment_start_line = 0
+    current_line = 0  # 0-indexed; incrementa em cada \n consumido
     while i < n:
         c = content[i]
         if state == "code":
@@ -53,6 +60,8 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 continue
             if c == "/" and i + 1 < n and content[i + 1] == "*":
                 state = "block_comment"
+                # v0.4.6 (A): grava linha de abertura pra cap defensivo.
+                block_comment_start_line = current_line
                 out.append("  ")
                 i += 2
                 at_start_of_line = False
@@ -96,6 +105,7 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
             out.append(c)
             if c == "\n":
                 at_start_of_line = True
+                current_line += 1
             elif c not in (" ", "\t", "\r"):
                 at_start_of_line = False
         elif state == "line_comment":
@@ -103,6 +113,7 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 state = "code"
                 out.append("\n")
                 at_start_of_line = True
+                current_line += 1
             else:
                 out.append(" ")
         elif state == "block_comment":
@@ -114,6 +125,13 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 continue
             if c == "\n":
                 out.append("\n")
+                current_line += 1
+                # v0.4.6 (A): cap defensivo — se block comment não fecha em
+                # _BLOCK_COMMENT_LINE_CAP linhas, assume typo (dev esqueceu
+                # `*/`) e volta a code state. Evita engolir Function decls.
+                if current_line - block_comment_start_line >= _BLOCK_COMMENT_LINE_CAP:
+                    state = "code"
+                    at_start_of_line = True
                 # Dentro de bloco, newline não conta para start-of-line da próxima linha
                 # de código (ainda estamos no comentário).
             else:
@@ -129,6 +147,7 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 state = "code"
                 out.append("\n")
                 at_start_of_line = True
+                current_line += 1
                 i += 1
                 continue
             if c == "\\" and i + 1 < n:
@@ -147,6 +166,7 @@ def strip_advpl(  # noqa: PLR0912, PLR0915
                 state = "code"
                 out.append("\n")
                 at_start_of_line = True
+                current_line += 1
                 i += 1
                 continue
             if c == "\\" and i + 1 < n:
