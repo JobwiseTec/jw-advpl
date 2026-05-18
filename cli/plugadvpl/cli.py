@@ -1905,6 +1905,12 @@ def hotspots(
         ctx,
         lambda c: hotspots_query(c, n=n, excluir_nativas=no_natives, tipo=tipo),
     )
+    # v0.6.1 (bug #1): detector de method dedup — emite warning quando vê
+    # múltiplos `VAR:METODO` com mesmo sufixo `:METODO`. Sintoma típico de
+    # mesma classe (TPrinter:Say) acessada via vars com nomes diferentes
+    # (oPrint/oPrn/oPrinter). Type inference real ficaria muito caro;
+    # warning informa sem agregar erroneamente.
+    _warn_hotspot_method_dedup(rows)
     _render_from_ctx(
         ctx,
         rows,
@@ -1920,6 +1926,34 @@ def hotspots(
             else None
         ),
     )
+
+
+def _warn_hotspot_method_dedup(rows: list[dict[str, Any]]) -> None:
+    """v0.6.1 (bug #1): detecta agrupamentos prováveis de mesma classe.
+
+    Agrupa rows por sufixo `:METODO`. Se >= 2 rows compartilham sufixo,
+    emite warning em stderr (typer.echo err=True) listando-os e somando
+    n_calls combinado.
+    """
+    from collections import defaultdict
+    by_method: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        dest = r.get("destino") or ""
+        if ":" not in dest:
+            continue
+        method = dest.rsplit(":", 1)[-1].upper()
+        by_method[method].append(r)
+    groups = [(m, lst) for m, lst in by_method.items() if len(lst) >= 2]
+    if not groups:
+        return
+    for method, items in groups:
+        labels = ", ".join(f"{r['destino']} ({r['n_calls']})" for r in items)
+        total = sum(r["n_calls"] for r in items)
+        typer.echo(
+            f"Aviso: '{labels}' compartilham método ':{method}' — "
+            f"provavelmente mesma classe via vars distintas. Soma efetiva: ~{total}.",
+            err=True,
+        )
 
 
 @app.command(name="cobertura-doc")

@@ -1873,6 +1873,49 @@ class TestQualidadeMetricas:
         rows = json.loads(result.stdout)["rows"]
         assert rows[0]["funcao"] == "ComplexFn"
 
+    def test_hotspots_method_dedup_warning(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.6.1 (bug #1): hotspots emite warning quando detecta múltiplas
+        variáveis VAR:METODO compartilhando o mesmo método (provavelmente
+        mesma classe acessada via vars diferentes — ex: TPrinter:Say via
+        oPrint/oPrn/oPrinter).
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        # 3 fontes que chamam TPrinter:Say via vars com nomes diferentes
+        (src / "FnA.prw").write_bytes(
+            b'User Function FnA()\n'
+            b'   Local oPrint := TPrinter():New()\n'
+            b'   oPrint:Say(1, "x")\n'
+            b'   oPrint:Say(2, "y")\n'
+            b'Return\n'
+        )
+        (src / "FnB.prw").write_bytes(
+            b'User Function FnB()\n'
+            b'   Local oPrn := TPrinter():New()\n'
+            b'   oPrn:Say(1, "x")\n'
+            b'Return\n'
+        )
+        (src / "FnC.prw").write_bytes(
+            b'User Function FnC()\n'
+            b'   Local oPrinter := TPrinter():New()\n'
+            b'   oPrinter:Say(1, "x")\n'
+            b'Return\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            ["--root", str(src), "hotspots", "--tipo", "method"],
+        )
+        assert result.exit_code == 0
+        stderr = result.stderr or ""
+        # Deve mencionar warning de :SAY ambiguo (3 vars distintas)
+        assert "SAY" in stderr.upper(), (
+            f"esperado warning mencionando :SAY no stderr. stderr={stderr!r}"
+        )
+
     def test_hotspots_ranks_simplefn_top(
         self, metrics_project: Path, runner: CliRunner
     ) -> None:

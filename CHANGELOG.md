@@ -4,6 +4,66 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-18
+
+### 🎯 Feature B polish — 3 itens reportados em uso real (v0.6.0)
+
+Reporter testou Feature B em corpus do Cliente X (~9.500 funções) e
+identificou 3 issues:
+- **#1** `hotspots --tipo method` duplica método de framework por nome de var
+- **#2** `cobertura-doc` heurística de módulo só olha path (98% sem grupo em codebase flat)
+- **UX #3** `cobertura-doc` vazio sem hint de próximo passo
+
+v0.6.1 fecha todos os 3.
+
+### Fixed
+- **#2 — `infer_module` cobre prefixo no nome do arquivo**
+  ([commit e1a091b](https://github.com/JoniPraia/plugadvpl/commit/e1a091b)).
+  Antes: só `SIGA\w{3,4}` no path. Agora `_module_from_filename` testa:
+  1. Prefixo TOTVS direto: `FINA050.prw` → SIGAFIN, `MATA125.prw` → SIGACOM
+  2. Prefixo cliente (1-4 chars) + TOTVS: `ABCCOM01.prw` → SIGACOM
+  Tabela hardcoded de **33 prefixos canônicos** (ordem importa — mais
+  específico primeiro pra evitar match genérico errado).
+  **Impacto medido no corpus real**: 27 fontes inferidos (0.3%) → **1.114
+  (56.2%)**. Top módulos detectados: SIGAFIN 241, SIGAFAT 199, SIGACOM 149,
+  SIGAEEC 119, SIGAEST 110, SIGAGFE 104, SIGAFIS 75, SIGACRM 63.
+
+- **UX #3 — `cobertura-doc` next_steps quando vazio** (mesmo commit).
+  Antes: silencioso. Agora hint padronizado (consistente com `metrics`):
+  sugere `ingest --no-incremental` + `docs --orphans` + `lint --regra BP-007`.
+
+### Added
+- **#1 — Warning de método ambíguo em `hotspots --tipo method`**
+  ([atual commit](https://github.com/JoniPraia/plugadvpl)). Detector
+  `_warn_hotspot_method_dedup` agrupa rows por sufixo `:METODO`. Quando
+  vê >= 2 rows compartilhando método (provável mesma classe via vars
+  com nomes distintos — `oPrint:Say`/`oPrn:Say`/`oPrinter:Say` =
+  `TPrinter:Say`), emite warning em stderr listando-os e somando
+  `n_calls` combinado.
+  Reporter aceitou explicitamente a **Opção C** (warning) como solução
+  válida — type inference de OO ADVPL ficaria caro demais (não justifica
+  pra esse escopo).
+
+### Limitação conhecida — Bug #1 não resolve agregação
+A solução é informativa, não agregadora. Pra ranking sem ambiguidade,
+recomendação do reporter mantida: usar `--tipo user_func` (ranking limpo
+de funções customizadas — o que tem real refactor priority).
+
+### Tests
+- **+2 testes unit** (`test_protheus_doc.py::TestModuleInference`):
+  prefixo TOTVS no nome + prefixo cliente+TOTVS
+- **+1 teste integration** (`test_cli.py::TestQualidadeMetricas`):
+  hotspots warning de method dedup
+- **565 testes verde** (era 562).
+
+### Notes
+- **Re-ingest recomendado** pra colher os módulos inferidos pelo novo
+  `_module_from_filename`. Antes 98% dos fontes ficavam em `_sem_grupo`;
+  agora ~44% (e dos remanescentes, maioria são utils/helpers sem
+  convenção de prefixo).
+- **3 itens do reporter fechados em 1 release** mantendo Princípio do
+  ciclo curto bug-report → fix.
+
 ## [0.6.0] - 2026-05-18
 
 ### 🚀 Universo 4 — Qualidade & Métricas (Feature B)
