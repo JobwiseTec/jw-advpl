@@ -4,6 +4,95 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-05-18
+
+### 🧹 Backlog cleanup — 11 itens fechados antes de Universo 4
+
+Polish pack agregando todos os deferred desde v0.4.3 (code review pós-Universo 3)
+e v0.4.4/v0.4.5 (QA de uso real). Tiers 1+2 (impacto real) + Tier 4 (feature) +
+Tier 3 (cosmético). Cada fix em commit atômico com TDD red→green.
+
+### Fixed (Tier 1 — impacto real)
+- **A — block comment `/* */` não-fechado cap defensivo de 200 linhas**
+  ([commit b6d5e6c](https://github.com/JoniPraia/plugadvpl/commit/b6d5e6c)).
+  Complementa o fix v0.4.5 da string mal-formada. Stripper agora encerra
+  block comment ao passar de 200 linhas (cap extremamente generoso pra qualquer
+  uso legítimo — devs que comentam função inteira tipicamente em <100 linhas).
+  Cap só dispara em casos patológicos (dev esqueceu `*/`).
+- **C — `op_dynamic` flag separado em execauto** (schema v8→v9, migration 009)
+  ([commit fc1435b](https://github.com/JoniPraia/plugadvpl/commit/fc1435b)).
+  Antes `MsExecAuto(..., nVar)` ou `MsExecAuto(..., 3+nOpc)` gravava
+  `op_code=NULL` indistinguível de "sem args". Agora coluna `op_dynamic`
+  diferencia. Filtro CLI `--op-dynamic` pra revisão manual. Display mostra
+  `(var)` em vez de vazio na coluna op.
+- **F — WFPrepEnv emite `kind=wf_callback` separado de `workflow`**
+  ([commit dd10dfc](https://github.com/JoniPraia/plugadvpl/commit/dd10dfc)).
+  Antes ambos compartilhavam `kind=workflow`, queries por kind contavam
+  duplicado em fontes com instanciação + callback. WorkflowKind enum
+  atualizada (aceita `--kind wf_callback`).
+
+### Added (Tier 1+2)
+- **B — `doctor --check-funcs`** ([commit 53d6c53](https://github.com/JoniPraia/plugadvpl/commit/53d6c53)).
+  Opt-in. Re-lê fontes em runtime, compara grep (`^[ \t]*(?:Static|User|Main)\s+Function\s+\w+`)
+  vs count no DB por arquivo. Status warn quando discrepância (lista até 10 arquivos
+  com counts). Surface tanto bugs de parser quanto commenting-out intencional —
+  usuário decide caso-a-caso.
+- **D — `caminho` (relativo) no JSON output de workflow/execauto/docs**
+  ([commit 77f02ee](https://github.com/JoniPraia/plugadvpl/commit/77f02ee)).
+  Antes filtro `--arquivo` casava basename mas display mostrava só basename.
+  Em projetos com fontes homônimos em subdirs diferentes, usuário não via qual
+  path foi indexado. Helper `_augment_with_caminho` injeta coluna `caminho` no
+  display dict; em table mode não aparece (mantém layout enxuto), em JSON aparece
+  sempre.
+- **E — Sugestão de módulos disponíveis quando `--modulo X` não casa**
+  ([commit 7aff67b](https://github.com/JoniPraia/plugadvpl/commit/7aff67b)).
+  `execauto --modulo SIGAINEXISTENTE` agora lista top-5 módulos reais no índice
+  via next_steps. Mesmo pra `docs [modulo]`. Queries novas:
+  `execauto_top_modulos` / `protheus_docs_top_modulos`.
+- **K — `workflow --duplicates`** ([commit 2824a82](https://github.com/JoniPraia/plugadvpl/commit/2824a82)).
+  Feature derivada de uso real: o usuário descobriu por acidente que tinha 2
+  TWFProcess para workflows diferentes com mesmo Process ID. Agora explícito:
+  `workflow --duplicates` lista targets compartilhados entre 2+ fontes,
+  agrupando por `(kind, target)` com `count >= 2`. Detecta erros de design
+  (Process ID reusado, Main name colidindo, pergunte SX1 duplicada).
+
+### Refactored (Tier 3)
+- **G — `_split_top_level_commas` unificado em `parsing/_split.py`**
+  ([commit 2848469](https://github.com/JoniPraia/plugadvpl/commit/2848469)).
+  Antes: 3 implementações divergentes (triggers/execauto/protheus_doc) com
+  pequenas diferenças (strings respeitadas ou não, `max_parts` ou não).
+  Agora versão única, mais conservadora. Pure refactor.
+
+### Polish (Tier 3 cosmético)
+- **H — `serialize_json([])` grava `'[]'` em vez de `NULL`**
+  ([commit dcd60c0](https://github.com/JoniPraia/plugadvpl/commit/dcd60c0)).
+  Inspeção via sqlite3 cli fica clara. End-to-end equivalente.
+- **I — `dict.fromkeys()` preservando ordem em next_steps** (mesmo commit).
+  Substitui set comprehensions não-determinísticas — evita flake em snapshot
+  tests futuros.
+- **J — Regex SemVer/PEP440 estrita em fragment-version marker** (mesmo commit).
+  Antes `[\d.+-]\S*` permitia qualquer non-whitespace. Agora exige
+  `\d+\.\d+\.\d+[\w.+-]*` (aceita dev/rc/pre/build).
+
+### Migration
+- **Schema 8 → 9** (ADD COLUMN, não-breaking). DBs antigos populam `op_dynamic`
+  com 0 default; re-ingest opcional pra colher valores corretos.
+
+### Tests
+- **+9 testes novos** (1 por item substantivo):
+  - `test_parser.py::test_unclosed_block_comment_does_not_swallow_distant_function`
+  - `test_parser.py::test_block_comment_short_legit_still_respected`
+  - `test_doctor_check_funcs_detects_discrepancy`
+  - `test_execauto_json_includes_caminho_relativo`
+  - `test_workflow_duplicates_detects_shared_target`
+  - `test_execauto_empty_modulo_suggests_available_modules`
+  - `test_op_dynamic_variable` / `test_op_dynamic_expression` / `test_op_literal_not_dynamic`
+- **508 testes verde** (era 499).
+
+### Notes
+- **Pronto pra Universo 4**: backlog deferred zerado. Próximo grande tema
+  pode ser tackled sem dívida técnica pendente.
+
 ## [0.4.5] - 2026-05-18
 
 ### 🚨 Bug crítico — stripper engolia declarações Function após string mal-formada

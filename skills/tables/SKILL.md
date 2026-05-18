@@ -26,7 +26,7 @@ Sem flags: lista todos os usos (leitura + escrita + reclock + SQL).
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.4.5 --format md tables $ARGUMENTS
+uvx plugadvpl@0.4.6 --format md tables $ARGUMENTS
 ```
 
 > **Para agente IA:** prefira `--format md`. Default `table` trunca colunas (`fonte_path` longo vira `ca...`). Flag eh global, vem **antes** do subcomando.
