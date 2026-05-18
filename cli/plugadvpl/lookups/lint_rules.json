@@ -383,5 +383,16 @@
     "detection_kind": "cross-file",
     "status": "active",
     "impl_function": "_check_sx011_x3_f3_consulta_inexistente"
+  },
+  {
+    "regra_id": "WS-001",
+    "titulo": "WSMETHOD sem WSSERVICE/WSRESTFUL/WSREST ou subname distinto em colisão",
+    "severidade": "error",
+    "categoria": "best-practice",
+    "descricao": "WSMETHOD <verb> deve terminar com `WS(SERVICE|RESTFUL|REST) <NomeDoServico>`. Sem isso o metodo nao registra na rota — compila mas vira código morto silencioso. Também detecta colisão (warning): dois `WSMETHOD <verb>` no mesmo servico sem subname distinto — last-wins. WSSERVICE/WSRESTFUL/WSREST sao aliases equivalentes.",
+    "fix_guidance": "Sintaxe canônica: `WSMETHOD GET listar WSSERVICE MeuSrv`. Para evitar colisão, sempre dê um subname único entre o verbo e WSSERVICE quando houver mais de um método com o mesmo verbo no mesmo serviço.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_ws001_wsmethod_orphan"
   }
 ]

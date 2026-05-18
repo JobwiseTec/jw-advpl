@@ -1975,3 +1975,88 @@ class TestSec005LocallyDefinedFunction:
         )
         findings = lint_source(_parsed_for(src), src)
         assert "SEC-005" in _ids(findings)
+
+
+# --- WS-001: WSMETHOD sem WSSERVICE / colisao de verbo sem subname ----------
+
+
+class TestWS001WSMethodOrphan:
+    """v0.7.0 (Fase 0): WSMETHOD precisa de WSSERVICE/WSRESTFUL/WSREST + ServiceName.
+
+    Sem isso o metodo nao registra na rota. Tambem detecta colisao: dois metodos
+    do mesmo verbo no mesmo servico sem subname distinto (last-wins silencioso).
+    """
+
+    def test_positive_wsmethod_without_wsservice(self) -> None:
+        src = (
+            "WSRESTFUL API_Foo DESCRIPTION 'API'\n"
+            "  WSDATA cBody AS STRING\n"
+            "ENDWSRESTFUL\n"
+            "WSMETHOD GET orfao\n"
+            "  ::SetResponse('{}')\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        ws001 = [f for f in findings if f["regra_id"] == "WS-001"]
+        assert len(ws001) == 1
+        assert ws001[0]["severidade"] == "error"
+        assert ws001[0]["linha"] == 4
+
+    def test_negative_wsmethod_with_wsservice(self) -> None:
+        src = (
+            "WSRESTFUL API_Foo DESCRIPTION 'API'\n"
+            "ENDWSRESTFUL\n"
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            "  ::SetResponse('{}')\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-001" not in _ids(findings)
+
+    def test_negative_wsmethod_with_wsrestful_alias(self) -> None:
+        """WSRESTFUL e WSREST sao aliases validos de WSSERVICE."""
+        src = (
+            "WSMETHOD POST salvar WSRESTFUL API_Foo\n"
+            "Return .T.\n"
+            "WSMETHOD DELETE remover WSREST API_Foo\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-001" not in _ids(findings)
+
+    def test_positive_colision_two_post_same_service_no_subname(self) -> None:
+        """Dois POST sem subname no mesmo service: ultimo vence (silencioso)."""
+        src = (
+            "WSRESTFUL API_Foo\n"
+            "ENDWSRESTFUL\n"
+            "WSMETHOD POST WSSERVICE API_Foo\n"
+            "Return .T.\n"
+            "WSMETHOD POST WSSERVICE API_Foo\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        ws001 = [f for f in findings if f["regra_id"] == "WS-001"]
+        # Duas declaracoes colidem — sinaliza ambas como warning
+        assert len(ws001) == 2
+        assert all(f["severidade"] == "warning" for f in ws001)
+
+    def test_negative_colision_resolved_by_subnames(self) -> None:
+        src = (
+            "WSMETHOD POST salvar WSSERVICE API_Foo\n"
+            "Return .T.\n"
+            "WSMETHOD POST atualizar WSSERVICE API_Foo\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-001" not in _ids(findings)
+
+    def test_negative_same_verb_no_subname_different_service(self) -> None:
+        """Mesmo verbo sem subname mas em servicos diferentes — nao colide."""
+        src = (
+            "WSMETHOD GET WSSERVICE API_Foo\n"
+            "Return .T.\n"
+            "WSMETHOD GET WSSERVICE API_Bar\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "apis.prw"), src)
+        assert "WS-001" not in _ids(findings)

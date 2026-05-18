@@ -234,6 +234,40 @@ _PUBLIC_DECL_RE = re.compile(r"^[ \t]*PUBLIC[ \t]+\w", re.IGNORECASE | re.MULTIL
 # Helpers para snippet length.
 _SNIPPET_MAX = 200
 
+# v0.7.0 Fase 0: regexes para regras de webservice (WS-001/002/003).
+# WSMETHOD canonico: `WSMETHOD <VERB> [<cId>] WS(SERVICE|RESTFUL|REST) <ServiceName>`.
+# Aliases WSSERVICE/WSRESTFUL/WSREST sao equivalentes (doc TDN).
+_WS001_WSMETHOD_LINE_RE = re.compile(
+    r"^[ \t]*WSMETHOD[ \t]+(GET|POST|PUT|DELETE)\b([^\r\n]*)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Dentro do "resto da linha" (group 2) extrai service: WS(SERVICE|RESTFUL|REST) <Name>
+_WS001_SERVICE_IN_REST_RE = re.compile(
+    r"\bWS(?:SERVICE|RESTFUL|REST)[ \t]+(\w+)", re.IGNORECASE,
+)
+# Captura cId (subname) opcional: primeiro identifier antes de WS(SERVICE|RESTFUL|REST).
+_WS001_SUBNAME_IN_REST_RE = re.compile(
+    r"^[ \t]+([A-Za-z_]\w*)(?=[ \t]+WS(?:SERVICE|RESTFUL|REST)\b)",
+    re.IGNORECASE,
+)
+
+# WS-002/003: usa _WSRESTFUL_CLASS_RE + _END_CLASS_RE existentes (SEC-001).
+# `cBody := ::GetContent()` ou `<v> := self:GetContent()` ou `self:GetContent()` direto.
+_WS002_GETCONTENT_RE = re.compile(
+    r"\b(?:::|[Ss][Ee][Ll][Ff]\s*:)GetContent\s*\(", re.IGNORECASE,
+)
+# DecodeUtf8(xxx) — verifica presenca interposta entre GetContent e FromJson.
+_WS002_DECODE_UTF8_RE = re.compile(r"\bDecodeUtf8\s*\(", re.IGNORECASE)
+# FromJson("...") — chamada sobre oJson ou JsonObject.
+_WS002_FROMJSON_RE = re.compile(r"\bFromJson\s*\(", re.IGNORECASE)
+_WS002_LOOKAHEAD_LINES = 10
+
+# WS-003: SetResponse(...) sem EncodeUtf8 envolvendo o argumento.
+_WS003_SETRESPONSE_RE = re.compile(
+    r"\b(?:::|[Ss][Ee][Ll][Ff]\s*:)SetResponse\s*\(([^)]*)\)", re.IGNORECASE,
+)
+_WS003_ENCODE_UTF8_RE = re.compile(r"\bEncodeUtf8\s*\(", re.IGNORECASE)
+
 
 # --- Helpers ------------------------------------------------------------------
 
@@ -1571,6 +1605,89 @@ def _check_perf005_reccount_for_existence(
     return findings
 
 
+# --- v0.7.0 Fase 0: Webservice rules (WS-001/002/003) -------------------------
+
+
+def _check_ws001_wsmethod_orphan(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """WS-001 (error): WSMETHOD <verb> sem WSSERVICE/WSRESTFUL/WSREST + ServiceName.
+
+    Sem o trailing WS(SERVICE|RESTFUL|REST), o metodo nao se registra na rota
+    do servico — compila mas vira `dead code` silencioso. TDN documenta os 3
+    aliases como equivalentes.
+
+    Tambem detecta colisao (severidade warning): dois `WSMETHOD <verb>` no
+    mesmo servico sem subname distinto — o ultimo registrado vence
+    silenciosamente, bug raro mas dificil de diagnosticar.
+
+    Estrategia:
+    1. Capturar todas declaracoes `WSMETHOD GET|POST|PUT|DELETE ...`.
+    2. Pra cada, extrair (verb, subname_opcional, service_opcional) da linha.
+    3. Service ausente → error.
+    4. Agrupar por (service, verb): se 2+ declaracoes sem subname (subname '')
+       no mesmo grupo → warning para todas.
+    """
+    stripped = strip_advpl(content)
+    findings: list[dict[str, Any]] = []
+    grupos: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    funcoes = parsed.get("funcoes", []) or []
+
+    for m in _WS001_WSMETHOD_LINE_RE.finditer(stripped):
+        verb = m.group(1).upper()
+        rest = m.group(2) or ""
+        linha = _line_at(stripped, m.start())
+
+        svc_match = _WS001_SERVICE_IN_REST_RE.search(rest)
+        if not svc_match:
+            findings.append(
+                {
+                    "arquivo": arquivo,
+                    "funcao": _funcao_at_line(funcoes, linha),
+                    "linha": linha,
+                    "regra_id": "WS-001",
+                    "severidade": "error",
+                    "snippet": _snippet_at_line(content, linha),
+                    "sugestao_fix": (
+                        f"WSMETHOD {verb} sem WS(SERVICE|RESTFUL|REST) — metodo nao "
+                        "registra na rota. Adicione `WSSERVICE <NomeDoServico>` no "
+                        "final da declaracao."
+                    ),
+                }
+            )
+            continue
+
+        service = svc_match.group(1).upper()
+        sub_match = _WS001_SUBNAME_IN_REST_RE.match(rest)
+        subname = (sub_match.group(1).upper() if sub_match else "")
+        chave = (service, verb)
+        grupos.setdefault(chave, []).append((linha, subname))
+
+    for (service, verb), decls in grupos.items():
+        sem_subname = [ln for ln, sub in decls if not sub]
+        if len(sem_subname) < 2:
+            continue
+        for linha in sem_subname:
+            findings.append(
+                {
+                    "arquivo": arquivo,
+                    "funcao": _funcao_at_line(funcoes, linha),
+                    "linha": linha,
+                    "regra_id": "WS-001",
+                    "severidade": "warning",
+                    "snippet": _snippet_at_line(content, linha),
+                    "sugestao_fix": (
+                        f"WSMETHOD {verb} sem subname em '{service}' colide com "
+                        "outra declaracao do mesmo verbo no mesmo servico — last-wins "
+                        "silencioso. Adicione um identificador unico entre o verbo "
+                        "e WSSERVICE: `WSMETHOD {verb} <cId> WSSERVICE {service}`."
+                    ).format(verb=verb, service=service),
+                }
+            )
+
+    return findings
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 
@@ -1609,6 +1726,8 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_mod001_conout_instead_fwlogmsg(arquivo, parsed, content))
     findings.extend(_check_mod002_public_declaration(arquivo, parsed, content))
     findings.extend(_check_mod004_legacy_cadastro(arquivo, parsed, content))
+    # v0.7.0 Fase 0: webservice rules
+    findings.extend(_check_ws001_wsmethod_orphan(arquivo, parsed, content))
 
     findings.sort(key=lambda f: (int(f["linha"]), str(f["regra_id"])))
     return findings
