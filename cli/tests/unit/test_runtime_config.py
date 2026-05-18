@@ -164,3 +164,35 @@ class TestLoadFlags:
             cfg = load(tmp_path)
         assert cfg is not None
         assert cfg.appserver_reachable is True
+
+
+class TestRenderTemplate:
+    def test_template_has_all_sections(self) -> None:
+        text = render_template()
+        for section in ["[tds_ls]", "[appserver]", "[auth]", "[compile]", "[logging]"]:
+            assert section in text
+
+    def test_template_is_valid_toml(self) -> None:
+        import tomllib
+        parsed = tomllib.loads(render_template())
+        assert "tds_ls" in parsed
+        assert "appserver" in parsed
+        assert "auth" in parsed
+        assert "compile" in parsed
+
+
+class TestInitGitignore:
+    def test_adds_line_when_gitignore_exists(self, tmp_path: Path) -> None:
+        gi = tmp_path / ".gitignore"
+        gi.write_text("*.pyc\n", encoding="utf-8")
+        assert init_gitignore_entry(tmp_path) is True
+        assert ".plugadvpl/runtime.toml" in gi.read_text(encoding="utf-8")
+
+    def test_idempotent(self, tmp_path: Path) -> None:
+        gi = tmp_path / ".gitignore"
+        gi.write_text(".plugadvpl/runtime.toml\n", encoding="utf-8")
+        assert init_gitignore_entry(tmp_path) is False
+
+    def test_no_gitignore_returns_false(self, tmp_path: Path) -> None:
+        assert init_gitignore_entry(tmp_path) is False
+        assert not (tmp_path / ".gitignore").exists()

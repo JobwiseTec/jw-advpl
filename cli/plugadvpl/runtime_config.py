@@ -180,12 +180,52 @@ def load(root: Path) -> RuntimeConfig | None:
     )
 
 
+_TEMPLATE = """\
+# .plugadvpl/runtime.toml — NÃO commitar valores de credencial
+# Gerado por `plugadvpl compile --init-config`.
+
+[tds_ls]
+# Caminho para advpls. Windows típico: D:/TOTVS/protheus/bin/Appserver/advpls.exe
+# ou da extensão tds-vscode.
+binary = "D:/TOTVS/protheus/bin/Appserver/advpls.exe"
+
+[appserver]
+# RECOMENDAÇÃO: host = "127.0.0.1" + SSH tunnel.
+# `ssh -L 1234:localhost:1234 user@vps -N`
+host = "127.0.0.1"
+port = 1234
+secure = false
+build = "7.00.240223P"
+environment = "P2510"
+
+[auth]
+# Convenção: NUNCA valor literal. Sempre nome da env var.
+# export PROTHEUS_USER=admin / export PROTHEUS_PASS='senha'
+user_env = "PROTHEUS_USER"
+password_env = "PROTHEUS_PASS"
+aut_file = ""
+
+[compile]
+recompile = true
+includes = [
+    "D:/TOTVS/protheus/includes",
+]
+mode = "auto"            # auto | appre | cli
+timeout_seconds = 120
+include_warnings = true
+
+[logging]
+log_to_file = ""
+show_console_output = true
+"""
+
+
 def render_template() -> str:
     """Retorna o conteúdo de template do runtime.toml com comentários explicativos.
 
     Usado por ``plugadvpl compile --init-config``. Sem efeito colateral.
     """
-    raise NotImplementedError("será implementado nos próximos steps")
+    return _TEMPLATE
 
 
 def init_gitignore_entry(root: Path) -> bool:
@@ -194,4 +234,13 @@ def init_gitignore_entry(root: Path) -> bool:
     Retorna True se adicionou linha, False se já estava lá ou se ``.gitignore``
     não existe (não cria arquivo novo só por isso — usuário pode preferir commitar).
     """
-    raise NotImplementedError("será implementado nos próximos steps")
+    gi = root / ".gitignore"
+    if not gi.is_file():
+        return False
+    text = gi.read_text(encoding="utf-8")
+    needle = ".plugadvpl/runtime.toml"
+    if needle in text:
+        return False
+    suffix = "" if text.endswith("\n") else "\n"
+    gi.write_text(text + suffix + needle + "\n", encoding="utf-8")
+    return True
