@@ -1026,6 +1026,23 @@ class TestExecauto:
         # Mensagem deve listar opcoes validas
         assert "inc" in combined.lower()
 
+    def test_execauto_json_includes_caminho_relativo(
+        self, execauto_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.6 (D): JSON output inclui caminho_relativo pra distinguir
+        fontes homonimos em pastas diferentes (ambiguidade basename).
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(execauto_project), "--format", "json", "execauto"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert rows
+        assert "caminho" in rows[0], (
+            f"esperado 'caminho' (relativo) no JSON output. row keys: {list(rows[0])}"
+        )
+
     def test_execauto_persisted_in_db(self, execauto_project: Path) -> None:
         """Sanity: tabela execauto_calls existe e tem rows."""
         db = execauto_project / ".plugadvpl" / "index.db"

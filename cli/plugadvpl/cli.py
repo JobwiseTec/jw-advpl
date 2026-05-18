@@ -268,6 +268,30 @@ def _with_ro_db(
         conn.close()
 
 
+def _augment_with_caminho(
+    ctx: typer.Context, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """v0.4.6 (D): adiciona ``caminho`` (relativo) em cada row pra distinguir
+    fontes homônimos. Coluna não aparece em table display (mantém layout
+    enxuto) mas vai pro JSON — útil pra agente IA evitar ambiguidade
+    quando basename colide entre subdiretórios."""
+    if not rows:
+        return rows
+    arquivos = {r["arquivo"] for r in rows if r.get("arquivo")}
+    if not arquivos:
+        return rows
+    placeholders = ",".join("?" * len(arquivos))
+    sql = f"SELECT arquivo, caminho_relativo FROM fontes WHERE arquivo IN ({placeholders})"
+
+    def _fetch(c: sqlite3.Connection) -> dict[str, str]:
+        return {row[0]: row[1] or "" for row in c.execute(sql, list(arquivos))}
+
+    mapping = _with_ro_db(ctx, _fetch)
+    for r in rows:
+        r["caminho"] = mapping.get(r.get("arquivo", ""), "")
+    return rows
+
+
 def _empty_result_hints(
     filters_applied: bool,
     *,
@@ -1245,6 +1269,7 @@ def workflow(
         }
         for r in rows
     ]
+    _augment_with_caminho(ctx, display_rows)  # v0.4.6 (D)
     _render_from_ctx(
         ctx,
         display_rows,
@@ -1341,6 +1366,7 @@ def execauto(
         }
         for r in rows
     ]
+    _augment_with_caminho(ctx, display_rows)  # v0.4.6 (D)
     _render_from_ctx(
         ctx,
         display_rows,
@@ -1483,6 +1509,7 @@ def docs(
         }
         for r in rows
     ]
+    _augment_with_caminho(ctx, display_rows)  # v0.4.6 (D)
     _render_from_ctx(
         ctx,
         display_rows,
