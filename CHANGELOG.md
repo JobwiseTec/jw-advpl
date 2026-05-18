@@ -4,6 +4,52 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-05-18
+
+### 🩺 `doctor --check-funcs` refinado — separa real bug vs commented-out + sem truncagem
+
+Adendo da bug report do v0.4.6 revelou 2 issues no `--check-funcs`:
+1. Reportava 36 "warnings" no codebase real do reporter, mas **TODAS eram
+   commenting-out intencional** (`/* Static Function X() ... */`) — não bug
+   do parser. False alarm.
+2. Detail truncado em 10 fontes ignorando `--limit 0` e `--format json`.
+
+### Fixed
+- **Classificação real_bug vs commented_out**. Estratégia: compara 3 contagens
+  por arquivo:
+  - `grep_raw`: regex no conteúdo cru (vê funções comentadas)
+  - `grep_code`: regex no conteúdo stripado (só funções em código real)
+  - `parser`: count em `fonte_chunks`
+  Discrepância classificada:
+  - `funcs_real_bug`: `grep_code > parser` → parser perdeu função em código
+    (bug do plugin, status `warn`)
+  - `funcs_commented_out`: `grep_raw > grep_code == parser` → função dentro
+    de `/* */` (intencional, status `info`)
+
+  No codebase real do reporter: **0 real_bug**, 36 commented_out.
+  Mensagem clara em vez de false alarm.
+
+### Added
+- **`--detail` flag** ([sugerido pelo reporter como Opção #2]):
+  `doctor --check-funcs --detail` expande pra row-per-file. Cada fonte com
+  discrepância vira 1 row com colunas `arquivo`, `grep_raw`, `grep_code`,
+  `parser`, `classificacao`. Sem truncagem — `--limit` global navega
+  naturalmente.
+
+### Tests
+- **+2 testes integration**:
+  - `test_doctor_check_funcs_classifies_commented_vs_real_bug`
+  - `test_doctor_check_funcs_detail_returns_row_per_file`
+- Test antigo `test_doctor_check_funcs_detects_discrepancy` substituído
+  (mudou de assertion `warn` pra classificação `info`/`ok`).
+- **509 testes verde**.
+
+### Notes
+- **Parser está correto**. Não havia bug remanescente em 0.4.5/0.4.6 — só
+  UX confusa do `--check-funcs` que reportava false positives.
+- **Critério #1 do adendo A2 zerado**: `funcs_real_bug.count == 0` no
+  codebase real do reporter (0 falsos negativos do parser).
+
 ## [0.4.6] - 2026-05-18
 
 ### 🧹 Backlog cleanup — 11 itens fechados antes de Universo 4

@@ -486,17 +486,20 @@ class TestDoctor:
         checks = {r["check"] for r in payload["rows"]}
         assert "fts_sync" in checks
 
-    def test_doctor_check_funcs_detects_discrepancy(
+    def test_doctor_check_funcs_classifies_commented_vs_real_bug(
         self, tmp_path: Path, runner: CliRunner
     ) -> None:
-        """v0.4.6 (B): doctor --check-funcs compara grep vs parser nas fontes
-        e flagga arquivos onde o parser perdeu funcoes (ex.: block comment
-        nao-fechado em fonte com bug raw).
+        """v0.4.7: doctor --check-funcs classifica discrepancias em 2 buckets:
+        - funcs_real_bug: parser perdeu funcao que esta em CODE (parser bug)
+        - funcs_commented_out: funcao dentro de /* */ (intencional, ok)
+
+        Antes (v0.4.6): single check 'funcs_count_match' warn-ava por commenting-
+        out (false alarm). Agora separa pra usuario ver claramente o que eh bug.
         """
         src = tmp_path / "src"
         src.mkdir()
-        # Fonte com block comment de tamanho legitimo (<200) englobando funcao
-        # (commenting-out intencional). Grep ve 2, parser ve 1.
+        # 1 funcao ativa + 1 funcao comentada (commenting-out intencional).
+        # Parser corretamente ignora a comentada -> nao eh bug.
         (src / "Sample.prw").write_bytes(
             b'User Function FnAtiva()\n'
             b'Return\n'
@@ -516,15 +519,56 @@ class TestDoctor:
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         checks = {r["check"]: r for r in payload["rows"]}
-        assert "funcs_count_match" in checks, (
-            f"esperado check 'funcs_count_match', recebido {list(checks)}"
+        # Deve ter 2 checks novos
+        assert "funcs_real_bug" in checks
+        assert "funcs_commented_out" in checks
+        # 0 real bugs (parser nao perdeu nada que esta em CODE)
+        assert checks["funcs_real_bug"]["status"] == "ok"
+        assert checks["funcs_real_bug"]["count"] == 0
+        # 1 commented-out
+        assert checks["funcs_commented_out"]["count"] >= 1
+        assert checks["funcs_commented_out"]["status"] == "info"
+
+    def test_doctor_check_funcs_detail_returns_row_per_file(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.7: --check-funcs --detail expande pra row-per-file
+        (sugerido pelo reporter no adendo da bug report). Permite --limit
+        global navegar lista completa sem truncagem em 10."""
+        src = tmp_path / "src"
+        src.mkdir()
+        # Cria 3 fontes com commenting-out cada
+        for nome in ("FnA", "FnB", "FnC"):
+            (src / f"{nome}.prw").write_bytes(
+                f'User Function {nome}()\n'.encode()
+                + b'Return\n'
+                + b'/*\n'
+                + f'Static Function {nome}Old()\nReturn\n'.encode()
+                + b'*/\n'
+            )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(src), "--format", "json",
+                "doctor", "--check-funcs", "--detail",
+            ],
         )
-        # Status warn porque ha discrepancia (mas eh por commenting-out
-        # intencional, nao erro do parser). Detail deve mencionar Sample.prw.
-        chk = checks["funcs_count_match"]
-        assert chk["status"] == "warn"
-        assert chk["count"] >= 1
-        assert "Sample.prw" in chk["detail"]
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        # detail mode: rows por fonte com discrepancia (check='funcs_detail')
+        detail_rows = [r for r in payload["rows"] if r.get("check") == "funcs_detail"]
+        assert len(detail_rows) == 3, (
+            f"esperado 3 rows (1 por fonte), recebi {len(detail_rows)}: {detail_rows}"
+        )
+        # Cada row deve ter arquivo, grep_raw, grep_code, parser, classificacao
+        for r in detail_rows:
+            assert "arquivo" in r
+            assert "grep_raw" in r
+            assert "grep_code" in r
+            assert "parser" in r
+            assert r.get("classificacao") == "commented_out"
 
 
 class TestGrep:

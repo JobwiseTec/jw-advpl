@@ -349,22 +349,37 @@ def stale_files(
     return out
 
 
+_FN_RE_DOCTOR = re.compile(
+    r"^[ \t]*(?:Static|User|Main)[ \t]+Function[ \t]+\w+",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 def doctor_func_count_check(
-    conn: sqlite3.Connection, root: Path
-) -> dict[str, Any]:
-    """v0.4.6 (B): compara grep vs parser por arquivo, surface discrepâncias.
+    conn: sqlite3.Connection, root: Path, *, detail: bool = False
+) -> list[dict[str, Any]]:
+    """v0.4.6 (B) + v0.4.7 refinado: classifica discrepâncias em 2 buckets.
 
-    Slow (re-lê todos os fontes do projeto). Opt-in via flag ``doctor --check-funcs``.
+    Estratégia (v0.4.7): compara 3 contagens por arquivo:
+      - ``grep_raw``: regex no conteúdo CRU (vê funções comentadas também)
+      - ``grep_code``: regex no conteúdo STRIPADO (só funções em código real)
+      - ``parser``: count em ``fonte_chunks`` (o que o parser indexou)
 
-    Retorna um dict no formato dos diagnósticos. ``count`` = número de arquivos
-    com discrepância. ``detail`` lista até 10 primeiros (basename + grep/parser
-    counts). Status ``warn`` se há discrepância (pode ser legítimo: commenting-out
-    intencional de função inteira via ``/* ... */``).
+    Classificação:
+      - ``real_bug``: ``grep_code > parser`` — parser perdeu função que está
+        em código (bug do plugin)
+      - ``commented_out``: ``grep_raw > grep_code == parser`` — funções dentro
+        de ``/* ... */`` (intencional, não é bug)
+
+    Slow (re-lê todos os fontes). Opt-in via ``doctor --check-funcs``.
+
+    Returns:
+        Lista de rows. Default (``detail=False``): 2 rows summary
+        (``funcs_real_bug``, ``funcs_commented_out``). Com ``detail=True``:
+        adiciona N rows ``funcs_detail`` (1 por fonte com discrepância),
+        sem truncagem.
     """
-    _FN_RE = re.compile(
-        r"^[ \t]*(?:Static|User|Main)[ \t]+Function[ \t]+\w+",
-        re.IGNORECASE | re.MULTILINE,
-    )
+    from plugadvpl.parsing.stripper import strip_advpl
     # Conta funcs no DB por arquivo (fonte_chunks com tipo_simbolo de function).
     parsed_by_file: dict[str, int] = {}
     for row in conn.execute(
@@ -373,8 +388,9 @@ def doctor_func_count_check(
         "GROUP BY arquivo"
     ):
         parsed_by_file[row[0]] = int(row[1])
-    # Itera fontes pra grep.
-    discrepancies: list[tuple[str, int, int]] = []
+    # Itera fontes pra grep + classificacao.
+    real_bug_rows: list[tuple[str, int, int, int]] = []  # (arq, raw, code, parser)
+    commented_rows: list[tuple[str, int, int, int]] = []
     for arq_row in conn.execute(
         "SELECT arquivo, caminho_relativo FROM fontes WHERE caminho_relativo IS NOT NULL"
     ):
@@ -389,29 +405,54 @@ def doctor_func_count_check(
             content = raw.decode("cp1252", errors="replace")
         except OSError:
             continue
-        grep_count = len(_FN_RE.findall(content))
+        grep_raw = len(_FN_RE_DOCTOR.findall(content))
+        grep_code = len(_FN_RE_DOCTOR.findall(strip_advpl(content)))
         parsed_count = parsed_by_file.get(arquivo, 0)
-        if grep_count != parsed_count:
-            discrepancies.append((arquivo, grep_count, parsed_count))
-    n = len(discrepancies)
-    if n == 0:
-        return {
-            "check": "funcs_count_match",
-            "status": "ok",
-            "count": 0,
-            "detail": "grep == parser em todos os fontes",
-        }
-    sample = ", ".join(
-        f"{arq} (grep={g} parser={p})"
-        for arq, g, p in sorted(discrepancies)[:10]
-    )
-    suffix = f" (+{n - 10} mais)" if n > 10 else ""
-    return {
-        "check": "funcs_count_match",
-        "status": "warn",
-        "count": n,
-        "detail": f"{n} fontes com discrepância: {sample}{suffix}",
-    }
+        if grep_code != parsed_count:
+            real_bug_rows.append((arquivo, grep_raw, grep_code, parsed_count))
+        elif grep_raw != parsed_count:
+            commented_rows.append((arquivo, grep_raw, grep_code, parsed_count))
+
+    n_real = len(real_bug_rows)
+    n_commented = len(commented_rows)
+    rows: list[dict[str, Any]] = [
+        {
+            "check": "funcs_real_bug",
+            "status": "ok" if n_real == 0 else "warn",
+            "count": n_real,
+            "detail": (
+                "parser indexa toda função em código (ok)"
+                if n_real == 0
+                else "; ".join(
+                    f"{arq} (em código={c} parser={p})"
+                    for arq, _r, c, p in sorted(real_bug_rows)
+                )
+            ),
+        },
+        {
+            "check": "funcs_commented_out",
+            "status": "ok" if n_commented == 0 else "info",
+            "count": n_commented,
+            "detail": (
+                "nenhum fonte com /* funcao */ comentada"
+                if n_commented == 0
+                else f"{n_commented} fontes com funções comentadas (intencional, não é bug)"
+            ),
+        },
+    ]
+    if detail:
+        for arquivo, raw, code, parser in sorted(real_bug_rows + commented_rows):
+            classificacao = "real_bug" if (arquivo, raw, code, parser) in real_bug_rows else "commented_out"
+            rows.append({
+                "check": "funcs_detail",
+                "status": "warn" if classificacao == "real_bug" else "info",
+                "arquivo": arquivo,
+                "grep_raw": raw,
+                "grep_code": code,
+                "parser": parser,
+                "classificacao": classificacao,
+            })
+    return rows
 
 
 def doctor_diagnostics(conn: sqlite3.Connection) -> list[dict[str, Any]]:

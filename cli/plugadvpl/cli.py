@@ -999,7 +999,16 @@ def doctor(
         typer.Option(
             "--check-funcs",
             help="v0.4.6 (B): compara grep vs parser por arquivo (slow — re-le fontes). "
-            "Surface fontes onde funcoes foram perdidas no parsing.",
+            "v0.4.7: classifica em real_bug (parser perdeu funcao em codigo) vs "
+            "commented_out (funcao dentro de /* */, intencional).",
+        ),
+    ] = False,
+    detail: Annotated[
+        bool,
+        typer.Option(
+            "--detail",
+            help="v0.4.7: com --check-funcs, expande pra row-per-file (sem truncagem). "
+            "Cada fonte com discrepancia vira 1 row com arquivo/grep_raw/grep_code/parser/classificacao.",
         ),
     ] = False,
 ) -> None:
@@ -1008,8 +1017,8 @@ def doctor(
     rows = _with_ro_db(ctx, doctor_diagnostics)
     if check_funcs:
         root: Path = ctx.obj["root"]
-        rows.append(
-            _with_ro_db(ctx, lambda c: doctor_func_count_check(c, root))
+        rows.extend(
+            _with_ro_db(ctx, lambda c: doctor_func_count_check(c, root, detail=detail))
         )
     _render_from_ctx(
         ctx,
