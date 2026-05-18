@@ -269,6 +269,37 @@ class TestExtractParams:
         names = {(p["nome"], p["modo"]) for p in params}
         assert ("MV_X", "write") in names
 
+    def test_custom_prefix_abc(self) -> None:
+        """v0.5.4 (bug #1): aceita params com prefixo custom ABC_/Z_/etc.
+
+        Antes regex `MV_\\w+` perdia TODOS os params customizados de cliente
+        (`ABC_GFE83F`, `ABC_CTB25A`, `ABC_GCTA17`) — bug critico, indice
+        `parametros_uso` ficava parcial em qualquer codebase real.
+        """
+        src = (
+            'Local _cfilia := GETMV("ABC_GFE83F", , "010002")\n'
+            'cUsDireto := SuperGetMV("ABC_CTB25A", .F., "000000")\n'
+            '_cUsr := GetNewPar("ABC_GCTA17","000000/")\n'
+        )
+        params = extract_params(src)
+        names = {p["nome"] for p in params}
+        assert "ABC_GFE83F" in names
+        assert "ABC_CTB25A" in names
+        assert "ABC_GCTA17" in names
+
+    def test_custom_prefix_z_and_short(self) -> None:
+        """Aceita também prefixos `Z_` e variações curtas."""
+        src = 'cVal := SuperGetMV("ZX_FOO", .F., "")\n'
+        params = extract_params(src)
+        assert "ZX_FOO" in {p["nome"] for p in params}
+
+    def test_putmv_custom_prefix(self) -> None:
+        """PutMV/PutMvFil também aceita prefix custom."""
+        src = 'PutMV("ABC_PARAM", "v")\n'
+        params = extract_params(src)
+        names = {(p["nome"], p["modo"]) for p in params}
+        assert ("ABC_PARAM", "write") in names
+
 
 class TestExtractPerguntas:
     def test_pergunte(self) -> None:

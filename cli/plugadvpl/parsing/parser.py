@@ -48,12 +48,17 @@ _RECLOCK_ALIAS_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*RecLock", re.IGNORECASE)
 _DBAPPEND_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbAppend", re.IGNORECASE)
 _DBDELETE_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbDelete", re.IGNORECASE)
 
-# MV_* parâmetros
+# Parâmetros SX6 — lidos via SuperGetMV/GetMv/GetNewPar/etc.
+# v0.5.4 (bug #1): regex relaxado pra aceitar prefixos custom de cliente
+# (ABC_*, Z_*, etc), não só `MV_*` TOTVS standard. Customer pode ter
+# `SuperGetMV("ABC_CTB25A", ...)` válido — antes regex perdia tudo.
+# Padrão SX6: identifier uppercase de 3+ chars (idealmente com `_`, mas
+# não exigido — variantes raras sem `_` existem em legados).
 # Default arg pode estar em posição 2 (GetNewPar(nome, default)) ou posição 3
 # (SuperGetMV(nome, lUseDef, default)). Grupo 2: default em pos 2 (sem vírgula extra),
 # Grupo 3: default em pos 3 (vírgula+arg+vírgula+string).
 _MV_READ_RE = re.compile(
-    r'(?:SuperGetMV|GetMv|GetNewPar|GetMVDef|FWMVPar)\s*\(\s*["\'](MV_\w+)["\']'
+    r'(?:SuperGetMV|GetMv|GetNewPar|GetMVDef|FWMVPar)\s*\(\s*["\']([A-Z][A-Z0-9_]{2,})["\']'
     r'(?:'
     r'\s*,\s*["\']([^"\']*)["\']\s*\)'  # default na pos 2: ("MV_X", "default")
     r'|'
@@ -62,7 +67,7 @@ _MV_READ_RE = re.compile(
     re.IGNORECASE,
 )
 _MV_WRITE_RE = re.compile(
-    r'(?:PutMV|PutMvFil)\s*\(\s*["\'](MV_\w+)["\']',
+    r'(?:PutMV|PutMvFil)\s*\(\s*["\']([A-Z][A-Z0-9_]{2,})["\']',
     re.IGNORECASE,
 )
 
