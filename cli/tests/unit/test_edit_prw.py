@@ -175,3 +175,18 @@ class TestConvertAndSave:
         fp.write_bytes(b"\xff\xfe\xfd")
         with pytest.raises(ValueError, match="Falha ao decodificar"):
             convert_and_save(fp, from_encoding="utf-8", backup=False)
+
+
+# --- encode_cp1252_bytes ----------------------------------------------------
+
+
+class TestEncodeBytes:
+    def test_encodes_accented_chars_to_cp1252(self) -> None:
+        from plugadvpl.edit_prw import encode_cp1252_bytes
+        assert encode_cp1252_bytes("Função") == "Função".encode("cp1252")
+
+    def test_replaces_non_encodable_chars(self) -> None:
+        from plugadvpl.edit_prw import encode_cp1252_bytes
+        # caractere 你 não existe em CP1252 → vira ?
+        out = encode_cp1252_bytes("你")
+        assert out == b"?"

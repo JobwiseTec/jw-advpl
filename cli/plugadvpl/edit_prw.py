@@ -72,6 +72,14 @@ def expected_encoding_for(path: Path) -> str:
     return "cp1252"
 
 
+def encode_cp1252_bytes(text: str) -> bytes:
+    """Encode string para CP1252 bytes (errors='replace').
+
+    Função pura — reusada por compile.py para gerar .ini do advpls.
+    """
+    return text.encode("cp1252", errors="replace")
+
+
 def detect_encoding(raw: bytes) -> tuple[str, bool, int]:
     """Detecta encoding via heurística determinística.
 
