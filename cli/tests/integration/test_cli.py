@@ -1477,6 +1477,143 @@ class TestDocs:
         assert count == 2
 
 
+class TestTrace:
+    """v0.5.0 (Universo 4 / Feature A): trace cross-universo."""
+
+    @pytest.fixture
+    def trace_project(self, tmp_path: Path, runner: CliRunner) -> Path:
+        """Projeto cobrindo as 3 entidades + cross-universo."""
+        src = tmp_path / "src"
+        src.mkdir()
+        # Fonte que define função, tem Protheus.doc, e chama MsExecAuto MATA410
+        (src / "MyCmp.prw").write_bytes(
+            b'/*/{Protheus.doc} U_MyCmp\n'
+            b'Helper que toca SA1 via ExecAuto.\n'
+            b'@type user function\n@author Tester\n'
+            b'/*/\n'
+            b'User Function U_MyCmp()\n'
+            b'   Local aCab := {}\n'
+            b'   MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, {}, 3)\n'
+            b'   dbSelectArea("SA1")\n'
+            b'   SA1->A1_COD := "001"\n'
+            b'Return\n'
+        )
+        # Fonte que chama U_MyCmp
+        (src / "Caller.prw").write_bytes(
+            b'User Function CallerFn()\n'
+            b'   U_MyCmp()\n'
+            b'Return\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        return src
+
+    def test_trace_funcao_returns_called_by_and_doc(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """trace de funcao retorna called_by (U1) + documented_in (U3)."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "U_MyCmp"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        edges = {r["edge"] for r in rows}
+        assert "called_by" in edges, f"esperado called_by; edges={edges}"
+        assert "documented_in" in edges, f"esperado documented_in; edges={edges}"
+        # called_by deve apontar pra Caller.prw
+        cb_rows = [r for r in rows if r["edge"] == "called_by"]
+        assert any("Caller.prw" in r["arquivo"] for r in cb_rows)
+
+    def test_trace_funcao_via_execauto(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """trace de MATA410 (rotina TOTVS) retorna via_execauto da chamada."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "MATA410"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        edges = {r["edge"] for r in rows}
+        assert "via_execauto" in edges
+        via = [r for r in rows if r["edge"] == "via_execauto"]
+        assert any("MyCmp.prw" in r["arquivo"] for r in via)
+
+    def test_trace_tabela_returns_reads_and_writes(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """trace SA1 retorna edges reads/writes (U1)."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "SA1"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        edges = {r["edge"] for r in rows}
+        # MyCmp.prw faz DbSelectArea("SA1") + SA1->A1_COD := ...
+        assert "reads" in edges or "writes" in edges, f"edges={edges}"
+
+    def test_trace_tabela_via_execauto_inferred(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """trace SC5 (tabela primária de MATA410) detecta touched_via_execauto."""
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "SC5"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        edges = {r["edge"] for r in rows}
+        assert "touched_via_execauto" in edges, f"edges={edges}"
+
+    def test_trace_filter_universo(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """--universo 3 limita a hits do Universo 3 (workflow/execauto/docs)."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(trace_project), "--format", "json",
+                "trace", "U_MyCmp", "--universo", "3",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert all(r["universo"] == 3 for r in rows), (
+            f"esperado só U3, recebi universos={[r['universo'] for r in rows]}"
+        )
+
+    def test_trace_tipo_override(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """--tipo força quando auto-detect erra."""
+        # SA1 vira tabela por default; com --tipo funcao, busca como função
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(trace_project),
+                "trace", "SA1", "--tipo", "funcao",
+            ],
+        )
+        assert result.exit_code == 0
+        # SA1 nao eh funcao definida; resultado provavelmente vazio (mas exit 0)
+
+    def test_trace_invalid_universo_rejected(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """--universo com valor inválido sai com erro amigável."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(trace_project),
+                "trace", "U_MyCmp", "--universo", "abc",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--universo" in (result.stderr or "")
+
+
 class TestMissingDb:
     def test_query_without_db_exits_2(
         self, synthetic_project: Path, runner: CliRunner

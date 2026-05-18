@@ -1443,3 +1443,462 @@ def render_pdoc_markdown(d: dict[str, Any]) -> str:
     location = f"\n_Source: {d.get('arquivo')}:{d.get('linha_bloco_inicio')}-{d.get('linha_bloco_fim')}_"
     lines.append(location)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# v0.5.0 — Universo 4 / Feature A: trace unificado
+# ---------------------------------------------------------------------------
+
+# Padrão TOTVS de tabela: 3 chars, [SZNQD]+letra+alfanum (SA1, SC5, ZA1, ND0).
+_TABLE_RE = re.compile(r"^[SZNQD][A-Z][A-Z0-9]$", re.IGNORECASE)
+# Padrão de campo SX3: <letra><digit>_<nome>, ex.: A1_COD, C5_NUM, F2_DOC.
+_CAMPO_RE = re.compile(r"^[A-Z]\d_[A-Z0-9_]+$", re.IGNORECASE)
+
+
+def _detect_entity_type(value: str) -> str:
+    """Auto-detect tipo de entidade pra ``trace_query`` (v0.5.0).
+
+    Heurística por regex:
+      - 3 chars no padrão TOTVS (``SA1``/``ZA1``/``ND0``) → ``tabela``
+      - ``<letra><digit>_<nome>`` (``A1_COD``) → ``campo``
+      - Fallback: ``funcao``
+
+    Usuario pode forçar tipo via ``--tipo`` no CLI quando a heurística erra
+    (ex.: variável `SA1` na verdade é nome de função custom).
+    """
+    if _TABLE_RE.match(value):
+        return "tabela"
+    if _CAMPO_RE.match(value):
+        return "campo"
+    return "funcao"
+
+
+def _trace_hit(
+    universo: int,
+    edge: str,
+    *,
+    arquivo: str = "",
+    funcao: str = "",
+    linha: int = 0,
+    alvo: str = "",
+    contexto: str = "",
+    snippet: str = "",
+) -> dict[str, Any]:
+    """Constrói um dict de hit do trace (schema unificado)."""
+    return {
+        "universo": universo,
+        "edge": edge,
+        "arquivo": arquivo,
+        "funcao": funcao or "",
+        "linha": int(linha or 0),
+        "alvo": alvo,
+        "contexto": contexto,
+        "snippet": (snippet or "")[:120],
+    }
+
+
+def _trace_funcao(
+    conn: sqlite3.Connection,
+    funcao: str,
+    *,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """Coleta arestas pra função-alvo cross-universo."""
+    hits: list[dict[str, Any]] = []
+    funcao_norm = funcao.upper().lstrip("U_") if funcao.upper().startswith("U_") else funcao.upper()
+
+    # U1: defined_in
+    sql = (
+        "SELECT arquivo, linha_inicio, tipo_simbolo, classe "
+        "FROM fonte_chunks WHERE funcao_norm = ? LIMIT ?"
+    )
+    for arq, ln, kind, classe in conn.execute(sql, (funcao_norm, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "defined_in", arquivo=arq, funcao=funcao, linha=int(ln or 0),
+            alvo=arq, contexto=f"{kind}" + (f" of {classe}" if classe else ""),
+        ))
+
+    # U1: callers
+    sql = (
+        "SELECT arquivo_origem, funcao_origem, linha_origem, tipo "
+        "FROM chamadas_funcao WHERE destino_norm = ? LIMIT ?"
+    )
+    for arq, fn, ln, tipo in conn.execute(sql, (funcao_norm, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "called_by", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
+            alvo=f"{fn}@{arq}" if fn else arq, contexto=f"call type={tipo}",
+        ))
+
+    # U1: callees (o que a função chama)
+    sql = (
+        "SELECT DISTINCT destino, tipo "
+        "FROM chamadas_funcao "
+        "WHERE upper(funcao_origem) = upper(?) LIMIT ?"
+    )
+    for destino, tipo in conn.execute(sql, (funcao, max_per_edge)):
+        hits.append(_trace_hit(
+            1, "calls", funcao=funcao, alvo=destino or "",
+            contexto=f"call type={tipo}",
+        ))
+
+    # U2: validates_field (função aparece em X3_VALID/INIT/WHEN/VLDUSER)
+    # Match com palavra-completa pra evitar prefix collision.
+    pat = f"%{funcao}%"
+    sql = (
+        "SELECT campo, tabela, validacao, inicializador, when_expr, vlduser "
+        "FROM campos "
+        "WHERE validacao LIKE ? COLLATE NOCASE OR inicializador LIKE ? COLLATE NOCASE "
+        "   OR when_expr LIKE ? COLLATE NOCASE OR vlduser LIKE ? COLLATE NOCASE "
+        "LIMIT ?"
+    )
+    for nome, tabela, v, i, w, vu in conn.execute(sql, (pat, pat, pat, pat, max_per_edge)):
+        # Confirma word-boundary
+        funcao_u = funcao.upper()
+        texts = {"VALID": v, "INIT": i, "WHEN": w, "VLDUSER": vu}
+        for slot, txt in texts.items():
+            if not txt or funcao_u not in txt.upper():
+                continue
+            hits.append(_trace_hit(
+                2, "validates_field", alvo=f"{tabela}.{nome}",
+                contexto=f"X3_{slot}", snippet=txt,
+            ))
+
+    # U3: via_execauto (função é rotina chamada por MsExecAuto)
+    sql = (
+        "SELECT arquivo, funcao, linha, module, op_label, snippet "
+        "FROM execauto_calls WHERE upper(routine) = upper(?) LIMIT ?"
+    )
+    for arq, fn, ln, mod, oplbl, snip in conn.execute(sql, (funcao, max_per_edge)):
+        hits.append(_trace_hit(
+            3, "via_execauto", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
+            alvo=funcao, contexto=f"module={mod or '?'} op={oplbl or '?'}",
+            snippet=snip,
+        ))
+
+    # U3: triggered_by_workflow/schedule/job/callback (função é target)
+    sql = (
+        "SELECT arquivo, funcao, linha, kind, snippet "
+        "FROM execution_triggers WHERE upper(target) = upper(?) LIMIT ?"
+    )
+    for arq, fn, ln, kind, snip in conn.execute(sql, (funcao, max_per_edge)):
+        edge_map = {
+            "workflow": "triggered_by_workflow",
+            "wf_callback": "triggered_by_callback",
+            "schedule": "triggered_by_schedule",
+            "job_standalone": "triggered_by_job",
+            "mail_send": "triggered_by_mail",
+        }
+        hits.append(_trace_hit(
+            3, edge_map.get(kind, f"triggered_by_{kind}"),
+            arquivo=arq, funcao=fn or "", linha=int(ln or 0),
+            alvo=funcao, contexto=f"kind={kind}", snippet=snip,
+        ))
+
+    # U3: documented_in (Protheus.doc da função, se houver)
+    sql = (
+        f"SELECT {_PDOC_COLUMNS} FROM protheus_docs "
+        "WHERE (funcao = ? COLLATE NOCASE OR funcao_id = ? COLLATE NOCASE) "
+        "LIMIT ?"
+    )
+    for row in conn.execute(sql, (funcao, funcao, max_per_edge)):
+        d = _row_to_pdoc(row)
+        ctx_parts = []
+        if d["author"]:
+            ctx_parts.append(f"author={d['author']}")
+        if d["since"]:
+            ctx_parts.append(f"since={d['since']}")
+        if d["deprecated"]:
+            ctx_parts.append("DEPRECATED")
+        hits.append(_trace_hit(
+            3, "documented_in", arquivo=d["arquivo"], funcao=d["funcao"] or funcao,
+            linha=int(d["linha_funcao"] or 0), alvo=funcao,
+            contexto=" ".join(ctx_parts) or "doc",
+            snippet=(d["summary"] or "")[:120],
+        ))
+
+    return hits
+
+
+def _trace_tabela(
+    conn: sqlite3.Connection,
+    tabela: str,
+    *,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """Coleta arestas pra tabela-alvo cross-universo."""
+    hits: list[dict[str, Any]] = []
+    tabela_u = tabela.upper()
+
+    # U1: reads/writes/reclock via fonte_tabela
+    sql = (
+        "SELECT arquivo, modo FROM fonte_tabela "
+        "WHERE upper(tabela) = ? LIMIT ?"
+    )
+    for arq, modo in conn.execute(sql, (tabela_u, max_per_edge * 3)):
+        edge = {"read": "reads", "write": "writes", "reclock": "reclock"}.get(modo, "touches")
+        hits.append(_trace_hit(
+            1, edge, arquivo=arq, alvo=tabela, contexto=f"mode={modo}",
+        ))
+
+    # U2: table_definition
+    sql = (
+        "SELECT codigo, nome, modo, custom FROM tabelas "
+        "WHERE upper(codigo) = ? LIMIT 1"
+    )
+    for cod, nome, modo, custom in conn.execute(sql, (tabela_u,)):
+        hits.append(_trace_hit(
+            2, "table_definition", alvo=tabela,
+            contexto=f"modo={modo or '?'} custom={int(custom or 0)}",
+            snippet=nome or "",
+        ))
+
+    # U2: n_fields (sumário)
+    sql = "SELECT COUNT(*) FROM campos WHERE upper(tabela) = ?"
+    (n_fields,) = conn.execute(sql, (tabela_u,)).fetchone() or (0,)
+    if n_fields:
+        hits.append(_trace_hit(
+            2, "n_fields", alvo=tabela, contexto=f"{int(n_fields)} campos SX3",
+        ))
+
+    # U2: indexed_by (SIX)
+    sql = (
+        "SELECT ordem, chave, descricao, nickname FROM indices "
+        "WHERE upper(tabela) = ? ORDER BY ordem LIMIT ?"
+    )
+    for ord_, chave, descr, nick in conn.execute(sql, (tabela_u, max_per_edge)):
+        hits.append(_trace_hit(
+            2, "indexed_by", alvo=tabela,
+            contexto=f"ord={ord_} nick={nick or '-'}",
+            snippet=f"chave={chave} | {descr or ''}",
+        ))
+
+    # U2: in_relationship (SX9)
+    sql = (
+        "SELECT tabela_origem, tabela_destino, identificador, "
+        "expressao_origem, expressao_destino "
+        "FROM relacionamentos "
+        "WHERE upper(tabela_origem) = ? OR upper(tabela_destino) = ? LIMIT ?"
+    )
+    for ori, dest, ident, eo, ed in conn.execute(
+        sql, (tabela_u, tabela_u, max_per_edge)
+    ):
+        hits.append(_trace_hit(
+            2, "in_relationship", alvo=f"{ori}<->{dest}",
+            contexto=f"id={ident} {eo}->{ed}",
+        ))
+
+    # U2: trigger_on_table (SX7)
+    sql = (
+        "SELECT campo_origem, sequencia, regra, campo_destino "
+        "FROM gatilhos WHERE upper(tabela) = ? LIMIT ?"
+    )
+    for camp, seq, regra, dest in conn.execute(sql, (tabela_u, max_per_edge)):
+        hits.append(_trace_hit(
+            2, "trigger_on_table", alvo=f"{tabela}.{camp}",
+            contexto=f"seq={seq} -> {dest or '?'}",
+            snippet=regra or "",
+        ))
+
+    # U3: touched_via_execauto (LIKE em tables_resolved_json)
+    sql = (
+        "SELECT arquivo, funcao, linha, routine, module, tables_resolved_json "
+        "FROM execauto_calls WHERE tables_resolved_json LIKE ? LIMIT ?"
+    )
+    like_pat = f'%"{tabela_u}"%'
+    for arq, fn, ln, rt, mod, tjson in conn.execute(sql, (like_pat, max_per_edge * 2)):
+        from plugadvpl.parsing.execauto import parse_tables
+        if tabela_u not in [t.upper() for t in parse_tables(tjson)]:
+            continue  # word boundary via JSON list
+        hits.append(_trace_hit(
+            3, "touched_via_execauto", arquivo=arq, funcao=fn or "",
+            linha=int(ln or 0), alvo=tabela,
+            contexto=f"routine={rt or '?'} module={mod or '?'}",
+        ))
+
+    # U3: documented_in (LIKE em protheus_docs.tables_json)
+    sql = (
+        "SELECT arquivo, funcao, linha_funcao, tables_json, summary "
+        "FROM protheus_docs WHERE tables_json LIKE ? LIMIT ?"
+    )
+    for arq, fn, ln, tjson, summ in conn.execute(sql, (like_pat, max_per_edge)):
+        from plugadvpl.parsing.protheus_doc import parse_json_list
+        if tabela_u not in [str(t).upper() for t in parse_json_list(tjson)]:
+            continue
+        hits.append(_trace_hit(
+            3, "documented_in", arquivo=arq, funcao=fn or "",
+            linha=int(ln or 0), alvo=tabela,
+            contexto="@table", snippet=(summ or "")[:120],
+        ))
+
+    return hits
+
+
+def _trace_campo(
+    conn: sqlite3.Connection,
+    campo: str,
+    *,
+    depth: int = 2,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """Coleta arestas pra campo-alvo cross-universo. Reaproveita queries
+    do impacto/gatilho + JOINs novos pra relacionamentos/consultas/SXG."""
+    hits: list[dict[str, Any]] = []
+    campo_u = campo.upper()
+
+    # U1: references_field (busca em fonte_chunks.content)
+    sql = (
+        "SELECT arquivo, funcao, linha_inicio, "
+        "substr(content, max(1, instr(upper(content), ?) - 30), 160) AS snippet "
+        "FROM fonte_chunks "
+        "WHERE upper(content) LIKE '%' || ? || '%' LIMIT ?"
+    )
+    for arq, fn, ln, snip in conn.execute(sql, (campo_u, campo_u, max_per_edge)):
+        snip_up = (snip or "").upper()
+        is_write = any(k in snip_up for k in _WRITE_KEYWORDS)
+        hits.append(_trace_hit(
+            1, "references_field",
+            arquivo=arq, funcao=fn or "", linha=int(ln or 0),
+            alvo=campo,
+            contexto="write" if is_write else "read",
+            snippet=snip,
+        ))
+
+    # U2: field_definition (SX3)
+    sql = (
+        "SELECT tabela, descricao, tipo, tamanho, context, browse "
+        "FROM campos WHERE upper(campo) = ? LIMIT 1"
+    )
+    for tab, descr, tp, tam, ctx, br in conn.execute(sql, (campo_u,)):
+        ctx_parts = [f"tabela={tab}", f"tipo={tp}({tam})"]
+        if ctx:
+            ctx_parts.append(f"ctx={ctx}")
+        if br:
+            ctx_parts.append(f"browse={br}")
+        hits.append(_trace_hit(
+            2, "field_definition", alvo=campo,
+            contexto=" ".join(ctx_parts), snippet=descr or "",
+        ))
+
+    # U2: trigger_origin (campo dispara gatilho)
+    sql_orig = (
+        "SELECT campo_origem, sequencia, campo_destino, regra, tabela "
+        "FROM gatilhos WHERE upper(campo_origem) = ? LIMIT ?"
+    )
+    for camp, seq, dest, regra, tab in conn.execute(sql_orig, (campo_u, max_per_edge)):
+        hits.append(_trace_hit(
+            2, "trigger_origin", alvo=f"{tab}.{dest or '?'}",
+            contexto=f"seq={seq}", snippet=regra or "",
+        ))
+    # U2: trigger_target (campo é modificado por gatilho)
+    sql_target = (
+        "SELECT campo_origem, sequencia, regra, tabela "
+        "FROM gatilhos WHERE upper(campo_destino) = ? LIMIT ?"
+    )
+    for camp, seq, regra, tab in conn.execute(sql_target, (campo_u, max_per_edge)):
+        hits.append(_trace_hit(
+            2, "trigger_target", alvo=f"{tab}.{camp}",
+            contexto=f"seq={seq}", snippet=regra or "",
+        ))
+
+    # U2: in_pergunte (SX1) — match em variavel ou conteudo_padrao
+    sql = (
+        "SELECT grupo, ordem, pergunta, variavel "
+        "FROM perguntas WHERE upper(variavel) = ? LIMIT ?"
+    )
+    for grp, ord_, perg, var in conn.execute(sql, (campo_u, max_per_edge)):
+        hits.append(_trace_hit(
+            2, "in_pergunte", alvo=f"{grp}.{ord_}",
+            contexto=f"variavel={var}", snippet=perg or "",
+        ))
+
+    # U2: in_relationship (SX9 expressao)
+    sql = (
+        "SELECT tabela_origem, tabela_destino, expressao_origem, expressao_destino "
+        "FROM relacionamentos "
+        "WHERE upper(expressao_origem) LIKE ? OR upper(expressao_destino) LIKE ? "
+        "LIMIT ?"
+    )
+    like_pat = f"%{campo_u}%"
+    for ori, dest, eo, ed in conn.execute(sql, (like_pat, like_pat, max_per_edge)):
+        if campo_u not in (eo or "").upper() and campo_u not in (ed or "").upper():
+            continue
+        hits.append(_trace_hit(
+            2, "in_relationship", alvo=f"{ori}<->{dest}",
+            contexto=f"{eo}->{ed}",
+        ))
+
+    # U2: in_consulta (SXB) — match em conteudo (expressão) ou alias=campo
+    sql = (
+        "SELECT alias, descricao, conteudo FROM consultas "
+        "WHERE upper(conteudo) LIKE ? LIMIT ?"
+    )
+    for alias, descr, conteudo in conn.execute(sql, (like_pat, max_per_edge)):
+        if campo_u not in (conteudo or "").upper():
+            continue
+        hits.append(_trace_hit(
+            2, "in_consulta", alvo=alias,
+            contexto="F3 lookup", snippet=descr or "",
+        ))
+
+    # U2: in_grupo_sxg
+    sql = (
+        "SELECT grpsxg FROM campos WHERE upper(campo) = ? AND grpsxg IS NOT NULL "
+        "AND grpsxg != '' LIMIT 1"
+    )
+    for (grp,) in conn.execute(sql, (campo_u,)):
+        if grp:
+            sql_g = "SELECT descricao FROM grupos_campo WHERE upper(grupo) = ? LIMIT 1"
+            descr_row = conn.execute(sql_g, (grp.upper(),)).fetchone()
+            descr = descr_row[0] if descr_row else ""
+            hits.append(_trace_hit(
+                2, "in_grupo_sxg", alvo=grp, contexto="SXG", snippet=descr or "",
+            ))
+
+    return hits
+
+
+def trace_query(
+    conn: sqlite3.Connection,
+    entidade: str,
+    *,
+    tipo: str | None = None,
+    depth: int = 2,
+    universos: list[int] | None = None,
+    max_per_edge: int = 20,
+) -> list[dict[str, Any]]:
+    """v0.5.0 (Universo 4 / Feature A): trace agregado cross-universo.
+
+    Args:
+        conn: conexão SQLite.
+        entidade: nome da entidade-alvo (campo/função/tabela).
+        tipo: força tipo (``campo``/``funcao``/``tabela``). Se None, auto-detect.
+        depth: profundidade pra BFS (1..3). Aplica em colectors que suportam.
+        universos: lista de universos a incluir (``[1, 2, 3]``). Default: todos.
+        max_per_edge: limite de hits por tipo de aresta. Default 20.
+
+    Returns:
+        Lista de dicts (1 por aresta) com schema unificado:
+        ``{universo, edge, arquivo, funcao, linha, alvo, contexto, snippet}``.
+        Ordenado por (``universo``, ``edge``, ``arquivo``, ``linha``).
+    """
+    depth = max(1, min(depth, 3))
+    if tipo is None:
+        tipo = _detect_entity_type(entidade)
+
+    if tipo == "campo":
+        hits = _trace_campo(conn, entidade, depth=depth, max_per_edge=max_per_edge)
+    elif tipo == "funcao":
+        hits = _trace_funcao(conn, entidade, max_per_edge=max_per_edge)
+    elif tipo == "tabela":
+        hits = _trace_tabela(conn, entidade, max_per_edge=max_per_edge)
+    else:
+        return []
+
+    # Filtra por universo se solicitado.
+    if universos:
+        wanted = set(universos)
+        hits = [h for h in hits if h["universo"] in wanted]
+
+    # Sort estável.
+    hits.sort(key=lambda h: (h["universo"], h["edge"], h["arquivo"], h["linha"]))
+    return hits

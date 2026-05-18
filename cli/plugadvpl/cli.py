@@ -69,6 +69,7 @@ from plugadvpl.query import (
     protheus_docs_query,
     protheus_docs_top_modulos,
     render_pdoc_markdown,
+    trace_query,
     gatilho_query,
     grep_fts,
     impacto_query,
@@ -141,6 +142,15 @@ class ExecAutoOp(StrEnum):
     inc = "inc"
     alt = "alt"
     exc = "exc"
+
+
+# v0.5.0 (Universo 4 / Feature A): tipo do `trace` quando auto-detect erra.
+class TraceTipo(StrEnum):
+    """Tipos de entidade aceitos pelo ``trace`` (Universo 4 Feature A)."""
+
+    campo = "campo"
+    funcao = "funcao"
+    tabela = "tabela"
 
 
 # ---------------------------------------------------------------------------
@@ -1614,6 +1624,118 @@ def _docs_modulo_hints(
     if not available:
         return []
     return [f"  Módulos disponíveis: {', '.join(available)}"]
+
+
+# ---------------------------------------------------------------------------
+# v0.5.0 — Universo 4 (Trace unificado) Feature A: trace
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def trace(
+    ctx: typer.Context,
+    entidade: Annotated[
+        str,
+        typer.Argument(help="Entidade a rastrear: campo (A1_COD), função (MaFisRef) ou tabela (SC5)."),
+    ],
+    tipo: Annotated[
+        TraceTipo | None,
+        typer.Option(
+            "--tipo",
+            "-t",
+            help="Força tipo (campo|funcao|tabela). Default: auto-detect por regex.",
+            case_sensitive=False,
+        ),
+    ] = None,
+    depth: Annotated[
+        int,
+        typer.Option(
+            "--depth", "-d",
+            help="Profundidade de BFS (1..3, default 2). Aplica em campo (gatilhos transitivos).",
+        ),
+    ] = 2,
+    universo: Annotated[
+        str | None,
+        typer.Option(
+            "--universo", "-u",
+            help="Filtra universos (1=fontes, 2=SX, 3=workflow/execauto/docs). Múltiplos: '1,2'.",
+        ),
+    ] = None,
+    max_per_edge: Annotated[
+        int,
+        typer.Option(
+            "--max-per-edge",
+            help="Limite de hits por tipo de aresta (default 20). Evita explosão em entidades comuns.",
+        ),
+    ] = 20,
+) -> None:
+    """Trace agregado cross-universo (Universo 4 / Feature A).
+
+    Atravessa fontes (U1) + dicionário SX (U2) + rastreabilidade
+    (U3: workflow/execauto/protheus_doc) e devolve em uma única lista todas
+    as arestas que tocam a entidade-alvo.
+
+    Substitui o workflow manual de 5 comandos:
+    `impacto` + `gatilho` + `tables` + `callers` + `execauto` → `trace`.
+    """
+    # Parse --universo "1,2" -> [1, 2]
+    universos: list[int] | None = None
+    if universo:
+        try:
+            universos = sorted({int(x.strip()) for x in universo.split(",") if x.strip()})
+            universos = [u for u in universos if u in (1, 2, 3)]
+        except ValueError:
+            typer.echo(
+                f"--universo aceita lista de 1/2/3 (ex: '1,2'). Valor inválido: {universo!r}",
+                err=True,
+            )
+            raise typer.Exit(code=2) from None
+
+    tipo_str = tipo.value if tipo else None
+    rows = _with_ro_db(
+        ctx,
+        lambda c: trace_query(
+            c, entidade, tipo=tipo_str, depth=depth,
+            universos=universos, max_per_edge=max_per_edge,
+        ),
+    )
+    tipo_detected = tipo_str or _detect_entity_type(entidade)
+    title_parts = [f"Trace de '{entidade}' (tipo={tipo_detected})"]
+    if universos:
+        title_parts.append(f"universos={','.join(map(str, universos))}")
+    if depth != 2:
+        title_parts.append(f"depth={depth}")
+
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["universo", "edge", "arquivo", "funcao", "linha", "alvo", "contexto", "snippet"],
+        title=" | ".join(title_parts),
+        next_steps=(
+            _trace_next_steps(rows, tipo_detected)
+            if rows
+            else _empty_result_hints(
+                bool(tipo or universos),
+                table_label=f"hit de {tipo_detected}",
+            )
+        ),
+    )
+
+
+def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
+    """v0.5.0: sugere próximo comando baseado no tipo detectado."""
+    if tipo == "campo":
+        return ["  plugadvpl impacto <campo>   # análise detalhada SX (depth maior)"]
+    if tipo == "funcao":
+        fns = {r["arquivo"] for r in rows[:3] if r.get("arquivo")}
+        return [f"  plugadvpl arch {arq}" for arq in fns][:3]
+    if tipo == "tabela":
+        return [f"  plugadvpl tables {rows[0]['alvo']} --mode write  # detalhe write"]
+    return []
+
+
+# Import lazy do _detect_entity_type (declarado em query.py).
+from plugadvpl.query import _detect_entity_type  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

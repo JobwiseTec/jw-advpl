@@ -4,6 +4,73 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-18
+
+### 🚀 Universo 4 — Trace Unificado (Feature A)
+
+**Killer feature do v0.5.0**: novo comando `plugadvpl trace <entidade>` que
+agrega TUDO que toca campo/função/tabela em uma única saída — atravessando
+os 3 universos do plugin (fontes + SX + workflow/execauto/docs).
+
+Substitui o workflow manual de 5 comandos (`impacto` + `gatilho` + `tables` +
+`callers` + `execauto`) por **1 comando**. Útil pra responder "estou
+alterando X, o que quebra?" sem correlação mental do output de 5 comandos.
+
+### Added
+- **Comando `plugadvpl trace <entidade>`** com auto-detect por regex:
+  - `SA1`, `SC5`, `ZA1`, `ND0` (3 chars [SZNQD]+letra+alfanum) → tabela
+  - `A1_COD`, `C5_NUM` (letra+dígito+_+nome) → campo
+  - Demais → função
+  Override via `--tipo campo|funcao|tabela`.
+- **Flags**: `--depth 1..3` (BFS, default 2) | `--universo 1,2,3` (filtra
+  universos) | `--max-per-edge N` (limita explosão em entidades comuns).
+- **Skill `/plugadvpl:trace`** com casos de uso + edges por tipo.
+- **Schema unificado de saída** (1 dict por aresta):
+  `{universo, edge, arquivo, funcao, linha, alvo, contexto, snippet}`.
+- **21 tipos de aresta (edges)** cobrindo:
+  - **U1** (fontes): `defined_in`, `called_by`, `calls`, `reads`, `writes`,
+    `reclock`, `references_field`
+  - **U2** (SX): `field_definition`, `trigger_origin`, `trigger_target`,
+    `in_pergunte`, `in_relationship`, `in_consulta`, `in_grupo_sxg`,
+    `table_definition`, `n_fields`, `indexed_by`, `trigger_on_table`,
+    `validates_field`
+  - **U3** (rastreabilidade): `via_execauto`, `triggered_by_workflow`/
+    `schedule`/`job`/`mail`/`callback`, `touched_via_execauto`,
+    `documented_in`
+
+### Implementation
+- 70% reaproveita queries existentes (`_impacto_fontes` pattern, `callers`,
+  `callees`, `tables_query`, `execauto_calls_query`, `execution_triggers_query`,
+  `protheus_docs_query`).
+- 30% SQL novo — filtros LIKE em colunas JSON (`tables_resolved_json`,
+  `tables_json`) com pós-filtro Python pra word-boundary correto.
+- **Sem schema migration** — usa o schema v9 atual.
+
+### Tests
+- **+4 testes unit** (`test_trace.py::TestAutoDetect`): cobre 4 padrões
+  (tabela Protheus, campo SX3, função fallback, rotinas TOTVS uppercase 4+ chars).
+- **+7 testes integration** (`test_cli.py::TestTrace`): fixture com fonte
+  Protheus.doc + ExecAuto MATA410 + caller, valida edges cross-universo
+  (called_by, documented_in, via_execauto, touched_via_execauto, reads/writes,
+  --universo filter, --tipo override, --universo inválido rejeitado).
+- **522 testes verde** (era 511).
+
+### Sucesso vs antes
+| KPI | Antes (5 cmds) | Depois (`trace`) |
+|-----|----------------|-------------------|
+| Comandos pra impacto completo | 5 | 1 |
+| Tokens consumidos por Claude | ~3-5k | ~800 |
+| Falsos negativos por esquecer comando | comum | zero |
+
+### Notes
+- **Spec aprovado** em `docs/universo4/A-trace-unificado.md` antes do código
+  (workflow novo: research → spec MD → approval → code).
+- **MVP** = 3 tipos (campo/função/tabela). Entidades bonus deferred pra
+  release dot: `parametro:MV_*`, `pergunte:GRUPO`, `arquivo:X.prw`,
+  `rotina:MATA410`.
+- **Próximo passo natural**: feature B do Universo 4 (a definir — candidatos:
+  qualidade & métricas, ownership analytics, cross-cliente diff).
+
 ## [0.4.9] - 2026-05-18
 
 ### 🎨 `doctor --check-funcs --detail` agora útil em render table
