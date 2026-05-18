@@ -264,6 +264,49 @@ class TestRunCli:
         assert result.summary["runtime_config_loaded"] is False
 
 
+class TestOutputEncoding:
+    def test_utf16_le_bom_decoded(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        msg = "foo.prw(1) error: Unbalanced ENDIF"
+        utf16_bytes = b"\xff\xfe" + msg.encode("utf-16-le")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (utf16_bytes, b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        row = next(r for r in result.rows if r["arquivo"] == str(foo))
+        assert row["counts"]["error"] == 1
+
+    def test_cp1252_fallback_when_utf8_invalid(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        cp1252_bytes = "foo.prw(1) error: função quebrou".encode("cp1252")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (cp1252_bytes, b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        row = next(r for r in result.rows if r["arquivo"] == str(foo))
+        assert row["counts"]["error"] == 1
+        diag = row["diagnostics"][0]
+        assert "função" in diag["mensagem"] or "fun" in diag["mensagem"]
+
+
 class TestLifecycle:
     def test_keyboard_interrupt_kills_subprocess(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
