@@ -194,6 +194,26 @@ def _build_appre_args(binary: Path, includes: list[Path], files: list[Path]) -> 
     return args
 
 
+def _build_setup_error_result(files: list[Path], mode: str, exit_code: int) -> CompileResult:
+    """Schema completo conforme §8 — CI consumer espera todos os campos."""
+    return CompileResult(
+        rows=[],
+        summary={
+            "total_files": len(files),
+            "ok": 0,
+            "failed": len(files),
+            "total_errors": 0,
+            "total_warnings": 0,
+            "mode_used": mode,
+            "appserver_reachable": False,
+            "runtime_config_loaded": False,
+            "output_truncated": False,
+        },
+        next_steps=[],
+        exit_code=exit_code,
+    )
+
+
 def _build_timeout_result(files: list[Path], timeout: int | None, mode: str) -> CompileResult:
     rows: list[dict[str, object]] = []
     for f in files:
@@ -237,16 +257,43 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
     mode = pick_mode(request.mode, runtime_cfg)
     binary = _resolve_advpls(runtime_cfg)
 
-    if mode == "appre":
+    tempdir: Path | None = None
+    if mode == "cli":
+        if runtime_cfg is None:
+            print(
+                "ERROR: runtime.toml required for cli mode. "
+                "Run: plugadvpl compile --init-config",
+                file=sys.stderr,
+            )
+            return _build_setup_error_result(files, mode, exit_code=2)
+
+        if runtime_cfg.warn_remote_host and not request.no_security_warning:
+            print(
+                f"WARNING: appserver.host = {runtime_cfg.appserver.host} (não-local).\n"
+                f"TDS-LS envia user/password sem TLS sobre TCP. Recomendado:\n"
+                f"  ssh -L {runtime_cfg.appserver.port}:localhost:{runtime_cfg.appserver.port} "
+                f"user@{runtime_cfg.appserver.host} -N\n"
+                f"  # depois altere host = \"127.0.0.1\" em runtime.toml\n"
+                f"(suprima com --no-security-warning)",
+                file=sys.stderr,
+            )
+            # SEM sleep — princípio fail visivelmente (§7.5)
+
+        includes = (
+            request.includes_override
+            if request.includes_override is not None
+            else list(runtime_cfg.compile.includes)
+        )
+        ini_content = _build_ini_script(runtime_cfg, files, includes)
+        ini_path, tempdir = _write_secure_ini(ini_content)
+        args = [str(binary), "cli", str(ini_path)]
+    else:
         includes = (
             request.includes_override
             if request.includes_override is not None
             else (list(runtime_cfg.compile.includes) if runtime_cfg else [])
         )
         args = _build_appre_args(binary, includes, files)
-    else:
-        # modo cli implementado na Task 5
-        raise NotImplementedError("modo cli implementado na Task 5")
 
     start = time.monotonic()
     proc = subprocess.Popen(
@@ -256,14 +303,28 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         stderr=subprocess.PIPE,
     )
     try:
-        stdout_bytes, stderr_bytes = proc.communicate(timeout=request.timeout_seconds)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
         try:
-            proc.wait(timeout=5)
+            stdout_bytes, stderr_bytes = proc.communicate(timeout=request.timeout_seconds)
         except subprocess.TimeoutExpired:
-            proc.kill()
-        return _build_timeout_result(files, request.timeout_seconds, mode)
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            return _build_timeout_result(files, request.timeout_seconds, mode)
+        except KeyboardInterrupt:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            raise
+    finally:
+        if tempdir is not None:
+            try:
+                shutil.rmtree(tempdir, ignore_errors=False)
+            except OSError as exc:
+                print(f"WARN: failed to delete tempdir {tempdir}: {exc}", file=sys.stderr)
 
     stdout = _decode_advpls_output(stdout_bytes)
     stderr = _decode_advpls_output(stderr_bytes)

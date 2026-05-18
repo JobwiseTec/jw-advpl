@@ -164,6 +164,106 @@ class TestRunAppre:
         assert not any(r["arquivo"] == "__unknown__" for r in result.rows)
 
 
+class TestRunCli:
+    def _make_runtime_cfg(
+        self, host: str = "127.0.0.1", warn_remote: bool = False
+    ) -> MagicMock:
+        return MagicMock(
+            tds_ls=MagicMock(binary=Path("/fake/advpls")),
+            appserver=MagicMock(host=host, port=1234, secure=False,
+                                build="7.00.240223P", environment="P2510"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True, includes=()),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+            warn_remote_host=warn_remote, appserver_reachable=True,
+        )
+
+    def test_cli_mode_uses_ini_script(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = self._make_runtime_cfg()
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"", b"")
+            proc.returncode = 0
+            PopenMock.return_value = proc
+            result = run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+        assert result.exit_code == 0
+        args = PopenMock.call_args.args[0]
+        assert Path(args[0]) == Path("/fake/advpls")
+        assert args[1] == "cli"
+        assert args[2].endswith("compile.ini")
+        assert PopenMock.call_args.kwargs.get("stdin") == subprocess.DEVNULL
+
+    def test_security_warning_remote_host(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=False,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = self._make_runtime_cfg(host="187.77.46.221", warn_remote=True)
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock(); proc.communicate.return_value = (b"", b""); proc.returncode = 0
+            PopenMock.return_value = proc
+            run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err or "warning" in captured.err.lower()
+        assert "ssh -L" in captured.err
+
+    def test_no_security_warning_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = self._make_runtime_cfg(host="187.77.46.221", warn_remote=True)
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock(); proc.communicate.return_value = (b"", b""); proc.returncode = 0
+            PopenMock.return_value = proc
+            run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+        captured = capsys.readouterr()
+        assert "ssh -L" not in captured.err
+
+    def test_cli_mode_without_runtime_cfg_returns_exit_2(
+        self, tmp_path: Path
+    ) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+            result = run(request, runtime_cfg=None, root=tmp_path)
+        assert result.exit_code == 2
+        assert result.summary["mode_used"] == "cli"
+        assert result.summary["runtime_config_loaded"] is False
+
+
 class TestTempIniFile:
     def test_creates_secure_tempdir_and_file(self, tmp_path: Path) -> None:
         from plugadvpl.compile import _write_secure_ini
