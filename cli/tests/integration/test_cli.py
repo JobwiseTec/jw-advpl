@@ -1977,3 +1977,74 @@ class TestReindex:
         payload = json.loads(result.stdout)
         assert payload["rows"][0]["arquivo"] == "FATA050.prw"
         assert payload["rows"][0]["ok"] == 1
+
+
+# --- v0.7.0 Fase 0 #5: edit-prw -------------------------------------------
+
+
+class TestEditPrwCheck:
+    def test_prw_cp1252_exits_0(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("cp1252"))
+        result = runner.invoke(app, ["--format", "json", "edit-prw", "check", str(fp)])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["rows"][0]["match"] is True
+
+    def test_prw_utf8_exits_1(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        result = runner.invoke(app, ["--format", "json", "edit-prw", "check", str(fp)])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["rows"][0]["match"] is False
+        assert payload["rows"][0]["detected_encoding"] == "utf-8"
+
+    def test_missing_file_exits_2(self, tmp_path: Path, runner: CliRunner) -> None:
+        result = runner.invoke(
+            app, ["edit-prw", "check", str(tmp_path / "naoexiste.prw")]
+        )
+        assert result.exit_code == 2
+
+
+class TestEditPrwSave:
+    def test_converts_utf8_to_cp1252_and_makes_backup(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        result = runner.invoke(
+            app, ["--format", "json", "edit-prw", "save", str(fp)]
+        )
+        assert result.exit_code == 0
+        assert fp.read_bytes() == "Função".encode("cp1252")
+        assert (tmp_path / "foo.prw.bak").exists()
+        assert (tmp_path / "foo.prw.bak").read_bytes() == "Função".encode("utf-8")
+
+    def test_no_backup_flag(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        result = runner.invoke(
+            app, ["edit-prw", "save", str(fp), "--no-backup"]
+        )
+        assert result.exit_code == 0
+        assert not (tmp_path / "foo.prw.bak").exists()
+
+    def test_explicit_to_utf8(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("cp1252"))
+        result = runner.invoke(
+            app, ["edit-prw", "save", str(fp), "--to", "utf-8", "--no-backup"]
+        )
+        assert result.exit_code == 0
+        assert fp.read_bytes() == "Função".encode("utf-8")
+
+
+class TestEditPrwOpen:
+    def test_prints_cp1252_as_utf8(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("cp1252"))
+        result = runner.invoke(app, ["edit-prw", "open", str(fp)])
+        assert result.exit_code == 0
+        # CliRunner captura stdout em bytes via mix_stderr; conteudo logico esta certo
+        assert "Função" in result.stdout

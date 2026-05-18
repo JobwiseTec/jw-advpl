@@ -1997,6 +1997,110 @@ def cobertura_doc(
 
 
 # ---------------------------------------------------------------------------
+# edit-prw (v0.7.0 Fase 0 #5): converte CP1252 <-> UTF-8
+# ---------------------------------------------------------------------------
+
+
+edit_prw_app = typer.Typer(
+    name="edit-prw",
+    help="Detecta/converte encoding de fontes ADVPL (.prw=cp1252) e TLPP (.tlpp=utf-8).",
+    no_args_is_help=True,
+)
+app.add_typer(edit_prw_app, name="edit-prw")
+
+
+@edit_prw_app.command("check")
+def edit_prw_check(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Caminho do fonte a inspecionar.")],
+) -> None:
+    """Reporta encoding detectado vs esperado pela extensão. Exit 1 se divergir."""
+
+    from plugadvpl.edit_prw import check_encoding
+
+    if not arquivo.exists():
+        typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    report = check_encoding(arquivo)
+    _render_from_ctx(
+        ctx,
+        [report.to_dict()],
+        columns=[
+            "file", "extension", "expected_encoding", "detected_encoding",
+            "has_bom", "match", "non_ascii_bytes",
+        ],
+        title=f"edit-prw check {arquivo.name}",
+    )
+    if not report.match:
+        raise typer.Exit(code=1)
+
+
+@edit_prw_app.command("open")
+def edit_prw_open(
+    arquivo: Annotated[Path, typer.Argument(help="Caminho do fonte a imprimir como UTF-8.")],
+) -> None:
+    """Imprime conteudo em UTF-8 puro (auto-detecta encoding de origem)."""
+
+    from plugadvpl.edit_prw import read_as_utf8
+
+    if not arquivo.exists():
+        typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    text = read_as_utf8(arquivo)
+    # Escreve direto em UTF-8 pra evitar transcoding do typer/console.
+    sys.stdout.buffer.write(text.encode("utf-8"))
+
+
+@edit_prw_app.command("save")
+def edit_prw_save(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Caminho do fonte a converter in-place.")],
+    from_encoding: Annotated[
+        str | None,
+        typer.Option("--from", help="Encoding de origem (default: auto-detect)."),
+    ] = None,
+    to_encoding: Annotated[
+        str | None,
+        typer.Option("--to", help="Encoding de destino (default: por extensao)."),
+    ] = None,
+    no_backup: Annotated[
+        bool,
+        typer.Option("--no-backup", help="Nao criar arquivo .bak antes de gravar."),
+    ] = False,
+) -> None:
+    """Converte arquivo in-place. Default: auto-detecta origem + destino pela extensao."""
+
+    from plugadvpl.edit_prw import convert_and_save
+
+    if not arquivo.exists():
+        typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    try:
+        src, dst, bak = convert_and_save(
+            arquivo,
+            to_encoding=to_encoding,
+            from_encoding=from_encoding,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    _render_from_ctx(
+        ctx,
+        [
+            {
+                "file": str(arquivo),
+                "from": src,
+                "to": dst,
+                "backup": str(bak) if bak else "",
+            }
+        ],
+        columns=["file", "from", "to", "backup"],
+        title=f"edit-prw save {arquivo.name}",
+    )
+
+
+# ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
