@@ -394,5 +394,27 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_ws001_wsmethod_orphan"
+  },
+  {
+    "regra_id": "WS-002",
+    "titulo": "WSRESTFUL: GetContent() + FromJson sem DecodeUtf8 interposto",
+    "severidade": "warning",
+    "categoria": "best-practice",
+    "descricao": "Em classe WSRESTFUL, padrão `cBody := ::GetContent()` seguido em ≤10 linhas de `FromJson(cBody)` sem `DecodeUtf8(cBody)` interposto. Quando cliente não envia `Content-Type: application/json; charset=utf-8`, body chega CP1252 cru; `oJson:FromJson` armazena bytes UTF-8 (0xC3 0xBA) como string CP1252 — corrompe gravação em SXX downstream.",
+    "fix_guidance": "Aplique `cBody := DecodeUtf8(cBody)` antes de `oJson:FromJson(cBody)`. Use `JsonObject():New()` (NÃO `FwJsonDeserialize`, descontinuada pela TOTVS).",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_ws002_getcontent_no_decode"
+  },
+  {
+    "regra_id": "WS-003",
+    "titulo": "WSRESTFUL: SetResponse sem EncodeUtf8 envolvendo o argumento",
+    "severidade": "warning",
+    "categoria": "best-practice",
+    "descricao": "Em classe WSRESTFUL, `::SetResponse(...)` cujo argumento não passa por `EncodeUtf8` antes — clients UTF-8 (browsers modernos, fetch JS, Postman default) receberão mojibake nos caracteres 0x80–0xFF. Definir `SetContentType('application/json; charset=utf-8')` apenas declara — não converte payload.",
+    "fix_guidance": "Padrão idiomático: `::SetResponse( EncodeUtf8( FwJsonSerialize(oResp, .F., .F., .T.) ) )`. Em respostas só-ASCII, regra gera ruído — supressão local aceitável via comentário.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_ws003_setresponse_no_encode"
   }
 ]

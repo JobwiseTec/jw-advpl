@@ -2060,3 +2060,120 @@ class TestWS001WSMethodOrphan:
         )
         findings = lint_source(_parsed_for(src, "apis.prw"), src)
         assert "WS-001" not in _ids(findings)
+
+
+# --- WS-002: GetContent + FromJson sem DecodeUtf8 ---------------------------
+
+
+class TestWS002GetContentNoDecode:
+    """v0.7.0 (Fase 0): em WSRESTFUL, GetContent() seguido de FromJson sem
+    DecodeUtf8 pode corromper acentos quando cliente nao envia charset header.
+    """
+
+    def test_positive_getcontent_then_fromjson_no_decode(self) -> None:
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "  WSDATA cBody AS STRING\n"
+            "ENDCLASS\n"
+            "WSMETHOD POST salvar WSSERVICE API_Foo\n"
+            "  Local cBody := ::GetContent()\n"
+            "  Local oJson := JsonObject():New()\n"
+            "  oJson:FromJson(cBody)\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        ws002 = [f for f in findings if f["regra_id"] == "WS-002"]
+        assert len(ws002) == 1
+        assert ws002[0]["severidade"] == "warning"
+
+    def test_negative_getcontent_with_decode_before_fromjson(self) -> None:
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD POST salvar WSSERVICE API_Foo\n"
+            "  Local cBody := ::GetContent()\n"
+            "  cBody := DecodeUtf8(cBody)\n"
+            "  oJson:FromJson(cBody)\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-002" not in _ids(findings)
+
+    def test_negative_getcontent_outside_wsrestful(self) -> None:
+        """GetContent fora de classe WSRESTFUL nao dispara."""
+        src = (
+            "User Function MTA300()\n"
+            "  Local cBody := oReq:GetContent()\n"
+            "  oJson:FromJson(cBody)\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src, "mta300.prw"), src)
+        assert "WS-002" not in _ids(findings)
+
+    def test_negative_getcontent_no_fromjson_nearby(self) -> None:
+        """GetContent sem FromJson nas proximas linhas — nao dispara."""
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD POST salvar WSSERVICE API_Foo\n"
+            "  Local cBody := ::GetContent()\n"
+            "  ConOut(cBody)\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-002" not in _ids(findings)
+
+
+# --- WS-003: SetResponse sem EncodeUtf8 -------------------------------------
+
+
+class TestWS003SetResponseNoEncode:
+    """v0.7.0 (Fase 0): WSRESTFUL retornando JSON sem EncodeUtf8(FwJsonSerialize)
+    quebra acentos para clients que esperam UTF-8 puro (browsers, fetch JS).
+    """
+
+    def test_positive_setresponse_without_encode(self) -> None:
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            "  ::SetResponse(FwJsonSerialize(oResp, .F., .F., .T.))\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        ws003 = [f for f in findings if f["regra_id"] == "WS-003"]
+        assert len(ws003) == 1
+        assert ws003[0]["severidade"] == "warning"
+
+    def test_negative_setresponse_with_encode(self) -> None:
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            "  ::SetResponse(EncodeUtf8(FwJsonSerialize(oResp, .F., .F., .T.)))\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-003" not in _ids(findings)
+
+    def test_negative_setresponse_outside_wsrestful(self) -> None:
+        """SetResponse em codigo que nao esta dentro de WSRESTFUL — ignora."""
+        src = (
+            "User Function MTA400()\n"
+            "  oRet:SetResponse('texto com acento')\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src, "mta400.prw"), src)
+        assert "WS-003" not in _ids(findings)
+
+    def test_negative_setresponse_with_encode_uppercase(self) -> None:
+        """ADVPL case-insensitive: EncodeUTF8 (maiusculo) tambem vale."""
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD POST salvar WSSERVICE API_Foo\n"
+            "  ::SetResponse(EncodeUTF8(cResposta))\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-003" not in _ids(findings)

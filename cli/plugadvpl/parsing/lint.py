@@ -253,8 +253,9 @@ _WS001_SUBNAME_IN_REST_RE = re.compile(
 
 # WS-002/003: usa _WSRESTFUL_CLASS_RE + _END_CLASS_RE existentes (SEC-001).
 # `cBody := ::GetContent()` ou `<v> := self:GetContent()` ou `self:GetContent()` direto.
+# Sem `\b` antes de `::` porque `::` eh non-word seguido por non-word (no boundary).
 _WS002_GETCONTENT_RE = re.compile(
-    r"\b(?:::|[Ss][Ee][Ll][Ff]\s*:)GetContent\s*\(", re.IGNORECASE,
+    r"(?:::|[Ss][Ee][Ll][Ff]\s*:)GetContent\s*\(", re.IGNORECASE,
 )
 # DecodeUtf8(xxx) — verifica presenca interposta entre GetContent e FromJson.
 _WS002_DECODE_UTF8_RE = re.compile(r"\bDecodeUtf8\s*\(", re.IGNORECASE)
@@ -263,8 +264,10 @@ _WS002_FROMJSON_RE = re.compile(r"\bFromJson\s*\(", re.IGNORECASE)
 _WS002_LOOKAHEAD_LINES = 10
 
 # WS-003: SetResponse(...) sem EncodeUtf8 envolvendo o argumento.
+# `[^)]*` para no primeiro `)` interno — suficiente pra detectar presenca de
+# EncodeUtf8 quando ele eh o wrapper externo (caso comum).
 _WS003_SETRESPONSE_RE = re.compile(
-    r"\b(?:::|[Ss][Ee][Ll][Ff]\s*:)SetResponse\s*\(([^)]*)\)", re.IGNORECASE,
+    r"(?:::|[Ss][Ee][Ll][Ff]\s*:)SetResponse\s*\(([^)]*)\)", re.IGNORECASE,
 )
 _WS003_ENCODE_UTF8_RE = re.compile(r"\bEncodeUtf8\s*\(", re.IGNORECASE)
 
@@ -1688,6 +1691,140 @@ def _check_ws001_wsmethod_orphan(
     return findings
 
 
+def _wsrestful_class_ranges(content: str) -> list[tuple[int, int]]:
+    """Retorna lista de (start_offset, end_offset) de cada bloco CLASS ... FROM WSRESTFUL ... ENDCLASS.
+
+    Reusa _WSRESTFUL_CLASS_RE + _END_CLASS_RE. Usado pelas regras WS-002/003
+    pra restringir match ao corpo de classes REST (evita FP em codigo nao-REST
+    que coincidentemente usa GetContent/SetResponse).
+    """
+    ranges: list[tuple[int, int]] = []
+    for m_open in _WSRESTFUL_CLASS_RE.finditer(content):
+        start = m_open.start()
+        end_match = _END_CLASS_RE.search(content, m_open.end())
+        end = end_match.end() if end_match else len(content)
+        ranges.append((start, end))
+    return ranges
+
+
+def _wsmethod_body_ranges(content: str) -> list[tuple[int, int]]:
+    """Retorna ranges de corpo de WSMETHOD: da declaracao ate proximo WSMETHOD/EOF.
+
+    Heuristica simples — ADVPL nao tem fechamento explicito de WSMETHOD; o corpo
+    vai ate o proximo `WSMETHOD` ou ate o fim do arquivo. Combina-se com
+    `_wsrestful_class_ranges` para WS-002/003 abrangerem ambas as formas
+    (corpo dentro de CLASS ... ENDCLASS OU implementacao standalone via WSMETHOD).
+    """
+    ranges: list[tuple[int, int]] = []
+    matches = list(_WS001_WSMETHOD_LINE_RE.finditer(content))
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        ranges.append((start, end))
+    return ranges
+
+
+def _in_any_range(offset: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(start <= offset < end for start, end in ranges)
+
+
+def _check_ws002_getcontent_no_decode(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """WS-002 (warning): GetContent() seguido de FromJson em ≤10 linhas sem DecodeUtf8 interposto.
+
+    Em WSRESTFUL, payload chega CP1252 cru quando cliente nao envia
+    `Content-Type: application/json; charset=utf-8`. Parsear direto com
+    `oJson:FromJson` armazena bytes UTF-8 como string CP1252 — quebra acentos
+    em gravacao SXX downstream.
+
+    NAO sugerir `FwJsonDeserialize` (descontinuada pela TOTVS — usar
+    `JsonObject():New():FromJson()`).
+    """
+    stripped = strip_advpl(content)
+    findings: list[dict[str, Any]] = []
+    # Escopo: corpo de WSMETHOD OU bloco CLASS FROM WSRESTFUL.
+    scopes = _wsrestful_class_ranges(stripped) + _wsmethod_body_ranges(stripped)
+    if not scopes:
+        return findings
+
+    funcoes = parsed.get("funcoes", []) or []
+    lines = stripped.splitlines()
+
+    for m_get in _WS002_GETCONTENT_RE.finditer(stripped):
+        if not _in_any_range(m_get.start(), scopes):
+            continue
+        linha_get = _line_at(stripped, m_get.start())
+        # Janela de ≤10 linhas: procurar FromJson sem DecodeUtf8 antes
+        end_line = min(len(lines), linha_get + _WS002_LOOKAHEAD_LINES)
+        window = "\n".join(lines[linha_get - 1 : end_line])
+        from_match = _WS002_FROMJSON_RE.search(window)
+        if not from_match:
+            continue
+        # Tem DecodeUtf8 entre GetContent e FromJson?
+        sub = window[: from_match.start()]
+        if _WS002_DECODE_UTF8_RE.search(sub):
+            continue
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _funcao_at_line(funcoes, linha_get),
+                "linha": linha_get,
+                "regra_id": "WS-002",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha_get),
+                "sugestao_fix": (
+                    "Aplique `DecodeUtf8(cBody)` antes de `oJson:FromJson(cBody)` "
+                    "para tratar payload UTF-8 enviado sem header de charset. "
+                    "Use `JsonObject():New()` (NAO FwJsonDeserialize, descontinuada)."
+                ),
+            }
+        )
+    return findings
+
+
+def _check_ws003_setresponse_no_encode(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """WS-003 (warning): SetResponse(...) dentro de WSRESTFUL sem EncodeUtf8 envolvendo o argumento.
+
+    Sem `EncodeUtf8(FwJsonSerialize(...))`, clients UTF-8 (browsers, fetch JS,
+    Postman default) recebem mojibake nos caracteres ≥ 0x80. Padrao idiomatico
+    TOTVS: `::SetResponse( EncodeUtf8( FwJsonSerialize(oResp, .F., .F., .T.) ) )`.
+    """
+    stripped = strip_advpl(content)
+    findings: list[dict[str, Any]] = []
+    scopes = _wsrestful_class_ranges(stripped) + _wsmethod_body_ranges(stripped)
+    if not scopes:
+        return findings
+
+    funcoes = parsed.get("funcoes", []) or []
+
+    for m in _WS003_SETRESPONSE_RE.finditer(stripped):
+        if not _in_any_range(m.start(), scopes):
+            continue
+        arg = m.group(1) or ""
+        if _WS003_ENCODE_UTF8_RE.search(arg):
+            continue
+        linha = _line_at(stripped, m.start())
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _funcao_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "WS-003",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Envolva o argumento com EncodeUtf8: "
+                    "`::SetResponse( EncodeUtf8( FwJsonSerialize(oResp, .F., .F., .T.) ) )`. "
+                    "Sem isso, clients UTF-8 (browsers, fetch JS) verao mojibake nos acentos."
+                ),
+            }
+        )
+    return findings
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 
@@ -1728,6 +1865,8 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_mod004_legacy_cadastro(arquivo, parsed, content))
     # v0.7.0 Fase 0: webservice rules
     findings.extend(_check_ws001_wsmethod_orphan(arquivo, parsed, content))
+    findings.extend(_check_ws002_getcontent_no_decode(arquivo, parsed, content))
+    findings.extend(_check_ws003_setresponse_no_encode(arquivo, parsed, content))
 
     findings.sort(key=lambda f: (int(f["linha"]), str(f["regra_id"])))
     return findings
