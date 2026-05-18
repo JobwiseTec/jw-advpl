@@ -352,8 +352,12 @@ _CLAUDE_FRAGMENT_END = "<!-- END plugadvpl -->"
 # `_write_claude_md_fragment` substitui `__VERSION__` por `__version__` real
 # na hora de gravar; `_check_fragment_staleness` (em status) le este marker
 # pra detectar fragments gerados por versoes antigas e avisar o usuario.
+# v0.4.6 (J): regex restrita ao formato SemVer/PEP440 (X.Y.Z + opcional trailing
+# safe chars: dev/rc/pre/build). Antes era \d.+-\\S* que permitia qualquer
+# non-whitespace, incluindo conteudo malicioso/corrompido em fragment editado a mao.
+# Aceita: 0.4.5, 0.4.5-rc1, 0.4.5+build.123, 0.1.1.dev2+ga... (setuptools-scm dev).
 _CLAUDE_FRAGMENT_VERSION_MARKER_RE = re.compile(
-    r"<!--\s*plugadvpl-fragment-version:\s*([\d.+-]\S*)\s*-->"
+    r"<!--\s*plugadvpl-fragment-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
 )
 _CLAUDE_FRAGMENT_BODY = """<!-- plugadvpl-fragment-version: __VERSION__ -->
 ## Plugadvpl — índice ADVPL local (LEIA ANTES de qualquer Read em .prw/.tlpp)
@@ -1319,7 +1323,8 @@ def workflow(
             + (f" (arquivo={arquivo})" if arquivo else "")
         ),
         next_steps=(
-            [f"plugadvpl find {t}" for t in {r["target"] for r in rows[:3] if r["target"]}]
+            # v0.4.6 (I): dedupe preservando ordem (set comprehension não garante).
+            [f"plugadvpl find {t}" for t in dict.fromkeys(r["target"] for r in rows[:3] if r["target"]).keys()]
             if rows
             else _empty_result_hints(
                 bool(kind or target or arquivo),
@@ -1418,9 +1423,10 @@ def execauto(
             + (" (dynamic)" if dynamic else "")
         ),
         next_steps=(
+            # v0.4.6 (I): dedupe preservando ordem (set não garante).
             [
                 f"plugadvpl arch {arq}"
-                for arq in {r["arquivo"] for r in rows[:3]}
+                for arq in dict.fromkeys(r["arquivo"] for r in rows[:3]).keys()
             ]
             if rows
             else _empty_result_hints(

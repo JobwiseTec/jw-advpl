@@ -336,10 +336,18 @@ def extract_protheus_docs(
 # --- Serialização pra DB --------------------------------------------------
 
 
-def serialize_json(value: Any) -> str | None:
-    """JSON-serializa pra colunas *_json. Retorna None se vazio."""
-    if not value:
-        return None
+def serialize_json(value: Any) -> str:
+    """JSON-serializa pra colunas *_json.
+
+    v0.4.6 (H): grava sempre JSON valido (``'[]'``/``'{}'``) em vez de NULL
+    quando vazio. Antes inspecao via sqlite3 cli mostrava NULL confuso (mesma
+    intencao de dado vazio, mas representacao diferente da que o parser_*
+    espera ler). End-to-end equivalente (parse_json_* devolve [] pra ambos),
+    mas leitura ad-hoc do DB fica clara.
+    """
+    if value is None:
+        # Mantem None explicito como NULL — distinto de "vazio" (lista/dict vazios).
+        return json.dumps(None, ensure_ascii=False)
     return json.dumps(value, ensure_ascii=False)
 
 
