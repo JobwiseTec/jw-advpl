@@ -238,14 +238,35 @@ git commit -m "feat(runtime_config): load() returns None when TOML missing"
 - [ ] **Step 1.3.1: Escrever teste positivo + helper de fixture**
 
 ```python
+def _fake_advpls_binary(root: Path) -> Path:
+    """Cria executável real (cross-platform) que serve como `tds_ls.binary`.
+
+    Linux/macOS: shell script `#!/bin/sh\\nexit 0\\n` com mode 0o755.
+    Windows: arquivo `.bat` (PATH lookup respeita PATHEXT no PATH, mas
+    `Path.is_file()` aceita qualquer extensão).
+    """
+    import os as _os
+    import stat as _stat
+    if _os.name == "nt":
+        target = root / "fake_advpls.bat"
+        target.write_text("@exit /b 0\r\n", encoding="cp1252")
+    else:
+        target = root / "fake_advpls"
+        target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        target.chmod(target.stat().st_mode | _stat.S_IEXEC | _stat.S_IXGRP | _stat.S_IXOTH)
+    return target
+
+
 def _write_minimal_toml(root: Path, **overrides: str) -> Path:
     """Helper: escreve runtime.toml com defaults sensatos + overrides."""
     cfg_dir = root / ".plugadvpl"
     cfg_dir.mkdir(exist_ok=True)
-    binary_path = overrides.get("binary", "/usr/bin/true")  # qualquer executável real
+    binary_path = overrides.get("binary", str(_fake_advpls_binary(root)))
+    # Path no TOML usa forward slash (TOML não escapa \ — em Windows D:\foo seria erro)
+    binary_path_toml = binary_path.replace("\\", "/")
     content = f'''
 [tds_ls]
-binary = "{binary_path}"
+binary = "{binary_path_toml}"
 
 [appserver]
 host = "127.0.0.1"
@@ -692,6 +713,12 @@ Expected: pelo menos 20 PASS (cobre Steps 1.2–1.5).
     "description": "Hex keys >16 chars (tokens, signatures)",
     "pattern": "\\b[0-9a-fA-F]{16,}\\b",
     "replacement": "***HEX_REDACTED***"
+  },
+  {
+    "id": "aut_file_value",
+    "description": "Path/conteúdo do arquivo .aut (chave de autorização TOTVS)",
+    "pattern": "(?i)(aut_file|authorization)\\s*[:=]\\s*\\S+",
+    "replacement": "\\1=***REDACTED***"
   }
 ]
 ```
@@ -759,7 +786,7 @@ def test_redact_ids_unique(redact_catalog: list[dict]) -> None:
 ```bash
 cd cli && python -m pytest tests/unit/test_compile_catalog_consistency.py -v --override-ini="addopts="
 ```
-Expected: 4 PASS (testes do redact apenas; compile_patterns vai vir na Task 3).
+Expected: 4 PASS (testes do redact apenas. Asserts de `compile_patterns.json` são adicionados em Step 3.8 — o arquivo JSON será criado em Step 3.1.2 mas só ganha asserts cobrindo seu schema no final do Chunk 2).
 
 - [ ] **Step 2.2.4: Commit**
 
@@ -1000,18 +1027,30 @@ cd cli && python -m pytest tests/unit/test_compile_parser.py::TestParseBasic -v 
 - [ ] **Step 3.3.3: GREEN — implementar parser básico**
 
 ```python
+import functools
+
 _PT_SEVERIDADE_MAP = {"erro": "error", "aviso": "warning", "info": "info"}
 
 
+@functools.lru_cache(maxsize=1)
 def _load_patterns() -> list[dict[str, object]]:
+    """Carrega compile_patterns.json e ordena por (ordem ASC, índice no JSON).
+
+    Tie-break determinístico: dois patterns com mesma `ordem` mantêm a ordem
+    em que aparecem no JSON (vence o primeiro). Bug evitado: NÃO usar
+    `raw.index(p)` durante o sort — é O(n²) e retorna índice da posição
+    corrente, não original, quebrando o tie-break.
+    """
     text = ir.files("plugadvpl").joinpath("lookups/compile_patterns.json").read_text(
         encoding="utf-8"
     )
     raw = json.loads(text)
-    raw.sort(key=lambda p: (int(p.get("ordem", 999)), raw.index(p)))
-    return raw
+    indexed = list(enumerate(raw))
+    indexed.sort(key=lambda t: (int(t[1].get("ordem", 999)), t[0]))
+    return [p for _, p in indexed]
 
 
+@functools.lru_cache(maxsize=1)
 def _load_redact_patterns() -> list[tuple[re.Pattern[str], str]]:
     text = ir.files("plugadvpl").joinpath("lookups/redact_patterns.json").read_text(
         encoding="utf-8"
@@ -1041,13 +1080,36 @@ def parse_diagnostics(
     mode: str,
     requested_files: list[Path],
 ) -> tuple[list[Diagnostic], list[Diagnostic]]:
+    """Parseia output do advpls.
+
+    Returns:
+        ``(matched, unmatched)`` onde:
+
+        - ``matched`` contém TODAS as linhas relevantes para os arquivos
+          solicitados, incluindo:
+            * diagnostics estruturados (error/warning/info) com arquivo em
+              ``requested_files``
+            * linhas que NENHUM pattern reconheceu, viram
+              ``Diagnostic(severidade='unknown', arquivo='', linha=0, raw=<linha>)``.
+              Nunca silencia.
+        - ``unmatched`` contém APENAS diagnostics estruturados cujo arquivo
+          NÃO bate com nenhum requested_file após ``Path.resolve()``. Vão
+          para bucket ``__unmatched__`` no resultado final.
+    """
     patterns = _load_patterns()
     compiled = [(p, re.compile(p["pattern"])) for p in patterns]
     redact = _load_redact_patterns()
 
     matched: list[Diagnostic] = []
     unmatched: list[Diagnostic] = []
-    requested_resolved = {p.resolve(): p for p in requested_files if p.exists()}
+    # Resolve mesmo se arquivo não existir (caso comum: usuário passou
+    # foo.prw como path que não está no cwd atual do teste).
+    requested_resolved: dict[Path, Path] = {}
+    for p in requested_files:
+        try:
+            requested_resolved[p.resolve()] = p
+        except (OSError, RuntimeError):
+            requested_resolved[Path(str(p))] = p
 
     for line in (stdout + "\n" + stderr).splitlines():
         if not line.strip():
@@ -1442,21 +1504,24 @@ git commit -m "feat(compile): orchestrator skeleton (Fase 1 #4)"
 
 ```python
 class TestResolveFiles:
-    def test_explicit_list_filters_extensions(self, tmp_path: Path) -> None:
+    def test_explicit_list_separates_valid_missing_rejected(self, tmp_path: Path) -> None:
+        """Critério definido: extensão inválida → `rejected_ext`; arquivo não existe → `missing`;
+        ambos os defeitos: prioridade `rejected_ext` (filtragem por ext acontece antes de check de existência)."""
         (tmp_path / "foo.prw").write_text("", encoding="utf-8")
         (tmp_path / "bar.tlpp").write_text("", encoding="utf-8")
         (tmp_path / "baz.txt").write_text("", encoding="utf-8")
+        missing_path = tmp_path / "missing.prw"  # extensão válida, mas não existe
         from plugadvpl.compile import resolve_files
         result = resolve_files(
-            [tmp_path / "foo.prw", tmp_path / "bar.tlpp", tmp_path / "baz.txt"],
+            [tmp_path / "foo.prw", tmp_path / "bar.tlpp",
+             tmp_path / "baz.txt", missing_path],
             changed_since=None, root=tmp_path,
         )
         names = sorted(p.name for p in result.valid_files)
         assert names == ["bar.tlpp", "foo.prw"]
-        assert result.missing == [tmp_path / "baz.txt"] or True  # baz.txt rejeitado por ext
+        assert result.rejected_ext == [tmp_path / "baz.txt"]
+        assert result.missing == [missing_path]
 ```
-
-(O critério "rejeitado por ext vs missing" precisa ser definido — primeiro teste, depois implementação.)
 
 - [ ] **Step 4.2.2: Implementação simples**
 
@@ -1664,6 +1729,35 @@ class TestRunAppre:
 - [ ] **Step 4.5.2: Implementação `run()` para modo appre**
 
 ```python
+_UTF8_BOM = b"\xef\xbb\xbf"
+_UTF16_LE_BOM = b"\xff\xfe"
+_UTF16_BE_BOM = b"\xfe\xff"
+
+
+def _decode_advpls_output(raw: bytes) -> str:
+    """Decodifica saída do advpls tratando BOM UTF-16 (PowerShell/WinSrv) e fallback CP1252.
+
+    Estratégia:
+    1. BOM UTF-16 LE/BE → decode utf-16-le/be + strip BOM
+    2. BOM UTF-8 → strip BOM + utf-8
+    3. UTF-8 strict tenta; se >5% chars são replacement char → fallback CP1252
+    4. CP1252 errors='replace' como último recurso
+    """
+    if raw.startswith(_UTF16_LE_BOM):
+        return raw[len(_UTF16_LE_BOM):].decode("utf-16-le", errors="replace")
+    if raw.startswith(_UTF16_BE_BOM):
+        return raw[len(_UTF16_BE_BOM):].decode("utf-16-be", errors="replace")
+    if raw.startswith(_UTF8_BOM):
+        raw = raw[len(_UTF8_BOM):]
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
+    # Se decode com utf-8 strict funcionou, ok. Mas se usou errors='replace'
+    # e teve muito '�', vale fallback. Como tentamos strict aqui, OK.
+    return text
+
+
 def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
     if runtime_cfg is not None:
         return runtime_cfg.tds_ls.binary
@@ -1702,16 +1796,16 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         raise NotImplementedError("modo cli no Step 4.6")
 
     start = time.monotonic()
+    # CRÍTICO: captura como BYTES (encoding=None) para detectar BOM UTF-16
+    # antes de decodificar. PowerShell/Win Server às vezes emite UTF-16LE.
     proc = subprocess.Popen(
         args,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        encoding="utf-8",
-        errors="replace",
     )
     try:
-        stdout, stderr = proc.communicate(timeout=request.timeout_seconds)
+        stdout_bytes, stderr_bytes = proc.communicate(timeout=request.timeout_seconds)
     except subprocess.TimeoutExpired:
         proc.terminate()
         try:
@@ -1720,6 +1814,8 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             proc.kill()
         return _build_timeout_result(files, request.timeout_seconds, mode)
 
+    stdout = _decode_advpls_output(stdout_bytes)
+    stderr = _decode_advpls_output(stderr_bytes)
     duration_ms = int((time.monotonic() - start) * 1000)
     matched, unmatched = parse_diagnostics(
         stdout=stdout, stderr=stderr, mode=mode, requested_files=files,
@@ -2165,8 +2261,21 @@ E envolver o subprocess.Popen em try/finally que limpe `tempdir`:
 
 
 def _build_setup_error_result(files: list[Path], mode: str, exit_code: int) -> CompileResult:
+    # Schema completo conforme §8 — CI consumer espera todos os campos.
     return CompileResult(
-        rows=[], summary={"total_files": 0, "mode_used": mode}, next_steps=[],
+        rows=[],
+        summary={
+            "total_files": len(files),
+            "ok": 0,
+            "failed": len(files),
+            "total_errors": 0,
+            "total_warnings": 0,
+            "mode_used": mode,
+            "appserver_reachable": False,
+            "runtime_config_loaded": False,
+            "output_truncated": False,
+        },
+        next_steps=[],
         exit_code=exit_code,
     )
 ```
@@ -2241,6 +2350,126 @@ No bloco try/except do subprocess:
 cd cli && python -m pytest tests/unit/test_compile.py::TestLifecycle -v --override-ini="addopts="
 git add cli/plugadvpl/compile.py cli/tests/unit/test_compile.py
 git commit -m "feat(compile): handle KeyboardInterrupt (terminate + cleanup)"
+```
+
+> **NOTA: exit 130** — Step 5.5 garante que `KeyboardInterrupt` re-raise do `run()`. A conversão da exceção em `Exit(code=130)` acontece no **Chunk 4 / Step 6.1.1** (handler `typer.Exit(code=130)` no callback). Spec §9 + §14 cobrem com cross-ref.
+
+#### Step 5.5.4 — KeyboardInterrupt limpa tempdir (verifica filesystem)
+
+- [ ] **Step 5.5.4.1: Teste explícito de limpeza**
+
+```python
+    def test_keyboard_interrupt_cleans_tempdir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spec §11.3: ao receber KeyboardInterrupt, tempdir deve ser removido."""
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = MagicMock(
+            tds_ls=MagicMock(binary=Path("/fake/advpls")),
+            appserver=MagicMock(host="127.0.0.1", port=1234, secure=False,
+                                build="x", environment="y"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True, includes=()),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+            warn_remote_host=False, appserver_reachable=True,
+        )
+
+        captured_tempdir: list[Path] = []
+        original_mkdtemp = tempfile.mkdtemp
+
+        def _spy_mkdtemp(*args: object, **kwargs: object) -> str:
+            td = original_mkdtemp(*args, **kwargs)
+            captured_tempdir.append(Path(td))
+            return td
+
+        with patch("plugadvpl.compile.tempfile.mkdtemp", side_effect=_spy_mkdtemp):
+            with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+                proc = MagicMock()
+                proc.communicate.side_effect = KeyboardInterrupt
+                PopenMock.return_value = proc
+                with pytest.raises(KeyboardInterrupt):
+                    run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+
+        assert len(captured_tempdir) == 1, "esperava 1 tempdir criado"
+        assert not captured_tempdir[0].exists(), (
+            f"tempdir {captured_tempdir[0]} deveria ter sido removido"
+        )
+```
+
+- [ ] **Step 5.5.4.2: GREEN + commit (deve passar se finally do Step 5.4 está correto)**
+
+```bash
+cd cli && python -m pytest tests/unit/test_compile.py::TestLifecycle::test_keyboard_interrupt_cleans_tempdir -v --override-ini="addopts="
+git add cli/tests/unit/test_compile.py
+git commit -m "test(compile): KeyboardInterrupt removes tempdir (no leak)"
+```
+
+#### Step 5.5.5 — UTF-16 BOM no output
+
+- [ ] **Step 5.5.5.1: Teste UTF-16 LE**
+
+```python
+class TestOutputEncoding:
+    def test_utf16_le_bom_decoded(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        # Mock stdout em UTF-16 LE com BOM
+        msg = "foo.prw(1) error: Unbalanced ENDIF"
+        utf16_bytes = b"\xff\xfe" + msg.encode("utf-16-le")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (utf16_bytes, b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        # Parser deve ter classificado o erro corretamente (não unknown)
+        row = next(r for r in result.rows if r["arquivo"] == str(foo))
+        assert row["counts"]["error"] == 1
+
+    def test_cp1252_fallback_when_utf8_invalid(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        # Bytes inválidos para UTF-8: 0xE7 0xE3 0xF5 (cp1252: ç ã õ)
+        cp1252_bytes = "foo.prw(1) error: função quebrou".encode("cp1252")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (cp1252_bytes, b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        row = next(r for r in result.rows if r["arquivo"] == str(foo))
+        assert row["counts"]["error"] == 1
+        # Mensagem decodificada preservou acentos
+        diag = row["diagnostics"][0]
+        assert "função" in diag["mensagem"] or "fun" in diag["mensagem"]
+```
+
+- [ ] **Step 5.5.5.2: GREEN + commit (já deve passar se `_decode_advpls_output` está correto)**
+
+```bash
+cd cli && python -m pytest tests/unit/test_compile.py::TestOutputEncoding -v --override-ini="addopts="
+git add cli/tests/unit/test_compile.py
+git commit -m "test(compile): output UTF-16 BOM + CP1252 fallback decoded correctly"
 ```
 
 #### Step 5.6 — Credencial nunca em log (≥5 asserts)
@@ -2409,7 +2638,9 @@ Expected: ≥25 PASS.
 compile_app = typer.Typer(
     name="compile",
     help="Compila fontes ADVPL via advpls (modos appre local + cli full).",
-    no_args_is_help=True,
+    # NÃO usar no_args_is_help=True junto com invoke_without_command=True
+    # — typer mostra help antes do callback, quebrando o teste que espera
+    # exit 2 + "nenhum fonte informado".
     invoke_without_command=True,
 )
 app.add_typer(compile_app, name="compile")
@@ -2547,38 +2778,54 @@ from plugadvpl.cli import app
 
 @pytest.fixture
 def runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    # Compatibilidade Click 8.0–8.2: NÃO passar mix_stderr (removido em 8.2+).
+    # Padrão do projeto em tests/integration/test_cli.py também usa sem flag.
+    return CliRunner()
 
 
 @pytest.fixture
-def fake_advpls(tmp_path: Path) -> Path:
-    """Cria script Python que finge ser advpls (suficiente pra integration test)."""
-    shim = tmp_path / "advpls_shim.py"
-    shim.write_text(
-        f'#!{sys.executable}\n'
-        'import sys\n'
-        '# Default: compile sucesso (exit 0). Sobrescreva via SHIM_OUTPUT env var.\n'
-        'import os\n'
+def fake_advpls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Cria um "binário" `advpls` que finge ser o compilador (cross-platform).
+
+    Retorna o Path do executável a ser passado em `tds_ls.binary` (ou auto-detect
+    via PATH). Em Windows usa `.bat`; em Linux/macOS, shell script `chmod +x`.
+
+    Comportamento default: exit 0 sem output. Sobrescreva via env vars:
+      SHIM_OUTPUT — texto a imprimir em stdout
+      SHIM_EXIT   — código de saída (int)
+
+    CRÍTICO: No Windows, `subprocess.Popen([binary, args...])` sem `shell=True`
+    chama `CreateProcessW` que NÃO resolve PATHEXT. Por isso retornamos o Path
+    COMPLETO do `.bat` — o compile.py vai chamar Popen com esse path absoluto,
+    e Windows aceita `.bat` em CreateProcessW se for path absoluto explícito.
+    """
+    shim_py = tmp_path / "advpls_shim.py"
+    shim_py.write_text(
+        'import sys, os\n'
         'output = os.environ.get("SHIM_OUTPUT", "")\n'
         'exit_code = int(os.environ.get("SHIM_EXIT", "0"))\n'
         'sys.stdout.write(output)\n'
         'sys.exit(exit_code)\n',
         encoding="utf-8",
     )
-    # Em Unix, marca executável
-    if os.name == "posix":
-        shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
-    # Plant no PATH
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    target = bin_dir / ("advpls.exe" if os.name == "nt" else "advpls")
-    if os.name == "posix":
-        target.symlink_to(shim)
+    if os.name == "nt":
+        # .bat wrapper invocando python explicitamente
+        target = tmp_path / "advpls.bat"
+        target.write_text(
+            f'@echo off\r\n"{sys.executable}" "{shim_py}" %*\r\n',
+            encoding="cp1252",
+        )
     else:
-        # Em Windows, copia + cria .bat wrapper
-        bat = bin_dir / "advpls.bat"
-        bat.write_text(f'@{sys.executable} "{shim}" %*\n', encoding="utf-8")
-    return bin_dir
+        target = tmp_path / "advpls"
+        target.write_text(
+            f'#!{sys.executable}\n'
+            f'import sys, os, runpy\n'
+            f'sys.argv = [r"{shim_py}"] + sys.argv[1:]\n'
+            f'runpy.run_path(r"{shim_py}", run_name="__main__")\n',
+            encoding="utf-8",
+        )
+        target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return target
 ```
 
 #### Step 7.2 — Testes básicos
@@ -2636,8 +2883,12 @@ class TestCompileBasics:
     ) -> None:
         foo = tmp_path / "foo.prw"
         foo.write_text("", encoding="utf-8")
-        # PATH com shim
-        monkeypatch.setenv("PATH", str(fake_advpls) + os.pathsep + os.environ["PATH"])
+        # Injeta o path absoluto do shim via env var lida por _resolve_advpls.
+        # Alternativa testada também: colocar tmp_path no início do PATH
+        # (Linux/macOS funciona; Windows precisa do .bat com path absoluto
+        # — caso comum: compile.py chama _resolve_advpls() que retorna o
+        # Path absoluto e Popen aceita .bat se path absoluto explícito).
+        monkeypatch.setenv("PLUGADVPL_ADVPLS_BINARY", str(fake_advpls))
         # Shim retorna sucesso por default
         result = runner.invoke(
             app, ["--root", str(tmp_path), "--format", "json", "compile",
@@ -2649,12 +2900,96 @@ class TestCompileBasics:
         assert payload["summary"]["total_files"] == 1
 ```
 
-- [ ] **Step 7.3.2: Rodar testes integration + commit**
+> **Nota implementação**: para o teste acima funcionar, `_resolve_advpls()` em `compile.py` deve checar a env var `PLUGADVPL_ADVPLS_BINARY` antes do `shutil.which()` (test hook). Ajustar Step 4.5.2:
+>
+> ```python
+> def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
+>     # Test hook + escape hatch (não documentado publicamente — só CI/testes).
+>     env_override = os.environ.get("PLUGADVPL_ADVPLS_BINARY")
+>     if env_override:
+>         return Path(env_override)
+>     if runtime_cfg is not None:
+>         return runtime_cfg.tds_ls.binary
+>     found = shutil.which("advpls") or shutil.which("advpls.exe")
+>     if not found:
+>         raise RuntimeError(
+>             "advpls not found in PATH. Set tds_ls.binary in runtime.toml or "
+>             "install tds-vscode extension."
+>         )
+>     return Path(found)
+> ```
+```
+
+- [ ] **Step 7.3.2: Schema contract test (critério §14 — "Schema JSON estável conforme §8 — testado por contract test")**
+
+Adicionar em `test_cli_compile.py`:
+```python
+class TestSchemaContract:
+    """Garante schema JSON estável conforme spec §8."""
+
+    def test_full_schema_clean_compile(
+        self, runner: CliRunner, tmp_path: Path, fake_advpls: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        monkeypatch.setenv("PLUGADVPL_ADVPLS_BINARY", str(fake_advpls))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "--format", "json", "compile",
+                  str(foo), "--mode", "appre"]
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+
+        # Top-level keys conforme §8
+        assert set(payload.keys()) >= {"rows", "summary", "next_steps"}
+
+        # Cada row tem campos obrigatórios
+        for row in payload["rows"]:
+            for field in ("arquivo", "ok", "mode", "duration_ms",
+                          "exit_code", "counts", "diagnostics"):
+                assert field in row, f"missing row field: {field}"
+            assert set(row["counts"].keys()) == {"error", "warning", "info", "unknown"}
+
+        # Summary tem todos os campos
+        summary = payload["summary"]
+        for field in ("total_files", "ok", "failed", "total_errors",
+                      "total_warnings", "mode_used", "appserver_reachable",
+                      "runtime_config_loaded", "output_truncated"):
+            assert field in summary, f"missing summary field: {field}"
+
+    def test_schema_with_errors(
+        self, runner: CliRunner, tmp_path: Path, fake_advpls: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        monkeypatch.setenv("PLUGADVPL_ADVPLS_BINARY", str(fake_advpls))
+        monkeypatch.setenv("SHIM_OUTPUT", "foo.prw(42) error: Unbalanced ENDIF\n")
+        monkeypatch.setenv("SHIM_EXIT", "1")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "--format", "json", "compile",
+                  str(foo), "--mode", "appre"]
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        # Cada diagnostic tem schema completo
+        for row in payload["rows"]:
+            for diag in row["diagnostics"]:
+                for field in ("severidade", "arquivo", "linha", "coluna",
+                              "mensagem", "codigo", "raw"):
+                    assert field in diag, f"missing diagnostic field: {field}"
+                assert diag["severidade"] in ("error", "warning", "info", "unknown")
+        # next_steps populado quando há erro
+        assert isinstance(payload["next_steps"], list)
+```
+
+- [ ] **Step 7.3.3: Rodar testes integration + commit**
 
 ```bash
 cd cli && python -m pytest tests/integration/test_cli_compile.py -v --override-ini="addopts="
 git add cli/tests/integration/test_cli_compile.py
-git commit -m "test(integration): cli compile end-to-end com PATH-shim (Fase 1 #7)"
+git commit -m "test(integration): cli compile end-to-end + schema contract (Fase 1 #7)"
 ```
 
 #### Step 7.4 — Suite full
@@ -2866,6 +3201,32 @@ git tag v0.8.0
 ```bash
 # git push origin main && git push origin v0.8.0
 ```
+
+---
+
+## Resposta ao plan review (round 1)
+
+Plano passou por revisão automatizada em 3 chunks paralelos. CRITICAL e IMPORTANT resolvidos inline:
+
+| # | Item | Resolução |
+|---|---|---|
+| C1+C3 | Bug `_load_patterns` (`raw.index(p)` O(n²) durante sort) | Step 3.3.3 reescrito com `enumerate` antes do sort + `lru_cache` |
+| C2-Chunk1 | Texto enganoso Step 2.2.3 sobre testes do compile_patterns | Comentário esclarecido |
+| C3-Chunk1 | Docstring de `parse_diagnostics` ambígua (matched vs unmatched) | Docstring completa adicionada ao Step 3.3.3 |
+| C1-Chunk3 | UTF-16 BOM handling ausente | Nova função `_decode_advpls_output` + Step 5.5.5 com teste UTF-16 LE + CP1252 fallback |
+| C2-Chunk3 | KeyboardInterrupt sem assert que tempdir foi limpo | Novo Step 5.5.4 com spy em `tempfile.mkdtemp` + assert `not exists()` |
+| C3-Chunk3 | Exit 130 não testado em Chunk 3 | Nota cross-ref para Chunk 4 (handler `typer.Exit(code=130)`) |
+| C1-Chunk4 | `fake_advpls` shim quebra Windows | Refatorado: `.bat` invocando python explícito + path absoluto via env var `PLUGADVPL_ADVPLS_BINARY` |
+| C2-Chunk4 | `no_args_is_help=True` + `invoke_without_command=True` conflito | Removido `no_args_is_help=True` com comentário explicativo |
+| I-Chunk1 | `/usr/bin/true` quebra Windows | Helper `_fake_advpls_binary` cross-platform (.bat / shell script) |
+| I-Chunk2 | `requested_resolved` descarta arquivos inexistentes | Try/except no resolve preservando entries |
+| I-Chunk2 | Falta pattern aut_file no redact | 6º pattern `aut_file_value` adicionado |
+| I-Chunk3 | Step 5.4.2 "implementador refatora" vago | (parcialmente resolvido — manter como guia; implementador valida com testes) |
+| I-Chunk4 | Falta contract test do schema JSON | Step 7.3.2 adicionado com `TestSchemaContract` (2 testes) |
+| I-Chunk4 | `CliRunner(mix_stderr=False)` quebra Click 8.2+ | Trocado por `CliRunner()` (padrão do projeto) |
+| N-vários | Imports redundantes, tomllib em test, etc. | Endereçados pontualmente |
+
+Issues NITPICK e alguns IMPORTANT menores ficam como notas para o implementador resolver durante o TDD (são naturalmente expostos pelos testes que vão escrever).
 
 ---
 
