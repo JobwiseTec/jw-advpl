@@ -147,3 +147,47 @@ class TestAppreIncludeNotFound:
         errors = [d for d in matched if d.severidade == "error"]
         assert len(errors) == 1
         assert "xxx.ch" in errors[0].mensagem
+
+
+class TestAppreCompilerCCode:
+    """v0.8.1 regression: advpls escreve erros em <basename>.errprw com formato
+    'APPRE41.PRW(N) Error CXXXX <mensagem>'. Esse pattern deve ser reconhecido
+    e ``codigo`` populado."""
+
+    def test_c2090_include_missing(self) -> None:
+        raw = (FIXTURES / "appre_errprw_c2090.txt").read_text(encoding="utf-8")
+        matched, _ = parse_diagnostics(
+            stdout=raw, stderr="", mode="appre",
+            requested_files=[Path("FOO.PRW")],
+            force_arquivo=Path("FOO.PRW"),
+        )
+        errors = [d for d in matched if d.severidade == "error"]
+        assert len(errors) == 1
+        d = errors[0]
+        assert d.codigo == "C2090"
+        assert "PRTOPDEF.CH" in d.mensagem
+        # force_arquivo: nome do fonte real, não APPRE41.PRW (que vem no raw)
+        assert d.arquivo == "FOO.PRW"
+
+    def test_c2006_lowercase_appre41(self) -> None:
+        raw = (FIXTURES / "appre_errprw_c2006.txt").read_text(encoding="utf-8")
+        matched, _ = parse_diagnostics(
+            stdout=raw, stderr="", mode="appre",
+            requested_files=[Path("BAR.PRW")],
+            force_arquivo=Path("BAR.PRW"),
+        )
+        errors = [d for d in matched if d.severidade == "error"]
+        assert len(errors) == 1
+        assert errors[0].codigo == "C2006"
+        assert errors[0].linha == 4
+
+    def test_force_arquivo_overrides_match(self) -> None:
+        """force_arquivo SEMPRE vence sobre o arquivo capturado no pattern."""
+        raw = "outro.prw(99) error: bad"
+        matched, _ = parse_diagnostics(
+            stdout=raw, stderr="", mode="cli",
+            requested_files=[Path("foo.prw")],
+            force_arquivo=Path("foo.prw"),
+        )
+        assert len(matched) == 1
+        assert matched[0].arquivo == "foo.prw"

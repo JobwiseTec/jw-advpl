@@ -33,5 +33,12 @@
     "pattern": "^Include\\s+['\"](?P<mensagem>[^'\"]+)['\"]\\s+not\\s+found\\s+in\\s+(?P<arquivo>\\S+)(?::(?P<linha>\\d+))?$",
     "severidade_fixed": "error",
     "ordem": 30
+  },
+  {
+    "id": "appre_compiler_c_code",
+    "lang": "any",
+    "pattern": "^(?P<arquivo>[Aa][Pp][Pp][Rr][Ee]41(?:\\.[Pp][Rr][Ww])?)\\((?P<linha>\\d+)\\)\\s+Error\\s+(?P<codigo>C\\d+)\\s+(?P<mensagem>.+)$",
+    "severidade_fixed": "error",
+    "ordem": 40
   }
 ]

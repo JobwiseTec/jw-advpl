@@ -186,12 +186,68 @@ def _write_secure_ini(content: str) -> tuple[Path, Path]:
     return ini_path, tempdir
 
 
-def _build_appre_args(binary: Path, includes: list[Path], files: list[Path]) -> list[str]:
-    args: list[str] = [str(binary), "appre"]
+def _build_appre_args(
+    binary: Path, includes: list[Path], files: list[Path], output_dir: Path
+) -> list[str]:
+    """Args do ``advpls appre``. Usa ``-O`` para controlar onde ``.errprw`` é gravado.
+
+    Sem ``-O``, o advpls escreve no CWD do processo — torna leitura posterior
+    dos diagnostics frágil (depende do cwd). Forçar tempdir garante isolamento.
+    """
+    args: list[str] = [str(binary), "appre", "-O", str(output_dir)]
     for inc in includes:
         args.append(f"-I{inc}")
     args.extend(str(f) for f in files)
     return args
+
+
+def _collect_errprw_diagnostics(
+    output_dir: Path, files: list[Path]
+) -> dict[str, list[Diagnostic]]:
+    """Lê ``<basename>.errprw`` para cada fonte em ``files``.
+
+    Diagnostics do advpls ``appre`` NÃO vão para stdout/stderr — vão para
+    arquivo ``<basename>.errprw`` em ``-O <dir>``. Esta função faz a leitura
+    + parse usando ``force_arquivo`` (porque advpls reporta sempre
+    ``APPRE41.PRW`` no arquivo do erro, não o fonte real).
+
+    Retorna dict ``{str(fonte): list[Diagnostic]}``. Fontes sem ``.errprw``
+    (compilação bem-sucedida) ficam ausentes.
+    """
+    by_file: dict[str, list[Diagnostic]] = {}
+    for fonte in files:
+        # advpls usa nome lowercase para .errprw (foo_real.errprw, não FOO_REAL.errprw)
+        errprw = output_dir / (fonte.stem.lower() + ".errprw")
+        if not errprw.is_file():
+            continue
+        try:
+            content = errprw.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not content.strip():
+            continue
+        diags, _unmatched = parse_diagnostics(
+            stdout=content, stderr="", mode="appre",
+            requested_files=[fonte], force_arquivo=fonte,
+        )
+        if diags:
+            by_file[str(fonte)] = diags
+    return by_file
+
+
+def _normalize_exit_code(returncode: int) -> int:
+    """Normaliza ``proc.returncode`` para faixa CI-friendly.
+
+    Windows: ``-1`` vira ``4294967295`` (0xFFFFFFFF) quando lido como unsigned.
+    POSIX: já vem signed. Esta função converte para faixa ``0-255`` (POSIX
+    convention) preservando 0 = sucesso, não-zero = falha.
+    """
+    if returncode == 0:
+        return 0
+    # Casos negativos (Unix signal) ou > 255 (Windows unsigned). Mapeia para 1.
+    if returncode < 0 or returncode > 255:
+        return 1
+    return returncode
 
 
 def _build_setup_error_result(files: list[Path], mode: str, exit_code: int) -> CompileResult:
@@ -293,7 +349,12 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             if request.includes_override is not None
             else (list(runtime_cfg.compile.includes) if runtime_cfg else [])
         )
-        args = _build_appre_args(binary, includes, files)
+        # appre escreve erros em <output_dir>/<basename>.errprw — usa tempdir
+        # dedicado (limpo no finally) pra isolar do CWD do processo.
+        tempdir = Path(tempfile.mkdtemp(prefix="plugadvpl-appre-"))
+        if os.name == "posix":
+            os.chmod(tempdir, 0o700)
+        args = _build_appre_args(binary, includes, files, tempdir)
 
     start = time.monotonic()
     proc = subprocess.Popen(
@@ -302,6 +363,7 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    errprw_by_file: dict[str, list[Diagnostic]] = {}
     try:
         try:
             stdout_bytes, stderr_bytes = proc.communicate(timeout=request.timeout_seconds)
@@ -319,6 +381,11 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             except subprocess.TimeoutExpired:
                 proc.kill()
             raise
+        # Captura .errprw em memória ANTES do finally (que apaga tempdir).
+        # Diagnostics reais do advpls appre vão pra <tempdir>/<basename>.errprw,
+        # NÃO stdout/stderr (que tem só log do connection_manager).
+        if mode == "appre" and tempdir is not None:
+            errprw_by_file = _collect_errprw_diagnostics(tempdir, files)
     finally:
         if tempdir is not None:
             try:
@@ -329,6 +396,8 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
     stdout = _decode_advpls_output(stdout_bytes)
     stderr = _decode_advpls_output(stderr_bytes)
     duration_ms = int((time.monotonic() - start) * 1000)
+    normalized_returncode = _normalize_exit_code(proc.returncode)
+
     matched, unmatched = parse_diagnostics(
         stdout=stdout, stderr=stderr, mode=mode, requested_files=files,
     )
@@ -344,6 +413,11 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             # contrato §7.8 / §11.3 — agrupa em __unmatched__ (nome estável).
             defensive_unmatched.append(d)
 
+    # Mescla diagnostics do .errprw com os do stdout/stderr.
+    for fpath, errprw_diags in errprw_by_file.items():
+        by_file.setdefault(fpath, []).extend(errprw_diags)
+
+    files_set = {str(f) for f in files}
     rows: list[dict[str, object]] = []
     for fpath, diags in by_file.items():
         counts = {
@@ -352,12 +426,16 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             "info": sum(1 for d in diags if d.severidade == "info"),
             "unknown": sum(1 for d in diags if d.severidade == "unknown"),
         }
+        # ok requer: zero errors E (subprocess sucesso OU temos diagnostics estruturados)
+        # Sem essa segunda condição, advpls que crasha sem produzir output marcaria ok=true.
+        has_structured = counts["error"] > 0 or counts["warning"] > 0 or counts["info"] > 0
+        ok_flag = counts["error"] == 0 and (normalized_returncode == 0 or has_structured)
         rows.append({
             "arquivo": fpath,
-            "ok": counts["error"] == 0,
+            "ok": ok_flag,
             "mode": mode,
             "duration_ms": duration_ms,
-            "exit_code": proc.returncode,
+            "exit_code": normalized_returncode,
             "counts": counts,
             "diagnostics": [d.to_dict() for d in diags],
         })
@@ -365,18 +443,19 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
     # Bucket __unmatched__: unmatched do parser + defensivos do agrupamento
     all_unmatched = defensive_unmatched + list(unmatched)
     if all_unmatched:
+        unmatched_counts = {
+            "error": sum(1 for d in all_unmatched if d.severidade == "error"),
+            "warning": sum(1 for d in all_unmatched if d.severidade == "warning"),
+            "info": sum(1 for d in all_unmatched if d.severidade == "info"),
+            "unknown": sum(1 for d in all_unmatched if d.severidade == "unknown"),
+        }
         rows.append({
             "arquivo": "__unmatched__",
             "ok": False,
             "mode": mode,
             "duration_ms": duration_ms,
-            "exit_code": proc.returncode,
-            "counts": {
-                "error": sum(1 for d in all_unmatched if d.severidade == "error"),
-                "warning": sum(1 for d in all_unmatched if d.severidade == "warning"),
-                "info": sum(1 for d in all_unmatched if d.severidade == "info"),
-                "unknown": sum(1 for d in all_unmatched if d.severidade == "unknown"),
-            },
+            "exit_code": normalized_returncode,
+            "counts": unmatched_counts,
             "diagnostics": [d.to_dict() for d in all_unmatched],
         })
 
@@ -387,13 +466,18 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         if isinstance(counts_obj, dict):
             total_errors += int(counts_obj.get("error", 0) or 0)
             total_warnings += int(counts_obj.get("warning", 0) or 0)
-    failed = sum(1 for r in rows if not r["ok"])
-    exit_code = 1 if total_errors > 0 else 0
+    failed_requested = sum(
+        1 for r in rows if r["arquivo"] in files_set and not r["ok"]
+    )
+    # Exit do plugin: 1 se há error parseado OU subprocess falhou sem produzir
+    # diagnostic (caso comum: advpls crash, includes faltando que travam pré).
+    has_any_failure = total_errors > 0 or failed_requested > 0
+    exit_code = 1 if has_any_failure else 0
 
     summary: dict[str, object] = {
         "total_files": len(files),
-        "ok": len(files) - sum(1 for r in rows if r["arquivo"] in [str(f) for f in files] and not r["ok"]),
-        "failed": failed,
+        "ok": len(files) - failed_requested,
+        "failed": failed_requested,
         "total_errors": total_errors,
         "total_warnings": total_warnings,
         "mode_used": mode,

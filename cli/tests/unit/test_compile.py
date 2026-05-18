@@ -555,3 +555,91 @@ class TestBuildIni:
         assert "recompile=T" in text
         assert "includes=D:/inc1;D:/inc2" in text
         assert "showConsoleOutput=true" in text
+
+
+class TestNormalizeExitCode:
+    """v0.8.1: advpls retorna -1 em Windows que vira 4294967295 unsigned no JSON.
+    Normalizar pra faixa 0-255 (POSIX). 0=sucesso, !=0=falha."""
+
+    def test_zero_stays_zero(self) -> None:
+        from plugadvpl.compile import _normalize_exit_code
+        assert _normalize_exit_code(0) == 0
+
+    def test_negative_becomes_one(self) -> None:
+        from plugadvpl.compile import _normalize_exit_code
+        assert _normalize_exit_code(-1) == 1
+
+    def test_huge_unsigned_becomes_one(self) -> None:
+        from plugadvpl.compile import _normalize_exit_code
+        assert _normalize_exit_code(4294967295) == 1
+
+    def test_in_range_preserved(self) -> None:
+        from plugadvpl.compile import _normalize_exit_code
+        assert _normalize_exit_code(1) == 1
+        assert _normalize_exit_code(124) == 124
+
+
+class TestAppreErrprwIntegration:
+    """v0.8.1 bug #1: advpls appre escreve erros em .errprw (não stdout/stderr).
+    Verifica que orchestrator passa -O <tempdir> e lê .errprw."""
+
+    def test_appre_passes_output_dir_to_advpls(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _build_appre_args
+        binary = Path("/fake/advpls")
+        files = [tmp_path / "foo.prw"]
+        output_dir = tmp_path / "out"
+        args = _build_appre_args(binary, [], files, output_dir)
+        assert "-O" in args
+        assert str(output_dir) in args
+
+    def test_collect_errprw_reads_basename_lowercase(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _collect_errprw_diagnostics
+        # advpls escreve foo_real.errprw (lowercase) mesmo se fonte é FOO_REAL.PRW
+        errprw = tmp_path / "foo_real.errprw"
+        errprw.write_text(
+            "APPRE41.PRW(0) Error C2090  File not found PRTOPDEF.CH",
+            encoding="utf-8",
+        )
+        fonte = tmp_path / "FOO_REAL.PRW"
+        by_file = _collect_errprw_diagnostics(tmp_path, [fonte])
+        assert str(fonte) in by_file
+        diags = by_file[str(fonte)]
+        assert len(diags) == 1
+        assert diags[0].severidade == "error"
+        assert diags[0].codigo == "C2090"
+
+    def test_collect_errprw_missing_file_skipped(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _collect_errprw_diagnostics
+        # Compilação bem-sucedida não gera .errprw
+        fonte = tmp_path / "CLEAN.PRW"
+        by_file = _collect_errprw_diagnostics(tmp_path, [fonte])
+        assert by_file == {}
+
+
+class TestOkFlagConsidersSubprocessFailure:
+    """v0.8.1 bug #3: ok=true ignorava advpls crash que não produz diagnostic.
+    Agora ok requer (zero errors) AND (subprocess ok OR diagnostics estruturados)."""
+
+    def test_subprocess_fails_silently_ok_false(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            # advpls retorna -1 (crash silencioso) sem stdout/stderr
+            proc.communicate.return_value = (b"", b"")
+            proc.returncode = -1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        # exit_code normalizado (não 4294967295)
+        assert result.rows[0]["exit_code"] == 1
+        # ok=false porque subprocess falhou sem produzir diagnostic
+        assert result.rows[0]["ok"] is False
+        # Plugin exit code também 1
+        assert result.exit_code == 1
+

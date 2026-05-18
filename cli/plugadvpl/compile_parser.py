@@ -108,8 +108,16 @@ def parse_diagnostics(
     stderr: str,
     mode: str,
     requested_files: list[Path],
+    force_arquivo: Path | None = None,
 ) -> tuple[list[Diagnostic], list[Diagnostic]]:
     """Parseia output do advpls.
+
+    Args:
+        force_arquivo: se setado, todos os diagnostics estruturados saem com
+            esse arquivo (sobrescreve `arquivo_raw` do match). Útil pra ler
+            ``.errprw`` em modo appre, onde o advpls reporta sempre
+            ``APPRE41.PRW`` no erro mas sabemos qual fonte o gerou via
+            nome do ``.errprw``.
 
     Returns:
         ``(matched, unmatched)`` onde:
@@ -160,10 +168,15 @@ def parse_diagnostics(
             linha = int(groups.get("linha") or 0)
             coluna = int(groups.get("coluna") or 0)
             mensagem = groups.get("mensagem", "") or ""
+            codigo = groups.get("codigo", "") or ""
 
-            arquivo_final, is_unmatched = _normalize_arquivo(
-                arquivo_raw, requested_resolved
-            )
+            if force_arquivo is not None:
+                arquivo_final = str(force_arquivo)
+                is_unmatched = False
+            else:
+                arquivo_final, is_unmatched = _normalize_arquivo(
+                    arquivo_raw, requested_resolved
+                )
 
             diag = Diagnostic(
                 severidade=severidade,
@@ -171,7 +184,7 @@ def parse_diagnostics(
                 linha=linha,
                 coluna=coluna,
                 mensagem=_redact(mensagem, redact),
-                codigo="",
+                codigo=codigo,
                 raw=_redact(line, redact),
             )
             if is_unmatched:

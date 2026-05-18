@@ -1,0 +1,1 @@
+appre41(4) Error C2006  Statement not allowed outside procedure or function
