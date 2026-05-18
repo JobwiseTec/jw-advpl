@@ -69,7 +69,7 @@ Ponto de Entrada apos faturamento. Envia ao Kafka.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.5.4 --format md docs $ARGUMENTS
+uvx plugadvpl@0.6.0 --format md docs $ARGUMENTS
 ```
 
 > **Para agente IA:** prefira `--format md` (sem truncamento). Default `table` Rich trunca colunas em terminais estreitos.

@@ -1771,6 +1771,143 @@ class TestTrace:
         assert "--universo" in (result.stderr or "")
 
 
+class TestQualidadeMetricas:
+    """v0.6.0 (Universo 4 / Feature B): metrics + hotspots + cobertura-doc."""
+
+    @pytest.fixture
+    def metrics_project(self, tmp_path: Path, runner: CliRunner) -> Path:
+        """Projeto com função simples + complexa + função muito chamada."""
+        src = tmp_path / "src"
+        src.mkdir()
+        # SimpleFn: CC=1, sem nesting
+        (src / "Simple.prw").write_bytes(
+            b'User Function SimpleFn(cArg)\n'
+            b'   Return Nil\n'
+        )
+        # ComplexFn: CC alta (5+), nesting 3+
+        (src / "Complex.prw").write_bytes(
+            b'/*/{Protheus.doc} U_ComplexFn\nHelper.\n@type user function\n/*/\n'
+            b'User Function ComplexFn(cArg, nVal)\n'
+            b'   Local i, j\n'
+            b'   If cArg == "A"\n'
+            b'      For i := 1 To 10\n'
+            b'         If i % 2 == 0\n'
+            b'            For j := 1 To 5\n'
+            b'               If j > 3\n'
+            b'                  ConOut("aa")\n'
+            b'               EndIf\n'
+            b'            Next j\n'
+            b'         EndIf\n'
+            b'      Next i\n'
+            b'   ElseIf cArg == "B"\n'
+            b'      ConOut("b")\n'
+            b'   EndIf\n'
+            b'Return Nil\n'
+        )
+        # CallerFn: chama SimpleFn 3x e ComplexFn 2x → hotspots
+        (src / "Caller.prw").write_bytes(
+            b'User Function CallerFn()\n'
+            b'   U_SimpleFn("x")\n'
+            b'   U_SimpleFn("y")\n'
+            b'   U_SimpleFn("z")\n'
+            b'   U_ComplexFn("A", 1)\n'
+            b'   U_ComplexFn("B", 2)\n'
+            b'Return\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        return src
+
+    def test_metrics_lists_all_functions(
+        self, metrics_project: Path, runner: CliRunner
+    ) -> None:
+        """metrics lista todas as funções com cc/loc/nesting."""
+        result = runner.invoke(
+            app, ["--root", str(metrics_project), "--format", "json", "metrics"]
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        funcs = {r["funcao"]: r for r in rows}
+        assert "SimpleFn" in funcs
+        assert "ComplexFn" in funcs
+        assert "CallerFn" in funcs
+        # SimpleFn: baseline
+        assert funcs["SimpleFn"]["cc"] == 1
+        assert funcs["SimpleFn"]["nesting"] == 0
+        # ComplexFn: muito mais alto
+        assert funcs["ComplexFn"]["cc"] >= 5
+        assert funcs["ComplexFn"]["nesting"] >= 3
+        # has_doc populado
+        assert funcs["ComplexFn"]["has_doc"] is True
+        assert funcs["SimpleFn"]["has_doc"] is False
+
+    def test_metrics_filter_min_cc(
+        self, metrics_project: Path, runner: CliRunner
+    ) -> None:
+        """--min-cc 5 retorna só ComplexFn (SimpleFn CC=1, CallerFn CC=1)."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(metrics_project), "--format", "json",
+                "metrics", "--min-cc", "5",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        funcs = {r["funcao"] for r in rows}
+        assert "ComplexFn" in funcs
+        assert "SimpleFn" not in funcs
+
+    def test_metrics_sort_loc(
+        self, metrics_project: Path, runner: CliRunner
+    ) -> None:
+        """--sort loc retorna ComplexFn primeiro (mais linhas)."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(metrics_project), "--format", "json",
+                "metrics", "--sort", "loc",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert rows[0]["funcao"] == "ComplexFn"
+
+    def test_hotspots_ranks_simplefn_top(
+        self, metrics_project: Path, runner: CliRunner
+    ) -> None:
+        """hotspots: SimpleFn chamada 3x, ComplexFn 2x → SimpleFn primeiro."""
+        result = runner.invoke(
+            app, ["--root", str(metrics_project), "--format", "json", "hotspots"]
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        # Top deve incluir SimpleFn com n_calls>=3
+        top = {r["destino"]: r["n_calls"] for r in rows}
+        assert "SIMPLEFN" in top
+        assert top["SIMPLEFN"] >= 3
+
+    def test_cobertura_doc_returns_pct(
+        self, metrics_project: Path, runner: CliRunner
+    ) -> None:
+        """cobertura-doc: 1 de 3 funcs com doc = 33%."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(metrics_project), "--format", "json",
+                "cobertura-doc", "--groupby", "source_type",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        assert rows
+        # Pelo menos um grupo deve ter com_doc=1 (ComplexFn) de total>=3
+        total_com_doc = sum(r["com_doc"] for r in rows)
+        total_funcs = sum(r["total"] for r in rows)
+        assert total_com_doc >= 1
+        assert total_funcs >= 3
+
+
 class TestMissingDb:
     def test_query_without_db_exits_2(
         self, synthetic_project: Path, runner: CliRunner

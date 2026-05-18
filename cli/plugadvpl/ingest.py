@@ -40,8 +40,10 @@ from plugadvpl.parsing.execauto import (
     extract_execauto_calls,
     serialize_tables as serialize_execauto_tables,
 )
+from plugadvpl.parsing.metrics import extract_function_metrics
 from plugadvpl.parsing.protheus_doc import (
     extract_protheus_docs,
+    infer_module,
     serialize_json as serialize_pdoc_json,
 )
 from plugadvpl.parsing.triggers import (
@@ -84,6 +86,28 @@ _REDACT_TOKEN_RE = re.compile(r"\b[a-f0-9]{40,}\b", re.IGNORECASE)
 def _iso_now() -> str:
     """Timestamp ISO-8601 UTC sem microssegundos (compatível com SQLite datetime)."""
     return _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_SIGNATURE_PARENS_RE = re.compile(r"\(([^)]*)\)")
+
+
+def _count_signature_params(assinatura: str) -> int:
+    """v0.6.0 (Feature B): conta parâmetros na assinatura da função.
+
+    Naïve: pega conteúdo entre o primeiro `(` e o primeiro `)` matching,
+    splita por vírgula top-level. Ignora ``Class X``/``As Y`` na cauda.
+    Retorna 0 se sem parens ou parens vazios.
+    """
+    if not assinatura:
+        return 0
+    m = _SIGNATURE_PARENS_RE.search(assinatura)
+    if not m:
+        return 0
+    args = m.group(1).strip()
+    if not args:
+        return 0
+    # Naïve comma count — signatures ADVPL raramente têm parens aninhados.
+    return args.count(",") + 1
 
 
 def _redact(text: str) -> str:
@@ -160,6 +184,7 @@ def _delete_dependents(conn: sqlite3.Connection, arquivo: str) -> None:
         "execution_triggers",  # v0.4.0 — Universo 3 Feature A
         "execauto_calls",      # v0.4.1 — Universo 3 Feature B
         "protheus_docs",       # v0.4.2 — Universo 3 Feature C
+        "fonte_metrics",       # v0.6.0 — Universo 4 Feature B
     ):
         conn.execute(f"DELETE FROM {table} WHERE arquivo=?", (arquivo,))
     conn.execute(
@@ -250,7 +275,10 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
             str(fp),
             caminho_relativo,
             "custom",
-            "",
+            # v0.6.0 (Feature B): backfill modulo via infer_module (path-based
+            # + routine-prefix fallback). Antes era hardcoded "". Permite
+            # cobertura-doc agrupar por modulo e qualquer comando filtrar.
+            infer_module(caminho_relativo, funcoes_nomes[0] if funcoes_nomes else None) or "",
             json.dumps(funcoes_nomes, ensure_ascii=False),
             json.dumps(user_funcs, ensure_ascii=False),
             json.dumps(pontos_entrada, ensure_ascii=False),
@@ -323,6 +351,32 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             chunk_rows,
+        )
+        # v0.6.0 (Feature B): popula fonte_metrics (CC + nesting + LOC + params).
+        # n_calls_out e has_doc ficam 0 aqui; UPDATE final no fim do _ingest_one
+        # depois que chamadas_funcao e protheus_docs estão populados.
+        metric_rows: list[tuple[Any, ...]] = []
+        for chunk in chunk_rows:
+            chunk_id, arq_c, fn_c, _norm, _kind, _classe, ini_c, fim_c, assin, cont, _mod = chunk
+            body = cont or ""
+            mets = extract_function_metrics(body)
+            params_count = _count_signature_params(assin or "")
+            loc = max(0, int(fim_c or 0) - int(ini_c or 0) + 1)
+            metric_rows.append((
+                chunk_id, arq_c, fn_c, ini_c, fim_c,
+                loc, mets["cc"], mets["nesting"],
+                0,  # n_calls_out — UPDATE no fim
+                params_count,
+                0,  # has_doc — UPDATE no fim
+            ))
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO fonte_metrics (
+                id, arquivo, funcao, linha_inicio, linha_fim,
+                loc, cc, nesting, n_calls_out, params_count, has_doc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            metric_rows,
         )
 
     # fonte_tabela — normaliza tabelas_ref em rows (arquivo, tabela, modo).
@@ -699,6 +753,34 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
             pdoc_rows,
         )
         counters["protheus_docs"] = counters.get("protheus_docs", 0) + len(pdoc_rows)
+
+    # v0.6.0 (Feature B): batch UPDATE de fonte_metrics com n_calls_out e has_doc
+    # agora que chamadas_funcao e protheus_docs estão populados pra este arquivo.
+    conn.execute(
+        """
+        UPDATE fonte_metrics
+        SET n_calls_out = COALESCE((
+            SELECT COUNT(*) FROM chamadas_funcao cf
+            WHERE cf.arquivo_origem = fonte_metrics.arquivo
+              AND upper(cf.funcao_origem) = upper(fonte_metrics.funcao)
+        ), 0)
+        WHERE arquivo = ?
+        """,
+        (arquivo,),
+    )
+    conn.execute(
+        """
+        UPDATE fonte_metrics
+        SET has_doc = CASE WHEN EXISTS (
+            SELECT 1 FROM protheus_docs pd
+            WHERE pd.arquivo = fonte_metrics.arquivo
+              AND (pd.funcao = fonte_metrics.funcao COLLATE NOCASE
+                   OR pd.funcao_id = fonte_metrics.funcao COLLATE NOCASE)
+        ) THEN 1 ELSE 0 END
+        WHERE arquivo = ?
+        """,
+        (arquivo,),
+    )
 
     counters["arquivos_ok"] += 1
 

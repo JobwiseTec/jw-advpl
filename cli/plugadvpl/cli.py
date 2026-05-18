@@ -59,7 +59,10 @@ from plugadvpl.query import (
     doctor_diagnostics,
     doctor_func_count_check,
     execauto_calls_query,
+    cobertura_doc_query,
     execauto_top_modulos,
+    hotspots_query,
+    metrics_query,
     execution_triggers_duplicates,
     execution_triggers_query,
     find_any,
@@ -1779,6 +1782,179 @@ def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
 
 # Import lazy do _detect_entity_type / _detect_entity_type_db (declarados em query.py).
 from plugadvpl.query import _detect_entity_type, _detect_entity_type_db  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# v0.6.0 — Universo 4 (Qualidade & Métricas) Feature B
+# ---------------------------------------------------------------------------
+
+
+class MetricsSort(StrEnum):
+    """Campos de sort do comando ``metrics`` (Universo 4 Feature B)."""
+
+    cc = "cc"
+    loc = "loc"
+    nesting = "nesting"
+    calls = "calls"
+    params = "params"
+
+
+class CoberturaGroupBy(StrEnum):
+    """Agrupamento do comando ``cobertura-doc``."""
+
+    modulo = "modulo"
+    source_type = "source_type"
+
+
+@app.command()
+def metrics(
+    ctx: typer.Context,
+    arquivo: Annotated[
+        str | None,
+        typer.Argument(help="Filtra por arquivo (basename, case-insensitive). Sem valor: todos."),
+    ] = None,
+    min_cc: Annotated[
+        int,
+        typer.Option("--min-cc", help="Filtra funções com CC >= N (default 0 = sem filtro)."),
+    ] = 0,
+    min_loc: Annotated[
+        int,
+        typer.Option("--min-loc", help="Filtra funções com LOC >= N (default 0)."),
+    ] = 0,
+    sort: Annotated[
+        MetricsSort,
+        typer.Option("--sort", "-s", help="Ordem desc: cc|loc|nesting|calls|params.", case_sensitive=False),
+    ] = MetricsSort.cc,
+) -> None:
+    """Métricas por função (Universo 4 / Feature B).
+
+    Complexidade ciclomática (McCabe), LOC, profundidade aninhamento,
+    fan-out (n_calls_out) e contagem de parâmetros — uma row por função
+    indexada.
+
+    Use ``--min-cc 10`` pra ver só funções complexas (candidatas refactor).
+    Use ``--sort loc`` pra ranking por tamanho.
+    """
+    rows = _with_ro_db(
+        ctx,
+        lambda c: metrics_query(
+            c, arquivo=arquivo, min_cc=min_cc, min_loc=min_loc, sort=sort.value,
+        ),
+    )
+    # v0.6.0: mantém schema completo no dict (JSON consumer); columns
+    # filtra display tabular.
+    display_rows = [
+        {
+            "arquivo": r["arquivo"],
+            "funcao": r["funcao"],
+            "linha": r["linha_inicio"],
+            "loc": r["loc"],
+            "cc": r["cc"],
+            "nesting": r["nesting"],
+            "n_calls_out": r["n_calls_out"],
+            "params_count": r["params_count"],
+            "has_doc": r["has_doc"],
+        }
+        for r in rows
+    ]
+    _render_from_ctx(
+        ctx,
+        display_rows,
+        columns=["arquivo", "funcao", "linha", "loc", "cc", "nesting", "n_calls_out", "params_count", "has_doc"],
+        title=(
+            f"Métricas"
+            + (f" (arquivo={arquivo})" if arquivo else "")
+            + (f" (cc>={min_cc})" if min_cc else "")
+            + (f" (loc>={min_loc})" if min_loc else "")
+            + f" sort={sort.value}"
+        ),
+        next_steps=(
+            [f"plugadvpl arch {rows[0]['arquivo']}    # contexto do fonte top"]
+            if rows
+            else ["plugadvpl ingest --no-incremental  # se esperava métricas"]
+        ),
+    )
+
+
+@app.command()
+def hotspots(
+    ctx: typer.Context,
+    n: Annotated[
+        int,
+        typer.Option("--n", help="Top-N funções (default 20)."),
+    ] = 20,
+    no_natives: Annotated[
+        bool,
+        typer.Option(
+            "--no-natives/--with-natives",
+            help="--no-natives (default): exclui funções TOTVS nativas (ConOut/RecLock/etc) pra refactor priority. --with-natives: inclui.",
+        ),
+    ] = True,
+    tipo: Annotated[
+        str | None,
+        typer.Option("--tipo", "-t", help="Filtra tipo de chamada: user_func|method|execauto|execblock."),
+    ] = None,
+) -> None:
+    """Top-N funções mais chamadas no projeto (Universo 4 / Feature B).
+
+    Refactor priority: funções com `n_calls` alto são bons candidatos pra
+    revisão (mudança aqui impacta muito código). Filtra nativas TOTVS
+    por default — sem filtro top-20 vira `RecLock`/`ConOut`/`DbSelectArea`.
+    """
+    rows = _with_ro_db(
+        ctx,
+        lambda c: hotspots_query(c, n=n, excluir_nativas=no_natives, tipo=tipo),
+    )
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["destino", "n_calls", "n_arquivos", "n_callsites"],
+        title=(
+            f"Hotspots top-{n}"
+            + (" (sem nativas)" if no_natives else " (com nativas)")
+            + (f" tipo={tipo}" if tipo else "")
+        ),
+        next_steps=(
+            [f"plugadvpl callers {rows[0]['destino']}    # callsites detalhados"]
+            if rows
+            else None
+        ),
+    )
+
+
+@app.command(name="cobertura-doc")
+def cobertura_doc(
+    ctx: typer.Context,
+    groupby: Annotated[
+        CoberturaGroupBy,
+        typer.Option("--groupby", "-g", help="Agrupar por: modulo (default) ou source_type.", case_sensitive=False),
+    ] = CoberturaGroupBy.modulo,
+) -> None:
+    """Cobertura de Protheus.doc agregada (Universo 4 / Feature B).
+
+    Mostra % de funções com header Protheus.doc por módulo (default) ou
+    por source_type (mvc/rest/cadastro/relatorio/outro).
+
+    Ordenado por pct asc — **pior cobertura primeiro** (refactor priority).
+    """
+    rows = _with_ro_db(
+        ctx,
+        lambda c: cobertura_doc_query(c, groupby=groupby.value),
+    )
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["grupo", "total", "com_doc", "pct"],
+        title=f"Cobertura Protheus.doc (por {groupby.value})",
+        next_steps=(
+            [
+                f"plugadvpl docs --orphans            # funções sem header",
+                f"plugadvpl lint --regra BP-007       # raw findings",
+            ]
+            if rows
+            else None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

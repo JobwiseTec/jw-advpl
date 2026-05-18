@@ -4,6 +4,84 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-18
+
+### 🚀 Universo 4 — Qualidade & Métricas (Feature B)
+
+**Killer feature do v0.6.0**: responde "**por onde começar num refactor?**"
+via 3 comandos novos baseados em métricas pré-computadas.
+
+### Added
+- **`plugadvpl metrics [arquivo]`** — métricas por função:
+  - `cc` (complexidade ciclomática McCabe — `If/ElseIf/While/For/Case/Catch/IIf`)
+  - `loc` (linhas de código)
+  - `nesting` (profundidade máxima de blocos)
+  - `n_calls_out` (fan-out)
+  - `params_count` (parâmetros da assinatura)
+  - `has_doc` (tem header Protheus.doc)
+  Filtros: `--min-cc N`, `--min-loc N`, `--sort cc|loc|nesting|calls|params`.
+
+- **`plugadvpl hotspots`** — top-N funções mais chamadas (fan-IN):
+  - Filtra nativas TOTVS por default (`--no-natives`) — sem filtro top-20
+    vira `RecLock`/`ConOut`/`DbSelectArea`
+  - `--n N` (default 20), `--tipo user_func|method|execauto|execblock`
+  - Retorna `{destino, n_calls, n_arquivos, n_callsites}`
+
+- **`plugadvpl cobertura-doc`** — % funções com Protheus.doc agregado:
+  - `--groupby modulo` (default — usa `fontes.modulo` backfilled) ou `source_type`
+  - Ordenado por `pct ASC` (pior cobertura primeiro = refactor priority)
+  - Bucket `"_sem_grupo"` quando módulo não inferível
+
+- **Backfill `fontes.modulo`** no ingest via `infer_module()` reaproveitado
+  do `protheus_doc.py` (path-based + routine-prefix do catálogo execauto).
+  Antes era hardcoded `""`; agora populado pra qualquer fonte com path
+  TOTVS standard (SIGAFAT/SIGACOM/etc) OU prefixo de função no catálogo
+  (`MATA*` → SIGAFAT, `FINA*` → SIGAFIN, etc).
+  Benefício colateral: `workflow --kind`, `execauto --modulo`, `docs <modulo>`
+  ganham agrupamento robusto.
+
+- **3 skills MD**: `/plugadvpl:metrics`, `/plugadvpl:hotspots`, `/plugadvpl:cobertura-doc`.
+
+### Migration
+- **Schema v9 → v10** (`010_universo4_metrics.sql`):
+  - Tabela nova `fonte_metrics` (cache 1 row por função)
+  - 4 índices: arquivo, cc DESC, loc DESC, funcao
+  - FK CASCADE com `fonte_chunks` (auto-cleanup em re-ingest)
+- **Re-ingest recomendado** pra popular cache: `plugadvpl ingest --no-incremental`
+
+### Extractors novos (`parsing/metrics.py`)
+- `compute_cyclomatic_complexity(body)` — regex `\\b(If|ElseIf|While|For|(?<!Do\\s)Case|Catch|IIf)\\b`
+  com lookbehind pra excluir `Case` em `Do Case` (header do switch, não é ramo).
+- `compute_max_nesting(body)` — stack-based scan de openers vs closers.
+- Roda sobre `strip_advpl()` pra ignorar keywords em strings/comments.
+
+### Tests
+- **+17 testes unit** (`test_metrics.py`):
+  - CC baseline, If/ElseIf/Else (McCabe), While/For, Do Case, IIf, Catch
+  - Nesting flat, single, nested, sequential, Do Case
+  - Aggregator combinado
+- **+5 testes integration** (`test_cli.py::TestQualidadeMetricas`):
+  - metrics lista todas funções com cc/loc/nesting
+  - `--min-cc 5` filtra
+  - `--sort loc` ordena
+  - hotspots ranking
+  - cobertura-doc retorna pct
+- **562 testes verde** (era 540, +22).
+
+### Convenção McCabe
+- ✅ Cada `If`/`ElseIf`/`While`/`For`/`Catch`/`IIf` = +1 path
+- ✅ Cada `Case` (cláusula) = +1 (espelha elif)
+- ❌ `Else` NÃO conta (não adiciona path)
+- ❌ `OtherWise` NÃO conta (= else do Do Case)
+- ❌ `Do Case` em si NÃO conta (é o switch base; só as cláusulas Case)
+- Base mínima = 1 (função sem ramificação)
+
+### Notes
+- **Spec aprovado** em `docs/universo4/B-qualidade-metricas.md` antes do código.
+- **Sem breaking change** em comandos existentes — todos continuam funcionando.
+- Próximas Features candidatas pro Universo 4: ownership analytics (depende git
+  history) e cross-cliente diff (nicho consultoria). Defer até demanda específica.
+
 ## [0.5.4] - 2026-05-18
 
 ### 🚨 Bug crítico pré-existente — `param` perdia params com prefixo custom

@@ -2052,6 +2052,166 @@ def _trace_campo(
     return hits
 
 
+# ---------------------------------------------------------------------------
+# v0.6.0 — Universo 4 / Feature B: qualidade & métricas
+# ---------------------------------------------------------------------------
+
+
+def metrics_query(
+    conn: sqlite3.Connection,
+    *,
+    arquivo: str | None = None,
+    min_cc: int = 0,
+    min_loc: int = 0,
+    sort: str = "cc",
+) -> list[dict[str, Any]]:
+    """Lista métricas por função (Universo 4 Feature B).
+
+    Args:
+        conn: conexão SQLite.
+        arquivo: filtra por basename (case-insensitive). None = todos.
+        min_cc: filtra ``cc >= min_cc`` (default 0 = sem filtro).
+        min_loc: filtra ``loc >= min_loc`` (default 0).
+        sort: campo de ordenação descendente — ``cc``/``loc``/``nesting``/``calls``.
+            Tie-break por ``arquivo, linha_inicio``.
+
+    Returns:
+        Lista de dicts ``{arquivo, funcao, linha_inicio, linha_fim, loc, cc,
+        nesting, n_calls_out, params_count, has_doc}``.
+    """
+    sort_col = {
+        "cc": "cc",
+        "loc": "loc",
+        "nesting": "nesting",
+        "calls": "n_calls_out",
+        "params": "params_count",
+    }.get(sort.lower(), "cc")
+
+    sql = (
+        "SELECT arquivo, funcao, linha_inicio, linha_fim, loc, cc, nesting, "
+        "n_calls_out, params_count, has_doc FROM fonte_metrics"
+    )
+    where: list[str] = []
+    params: list[Any] = []
+    if arquivo:
+        where.append("arquivo = ? COLLATE NOCASE")
+        params.append(arquivo)
+    if min_cc > 0:
+        where.append("cc >= ?")
+        params.append(min_cc)
+    if min_loc > 0:
+        where.append("loc >= ?")
+        params.append(min_loc)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += f" ORDER BY {sort_col} DESC, arquivo, linha_inicio"
+    rows = conn.execute(sql, params).fetchall()
+    out: list[dict[str, Any]] = []
+    for (arq, fn, ini, fim, loc, cc, nest, ncalls, np, hdoc) in rows:
+        out.append({
+            "arquivo": arq,
+            "funcao": fn or "",
+            "linha_inicio": int(ini or 0),
+            "linha_fim": int(fim or 0),
+            "loc": int(loc or 0),
+            "cc": int(cc or 0),
+            "nesting": int(nest or 0),
+            "n_calls_out": int(ncalls or 0),
+            "params_count": int(np or 0),
+            "has_doc": bool(hdoc),
+        })
+    return out
+
+
+def hotspots_query(
+    conn: sqlite3.Connection,
+    *,
+    n: int = 20,
+    excluir_nativas: bool = True,
+    tipo: str | None = None,
+) -> list[dict[str, Any]]:
+    """Top-N funções mais chamadas (Universo 4 Feature B).
+
+    Args:
+        conn: conexão SQLite.
+        n: limite de rows (default 20).
+        excluir_nativas: se True (default), exclui funções do lookup
+            ``funcoes_nativas`` (`ConOut`/`RecLock`/etc) — refactor priority.
+        tipo: filtra por ``chamadas_funcao.tipo`` (``user_func``, ``method``,
+            ``execauto``, ``execblock``). None = todos.
+
+    Returns:
+        Lista ``{destino_norm, n_calls, n_arquivos, n_callsites}`` ordenada
+        por ``n_calls DESC``.
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    if excluir_nativas:
+        where.append("destino_norm NOT IN (SELECT upper(nome) FROM funcoes_nativas)")
+    if tipo:
+        where.append("tipo = ?")
+        params.append(tipo)
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
+    sql = (
+        f"SELECT destino_norm, COUNT(*) AS n_calls, "
+        f"COUNT(DISTINCT arquivo_origem) AS n_arquivos, "
+        f"COUNT(DISTINCT arquivo_origem || '::' || funcao_origem) AS n_callsites "
+        f"FROM chamadas_funcao{where_clause} "
+        f"GROUP BY destino_norm "
+        f"ORDER BY n_calls DESC LIMIT ?"
+    )
+    params.append(n)
+    rows = conn.execute(sql, params).fetchall()
+    return [
+        {
+            "destino": dest,
+            "n_calls": int(nc or 0),
+            "n_arquivos": int(na or 0),
+            "n_callsites": int(ns or 0),
+        }
+        for (dest, nc, na, ns) in rows
+    ]
+
+
+def cobertura_doc_query(
+    conn: sqlite3.Connection,
+    *,
+    groupby: str = "modulo",
+) -> list[dict[str, Any]]:
+    """Cobertura de Protheus.doc agregada por módulo ou source_type.
+
+    Args:
+        conn: conexão SQLite.
+        groupby: ``modulo`` (default — usa ``fontes.modulo``) ou ``source_type``
+            (mvc/rest/cadastro/relatorio/outro).
+
+    Returns:
+        Lista ``{grupo, total, com_doc, pct}`` ordenada por ``pct ASC``
+        (pior primeiro pra refactor priority). Funções sem grupo viram
+        bucket ``"_sem_grupo"``.
+    """
+    col = "f.modulo" if groupby == "modulo" else "f.source_type"
+    sql = (
+        f"SELECT COALESCE(NULLIF({col}, ''), '_sem_grupo') AS grupo, "
+        f"COUNT(*) AS total, "
+        f"SUM(fm.has_doc) AS com_doc, "
+        f"ROUND(100.0 * SUM(fm.has_doc) / COUNT(*), 1) AS pct "
+        f"FROM fonte_metrics fm "
+        f"JOIN fontes f ON f.arquivo = fm.arquivo "
+        f"GROUP BY grupo ORDER BY pct ASC, total DESC"
+    )
+    rows = conn.execute(sql).fetchall()
+    return [
+        {
+            "grupo": grp or "_sem_grupo",
+            "total": int(tot or 0),
+            "com_doc": int(cd or 0),
+            "pct": float(pct or 0),
+        }
+        for (grp, tot, cd, pct) in rows
+    ]
+
+
 def _trace_arquivo(
     conn: sqlite3.Connection,
     arquivo: str,
