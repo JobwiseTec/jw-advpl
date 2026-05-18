@@ -1,0 +1,10 @@
+foo.prw(10) error: Function 'BarFunc' is undefined
+foo.prw(12) error: Type mismatch in expression
+bar.prw(5) warning: Variable 'nQtde' may be uninitialized
+foo.prw(20) error: Unbalanced ENDIF
+bar.prw(8) warning: Deprecated function 'OldFn' used
+foo.prw(30) warning: Unreachable code after Return
+foo.prw(40) error: Syntax error before token ';'
+foo.prw(45) error: Expected expression, got '{'
+Compilation finished with 5 errors and 3 warnings.
+[2026-05-18 10:32:14] Build context: P2510

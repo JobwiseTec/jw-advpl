@@ -1,0 +1,2 @@
+Segmentation fault (core dumped)
+advpls: cannot read source file 'foo.prw': stream closed

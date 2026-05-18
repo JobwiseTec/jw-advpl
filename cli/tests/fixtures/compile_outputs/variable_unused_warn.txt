@@ -1,0 +1,1 @@
+foo.prw(17) warning: Variable 'cAux' declared but not used

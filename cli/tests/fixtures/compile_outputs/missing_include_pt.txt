@@ -1,0 +1,1 @@
+Erro ao compilar foo.prw: linha 3 - INCLUDE 'xxx.ch' nao encontrado
