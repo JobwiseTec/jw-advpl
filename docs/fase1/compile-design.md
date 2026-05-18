@@ -203,15 +203,19 @@ show_console_output = true
 
 ### 6.1 Validações no load (`runtime_config.load`)
 
+Parser TOML: `tomllib` (stdlib Python 3.11+ — alinhado com "sem deps pesadas" §contexto). Nenhuma dep nova.
+
 | Check | Falha → |
 |---|---|
 | TOML parseável | `RuntimeConfigError("invalid TOML at line N: ...")` |
 | Seções obrigatórias presentes (`[tds_ls]`, `[appserver]`, `[auth]`, `[compile]`) | `RuntimeConfigError("missing section: <name>")` |
 | `tds_ls.binary` arquivo existe e é executável | `RuntimeConfigError("advpls not found at <path>")` |
+| `tds_ls.binary` resolve sem symlink loop (`Path.resolve(strict=True)`) | `RuntimeConfigError("binary path resolution failed: <reason>")` |
+| `tds_ls.binary` é symlink → flag `binary_is_symlink=True` na dataclass | warning em stderr (não erro) |
 | Env var de `auth.user_env` setada | `RuntimeConfigError("env var PROTHEUS_USER (auth.user_env) is not set")` |
 | Env var de `auth.password_env` setada | mesma forma |
 | `auth.aut_file` setado → arquivo existe | `RuntimeConfigError("aut_file not found: <path>")` |
-| `appserver.host` ∈ `{127.0.0.1, localhost}` | flag `warn_remote_host = True` (não erro) |
+| `appserver.host` ∉ `{127.0.0.1, localhost, ::1}` | flag `warn_remote_host = True` (não erro) |
 | TCP ping `appserver.host:port` (1s timeout) | flag `appserver_reachable = bool` na dataclass |
 | `[logging]` ausente | usa defaults (`log_to_file=""`, `show_console_output=true`) — não erro |
 
@@ -267,28 +271,57 @@ show_console_output = true
 
 5. compile.security_check(runtime_cfg, mode):
    - mode == cli AND warn_remote_host AND NOT --no-security-warning:
-     imprime aviso em stderr, sleep(3), continua
+     imprime aviso em stderr e CONTINUA imediatamente (sem sleep — princípio
+     §4.6 "fail visivelmente sem retry mágico"; sleep mágico em CI é regressão).
 
 6. compile.build_invocation(request, runtime_cfg, mode):
    - mode == cli:
      a) gera dict do script .ini (auth + compile + logging)
-     b) escreve em tempfile CP1252 via edit_prw.convert_and_save lógica
-        (chama função compartilhada `_write_cp1252_bytes()`)
-     c) args = [binary, "cli", "<tempfile>"]
+     b) cria diretório próprio: `tempfile.mkdtemp(prefix="plugadvpl-", mode=0o700)`
+        (no Windows, mode é ignorado mas o uuid no path mitiga reading-by-name;
+        documentar limitação Windows: ACL não enforça como Unix permission bits)
+     c) grava `compile.ini` com `os.open(path, O_WRONLY|O_CREAT|O_EXCL, 0o600)`
+        + bytes em CP1252 (reusa função compartilhada `_encode_cp1252_bytes()`
+        do edit_prw.py — extraída para função pura)
+     d) args = [binary, "cli", "<tempdir>/compile.ini"]
    - mode == appre:
-     args = [binary, "appre", *[f"-I{inc}" for inc in includes], *files]
+     args = [binary, "appre", *[f"-I{inc}" for inc in includes], *resolved_files]
 
 7. compile.run_subprocess(args, timeout):
-   - subprocess.run com capture_output=True, timeout
-   - try/finally garante exclusão do tempfile .ini
+   - usa subprocess.Popen (NÃO run) para controlar lifecycle:
+     proc = Popen(args, stdin=subprocess.DEVNULL, stdout=PIPE, stderr=PIPE,
+                  encoding="utf-8", errors="replace")
+   - explícito stdin=DEVNULL evita bloqueio se advpls algum dia ler stdin
+   - try/proc.communicate(timeout=N)/except TimeoutExpired:
+       proc.terminate(); proc.wait(timeout=5); proc.kill() se ainda vivo
+   - except KeyboardInterrupt:
+       proc.terminate(); proc.wait(timeout=5); proc.kill(); raise
+       (Windows não propaga SIGINT a child via Popen padrão — terminate explícito)
+   - finally: shutil.rmtree(tempdir, ignore_errors=True)
+     (warning stderr se falhar — não derruba resultado)
+   - Tratamento de encoding do output:
+     a) Se stdout/stderr começa com BOM UTF-16LE (0xFF 0xFE) ou UTF-16BE (0xFE 0xFF):
+        capturar bytes brutos primeiro (encoding=None), strip BOM, decode utf-16
+     b) Se decode utf-8 com errors="replace" produz muitos `�` (>5% chars):
+        fallback decode CP1252
+     c) Strip BOM UTF-8 (0xEF 0xBB 0xBF) se presente
    - retorna (exit_code, stdout, stderr, duration_ms)
 
-8. compile_parser.parse_diagnostics(stdout+stderr, mode, files):
+8. compile_parser.parse_diagnostics(stdout, stderr, mode, requested_files):
    - aplica patterns de compile_patterns.json em ordem (`ordem` ASC)
-   - cada match → Diagnostic
+   - cada match → Diagnostic (com arquivo bruto do match)
    - linhas não-classificadas → Diagnostic(severidade="unknown", linha=0, raw=<linha>)
    - patterns são filtrados por `lang` (any | pt-BR | en) conforme heurística simples
      (detecta "Erro" → pt-BR, "error" → en, default any)
+   - **normalização de arquivo (CRÍTICO)**:
+     a) para cada Diagnostic.arquivo, computa Path.resolve()
+     b) cria mapa requested_resolved = {p.resolve(): p_original for p in requested_files}
+     c) se diagnostic.arquivo_resolved ∈ requested_resolved: substitui pelo nome original
+        passado pelo usuário (mantém consistência de output)
+     d) se não bate: arquivo permanece como veio do advpls; flag _unmatched=True
+        para o orchestrator agrupar em bucket "__unmatched__" no resultado
+   - precedência tie-break: se 2 patterns matcham mesma linha com mesma `ordem`,
+     vence o primeiro do JSON (estável). Testado em §11.1.
 
 9. compile.build_result(files, diagnostics, exit_code, mode, runtime_cfg):
    - agrupa diagnostics por arquivo
@@ -412,17 +445,22 @@ Regras de schema:
 | Arquivo da lista não existe | `Path.exists()` | Diagnostic sintético `error: "file not found"` só pra esse, demais continuam | 1 |
 | `--changed-since` sem repo git | `git diff` exit ≠ 0 | Mensagem clara: `"--changed-since requires a git repository at <root>"` | 2 |
 | `--changed-since` retorna vazio | git diff vazio | Sucesso, `summary.total_files=0`. Output válido pra CI. | 0 |
-| Tempfile `.ini` não pode ser criado | `tempfile.NamedTemporaryFile` falha | Erro claro com path tentado. Sem fallback silencioso. | 2 |
-| Limpeza do `.ini` falha | `try/finally` | Warning stderr (`"failed to delete temp ini: <path>"`). Não derruba resultado. | usa exit do compile |
-| Credencial em log do advpls (paranoia) | regex no parser | Redact `password|psw\s*=\s*\S+` antes de gravar em diagnostic.raw | n/a |
+| Tempdir/`.ini` não pode ser criado | `tempfile.mkdtemp` ou `os.open` falha | Erro claro com path tentado. Sem fallback silencioso. | 2 |
+| Limpeza do tempdir falha | `shutil.rmtree(ignore_errors=True)` no finally | Warning stderr (`"failed to delete tempdir: <path>"`). Não derruba resultado. | usa exit do compile |
+| `KeyboardInterrupt` (Ctrl-C) | except no `run_subprocess` | `proc.terminate()` → `proc.wait(5)` → `proc.kill()` se ainda vivo. Limpa tempdir. Re-raise. | 130 (convenção) |
+| Output em UTF-16 (PowerShell/Win Server) | BOM check em `run_subprocess` | Decode utf-16, strip BOM. Funciona transparente p/ parser. | n/a |
+| Output em CP1252 (fallback) | >5% `�` em utf-8 decode | Re-decode CP1252. Documentado no log stderr. | n/a |
+| Diagnostic com `arquivo` reportado pelo advpls ≠ nome passado pelo usuário | normalização §7.8 | `Path.resolve()` em ambos, se bate → usa nome original do usuário. Não bate → bucket `__unmatched__` no resultado | usa exit do compile |
+| Credencial em log do advpls (paranoia) | redact patterns externos em `lookups/redact_patterns.json` | Patterns aplicados em `Diagnostic.raw` E em todo stdout/stderr antes de log. Lista cobre: `password`, `psw`, `senha`, `pwd`, `aut_file` value, hex keys >16 chars. Catalog test garante cada pattern compila. | n/a |
 
 **Convenções**:
 - Exit 0 = sucesso (zero errors)
 - Exit 1 = compile encontrou error (CI normal)
 - Exit 2 = config/setup inválido
+- Exit 130 = `KeyboardInterrupt` (convenção POSIX 128+SIGINT)
 - Setup errors → stderr; diagnostics → stdout (JSON/table). Permite `compile foo.prw 2>setup.log | jq .`.
 
-**Sem retry automático**. **Sem cache no MVP** (entra em Fase 1.5 se ficar lento).
+**Sem retry automático**. **Sem cache no MVP** (entra em Fase 1.5 se ficar lento). **Sem sleep mágico em warning** (§7.5).
 
 ---
 
@@ -476,6 +514,10 @@ Função pura `parse_diagnostics(raw, files) → list[Diagnostic]`. Sem subproce
 - `mixed_*`: linhas não classificadas viram `unknown` (não silenciam)
 - `empty_output`: parser retorna `[]`; orchestrator monta diagnostic sintético
 - Catalog consistency: cada pattern em `compile_patterns.json` compila como regex, tem `severidade_group` XOR `severidade_fixed`, grupos referenciados existem
+- **Precedência tie-break**: 2 patterns com mesma `ordem` matchando mesma linha → vence o que aparece primeiro no JSON (estável)
+- **Normalização de arquivo**: diagnostic com path absoluto Windows (`D:\\full\\path\\foo.prw`) matcheia com input relativo (`foo.prw`) — retorna nome original do usuário
+- **Bucket `__unmatched__`**: diagnostic com arquivo que não está em `requested_files` resolved → vai pra bucket separado, não polui rows principais
+- **Redact patterns**: linha do output contendo `psw=segredo123` → `Diagnostic.raw` tem `psw=***REDACTED***`. Catalog `redact_patterns.json` testado por consistency.
 
 ### 11.2 Unit — `runtime_config.py` (~20 testes)
 
@@ -514,8 +556,16 @@ Função pura `parse_diagnostics(raw, files) → list[Diagnostic]`. Sem subproce
 | Credencial nunca em log | captura stderr completo | regex assert `password|psw` ausente |
 | Glob `*.prw` | `Path.glob` | expande, warning se 0 |
 | Arquivo inexistente | resolve_files | diagnostic só pra esse, demais OK |
-| Security warning host remoto | log stderr | warning impresso, sleep 3 a menos que `--no-security-warning` |
+| Security warning host remoto | log stderr | warning impresso, SEM sleep, continua direto (§7.5) |
 | `--no-security-warning` | n/a | warning suprimido |
+| `KeyboardInterrupt` no meio do compile | mock raise dentro de `proc.communicate` | `proc.terminate()` chamado, tempdir limpo, re-raise, exit 130 |
+| Output UTF-16LE com BOM | mock retorna `b"\\xff\\xfe<utf-16-bytes>"` | decode utf-16, parser classifica normal |
+| Output com >5% chars `�` em utf-8 | mock retorna bytes mistos cp1252 | fallback decode cp1252, log informativo |
+| Diagnostic path absoluto vs input relativo | mock retorna `D:\\proj\\foo.prw(42) error: ...`, input `foo.prw` | row tem `arquivo="foo.prw"` (original do usuário), não absoluto |
+| Diagnostic arquivo não solicitado | mock retorna `outro.prw(1) error` para request `foo.prw` | bucket `__unmatched__` no resultado, não em rows |
+| Tempdir mode 0o700 (Linux/macOS) | inspeção pós-create | `os.stat` mode bits = 0o700. Skip em Windows (documentar) |
+| `.ini` mode 0o600 | inspeção do file criado por `os.open` | mesma forma |
+| Stdin DEVNULL | mock Popen verifica kwarg | `stdin == subprocess.DEVNULL` |
 
 ### 11.4 Integration CLI — `cli.py` end-to-end (~10 testes)
 
@@ -540,23 +590,30 @@ Skip por default; roda se `PLUGADVPL_SMOKE=1`:
 - `compile foo_with_error.prw` mesmo setup — valida `compile_patterns.json` contra output real
 - Via SSH tunnel para VPS (`host=127.0.0.1` após `ssh -L 1234:...`)
 
+**Critério objetivo de aprovação do smoke**:
+- Fixtures coletadas no smoke devem cobrir **≥3 famílias de erro distintas** (ex: sintaxe, include faltando, função redefinida) e cada uma vira teste unit do parser antes do release.
+- Pelo menos 1 fixture pt-BR + 1 en (cobre os 2 idiomas comuns do advpls).
+- Todas as fixtures sanitizadas (sem credencial, sem caminho de cliente, sem nome de empresa).
+
 **Loop de aprendizagem**: cada output real coletado no smoke vira fixture sanitizada em `tests/fixtures/compile_outputs/` + teste unit do parser. Reforça `compile_patterns.json` a cada bug encontrado em uso real.
 
 ---
 
 ## 12. Ordem de implementação (TDD red→green, commit atômico por etapa)
 
-1. **`runtime_config.py`** (dataclass + load + validações + `--init-config` template) — ~3h
-2. **`compile_parser.py`** + `lookups/compile_patterns.json` (3-5 patterns iniciais) + fixtures básicas — ~3h
-3. **`compile.py` orchestrator** modo `appre` (subprocess mockado, sem AppServer) — ~3h
-4. **`compile.py` orchestrator** modo `cli` (geração `.ini` CP1252, security warning, TCP ping) — ~3h
-5. **`cli.py`** subcomando `compile` typer (sub-app pattern) + `--init-config` — ~2h
-6. **Integration tests** CLI end-to-end (PATH-shim do advpls) — ~2h
-7. **Smoke real** no AppServer local Windows + VPS via SSH tunnel — ~2h
-8. **Coleta de fixtures reais** sanitizadas (ciclo: rodar smoke → capturar output → sanitizar → fixture → teste parser → ajustar patterns) — ~2h
+1. **`runtime_config.py`** (dataclass + load + validações + `--init-config` template + symlink + tomllib) — ~3h
+2. **`lookups/redact_patterns.json`** + catalog test — ~1h
+3. **`compile_parser.py`** + `lookups/compile_patterns.json` (3-5 patterns iniciais) + fixtures básicas + normalização de arquivo + redact — ~4h
+4. **`compile.py` orchestrator** modo `appre` (subprocess mockado, sem AppServer) — ~3h
+5. **`compile.py` orchestrator** modo `cli` (mkdtemp 0o700 + os.open 0o600 + Popen + DEVNULL + BOM/encoding + KeyboardInterrupt + security warning) — ~4h
+6. **`cli.py`** subcomando `compile` typer (sub-app pattern) + `--init-config` — ~2h
+7. **Integration tests** CLI end-to-end (PATH-shim do advpls) — ~2h
+8. **Smoke real iterativo** no AppServer local Windows + VPS via SSH tunnel — esse passo é **cíclico com coleta de fixtures**: rodar smoke → capturar output → sanitizar → criar fixture → adicionar/ajustar pattern → re-rodar smoke. Estimar ~3h (1h smoke inicial + 2h para 3 famílias de erro descobertas iterativamente). — ~3h
 9. **Release v0.8.0**: CHANGELOG + plugin.json + marketplace.json + ROADMAP + README + cli-reference + commit + tag — ~1h
 
-**Total estimado**: ~21h (~2,5 dias). Margem: ~3h para imprevistos (parsing surpresas, encoding edge cases).
+**Total estimado**: ~23h (~3 dias). Margem: ~4h para imprevistos (parsing surpresas no smoke iterativo, encoding edge cases em Windows Server).
+
+**Dependência entre etapas**: 8 (smoke real iterativo) realimenta 3 (patterns) — espera-se 2-3 iterações pequenas até estabilizar. Etapa 9 só inicia quando ≥3 famílias de erro têm fixture estável.
 
 ---
 
@@ -577,21 +634,28 @@ Skip por default; roda se `PLUGADVPL_SMOKE=1`:
 
 ## 14. Critérios de aceitação
 
+Todos verificáveis por teste automatizado, exceto onde explicitamente "smoke manual".
+
 - [ ] 4 módulos novos (`runtime_config.py`, `compile.py`, `compile_parser.py`, +cli.py) com responsabilidade isolada conforme §5.
-- [ ] `lookups/compile_patterns.json` com ≥5 patterns iniciais cobrindo en + pt-BR.
+- [ ] `lookups/compile_patterns.json` com ≥5 patterns iniciais cobrindo `en` + `pt-BR`.
+- [ ] `lookups/redact_patterns.json` com ≥5 patterns de redaction (password, psw, senha, pwd, aut_file value, hex keys).
 - [ ] Subcomando `plugadvpl compile <fonte...>` com flags `--mode`, `--changed-since`, `--no-warnings`, `--timeout`, `--no-security-warning`, `--includes`, `--format`.
 - [ ] Subcomando `plugadvpl compile --init-config` gera template + adiciona ao `.gitignore`.
-- [ ] Schema JSON estável conforme §8 — testado por contract test.
+- [ ] Schema JSON estável conforme §8 — testado por contract test (snapshot do schema).
 - [ ] ~85 novos testes (30 parser + 20 config + 25 orchestrator + 10 CLI). 100% passing.
-- [ ] Catalog consistency test cobre `compile_patterns.json` (pattern compila, severidade XOR, grupos válidos).
+- [ ] Catalog consistency test cobre `compile_patterns.json` (pattern compila, severidade XOR, grupos válidos, sem ordem duplicada problemática) E `redact_patterns.json` (cada pattern compila).
 - [ ] Suite total ≥714 testes verde (era 629 no v0.7.0).
-- [ ] `--mode appre` funciona end-to-end sem AppServer (smoke local).
-- [ ] `--mode cli` funciona end-to-end com AppServer local Windows + VPS via SSH tunnel (smoke manual).
-- [ ] Security warning impresso em host remoto a menos que `--no-security-warning`.
-- [ ] `.ini` temporário sempre em CP1252; deletado em qualquer caminho.
-- [ ] Credencial nunca aparece em stdout, stderr ou diagnostic.raw.
+- [ ] `--mode appre` funciona end-to-end sem AppServer (testado em integration via PATH-shim).
+- [ ] `--mode cli` funciona end-to-end com AppServer local Windows + VPS via SSH tunnel **(smoke manual, critério §11.5)**.
+- [ ] Security warning impresso em host remoto a menos que `--no-security-warning`, **SEM sleep** (testado em integration).
+- [ ] Tempfile `.ini` em CP1252 + permission 0o600 (Linux/macOS — Windows documentado). Tempdir 0o700. Deletado em qualquer caminho (try/finally, KeyboardInterrupt, timeout).
+- [ ] **Credencial assertion objetiva**: para todos os testes que rodam o orchestrator end-to-end, regex assert `(?i)(password|psw|senha|pwd)\s*[:=]\s*\S+` ausente em stdout, stderr e qualquer `Diagnostic.raw`. Mínimo 5 testes cobrindo esse assert.
+- [ ] `Path.resolve()` normaliza diagnostic.arquivo vs requested_files (testado positiva + negativa com `__unmatched__`).
+- [ ] Suporte a output UTF-16 BOM e fallback CP1252 (testado com fixtures binárias).
+- [ ] Exit codes: 0 (sucesso), 1 (compile error), 2 (config/setup), 130 (KeyboardInterrupt) — cada um testado.
 - [ ] CHANGELOG, plugin.json, marketplace.json, ROADMAP, README, cli-reference sincronizados em v0.8.0.
 - [ ] Tag git `v0.8.0` aplicada.
+- [ ] Smoke fixtures (≥3 famílias de erro, ≥1 pt-BR + ≥1 en, todas sanitizadas) commitadas em `tests/fixtures/compile_outputs/`.
 
 ---
 
@@ -614,3 +678,24 @@ Skip por default; roda se `PLUGADVPL_SMOKE=1`:
 - Sem retry automático — fail visível é princípio do plugin.
 - Sem orquestração de SSH tunnel — fora do escopo (usuário/CI controla).
 - Sem `language-server` mode — é Fase 6+.
+- **Sem sleep mágico em warning** (decisão pós-review) — sleep em CI é regressão; warning deve ser síncrono e informativo, não bloqueante.
+
+### 15.3 Resposta ao review automatizado
+
+Spec passou por revisão crítica antes do user review gate. CRITICAL e IMPORTANT resolvidos inline:
+
+| Item do review | Resolução |
+|---|---|
+| C1 — Race condition tempfile credencial | §7.6b/c: `mkdtemp(mode=0o700)` + `os.open(O_EXCL, 0o600)` + `shutil.rmtree` no `finally`. Windows documentado. |
+| C2 — Path absoluto vs relativo nos diagnostics | §7.8: normalização explícita via `Path.resolve()` + bucket `__unmatched__`. Teste em §11.1 + §11.3. |
+| C3 — Stdin bloqueia subprocess | §7.7: `stdin=subprocess.DEVNULL` explícito. Teste em §11.3. |
+| C4 — Output UTF-16 BOM | §7.7: BOM check + fallback UTF-16/CP1252 documentado. Testes em §11.3. |
+| I1 — SIGINT/Ctrl-C | §7.7: `try/except KeyboardInterrupt: terminate → wait(5) → kill`. Exit 130. Teste em §11.3. |
+| I2 — Symlink traversal | §6.1: `resolve(strict=True)` + flag `binary_is_symlink` + warning. |
+| I3 — `sleep(3)` no warning | §7.5: removido. Warning síncrono, continua direto. Registrado em §15.2. |
+| I4 — Credencial assertion objetiva | §14: regex `(?i)(password\|psw\|senha\|pwd)\s*[:=]\s*\S+` em mínimo 5 testes. |
+| I5 — Redact patterns como lookup | §9 + nova etapa 2 em §12: `lookups/redact_patterns.json` + catalog test. |
+| I6 — Pattern precedence tie-break | §7.8 + §11.1: documentado "primeiro do JSON" + teste explícito. |
+| N1 — Critério objetivo do smoke | §11.5: ≥3 famílias + 1 pt-BR + 1 en + sanitização. |
+| N2 — `tomllib` stdlib | §6.1: explicitado "tomllib stdlib 3.11+, sem dep nova". |
+| N3 — Dependência cíclica 7→8 | §12: passos 3 e 8 marcados cíclicos, estimativa ajustada (~21h → ~23h). |
