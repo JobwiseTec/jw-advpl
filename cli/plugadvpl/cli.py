@@ -27,7 +27,7 @@ import io
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 import typer
 
@@ -2098,6 +2098,120 @@ def edit_prw_save(
         columns=["file", "from", "to", "backup"],
         title=f"edit-prw save {arquivo.name}",
     )
+
+
+# ---------------------------------------------------------------------------
+# compile (v0.8.0 Fase 1): wrapper sobre advpls
+# ---------------------------------------------------------------------------
+
+
+compile_app = typer.Typer(
+    name="compile",
+    help="Compila fontes ADVPL via advpls (modos appre local + cli full).",
+    # NAO usar no_args_is_help=True junto com invoke_without_command=True
+    # — typer mostra help antes do callback, quebrando o teste que espera
+    # exit 2 + "nenhum fonte informado".
+    invoke_without_command=True,
+)
+app.add_typer(compile_app, name="compile")
+
+
+@compile_app.callback()
+def compile_callback(
+    ctx: typer.Context,
+    files: Annotated[list[Path] | None, typer.Argument(help="Fontes a compilar.")] = None,
+    mode: Annotated[str, typer.Option("--mode", help="auto|appre|cli")] = "auto",
+    changed_since: Annotated[
+        str | None, typer.Option("--changed-since", help="Git ref para git diff")
+    ] = None,
+    no_warnings: Annotated[bool, typer.Option("--no-warnings", help="Filtra warnings")] = False,
+    timeout: Annotated[
+        int, typer.Option("--timeout", help="Timeout do subprocess em segundos")
+    ] = 120,
+    no_security_warning: Annotated[
+        bool, typer.Option("--no-security-warning", help="Suprime warning host remoto")
+    ] = False,
+    includes: Annotated[
+        list[Path] | None, typer.Option("--includes", help="Override includes")
+    ] = None,
+    init_config: Annotated[
+        bool, typer.Option("--init-config", help="Gera template runtime.toml")
+    ] = False,
+    force: Annotated[bool, typer.Option("--force", help="Sobrescreve config existente")] = False,
+) -> None:
+    """Compila fontes ADVPL via wrapper sobre advpls."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    obj = ctx.obj
+    root: Path = obj["root"]
+
+    if init_config:
+        _handle_init_config(root, force)
+        return
+
+    if not files:
+        typer.secho("nenhum fonte informado", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    from plugadvpl.compile import CompileRequest, run as compile_run
+    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+
+    try:
+        runtime_cfg = load_runtime_config(root)
+    except RuntimeConfigError as exc:
+        typer.secho(f"runtime config error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+    if mode == "cli" and runtime_cfg is None:
+        typer.secho(
+            f"runtime.toml required for cli mode at {root}/.plugadvpl/runtime.toml. "
+            "Run: plugadvpl compile --init-config",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    request = CompileRequest(
+        files=files,
+        mode=cast(Literal["auto", "appre", "cli"], mode),
+        no_warnings=no_warnings,
+        timeout_seconds=timeout, no_security_warning=no_security_warning,
+        includes_override=includes, changed_since=changed_since,
+    )
+    try:
+        result = compile_run(request, runtime_cfg=runtime_cfg, root=root)
+    except KeyboardInterrupt:
+        typer.secho("interrupted", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=130)
+
+    _render_from_ctx(
+        ctx,
+        result.rows,
+        columns=["arquivo", "ok", "mode", "duration_ms", "exit_code"],
+        title=f"compile ({result.summary.get('mode_used', '?')})",
+        next_steps=result.next_steps,
+    )
+
+    raise typer.Exit(code=result.exit_code)
+
+
+def _handle_init_config(root: Path, force: bool) -> None:
+    from plugadvpl.runtime_config import render_template, init_gitignore_entry
+
+    cfg_dir = root / ".plugadvpl"
+    cfg_dir.mkdir(exist_ok=True)
+    target = cfg_dir / "runtime.toml"
+    if target.exists() and not force:
+        typer.secho(
+            f"{target} already exists. Use --force to overwrite.",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        raise typer.Exit(code=1)
+    target.write_text(render_template(), encoding="utf-8")
+    added = init_gitignore_entry(root)
+    typer.echo(f"created: {target}")
+    if added:
+        typer.echo("added to .gitignore: .plugadvpl/runtime.toml")
 
 
 # ---------------------------------------------------------------------------
