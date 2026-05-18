@@ -264,6 +264,82 @@ class TestRunCli:
         assert result.summary["runtime_config_loaded"] is False
 
 
+class TestLifecycle:
+    def test_keyboard_interrupt_kills_subprocess(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = MagicMock(
+            tds_ls=MagicMock(binary=Path("/fake/advpls")),
+            appserver=MagicMock(host="127.0.0.1", port=1234, secure=False,
+                                build="x", environment="y"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True, includes=()),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+            warn_remote_host=False, appserver_reachable=True,
+        )
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.side_effect = KeyboardInterrupt
+            PopenMock.return_value = proc
+            with pytest.raises(KeyboardInterrupt):
+                run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+            proc.terminate.assert_called_once()
+
+    def test_keyboard_interrupt_cleans_tempdir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spec §11.3: ao receber KeyboardInterrupt, tempdir deve ser removido."""
+        import tempfile as _tempfile
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="cli", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        runtime_cfg = MagicMock(
+            tds_ls=MagicMock(binary=Path("/fake/advpls")),
+            appserver=MagicMock(host="127.0.0.1", port=1234, secure=False,
+                                build="x", environment="y"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True, includes=()),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+            warn_remote_host=False, appserver_reachable=True,
+        )
+
+        captured_tempdir: list[Path] = []
+        original_mkdtemp = _tempfile.mkdtemp
+
+        def _spy_mkdtemp(*args: object, **kwargs: object) -> str:
+            td = original_mkdtemp(*args, **kwargs)
+            captured_tempdir.append(Path(td))
+            return td
+
+        with patch("plugadvpl.compile.tempfile.mkdtemp", side_effect=_spy_mkdtemp):
+            with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+                proc = MagicMock()
+                proc.communicate.side_effect = KeyboardInterrupt
+                PopenMock.return_value = proc
+                with pytest.raises(KeyboardInterrupt):
+                    run(request, runtime_cfg=runtime_cfg, root=tmp_path)
+
+        assert len(captured_tempdir) == 1, "esperava 1 tempdir criado"
+        assert not captured_tempdir[0].exists(), (
+            f"tempdir {captured_tempdir[0]} deveria ter sido removido"
+        )
+
+
 class TestTempIniFile:
     def test_creates_secure_tempdir_and_file(self, tmp_path: Path) -> None:
         from plugadvpl.compile import _write_secure_ini
