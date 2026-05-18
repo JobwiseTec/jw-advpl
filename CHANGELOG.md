@@ -36,6 +36,65 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.1] - 2026-05-18
+
+### 🐛 3 bugs achados no smoke real contra advpls
+
+Validação manual contra binário `advpls` real (extensão tds-vscode v3.x.x)
+revelou que o modo `appre` da v0.8.0 estava **silenciosamente perdendo erros
+do compilador** — exatamente o caso que o smoke iterativo (§11.5 do spec) foi
+desenhado pra pegar.
+
+### Fixed
+
+- **CRITICAL — modo `appre` perdia erros do compilador**:
+  `advpls appre` escreve diagnostics estruturados em
+  `<output_dir>/<basename>.errprw`, **não** stdout/stderr (que tem só log
+  interno do `connection_manager`). v0.8.0 só lia stdout/stderr → usuário via
+  `ok=true` mesmo quando havia erro real (falso negativo crítico em CI).
+  - Fix: orchestrator passa `-O <tempdir>` ao advpls + novo helper
+    `_collect_errprw_diagnostics()` lê os `.errprw` ANTES do cleanup do
+    tempdir (antes do `shutil.rmtree` no `finally`).
+  - Novo parâmetro `force_arquivo` em `parse_diagnostics()`: advpls reporta
+    sempre `APPRE41.PRW` no arquivo do erro (compilador genérico), mas
+    sabemos qual fonte gerou via nome do `.errprw` (`foo.errprw` ↔ `foo.prw`).
+- **IMPORTANT — `exit_code` Windows ficava `4294967295`**: `proc.returncode`
+  retornava `-1` em Windows, que virava `0xFFFFFFFF` (4294967295 unsigned)
+  no JSON. Novo `_normalize_exit_code()` mapeia para faixa 0–255 (POSIX
+  convention) — 0=sucesso, !=0=falha.
+- **IMPORTANT — `ok=true` em subprocess crash silencioso**: lógica antiga
+  `ok = (counts.error == 0)` ignorava advpls crash que não produzia
+  diagnostic. Nova regra: `ok = (zero errors) AND (subprocess ok OR
+  diagnostics estruturados)`. Plugin `exit_code` também propaga
+  `failed_requested > 0`.
+
+### Added
+
+- **Pattern `appre_compiler_c_code`** em `lookups/compile_patterns.json`:
+  reconhece formato real `APPRE41.PRW(N) Error CXXXX <mensagem>` (e variante
+  lowercase `appre41(N) Error CXXXX...`). Captura `codigo` (códigos estáveis
+  do compilador como C2090, C2006) que agora é populado no `Diagnostic`.
+- 2 fixtures sanitizadas em `tests/fixtures/compile_outputs/`:
+  `appre_errprw_c2090.txt` + `appre_errprw_c2006.txt`.
+- 11 testes novos de regressão (5 `_normalize_exit_code` + 3 errprw collector
+  + 3 parser C-code) — garante que os 3 bugs nunca voltem.
+
+### Tests
+
+- **716 testes verde** (era 705 no v0.8.0, +11).
+- Validado contra `advpls.exe` real:
+  - **Antes**: `ok=true`, `exit_code=4294967295`, `errors=0` (bug latente)
+  - **Depois**: `ok=false`, `exit_code=1`, `errors=1` com
+    `codigo=C2090`, `arquivo=<fonte real>`, `mensagem="File not found PRTOPDEF.CH"`
+
+### Notes
+
+- Smoke iterativo §11.5 do spec entregou exatamente o que prometia: bugs
+  reais só visíveis com binário real. Valor do loop "smoke → fixture →
+  pattern" confirmado.
+- Reforça princípio "fail visivelmente" — `ok=false` mesmo sem diagnostic
+  parseado quando subprocess crasha. CI nunca silencia.
+
 ## [0.8.0] - 2026-05-18
 
 ### 🚀 Fase 1 — `plugadvpl compile` (wrapper TDS-LS)
