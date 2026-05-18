@@ -48,22 +48,26 @@ X3_VALID    Expressão de validação (`U_XYZVAL()`, `NaoVazio()`, etc.)
 X3_INIT     Inicializador (`Space(10)`, `CToD("")`, `U_XYZINIT()`)
 X3_WHEN     Habilitação condicional
 X3_VLDUSER  Validação adicional (user-level)
-X3_USADO    Bitmap de uso por contexto
+X3_USADO    varchar(120) — bitmap por módulo/segmento do ERP (FAT/EST/FIN/...). NÃO é empresa/filial. Use X3Uso()/X3TreatUso().
 X3_BROWSE   Aparece em browse? (S/N)
 X3_RELACAO  Default/fórmula
 X3_F3       Consulta padrão (referência à SXB)
-X3_TRIGGER  Disparar gatilho (S/N)
-X3_FOLDER   Aba SXA onde aparece
-X3_OBRIGAT  Obrigatório (S/N/X)
+X3_TRIGGER  varchar(1): "S" se possui gatilho SX7; vazio = não
+X3_FOLDER   varchar(1) — aba SXA onde aparece (casa com XA_ORDEM)
+X3_OBRIGAT  varchar(8) — bitmap controlado por API (v12.1.7+ usa X3TreatObrigat). Setar "S" via SQL direto é IGNORADO.
 X3_PROPRI   U=User custom / S=System TOTVS
-X3_GRPSXG   Grupo SXG (template de tamanho)
+X3_GRPSXG   varchar(3) — grupo SXG (template de tamanho). NB: docs antigos chamam de X3_GRUPO — coluna física é x3_grpsxg.
 X3_NIVEL    Nível de acesso (visibilidade)
 ```
 
 ### Customizando campo sem mexer no fonte
 
-- **Esconder**: `X3_BROWSE='N'`, `X3_NIVEL` baixo, `X3_USADO` zerado pra contexto específico.
-- **Tornar opcional**: `X3_OBRIGAT=''`.
+- **Esconder**: `X3_BROWSE='N'`, `X3_NIVEL` baixo, ou apagar bit de módulo em `X3_USADO` **via API** (`FwPutSX3()`/Configurador — não SQL direto, é bitmap de ~113-117 chars).
+- **Tornar opcional**: `X3_OBRIGAT=''` (já é o default de quase todos os campos). **Tornar obrigatório**: prefira `X3_VALID := "!Empty(M->CAMPO)"` — atribuir `"S"` em `X3_OBRIGAT` via SQL direto é silenciosamente ignorado em v12.1.7+ (campo é bitmap controlado por API).
+
+### Criar campo SX3 via SQL (cookbook)
+
+Pra scriptar criação de campo custom (pipeline/CI, ambiente sem GUI) — quando `FwPutSX3()`/Configurador não couberem no workflow — ver [`reference.md` §15](reference.md): regra de ouro (clonar bitmaps via subselect), workflow 3-fases (ALTER + INSERT + cache invalidation), checklist pré-INSERT, armadilhas frequentes.
 - **Validação custom**: `X3_VALID := "U_XYZVAL()"` — User Function deve existir nos fontes. Lint `SX-001` flagga se não.
 - **Default custom**: `X3_INIT := "U_XYZDEF()"` ou `X3_RELACAO := "U_XYZDEF()"`.
 - **Lookup F3**: `X3_F3 := "SA1XYZ"` — alias deve existir em SXB. Lint `SX-011` flagga se não.
@@ -79,7 +83,7 @@ X7_CAMPO   Campo gatilho (A1_COD)
 X7_SEQUENC Sequência (01, 02, ...)
 X7_REGRA   Expressão que retorna valor
 X7_CDOMIN  Campo destino (A1_NOME)
-X7_TIPO    P (Primário, requer SEEK) ou S (Secundário, derivação simples)
+X7_TIPO    P/vazio = Primário (mais comum); X = Posicionamento. Tipo "E" (Estrangeiro) NÃO existe no padrão atual.
 X7_SEEK    "S" — usa DbSeek + alias na regra
 X7_ALIAS   Alias-fonte (se SEEK=S)
 X7_ORDEM   Ordem do índice no seek
@@ -235,12 +239,15 @@ Campos pertencem à aba via `X3_FOLDER` (mesmo valor de `XA_ORDEM`).
 Templates de tamanho/picture compartilhados entre campos similares:
 
 ```
-XG_GRUPO       ID do grupo (ex: "037")
-XG_TAMANHO     Tamanho (15)
-XG_DECIMAL     Decimais (4)
-XG_DESCRIC     Descrição
-XG_TIPO        C/N/D
-XG_PICTURE     Máscara
+XG_GRUPO       C(3) — ID do grupo (ex: "037")
+XG_DESCRI      C(30) — Descrição (PT; XG_DESCSPA/XG_DESCENG). NB: no CSV do Configurador o header costuma vir como XG_DESCRIC (legado).
+XG_SIZE        N — Tamanho padrão (ex: 15). NB: no CSV do Configurador costuma vir como XG_TAMANHO.
+XG_SIZEMAX     N — Tamanho máximo permitido na faixa (CSV: XG_TAMMAX)
+XG_SIZEMIN     N — Tamanho mínimo permitido na faixa (CSV: XG_TAMMIN)
+XG_PICTURE     C(45) — Máscara
+XG_CHECK1      C(32) — Expressão de validação adicional
+XG_CHECK2      C(32) — Segunda expressão de validação
+(NÃO existem XG_DECIMAL nem XG_TIPO no schema físico — tipo/decimal vêm do SX3 que referencia o grupo)
 ```
 
 Campos que usam o grupo: `X3_GRPSXG := "037"`.

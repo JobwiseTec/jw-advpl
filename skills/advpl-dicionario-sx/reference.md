@@ -131,21 +131,27 @@ Exemplos de uso: filtros de período (data de/até), filtros de código (produto
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X1_GRUPO` | C | Identificador do grupo de perguntas (ex: `"REL001"`) |
-| `X1_ORDEM` | C | Ordem de exibição dentro do grupo (`"01"`, `"02"`, ...) |
-| `X1_PERGUNT` | C | Texto da pergunta em português |
-| `X1_PERSPA` | C | Texto da pergunta em espanhol |
-| `X1_PERENG` | C | Texto da pergunta em inglês |
-| `X1_VARIAVL` | C | Variável de memória associada |
-| `X1_TIPO` | C | Tipo do campo: `C`=Caractere, `N`=Numérico, `D`=Data, `L`=Lógico |
+| `X1_GRUPO` | C(10) | Identificador do grupo de perguntas (ex: `"REL001"`) |
+| `X1_ORDEM` | C(2) | Ordem de exibição dentro do grupo (`"01"`, `"02"`, ...) |
+| `X1_PERGUNT` | C(30) | Texto da pergunta em português |
+| `X1_PERSPA` | C(30) | Texto da pergunta em espanhol |
+| `X1_PERENG` | C(30) | Texto da pergunta em inglês |
+| `X1_VARIAVL` | C(6) | Variável de memória associada |
+| `X1_TIPO` | C(1) | Tipo do campo: `C`=Caractere, `N`=Numérico, `D`=Data, `L`=Lógico, `M`=Memo |
 | `X1_TAMANHO` | N | Tamanho do campo de resposta |
 | `X1_DECIMAL` | N | Casas decimais (para tipo `N`) |
-| `X1_PRESEL` | C | Pré-seleção para combos |
-| `X1_GSC` | C | Tipo de input: `G`=Get, `S`/`C`=Combo, `F`=File |
-| `X1_VALID` | C | Expressão de validação ADVPL |
-| `X1_F3` | C | Consulta F3 disponível para o campo |
-| `X1_VAR01`..`X1_VAR05` | C | Variáveis MV_PAR correspondentes (`MV_PAR01`..`MV_PAR05`) |
-| `X1_DEF01`..`X1_DEF05` | C | Valores default de cada opção |
+| `X1_PRESEL` | **N** | Pré-seleção para combos — **coluna é numérica** (`double precision`). Em SQL direto use número, não string: `x1_presel = 1`, não `'01'`. ADVPL coerce mas o banco rejeita. |
+| `X1_GSC` | C(1) | Tipo de input — valores observados: `G`=Get (input livre, mais comum), `C`=Combo (dropdown), `R`=Range/Radio (segundo mais usado depois de G/C), `S`, `F`=File, `E`, `K`. |
+| `X1_VALID` | C(160) | Expressão de validação ADVPL |
+| `X1_F3` | C(6) | Consulta F3 disponível para o campo |
+| `X1_VAR01`..`X1_VAR05` | C(15) | Variáveis MV_PAR correspondentes (`MV_PAR01`..`MV_PAR05`) |
+| `X1_DEF01`..`X1_DEF05` | C(15) | Valores default de cada opção (multilíngue: `X1_DEFSPA*`/`X1_DEFENG*`) |
+| `X1_CNT01`..`X1_CNT05` | C(60) | Conteúdos da pergunta |
+| `X1_HELP` | C(14) | Referência ao help do SX5 |
+| `X1_PICTURE` | C(40) | Máscara de formatação |
+| `X1_GRPSXG` | C(3) | Grupo SXG (template de tamanho) |
+| `X1_IDFIL` | C(6) | Filial de identificação |
+| `X1_PYME` | C(1) | Marca uso na versão PME |
 
 ### Função Pergunte
 
@@ -227,14 +233,26 @@ A tabela **SX2** define de forma padronizada todas as tabelas disponíveis dentr
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X2_CHAVE` | C | Alias/prefixo da tabela (ex: `"SA1"`, `"SB1"`) — chave de busca |
-| `X2_NOME` | C | Nome descritivo/real da tabela no banco de dados |
-| `X2_MODO` | C | Modo de acesso: `"C"`=Compartilhado, `"E"`=Exclusivo |
-| `X2_UNICO` | C | Controle de unicidade dos registros |
-| `X2_PREF` | C | Prefixo dos campos da tabela (ex: `"A1"` para SA1) |
-| `X2_ARQUIVO` | C | Nome físico do arquivo (prefixo + código da empresa + "0") |
-| `X2_TTS` | C | Indica uso de controle de transação |
-| `X2_ROTINA` | C | Rotina responsável pela manutenção da tabela |
+| `X2_CHAVE` | C(3) | Alias/prefixo da tabela (ex: `"SA1"`, `"SB1"`) — chave de busca. **O prefixo dos campos é derivado deste valor** (não existe coluna `X2_PREF`). |
+| `X2_NOME` | C(30) | Nome descritivo/real da tabela (PT — também `X2_NOMESPA`/`X2_NOMEENG`) |
+| `X2_MODO` | C(1) | Modo de acesso: `"C"`=Compartilhado, `"E"`=Exclusivo |
+| `X2_MODOUN` | C(1) | Modo por **unidade** (diferente de X2_MODO) |
+| `X2_MODOEMP` | C(1) | Modo por **empresa** |
+| `X2_UNICO` | C(250) | Expressão da chave única (essencial pra customização) |
+| `X2_ARQUIVO` | C(8) | Nome físico do arquivo (prefixo + código da empresa + "0") |
+| `X2_PATH` | C(40) | Caminho/path do arquivo |
+| `X2_TTS` | C(1) | Indica uso de controle de transação |
+| `X2_ROTINA` | C(40) | Rotina responsável pela manutenção da tabela |
+| `X2_DELET` | **N** | **Contador numérico** de registros deletados — **não** é flag `"S"/"N"`. Em SQL direto exige número. |
+| `X2_MODULO` | N | Módulo a que pertence (numérico — pra filtrar por módulo) |
+| `X2_DISPLAY` | C(254) | Filtro de exibição |
+| `X2_TAMFIL` / `X2_TAMUN` / `X2_TAMEMP` | N | Tamanhos do FILIAL/UNIDADE/EMPRESA usados |
+| `X2_POSLGT` / `X2_CLOB` / `X2_AUTREC` | C(1) | Flags de comportamento |
+| `X2_STAMP` / `X2_INSDT` | C(1) | Timestamp/inserção controlada |
+| `X2_SYSOBJ` / `X2_USROBJ` | C(100) | Objetos de sistema / usuário |
+| `X2_PYME` | C(1) | Marca uso na versão PME |
+
+> **Atenção:** docs antigos TOTVS mencionam uma coluna `X2_PREF` para "prefixo dos campos" — **ela não existe** no schema atual. `SELECT x2_pref FROM sx2xxx` falha com *column does not exist*. O prefixo dos campos é simplesmente as 2-3 primeiras letras de `X2_CHAVE` (ex: `SA1` → campos com prefixo `A1_`).
 
 ### Convenção de nomenclatura das tabelas
 
@@ -261,8 +279,9 @@ O "S" inicial indica que o arquivo pertence ao ambiente genérico Microsiga. Por
 DbSelectArea("SX2")
 DbSetOrder(1)  // X2_CHAVE
 If DbSeek("SA1")
-    cModo := SX2->X2_MODO   // "C" ou "E"
-    cPref := SX2->X2_PREF   // Prefixo dos campos
+    cModo := SX2->X2_MODO        // "C" ou "E"
+    cPref := SubStr(SX2->X2_CHAVE, 2, 2)  // Prefixo dos campos derivado da chave
+                                          // (ex: "SA1" → "A1")
 EndIf
 ```
 
@@ -278,7 +297,7 @@ If !DbSeek("ZZ1")
     SX2->X2_NOME    := "Tabela Customizada"
     SX2->X2_MODO    := "E"   // Exclusiva por filial
     SX2->X2_UNICO   := "ZZ1_FILIAL+ZZ1_COD"
-    SX2->X2_PREF    := "ZZ1"
+    // Não atribuir X2_PREF — coluna não existe; prefixo é derivado de X2_CHAVE
     SX2->(MsUnlock())
 EndIf
 ```
@@ -331,20 +350,20 @@ O SX3 determina os campos contidos no banco de dados, sendo o TopConnect respons
 | `X3_BROWSE` | C | `"S"` = exibe no browse (listagem), `"N"` = não exibe |
 | `X3_VISUAL` | C | Visibilidade: `"A"`=Alterar, `"V"`=Visualizar, `""`=Oculto |
 | `X3_NÍVEL` | N | Nível de acesso necessário para ver/editar o campo |
-| `X3_GRUPO` | C | Grupo visual ao qual o campo pertence |
+| `X3_GRPSXG` | C | `varchar(3)` — referência ao **grupo SXG** (template de tamanho). Docs TOTVS antigos chamam de `X3_GRUPO`, mas a coluna física é `X3_GRPSXG`: `SELECT x3_grupo FROM sx3xxx` falha com *column does not exist*. Não confundir com `X3_FOLDER` (pasta na tela). |
 | `X3_PYME` | C | Indica se o campo é usado na versão PME |
 
 ### 4.3 Campos de comportamento
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X3_OBRIGAT` | C | `"S"` = preenchimento obrigatório |
+| `X3_OBRIGAT` | C | `varchar(8)` — na prática quase sempre **vazio**. A partir de v12.1.7 a estrutura mudou de binário para CHAR controlado por API; use `X3TreatObrigat()` para analisar/transformar (`Bin2Str()` falha após 12.1.7). Atribuir `"S"` direto via SQL é silenciosamente ignorado. Para forçar preenchimento de forma confiável, use `X3_VALID := "!Empty(M->CAMPO)"`. |
 | `X3_VALID` | C | Expressão/função de validação do conteúdo |
 | `X3_RELACAO` | C | Inicializador padrão (valor sugerido na inclusão) |
 | `X3_F3` | C | Alias da consulta SXB ou código de tabela SX5 para o F3 |
 | `X3_WHEN` | C | Condição ADVPL para habilitar a edição do campo |
-| `X3_TRIGGER` | L | `.T.` = campo possui gatilhos na SX7 |
-| `X3_USADO` | C | Indica em quais empresas/filiais o campo está habilitado |
+| `X3_TRIGGER` | C | `varchar(1)` — `"S"` = campo possui gatilhos na SX7; vazio = não tem. API ADVPL pode expor como lógico (`.T./.F.`), mas em SQL direto / script de update use literal `"S"`. |
+| `X3_USADO` | C | `varchar(120)` — bitmap indicando em quais **módulos/segmentos do ERP** (FAT, EST, FIN, COM, RH, …) o campo está habilitado. **Não** é empresa/filial — para filtragem por empresa/filial use `X3_CONDSQL` ou filtro de aplicação. A partir da v12.1.7 a estrutura mudou de binário para CHAR controlado por API; use `X3TreatUso()` para analisar/transformar, ou `X3Uso(SX3->X3_USADO)` para checar runtime. Manipular via SQL direto exige reproduzir o bitmap exato — caminho seguro: clonar de campo similar via subselect (`FwPutSX3()` é o caminho oficial). |
 | `X3_INIBRW` | C | Expressão para exibição no browse (campos virtuais no browse) |
 
 ### 4.4 X3_VALID — Validação de campo
@@ -408,7 +427,7 @@ X3_WHEN := "u_PermiteEditar()"
 
 ### 4.6 X3_TRIGGER — Gatilhos
 
-O campo `X3_TRIGGER` é do tipo lógico e indica se o campo possui gatilhos associados na tabela SX7. Quando `.T.`, ao sair do campo o sistema consulta a SX7 e executa os gatilhos configurados.
+O campo `X3_TRIGGER` é **`varchar(1)`** no banco (`character(1)` no PostgreSQL/Oracle): valor `"S"` indica que o campo possui gatilhos associados na tabela SX7; vazio indica que não tem. Quando habilitado, ao sair do campo o sistema consulta a SX7 e executa os gatilhos configurados. A API ADVPL pode tratar o valor como lógico (`.T./.F.`), mas em SQL direto e scripts de update use sempre literal `"S"`.
 
 ```advpl
 // Verificando programaticamente se um campo tem gatilhos
@@ -574,14 +593,20 @@ A tabela **SX6** armazena todos os parâmetros de configuração do sistema Prot
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X6_FIL` | C | Filial do parâmetro |
-| `X6_VAR` | C | Nome do parâmetro (ex: `"MV_ESTADO"`) |
-| `X6_TIPO` | C | Tipo do valor: `C`=Caractere, `N`=Numérico, `L`=Lógico, `D`=Data |
-| `X6_DESCRIC` | C | Descrição — parte 1 (até 50 caracteres) |
-| `X6_DESC1` | C | Descrição — parte 2 |
-| `X6_DESC2` | C | Descrição — parte 3 |
-| `X6_CONTEUD` | C | Conteúdo/valor do parâmetro |
-| `X6_PROPRI` | C | Propriedade: `"U"`=Usuário (customizável) |
+| `X6_FIL` | C(2) | Filial do parâmetro |
+| `X6_VAR` | C(10) | Nome do parâmetro (ex: `"MV_ESTADO"`) |
+| `X6_TIPO` | C(1) | Tipo do valor: `C`=Caractere, `N`=Numérico, `L`=Lógico, `D`=Data |
+| `X6_DESCRIC` | C(50) | Descrição — parte 1 (PT / `X6_DESCSPA` / `X6_DESCENG`) |
+| `X6_DESC1` | C(50) | Descrição — parte 2 (multilíngue) |
+| `X6_DESC2` | C(50) | Descrição — parte 3 (multilíngue) |
+| `X6_CONTEUD` | C(250) | Conteúdo/valor do parâmetro (multilíngue: `X6_CONTSPA`/`X6_CONTENG`) |
+| `X6_PROPRI` | C(1) | Propriedade: `"U"`=Usuário (customizável) |
+| `X6_PYME` | C(1) | Marca uso na versão PME |
+| `X6_VALID` | C(160) | Expressão ADVPL de validação ao **gravar** o parâmetro (ex: `'Pertence("SN")'`). Roda no `PutMV` / Configurador. |
+| `X6_INIT` | C(128) | Inicializador — valor default quando o `GetMV`/`SuperGetMV` não acha registro. |
+| `X6_DEFPOR` / `X6_DEFSPA` / `X6_DEFENG` | C(250) | Defaults multilíngues (diferentes de `X6_CONTEUD`) |
+| `X6_EXPDEST` | C(1) | Expressão de destino (uso em integração) |
+| `X6_ACTIVE` | C(1) | **Importante**: controla se o parâmetro está **ativo**. Em algumas releases, parâmetro com `X6_ACTIVE` vazio é ignorado pelo runtime. Setar `"1"` ao criar custom. |
 
 ### GetMV — Obter valor de parâmetro
 
@@ -655,6 +680,7 @@ User Function zCriaSX6()
             X6_PROPRI  := "U"
             X6_DESCRIC := SubStr(aParams[nI][3], 1, 50)
             X6_CONTEUD := aParams[nI][4]
+            X6_ACTIVE  := "1"   // crítico: parâmetro inativo é ignorado em releases recentes
             SX6->(MsUnlock())
         EndIf
     Next nI
@@ -673,29 +699,30 @@ Os gatilhos eliminam a necessidade de codificar manualmente a lógica de preench
 
 ### 7.1 Tipos de gatilho
 
+Valores observados em `X7_TIPO` em releases atuais:
+
 | Tipo | Nome | Descrição |
 |------|------|-----------|
-| **Primário** | — (padrão) | Preenche um campo na mesma tela. Tipo mais utilizado. |
-| **Estrangeiro** (`E`) | Estrangeiro | Atualiza um campo em **outra tabela** diretamente no banco de dados, na confirmação. |
-| **Posicionamento** (`X`) | Posicionamento | Posiciona um alias sem efetuar atualização — usado para relacionamentos. |
+| `P` ou vazio | **Primário** (padrão) | Preenche um campo na mesma tela. Tipo mais utilizado. |
+| `X` | **Posicionamento** | Posiciona um alias sem efetuar atualização — usado para relacionamentos. |
+
+> **Cuidado:** docs antigos citam tipo `"E"` (**Estrangeiro** — atualizaria campo em outra tabela). Na prática, esse tipo **não existe** em releases modernas: zero ocorrências no dicionário padrão. Gravar `X7_TIPO='E'` faz o appserver ignorar o gatilho. Para atualizar campo em outra tabela, use rotina/PE em ADVPL, não SX7.
 
 ### 7.2 Campos da SX7
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X7_ARQUIVO` | C | Alias da tabela a que o campo pertence |
-| `X7_CAMPO` | C | Campo de origem — dispara o gatilho quando alterado |
-| `X7_SEQUEN` | C | Sequência de execução (`"001"`, `"002"`, ...) |
-| `X7_TIPO` | C | Tipo: vazio=Primário, `"E"`=Estrangeiro, `"X"`=Posicionamento |
-| `X7_CDOMIN` | C | Contra domínio — campo que receberá o resultado |
-| `X7_REGRA` | C | Expressão ADVPL que define o valor a atribuir ao contra domínio |
-| `X7_SEEK` | C | `"S"` = realiza posicionamento na tabela antes de avaliar a regra |
-| `X7_ALIAS` | C | Alias da tabela a ser posicionada |
+| `X7_CAMPO` | C(10) | Campo de origem — dispara o gatilho quando alterado. **O alias da tabela é derivado do prefixo** (`B1_DESC` → SB1); não existe coluna `X7_ARQUIVO`. |
+| `X7_SEQUENC` | C(3) | Sequência de execução (`"001"`, `"002"`, ...). **Nome correto é `X7_SEQUENC` com `C` final** — `X7_SEQUEN` não existe (`SELECT x7_sequen FROM sx7xxx` falha). |
+| `X7_REGRA` | C(200) | Expressão ADVPL que define o valor a atribuir ao contra domínio |
+| `X7_CDOMIN` | C(10) | Contra domínio — campo que receberá o resultado |
+| `X7_TIPO` | C(1) | Tipo: `P`/vazio=Primário, `X`=Posicionamento |
+| `X7_SEEK` | C(1) | `"S"` = realiza posicionamento na tabela antes de avaliar a regra |
+| `X7_ALIAS` | C(3) | Alias da tabela a ser posicionada |
 | `X7_ORDEM` | N | Índice da tabela a ser usada no posicionamento |
-| `X7_CHAVE` | C | Expressão-chave para o posicionamento (use `M->` para variáveis de memória) |
-| `X7_CONDIN` | C | Condição de entrada (se falsa, o gatilho não executa) |
-| `X7_CONDOUT` | C | Condição de saída (se falsa, o resultado não é aplicado) |
-| `X7_PROPRI` | C | Propriedade do campo destino (`"R"`=Replace, `"A"`=Append) |
+| `X7_CHAVE` | C(200) | Expressão-chave para o posicionamento (use `M->` para variáveis de memória) |
+| `X7_CONDIC` | C(40) | **Condição única** (ADVPL) — se `.F.`, gatilho não executa. **Não existem `X7_CONDIN` + `X7_CONDOUT` separadas** em releases modernas: foi unificado em `X7_CONDIC` numa só. |
+| `X7_PROPRI` | C(1) | Propriedade do campo destino (`"R"`=Replace, `"A"`=Append) |
 
 ### 7.3 Fluxo de execução de um gatilho
 
@@ -703,7 +730,7 @@ Os gatilhos eliminam a necessidade de codificar manualmente a lógica de preench
 [Usuário altera X7_CAMPO na tela]
           │
           ▼
-[X7_CONDIN avaliada?]
+[X7_CONDIC avaliada?]
      │         └── Falso → Gatilho ignorado
      │ Verdadeiro
      ▼
@@ -717,21 +744,17 @@ Os gatilhos eliminam a necessidade de codificar manualmente a lógica de preench
 [Avalia expressão X7_REGRA (macro execução)]
           │
           ▼
-[X7_CONDOUT avaliada?]
-     │         └── Falso → Resultado descartado
-     │ Verdadeiro
-     ▼
 [Atribui resultado ao campo X7_CDOMIN na tela]
 ```
 
 ### 7.4 Encadeamento de gatilhos
 
-Quando múltiplos gatilhos são configurados para o mesmo campo (`X7_CAMPO`), o Protheus os executa na ordem definida por `X7_SEQUEN`. Se o primeiro gatilho já posicionou a tabela, os seguintes podem omitir `X7_ALIAS`, `X7_ORDEM` e `X7_CHAVE` — a tabela permanece posicionada.
+Quando múltiplos gatilhos são configurados para o mesmo campo (`X7_CAMPO`), o Protheus os executa na ordem definida por `X7_SEQUENC`. Se o primeiro gatilho já posicionou a tabela, os seguintes podem omitir `X7_ALIAS`, `X7_ORDEM` e `X7_CHAVE` — a tabela permanece posicionada.
 
 ```
-X7_SEQUEN = "001" → Posiciona SB1 pela chave do produto, retorna B1_DESC
-X7_SEQUEN = "002" → Sem posicionamento, retorna B1_UM (mesma posição SB1)
-X7_SEQUEN = "003" → Sem posicionamento, retorna B1_LOCPAD
+X7_SEQUENC = "001" → Posiciona SB1 pela chave do produto, retorna B1_DESC
+X7_SEQUENC = "002" → Sem posicionamento, retorna B1_UM (mesma posição SB1)
+X7_SEQUENC = "003" → Sem posicionamento, retorna B1_LOCPAD
 ```
 
 ### 7.5 Exemplo real de gatilho
@@ -741,15 +764,15 @@ X7_SEQUEN = "003" → Sem posicionamento, retorna B1_LOCPAD
 | Campo SX7 | Seq 001 | Seq 002 | Seq 003 |
 |-----------|---------|---------|---------|
 | `X7_CAMPO` | `C6_PRODUTO` | `C6_PRODUTO` | `C6_PRODUTO` |
-| `X7_TIPO` | (vazio) | (vazio) | (vazio) |
+| `X7_SEQUENC` | `001` | `002` | `003` |
+| `X7_TIPO` | `P` | `P` | `P` |
 | `X7_CDOMIN` | `C6_DESCRI` | `C6_UM` | `C6_PRUNIT` |
 | `X7_REGRA` | `SB1->B1_DESC` | `SB1->B1_UM` | `SB1->B1_PRV1` |
 | `X7_SEEK` | `S` | `` | `` |
 | `X7_ALIAS` | `SB1` | `` | `` |
 | `X7_ORDEM` | `1` | `` | `` |
 | `X7_CHAVE` | `xFilial("SB1")+M->C6_PRODUTO` | `` | `` |
-| `X7_CONDIN` | `.T.` | `.T.` | `.T.` |
-| `X7_CONDOUT` | `.T.` | `.T.` | `.T.` |
+| `X7_CONDIC` | (vazio = sempre dispara) | (vazio) | (vazio) |
 
 ```advpl
 // Executar gatilho manualmente (ex: importação de planilha)
@@ -842,14 +865,19 @@ A SX9 é usada para:
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `X9_DOM` | C | Tabela de origem (Domínio) |
-| `X9_CDOM` | C | Tabela de destino (Contra Domínio) |
-| `X9_EXPDOM` | C | Expressão da chave no lado do domínio |
-| `X9_EXPCDOM` | C | Expressão da chave no lado do contra domínio |
-| `X9_LIGDOM` | C | Cardinalidade do lado domínio (`"1"` ou `"N"`) |
-| `X9_LIGCDOM` | C | Cardinalidade do lado contra domínio (`"1"` ou `"N"`) |
-| `X9_VINFIL` | C | Vínculo do modo de compartilhamento de filiais |
-| `X9_CHVFOR` | C | Chave forte (exige mesmo modo de compartilhamento) |
+| `X9_DOM` | C(3) | Tabela de origem (Domínio) |
+| `X9_IDENT` | C(3) | **Parte da chave** — identifica o registro quando há múltiplos relacionamentos entre as mesmas duas tabelas (ex: SC5↔SC6 com vários laços). Esquecer no INSERT gera conflito de chave. |
+| `X9_CDOM` | C(3) | Tabela de destino (Contra Domínio) |
+| `X9_EXPDOM` | C(250) | Expressão da chave no lado do domínio |
+| `X9_EXPCDOM` | C(250) | Expressão da chave no lado do contra domínio |
+| `X9_LIGDOM` | C(1) | Cardinalidade do lado domínio (`"1"` ou `"N"`) |
+| `X9_LIGCDOM` | C(1) | Cardinalidade do lado contra domínio (`"1"` ou `"N"`) |
+| `X9_VINFIL` | C(1) | Vínculo do modo de compartilhamento de filiais |
+| `X9_CHVFOR` | C(1) | Chave forte (exige mesmo modo de compartilhamento) |
+| `X9_PROPRI` | C(1) | Propriedade: `U`=User custom / `S`=System |
+| `X9_USEFIL` | C(1) | Usa filial no relacionamento |
+| `X9_ENABLE` | C(1) | **Controla se o relacionamento está ativo**. Vazio/desabilitado faz o framework ignorar a SX9 — sem warning. Sempre conferir ao criar relacionamento novo. |
+| `X9_CONDSQL` | C(250) | Filtro SQL adicional aplicado ao relacionamento |
 
 ### Cardinalidades
 
@@ -913,12 +941,13 @@ No campo `X3_F3` da SX3, informa-se o alias da consulta SXB desejada.
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `XB_ALIAS` | C | Nome/alias da consulta (identificador único) |
-| `XB_TIPO` | C | Tipo do registro (ver seção abaixo) |
-| `XB_SEQ` | C | Sequência do registro dentro do tipo |
-| `XB_COLUNA` | C | Coluna, índice ou referência de coluna |
-| `XB_DESCRI` | C | Descrição da consulta ou do título da coluna |
-| `XB_CONTEM` | C | Conteúdo: tabela, campo, filtro ou expressão de retorno |
+| `XB_ALIAS` | C(6) | Nome/alias da consulta (identificador único). **Máximo 6 chars** — `"ZPROD01"` (7 chars) seria truncado para `"ZPROD0"`. |
+| `XB_TIPO` | C(1) | Tipo do registro (ver seção abaixo) |
+| `XB_SEQ` | C(2) | Sequência do registro dentro do tipo |
+| `XB_COLUNA` | C(2) | Coluna, índice ou referência de coluna |
+| `XB_DESCRI` | C(20) | Descrição da consulta ou do título da coluna (multilíngue: `XB_DESCSPA`/`XB_DESCENG`) |
+| `XB_CONTEM` | C(250) | Conteúdo: tabela, campo, filtro ou expressão de retorno |
+| `XB_WCONTEM` | C(250) | **When Contém** — filtro condicional adicional, útil para consultas complexas |
 
 ### 10.1 Tipos de registro na SXB
 
@@ -986,6 +1015,12 @@ Define qual campo é retornado ao campo de origem quando o usuário seleciona um
 | `"3"` | Filtro/expressão ADVPL aplicado à lista |
 | `"4"` | Campos reais da tabela vinculados a cada coluna |
 | `"5"` | Campo retornado ao confirmar a seleção |
+| `"6"` | Observado na base mas pouco documentado (consultas avançadas) |
+| `"7"` | Observado na base mas pouco documentado |
+| `"8"` | Observado na base mas pouco documentado (raro) |
+| `"9"` | Observado na base mas pouco documentado |
+
+> Os tipos 6-9 são observados em milhares de registros do dicionário padrão TOTVS mas não têm documentação pública clara. Ao customizar uma consulta, focar em 1-5; mas ao **ler** SXB existente (ex: para análise de impacto), considerar que esses tipos podem aparecer.
 
 ### 10.2 Criando uma consulta F3 personalizada
 
@@ -1001,7 +1036,7 @@ Define qual campo é retornado ao campo de origem quando o usuário seleciona um
 ```advpl
 User Function zCriaConsF3()
     Local aSXB  := {}
-    Local cAls  := "ZPROD01"   // Alias da consulta
+    Local cAls  := "ZPROD1"    // Alias da consulta (máx 6 chars!)
 
     // Tipo 1 — Cabeçalho
     // {Alias, Tipo, Seq, Coluna, Descri, DescrSpa, DescrEng, Contem}
@@ -1041,14 +1076,14 @@ User Function zCriaConsF3()
         EndIf
     Next nI
 
-    // No campo X3_F3 do SX3, coloque "ZPROD01"
+    // No campo X3_F3 do SX3, coloque "ZPROD1"
     MsgInfo("Consulta " + cAls + " criada com sucesso!")
 Return
 
 // Abrir consulta via código
 User Function zAbreF3()
     Local cRetorno := ""
-    cRetorno := ConPad1("ZPROD01")   // Abre a consulta e retorna o valor selecionado
+    cRetorno := ConPad1("ZPROD1")    // Abre a consulta e retorna o valor selecionado
     MsgInfo("Selecionado: " + cRetorno)
 Return
 ```
@@ -1103,11 +1138,18 @@ A tabela **SIX** armazena a definição de todos os índices das tabelas do Prot
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `INDICE` | C | Alias da tabela (ex: `"SA1"`) |
-| `ORDEM` | C | Número da ordem do índice (`"1"`, `"2"`, ...) |
-| `CHAVE` | C | Expressão-chave do índice (ex: `"A1_FILIAL+A1_COD+A1_LOJA"`) |
-| `DESCR` | C | Descrição do índice |
-| `SHOWPESQ` | C | `"S"` = exibe no atalho de pesquisa |
+| `INDICE` | C(3) | Alias da tabela (ex: `"SA1"`) |
+| `ORDEM` | C(1) | Número da ordem do índice (`"1"`, `"2"`, ...) |
+| `CHAVE` | C(160) | Expressão-chave do índice (ex: `"A1_FILIAL+A1_COD+A1_LOJA"`) |
+| `DESCRICAO` | C(70) | Descrição do índice (PT — também `DESCSPA`/`DESCENG`). **Atenção:** nome real é `DESCRICAO`, não `DESCR` (`SELECT descr FROM sixxxx` falha). |
+| `PROPRI` | C(1) | `U`=User custom / `S`=System TOTVS |
+| `F3` | C(160) | Consulta F3 do índice |
+| `NICKNAME` | C(10) | Apelido para uso em ADVPL |
+| `SHOWPESQ` | C(1) | `"S"` = exibe no atalho de pesquisa |
+| `IX_VIRTUAL` | C(1) | Índice virtual (feature moderna) |
+| `IX_VIRCUST` | C(1) | Índice virtual customizado |
+
+> Observação: ao contrário das outras tabelas SX, **SIX não tem prefixo `ix_` na maioria das colunas** — é legado. Colunas: `indice`, `ordem`, `chave`, `descricao`, `propri`, `f3`, `nickname`, `showpesq`.
 
 ```advpl
 // Exemplo: definindo índice na SIX via ADVPL
@@ -1115,11 +1157,11 @@ DbSelectArea("SIX")
 DbSetOrder(1)
 If !DbSeek("ZZ1" + "1")
     RecLock("SIX", .T.)
-    SIX->INDICE   := "ZZ1"
-    SIX->ORDEM    := "1"
-    SIX->CHAVE    := "ZZ1_FILIAL+ZZ1_COD"
-    SIX->DESCR    := "Código da Tabela Customizada"
-    SIX->SHOWPESQ := "S"
+    SIX->INDICE    := "ZZ1"
+    SIX->ORDEM     := "1"
+    SIX->CHAVE     := "ZZ1_FILIAL+ZZ1_COD"
+    SIX->DESCRICAO := "Codigo da Tabela Customizada"   // coluna é DESCRICAO, não DESCR
+    SIX->SHOWPESQ  := "S"
     SIX->(MsUnlock())
 EndIf
 ```
@@ -1130,7 +1172,7 @@ EndIf
 
 ### O que é a SXA
 
-A tabela **SXA** define as **pastas** (abas) das telas de cadastro do Protheus. Os campos da SX3 são associados às pastas da SXA por meio do campo `X3_GRUPO`.
+A tabela **SXA** define as **pastas** (abas) das telas de cadastro do Protheus. Os campos da SX3 são associados às pastas da SXA por meio do campo `X3_FOLDER` (que casa com `XA_ORDEM`). _Não confundir com `X3_GRPSXG`, que aponta para o grupo SXG de template de tamanho._
 
 ### Campos da SXA
 
@@ -1143,8 +1185,8 @@ A tabela **SXA** define as **pastas** (abas) das telas de cadastro do Protheus. 
 | `XA_DESCENG` | C | Descrição em inglês |
 
 ```advpl
-// No SX3, o campo X3_GRUPO vincula o campo à pasta da SXA
-// Ex: X3_GRUPO = "001" → pasta "Dados Gerais" definida na SXA com XA_ORDEM = "001"
+// No SX3, o campo X3_FOLDER vincula o campo à pasta da SXA
+// Ex: X3_FOLDER = "001" → pasta "Dados Gerais" definida na SXA com XA_ORDEM = "001"
 ```
 
 ---
@@ -1499,14 +1541,18 @@ Next nI
 #### Campos obrigatórios vs. validação
 
 ```advpl
-// X3_OBRIGAT = "S" → o sistema verifica se o campo está vazio ANTES de chamar X3_VALID
-// X3_VALID           → expressão adicional de validação de conteúdo
+// X3_OBRIGAT (CHAR(8), bitmap) → quando preenchido via API, o sistema verifica
+//                                se o campo está vazio ANTES de chamar X3_VALID.
+//                                ATENÇÃO: setar "S" via SQL direto é silenciosamente
+//                                ignorado em v12.1.7+. Para forçar obrigatoriedade
+//                                de forma confiável, use X3_VALID = "!Empty(M->CAMPO)".
+// X3_VALID                     → expressão adicional de validação de conteúdo
 
 // Ordem de verificação pelo sistema:
 // 1. X3_WHEN  → campo está habilitado?
-// 2. X3_OBRIGAT → campo está vazio? (se obrigatório, rejeita)
+// 2. X3_OBRIGAT → campo está vazio? (se bitmap obrigatório estiver setado, rejeita)
 // 3. X3_VALID → expressão de validação
-// 4. X3_TRIGGER → executa gatilhos SX7
+// 4. X3_TRIGGER → executa gatilhos SX7 (se X3_TRIGGER = "S")
 ```
 
 #### Atualização do dicionário — ferramenta correta
@@ -1527,6 +1573,132 @@ User Function zInstalaDict()
     FWCallProgram("CFGX031")   // Abre o Configurador programaticamente
 Return
 ```
+
+---
+
+## 15. Cookbook — criando campo SX3 customizado via SQL
+
+Receita prática pra criar um campo custom na SX3 quando você precisa scriptar um update (pipeline CI/CD, ambiente sem GUI, atualização em massa). O caminho **oficial TOTVS** continua sendo `FwPutSX3()` em ADVPL ou o Configurador (SIGACFG); use SQL direto só quando esses não couberem no workflow.
+
+> ⚠️ **TOTVS desencoraja manipulação direta do dicionário em produção.** Esta seção é defensiva: documenta o que funciona quando você *já* decidiu ir por SQL, pra você não tomar pé errado.
+
+### 15.1 Regra de ouro: clonar bitmaps via subselect
+
+`X3_USADO` (varchar(120) — bitmap de módulos) e `X3_RESERV` (varchar(16) — bitmap de propriedades) são controlados por API a partir de v12.1.7. **Não invente os valores**: clone de campo similar da mesma tabela usando `INSERT ... SELECT`.
+
+```sql
+-- ❌ Errado (parece funcionar — campo aparece no dbstruct — mas a tela ignora):
+INSERT INTO sx3xxx (..., x3_usado, ...)
+VALUES (..., '111111111111111111', ...);   -- bitmap inventado
+
+-- ✅ Certo (bitmap clonado de campo similar via subselect):
+INSERT INTO sx3xxx (..., x3_usado, x3_reserv, ...)
+SELECT ..., x3_usado, x3_reserv, ...
+  FROM sx3xxx
+ WHERE x3_arquivo='SB1' AND x3_campo='B1_FAMILIA' AND d_e_l_e_t_=' ';
+```
+
+Validação rápida: `SELECT length(x3_usado) FROM sx3xxx WHERE x3_campo='SEU_CAMPO  '` deve devolver algo entre **113 e 120** chars. Se for muito menor, o bitmap está malformado.
+
+### 15.2 Workflow (3 fases)
+
+Pra campo Real (não-virtual) numa tabela existente:
+
+```sql
+BEGIN;
+
+-- Fase 1: coluna física no banco (só se x3_context='R')
+ALTER TABLE sb1xxx ADD COLUMN b1_znovo VARCHAR(1) NOT NULL DEFAULT ' ';
+
+-- Fase 2: registro SX3 clonando bitmaps de campo template
+INSERT INTO sx3xxx (
+  x3_arquivo, x3_ordem, x3_campo, x3_tipo, x3_tamanho, x3_decimal,
+  x3_titulo, x3_titspa, x3_titeng,
+  x3_descric, x3_descspa, x3_desceng,
+  x3_picture, x3_valid, x3_usado, x3_relacao, x3_f3, x3_nivel, x3_reserv,
+  x3_browse, x3_visual, x3_context, x3_obrigat,
+  x3_cbox, x3_when, x3_grpsxg, x3_folder, x3_propri, x3_trigger,
+  d_e_l_e_t_
+)
+SELECT
+  'SB1', 'ZA', 'B1_ZNOVO  ',                      -- arquivo, ordem (Z* p/ custom), campo (10 chars padded)
+  'C', 1, 0,                                       -- tipo C, tamanho 1
+  'Novo Cmp  ', 'Novo Cmp  ', 'New Field  ',       -- títulos (12 chars padded - sem acentos)
+  'Descricao do Campo Novo  ',                     -- descric PT (25 chars)
+  'Descripcion Campo Nuevo  ', 'New Field Desc           ',
+  '@!', 'Pertence("FC")',                          -- picture, valid (Pertence valida combo)
+  x3_usado,                                        -- CLONADO do template
+  '', '', 1,
+  x3_reserv,                                       -- CLONADO do template
+  'N', ' ', ' ', '        ',                       -- browse=N, visual/context vazio, obrigat vazio (8 chars)
+  'F=FOB;C=CIF',                                   -- cbox: storage=val, label=val
+  '', '   ', '1',                                  -- when, grpsxg vazio, folder='1'
+  'U', '',                                         -- propri=U (custom), sem trigger
+  ' '
+  FROM sx3xxx
+ WHERE x3_arquivo='SB1' AND x3_campo='B1_FAMILIA' AND d_e_l_e_t_=' ';
+
+-- Fase 3: invalidar cache do dicionário
+-- (o mecanismo depende do ambiente — Configurador faz automaticamente.
+--  Via SQL puro, sinalize a tabela de controle de metadata do DBAccess
+--  conforme a documentação da release; ou reinicie dbaccess + appserver.)
+
+COMMIT;
+```
+
+Depois do COMMIT, **invalidar cache** (restart `dbaccess` + appserver, ou comando equivalente) e validar via REST `dbstruct?alias=SB1` ou em ADVPL com `DbStruct("SB1")` que o campo aparece.
+
+### 15.3 Checklist pré-INSERT em sx3xxx
+
+- [ ] `x3_arquivo` = alias existe em SX2 (`SELECT 1 FROM sx2xxx WHERE x2_chave='SB1'`)
+- [ ] `x3_campo` ≤ 10 chars, padded com espaço (`'B1_ZNOVO  '`)
+- [ ] `x3_ordem` único na tabela (`SELECT MAX(x3_ordem) FROM sx3xxx WHERE x3_arquivo='SB1'`)
+- [ ] Prefixo custom (`Z*` ou `X*`) — evita colisão em upgrade TOTVS
+- [ ] `x3_propri='U'` se custom
+- [ ] `x3_tipo` ∈ {`C`, `N`, `D`, `M`, `L`}
+- [ ] `x3_usado` / `x3_reserv` **CLONADOS** via subselect — não inventar
+- [ ] `x3_browse` ∈ {`S`, `N`, vazio} — **nunca `1`, `0` ou outros**
+- [ ] `x3_visual` ∈ {`A`, `V`, vazio}
+- [ ] `x3_context` ∈ {`R`, `V`, vazio}
+- [ ] `x3_folder` setado se quer aparecer na tela MVC (conferir SXA antes pra usar valor existente)
+- [ ] Se `x3_context='R'`, `ALTER TABLE` físico **antes** do INSERT
+- [ ] `x3_titulo` ≤ 12 chars; `x3_descric` ≤ 25 chars — **sem acentos** (bancos legados costumam ser CP1252; scripts UTF-8 + DB CP1252 = mojibake)
+- [ ] Se combo: `x3_cbox='val=Label;val=Label'` **E** `x3_valid="Pertence('VALS')"` (defesa dupla)
+- [ ] Pós-INSERT: invalidar cache do dicionário antes de testar na tela
+
+### 15.4 Armadilhas frequentes
+
+| Sintoma | Causa | Fix |
+|---|---|---|
+| Campo aparece no `dbstruct` REST mas não na tela | `x3_browse='1'` (ou valor fora de S/N/vazio) | `UPDATE x3_browse='N'` |
+| Campo aparece no `dbstruct` mas tela "Cadastrais" não exibe | `x3_folder` vazio ou referenciando pasta inexistente | `UPDATE x3_folder='1'` (ou folder existente em SXA) |
+| INSERT passou mas tela ignora completamente | `x3_usado` formato inventado (literal `'111…'`) | Clonar de campo similar via SELECT subselect |
+| `x3_obrigat='S'` não força preenchimento | Coluna é bitmap controlado por API; valor `'S'` ignorado | Usar `x3_valid='!Empty(M->CAMPO)'` |
+| Acentos viram `?` ou mojibake no `x3_titulo` | Banco em CP1252 + script em UTF-8 | Manter títulos ASCII puro (sem acentos) |
+| Combo aparece vazio mesmo com `x3_cbox` preenchido | Formato errado (sem `=` ou sem `;`) | Formato literal: `val=Label;val=Label` |
+| Cache de dicionário não atualiza após INSERT | Faltou invalidar o cache do DBAccess | Restart `dbaccess` + appserver, ou usar Configurador |
+
+### 15.5 Validação visual (template de QA)
+
+Compare o campo novo contra um template conhecido — `len_usado` muito menor que ~115 indica INSERT errado:
+
+```sql
+SELECT
+  campo,
+  x3_ordem, x3_folder, x3_browse, x3_visual, x3_context, x3_propri,
+  length(x3_usado)  AS len_usado,    -- esperado entre 113 e 120
+  length(x3_reserv) AS len_reserv,   -- esperado > 0 quando clonado
+  x3_cbox
+FROM (
+  SELECT 'NOVO' AS campo, * FROM sx3xxx
+   WHERE x3_arquivo='SB1' AND x3_campo='B1_ZNOVO   ' AND d_e_l_e_t_=' '
+  UNION ALL
+  SELECT 'TPLT' AS campo, * FROM sx3xxx
+   WHERE x3_arquivo='SB1' AND x3_campo='B1_FAMILIA' AND d_e_l_e_t_=' '
+) t;
+```
+
+Saída deve ter `NOVO` e `TPLT` com mesmos valores em colunas de comportamento (`x3_folder`, `x3_browse`, `x3_visual`, `x3_context`, `x3_propri`, `len_usado`, `len_reserv`), divergindo só em `x3_ordem`, `x3_campo`, `x3_titulo`, `x3_cbox`.
 
 ---
 

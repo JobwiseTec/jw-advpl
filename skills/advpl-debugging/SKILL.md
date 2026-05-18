@@ -186,8 +186,12 @@ SELECT * FROM SX1010 WHERE X1_GRUPO = 'ABCREL01' AND D_E_L_E_T_ = ' '
 
 **Sintoma:** adicionou `A1_XCAMPO` na SX3, mas no AxCadastro/MVC não aparece.
 
-**Causa raiz #1** — `X3_USADO` vazio (precisa de valor binário válido tipo
-`"þþ                  "`).
+**Causa raiz #1** — `X3_USADO` vazio ou com bitmap mal formado. O campo é
+`varchar(120)` indicando módulos do ERP (FAT/EST/FIN/COM/RH/…); precisa do
+formato exato (cada char 0xFE / `þ` em Latin1 = bit setado, espaço = bit zero).
+A partir de v12.1.7 o conteúdo é controlado por API — use `FwPutSX3()` ou
+clone de campo similar via subselect (reproduzir manualmente é frágil).
+**Não é** controle de empresa/filial — pra isso use `X3_CONDSQL`.
 
 **Causa raiz #2** — `X3_ORDEM` igual a outro campo; conflito.
 

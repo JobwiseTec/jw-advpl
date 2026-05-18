@@ -254,7 +254,7 @@ Além dos 21 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-jobs-rpc` | `RpcSetEnv`, `StartJob`, `MsRunInThread`, funções proibidas em job |
 | `advpl-matxfis` | Família fiscal (NF-e, SPED, ECF, REINF, integração SF2/SD2/SF3) |
 | `advpl-advanced` | Threads, IPC, debug, OO em profundidade |
-| `advpl-dicionario-sx` | Estrutura SX1/SX2/SX3/SX5/SX6/SX7/SIX/SXA/SXB (v0.2.0) |
+| `advpl-dicionario-sx` | Estrutura SX1/SX2/SX3/SX5/SX6/SX7/SIX/SXA/SXB + cookbook SQL pra criar campo (clonar bitmap `X3_USADO`, checklist, armadilhas v12.1.7+) (v0.2.0) |
 | `advpl-dicionario-sx-validacoes` | Expressões ADVPL embutidas em X3_VALID/INIT/WHEN/VLDUSER, X7_REGRA, X1_VALID, X6_VALID/INIT — guia pra análise de impacto (v0.3.0) |
 | `advpl-refactoring` | 6 padrões com before/after (DbSeek loop, Posicione repetido, IFs hardcoded, AxCadastro→MVC, string concat em loop, RecLock sem Begin Transaction) — usar quando o pedido for "melhorar"/"refatorar"/"está lento" (v0.3.3) |
 | `advpl-debugging` | Top 30 erros comuns em produção + métodos de debug (ConOut, MemoWrite, FwLogMsg, varInfo) — usar quando o usuário cola traceback do AppServer.log (v0.3.3) |

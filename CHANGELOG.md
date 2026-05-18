@@ -4,6 +4,38 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+Correções factuais nas skills do dicionário SX, validadas contra schema real
+do `sx*xxx` em release atual (varchar/CHAR sizes confirmadas via
+[Terminal de Informação](https://terminaldeinformacao.com/wp-content/tabelas/sx3.php)
+e TDN TOTVS).
+
+- **`advpl-dicionario-sx/reference.md`** — 14 bugs corrigidos:
+  - **SX1**: `X1_PRESEL` é numérico (não CHAR); `X1_GSC` aceita `R` (Range/Radio); `X1_TIPO` aceita `M` (Memo). +5 colunas (`X1_HELP`/`PICTURE`/`GRPSXG`/`IDFIL`/`PYME`).
+  - **SX2**: `X2_PREF` **não existe** — prefixo é derivado de `X2_CHAVE`. `X2_DELET` é NUMERIC (contador), não CHAR. +13 colunas físicas (`X2_MODOUN`/`MODOEMP`/`UNICO`/`DISPLAY`/`MODULO`/`TAMFIL`/`TAMUN`/`TAMEMP`/...).
+  - **SX3**: `X3_USADO` é bitmap `varchar(120)` de **módulos do ERP**, não empresas/filiais (use `X3_CONDSQL` p/ isso). `X3_OBRIGAT` é bitmap `varchar(8)` controlado por API (`"S"` direto via SQL é ignorado em v12.1.7+; use `X3_VALID := "!Empty(M->CAMPO)"`). `X3_TRIGGER` é `varchar(1)`, valor `"S"` ou vazio (não lógico no banco). `X3_GRPSXG` (não `X3_GRUPO`) é a coluna física do grupo SXG. Documentadas funções `X3TreatUso()`/`X3TreatObrigat()`/`X3TreatReserv()`.
+  - **SX6**: `X6_ACTIVE` documentado (parâmetro inativo é silenciosamente ignorado em releases recentes). +`X6_VALID`/`X6_INIT`/`X6_DEFPOR`/`X6_EXPDEST`.
+  - **SX7**: `X7_SEQUENC` com C final (não `X7_SEQUEN`). `X7_CONDIC` única (não `X7_CONDIN` + `X7_CONDOUT` separadas). Tipo `"E"` (Estrangeiro) **não existe** no padrão atual — só `P`/vazio (Primário) e `X` (Posicionamento). `X7_ARQUIVO` não existe — alias é derivado do prefixo de `X7_CAMPO`.
+  - **SX9**: `X9_IDENT` documentado (parte da chave, essencial pra múltiplos laços entre as mesmas tabelas). `X9_ENABLE` documentado (relacionamento desabilitado é ignorado sem warning). +`X9_PROPRI`/`USEFIL`/`CONDSQL`.
+  - **SXA**: campos da SX3 vinculam à pasta via `X3_FOLDER` (casa com `XA_ORDEM`), não `X3_GRUPO`.
+  - **SXB**: tipos `6`/`7`/`8`/`9` mencionados; `XB_WCONTEM` documentado; nota sobre `XB_ALIAS` ser `CHAR(6)` (alias `"ZPROD01"` seria truncado).
+  - **SXG**: colunas reais `XG_SIZE`/`XG_SIZEMAX`/`XG_SIZEMIN` (não `XG_TAMANHO`/`XG_DECIMAL`/`XG_TIPO`). `XG_DESCRI` no banco físico — `XG_DESCRIC` aparece só em CSV export do Configurador (dualidade documentada).
+  - **SIX**: coluna real é `DESCRICAO` (não `DESCR`). +`PROPRI`/`F3`/`NICKNAME`/`IX_VIRTUAL`/`IX_VIRCUST`.
+- **`advpl-dicionario-sx/SKILL.md`** — bloco de campos SX3 reescrito com tipos/tamanhos reais; seção "Customizando campo sem mexer no fonte" reflete bitmap controlado por API; `X7_TIPO` removida menção a tipo `S`/`E` inexistentes.
+- **`advpl-dicionario-sx-validacoes/SKILL.md`** — regra SX-009 reformulada removendo `X3_OBRIGAT='X'` (uppercase incorreto) com disclaimer do bitmap moderno.
+- **`advpl-debugging/SKILL.md`** — "campo não aparece" reformulado: bitmap `varchar(120)`, não 18 chars; menciona `X3_CONDSQL` como local de empresa/filial; aponta `FwPutSX3()`/clonagem como caminho seguro.
+
+### Added
+
+- **`advpl-dicionario-sx/reference.md` §15 — Cookbook SQL pra criar campo customizado**:
+  regra de ouro (clonar `X3_USADO`/`X3_RESERV` via `INSERT...SELECT`, nunca
+  inventar bitmap), workflow 3 fases (`ALTER TABLE` + `INSERT` + invalidar
+  cache), checklist pré-INSERT (15 itens), armadilhas frequentes (7 sintomas →
+  causa → fix), template de QA visual via `UNION ALL` comparando NOVO vs TPLT.
+  Generalizado (sem detalhes de ambiente específico); banner inicial reforça
+  que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
+
 ## [0.8.0] - 2026-05-18
 
 ### 🚀 Fase 1 — `plugadvpl compile` (wrapper TDS-LS)

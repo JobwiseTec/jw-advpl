@@ -81,7 +81,7 @@ GetAdvFVal("SC6", "C6_TOTAL", xFilial("SC6")+SC5->C5_NUM, 1, 0)
 
 ### Anti-padrões
 
-- **Campo obrigatório** (`X3_OBRIGAT='X'`) com INIT vazio (`""`, `Space(N)`, `0`) — usuário sempre vai precisar redigitar. `plugadvpl lint --cross-file --regra SX-009`.
+- **Campo obrigatório** com INIT vazio (`""`, `Space(N)`, `0`) — usuário sempre vai precisar redigitar. `plugadvpl lint --cross-file --regra SX-009`. (Obs: em v12.1.7+ `X3_OBRIGAT` é bitmap controlado por API; clientes normalmente forçam obrigatoriedade via `X3_VALID := "!Empty(M->CAMPO)"`.)
 - **INIT lento em VIRTUAL** — recalcula a cada paint. Cache em variável Static ou use `MemoLine()`.
 
 ## X3_WHEN — Habilitação condicional
