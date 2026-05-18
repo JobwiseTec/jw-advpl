@@ -499,6 +499,25 @@ class TestGrep:
         payload = json.loads(result.stdout)
         assert payload["total"] >= 1
 
+    def test_grep_fts_invalid_syntax_friendly_error(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.4 (BUG #1): padrão FTS5-inválido (com `/`, `(`, etc) NÃO deve
+        crashar com traceback completo — deve mostrar mensagem amigável em
+        stderr com sugestão de modo alternativo.
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(indexed_project), "grep", "//.*MsExecAuto", "-m", "fts"],
+        )
+        # Exit != 0 mas SEM traceback
+        assert result.exit_code != 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "Traceback" not in combined, "esperado mensagem amigável, não traceback"
+        assert "FTS5" in combined or "fts" in combined.lower()
+        # Sugere modo alternativo
+        assert "literal" in combined or "identifier" in combined
+
 
 class TestLint:
     def test_lint_global(

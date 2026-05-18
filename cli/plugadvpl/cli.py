@@ -935,7 +935,24 @@ def grep(
     """Busca textual no conteúdo dos chunks (FTS5 / LIKE / identifier)."""
 
     limit = ctx.obj["limit"] or 50
-    rows = _with_ro_db(ctx, lambda c: grep_fts(c, pattern, mode=mode.value, limit=limit))
+    try:
+        rows = _with_ro_db(ctx, lambda c: grep_fts(c, pattern, mode=mode.value, limit=limit))
+    except sqlite3.OperationalError as exc:
+        # v0.4.4 (BUG #1): FTS5 rejeita caracteres como `/`, `(`, `)`. Antes
+        # propagava traceback completo vazando paths internos. Agora mensagem
+        # amigável + sugestão de modo alternativo.
+        if mode == GrepMode.fts and "fts5" in str(exc).lower():
+            typer.echo(
+                f"Padrão FTS5 inválido: {pattern!r}.\n"
+                f"FTS5 não aceita caracteres como '/', '(', ')', '[', ']'. "
+                f"Operadores válidos: '+', '*', '\"frase\"', 'OR', 'AND', 'NEAR'.\n"
+                f"Alternativas:\n"
+                f"  plugadvpl grep {pattern!r} -m literal      (substring exata via LIKE)\n"
+                f"  plugadvpl grep <termo> -m identifier        (busca por símbolo)",
+                err=True,
+            )
+            raise typer.Exit(code=2) from exc
+        raise
     _render_from_ctx(
         ctx,
         rows,
