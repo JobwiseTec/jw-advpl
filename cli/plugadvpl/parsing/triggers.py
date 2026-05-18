@@ -275,12 +275,13 @@ def _detect_workflow(content: str, stripped: str) -> list[dict[str, Any]]:
             "snippet": _snippet_at(content, linha),
             "metadata": {"is_legacy": True},
         })
-    # WFPrepEnv — geralmente em callback; emite trigger separado pra
-    # mostrar "este fonte é executado em contexto de workflow callback".
+    # WFPrepEnv — geralmente em callback; emite trigger separado.
+    # v0.4.6 (F): kind='wf_callback' (separado de 'workflow' que eh instanciacao).
+    # Antes ambos compartilhavam kind='workflow' e query por kind contava duplicado.
     for m in _WF_PREPENV_RE.finditer(stripped):
         linha = _line_at(stripped, m.start())
         out.append({
-            "kind": "workflow",
+            "kind": "wf_callback",
             "target": "wf_callback",
             "linha": linha,
             "snippet": _snippet_at(content, linha),

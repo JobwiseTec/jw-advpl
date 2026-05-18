@@ -909,7 +909,9 @@ def sx_status(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 # v0.4.0 (Universo 3 Feature A) -----------------------------------------------
 
 
-_EXEC_TRIGGER_KINDS = {"workflow", "schedule", "job_standalone", "mail_send"}
+_EXEC_TRIGGER_KINDS = {
+    "workflow", "wf_callback", "schedule", "job_standalone", "mail_send"
+}  # v0.4.6 (F): wf_callback separado de workflow
 
 
 def execution_triggers_query(

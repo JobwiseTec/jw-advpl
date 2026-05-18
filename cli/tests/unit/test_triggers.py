@@ -43,7 +43,13 @@ class TestWorkflowTrigger:
         assert any(t["metadata"].get("is_legacy") is True for t in wf)
 
     def test_positive_wfprepenv_callback(self) -> None:
-        """WFPrepEnv em callback — emite trigger 'wf_callback'."""
+        """v0.4.6 (F): WFPrepEnv emite kind='wf_callback' separado de 'workflow'.
+
+        Antes ambos eram kind='workflow' e queries por kind contavam duplicado
+        em fontes que tem instanciacao + callback. Agora separacao clara:
+        workflow = TWFProcess/MsWorkflow (instanciacao)
+        wf_callback = WFPrepEnv (recebe retorno aprovacao)
+        """
         src = (
             'User Function WfRetSN(oProc)\n'
             '   WFPrepEnv("01", "0101")\n'
@@ -51,8 +57,13 @@ class TestWorkflowTrigger:
             'Return\n'
         )
         triggers = extract_execution_triggers(src)
+        wf_cb = [t for t in triggers if t["kind"] == "wf_callback"]
+        assert len(wf_cb) >= 1
+        # NAO deve estar em 'workflow' (que eh so instanciacao)
         wf = [t for t in triggers if t["kind"] == "workflow"]
-        assert any(t["target"] == "wf_callback" for t in wf)
+        assert wf == [], (
+            f"WFPrepEnv standalone NAO deveria emitir kind='workflow'. workflow={wf}"
+        )
 
     def test_negative_string_with_twfprocess(self) -> None:
         """TWFProcess em comentario nao deve disparar."""

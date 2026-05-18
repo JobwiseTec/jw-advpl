@@ -126,6 +126,7 @@ class WorkflowKind(StrEnum):
     """Kinds do comando ``workflow`` (Universo 3 Feature A)."""
 
     workflow = "workflow"
+    wf_callback = "wf_callback"  # v0.4.6 (F): WFPrepEnv standalone separado
     schedule = "schedule"
     job_standalone = "job_standalone"
     mail_send = "mail_send"
