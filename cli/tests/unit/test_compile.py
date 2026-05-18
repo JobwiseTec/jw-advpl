@@ -2,6 +2,7 @@
 Subprocess sempre mockado — nada real."""
 from __future__ import annotations
 
+import re as _re
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plugadvpl.compile import CompileRequest, run
+
+_CRED_REGEX = _re.compile(r"(?i)(password|psw|senha|pwd)\s*[:=]\s*\S+")
 
 
 class TestResolveFiles:
@@ -305,6 +308,117 @@ class TestOutputEncoding:
         assert row["counts"]["error"] == 1
         diag = row["diagnostics"][0]
         assert "função" in diag["mensagem"] or "fun" in diag["mensagem"]
+
+
+class TestNoCredentialLeak:
+    """≥5 testes confirmando: regex (?i)(password|psw|senha|pwd)\\s*[:=]\\s*\\S+
+    ausente em stdout/stderr/diagnostic.raw em todos os cenários típicos."""
+
+    def _build_request(self, tmp_path: Path, mode: str = "cli") -> CompileRequest:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        return CompileRequest(
+            files=[foo], mode=mode, no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+
+    def _runtime_cfg(self) -> MagicMock:
+        return MagicMock(
+            tds_ls=MagicMock(binary=Path("/fake/advpls")),
+            appserver=MagicMock(host="127.0.0.1", port=1234, secure=False,
+                                build="x", environment="y"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True, includes=()),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+            warn_remote_host=False, appserver_reachable=True,
+        )
+
+    def _assert_no_leak(self, captured: str, *result_jsons: dict[str, object]) -> None:
+        import json as _json
+        assert _CRED_REGEX.search(captured) is None, f"leak in: {captured[:200]}"
+        for r in result_jsons:
+            text = _json.dumps(r)
+            assert _CRED_REGEX.search(text) is None, f"leak in result: {text[:200]}"
+
+    def test_clean_compile_no_leak(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "secretSauce42")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock(); proc.communicate.return_value = (b"", b""); proc.returncode = 0
+            PopenMock.return_value = proc
+            result = run(self._build_request(tmp_path), self._runtime_cfg(), tmp_path)
+        captured = capsys.readouterr()
+        self._assert_no_leak(captured.err + captured.out, result.summary, *result.rows)
+
+    def test_advpls_echoes_psw_in_stderr_no_leak(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "secretSauce42")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"", b"auth failed: psw=secretSauce42")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            result = run(self._build_request(tmp_path), self._runtime_cfg(), tmp_path)
+        import json as _json
+        result_text = _json.dumps([_json.dumps(r) for r in result.rows])
+        assert "secretSauce42" not in result_text
+
+    def test_advpls_echoes_password_no_leak(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "topSecret")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (
+                b"foo.prw(1) error: failed with PASSWORD=topSecret oops", b""
+            )
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            result = run(self._build_request(tmp_path), self._runtime_cfg(), tmp_path)
+        import json as _json
+        assert "topSecret" not in _json.dumps([_json.dumps(r) for r in result.rows])
+
+    def test_pt_senha_no_leak(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "minhaSenh@")
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"erro: senha=minhaSenh@", b"")
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            result = run(self._build_request(tmp_path), self._runtime_cfg(), tmp_path)
+        import json as _json
+        assert "minhaSenh@" not in _json.dumps([_json.dumps(r) for r in result.rows])
+
+    def test_appre_mode_no_leak(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with patch("plugadvpl.compile.subprocess.Popen") as PopenMock:
+            proc = MagicMock()
+            proc.communicate.return_value = (
+                b"foo.prw(1) error: missing include 'pwd=xyz.ch'", b""
+            )
+            proc.returncode = 1
+            PopenMock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(self._build_request(tmp_path, mode="appre"), None, tmp_path)
+        import json as _json
+        text = _json.dumps([_json.dumps(r) for r in result.rows])
+        assert "pwd=xyz" not in text
+        assert "REDACTED" in text
 
 
 class TestLifecycle:
