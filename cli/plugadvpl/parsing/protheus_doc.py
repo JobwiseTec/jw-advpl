@@ -115,45 +115,9 @@ def infer_module(arquivo: str, funcao: str | None) -> str | None:
 # --- Parser de tags estruturadas ----------------------------------------
 
 
-def _split_top_level_commas(s: str, max_parts: int = -1) -> list[str]:
-    """Split por vírgulas top-level (ignora dentro de aspas e parens)."""
-    parts: list[str] = []
-    depth_paren = depth_brace = depth_bracket = 0
-    in_str: str | None = None
-    last = 0
-    count = 0
-    for i, c in enumerate(s):
-        if in_str:
-            if c == in_str:
-                in_str = None
-            continue
-        if c in ("'", '"'):
-            in_str = c
-        elif c == "(":
-            depth_paren += 1
-        elif c == ")":
-            depth_paren -= 1
-        elif c == "{":
-            depth_brace += 1
-        elif c == "}":
-            depth_brace -= 1
-        elif c == "[":
-            depth_bracket += 1
-        elif c == "]":
-            depth_bracket -= 1
-        elif (
-            c == ","
-            and depth_paren == 0
-            and depth_brace == 0
-            and depth_bracket == 0
-        ):
-            parts.append(s[last:i])
-            last = i + 1
-            count += 1
-            if max_parts > 0 and count >= max_parts - 1:
-                break
-    parts.append(s[last:])
-    return parts
+# v0.4.6 (G): _split_top_level_commas eh importado do parsing._split
+# (eliminado duplicacao com triggers.py/execauto.py).
+from plugadvpl.parsing._split import split_top_level_commas as _split_top_level_commas  # noqa: E402
 
 
 def _strip_quotes(s: str) -> str:

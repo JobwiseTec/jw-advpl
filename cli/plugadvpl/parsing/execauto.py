@@ -20,6 +20,7 @@ import re
 from importlib import resources
 from typing import Any
 
+from plugadvpl.parsing._split import split_top_level_commas as _split_top_level_commas
 from plugadvpl.parsing.stripper import strip_advpl
 
 # `MsExecAuto(` ou `ExecAuto(` (Ms opcional, case-insensitive).
@@ -69,34 +70,8 @@ def _find_balanced_paren(s: str, open_idx: int) -> int:
     return -1
 
 
-def _split_top_level_commas(s: str) -> list[str]:
-    """Split por vírgulas de top-level (ignora dentro de (), {}, [])."""
-    parts: list[str] = []
-    depth_paren = depth_brace = depth_bracket = 0
-    last = 0
-    for i, c in enumerate(s):
-        if c == "(":
-            depth_paren += 1
-        elif c == ")":
-            depth_paren -= 1
-        elif c == "{":
-            depth_brace += 1
-        elif c == "}":
-            depth_brace -= 1
-        elif c == "[":
-            depth_bracket += 1
-        elif c == "]":
-            depth_bracket -= 1
-        elif (
-            c == ","
-            and depth_paren == 0
-            and depth_brace == 0
-            and depth_bracket == 0
-        ):
-            parts.append(s[last:i])
-            last = i + 1
-    parts.append(s[last:])
-    return parts
+# v0.4.6 (G): _split_top_level_commas eh importado do parsing._split
+# (eliminado duplicacao com triggers.py/protheus_doc.py).
 
 
 def _line_at(content: str, offset: int) -> int:
