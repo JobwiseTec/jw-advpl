@@ -4,6 +4,68 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-05-18
+
+### 🚨 Bug crítico pré-existente — `param` perdia params com prefixo custom
+
+Reporter v0.5.3 descobriu (via `trace -t parametro`) que o índice
+`parametros_uso` populava parcialmente: regex hardcoded `MV_\w+` só
+capturava parâmetros TOTVS standard, **perdendo todos os customs** de
+cliente. Bug **pré-existente desde a primeira versão do parser**, só
+exposto agora porque o `trace` declarativamente promete cruzar U1+U2+U3
+e ficou óbvio que U1 vinha vazio.
+
+### Fixed
+- **`_MV_READ_RE` / `_MV_WRITE_RE` aceitam qualquer prefixo de identifier
+  uppercase** ([parser.py:55-75](cli/plugadvpl/parsing/parser.py)).
+  Antes: `MV_\w+` (só TOTVS standard). Agora: `[A-Z][A-Z0-9_]{2,}` —
+  qualquer convenção que cliente usar:
+  - `MV_*` (TOTVS standard)
+  - `ABC_*` (cliente A)
+  - `MFG_*`, `ABC_*`, `XYZ_*`, `Z_*` (qualquer cliente)
+
+  **Impacto medido em corpus real** (amostra 200 fontes):
+  - Antes: 43 params (só `MV_*`)
+  - Depois: 92 params (47 ABC_* + 43 MV_* + 2 MFG_*)
+  - **+114%** params catalogados — quase metade era perdida.
+
+- **Bug #2 do reporter (downstream)**: `trace -t parametro` agora retorna
+  edges U1 (`used_read`/`used_write`) também — só faltava porque
+  `parametros_uso` estava parcial. Auto-resolve após re-ingest.
+
+### Changed (UX)
+- **Help text de `trace --tipo`** atualizado pra listar os 6 valores
+  aceitos com hint do que cada um faz. Antes mencionava só
+  "campo|funcao|tabela" (lista de v0.5.0 — desatualizada desde v0.5.3
+  que adicionou arquivo/parametro/pergunte).
+
+### Não-bug (verificação)
+- **`_PERGUNTE_RE`** já estava OK (aceita `\w+`). Reporter relatou
+  `trace AGRR890 -t pergunte` faltando U1, mas verificação no corpus
+  (`Pergunte("MTR110", ...)`, `Pergunte("DAMDFE", ...)` etc) confirmou
+  que o regex captura corretamente. `AGRR890` específico provavelmente
+  não tem callsite no codebase.
+
+### Tests
+- **+3 testes unit** (`test_parser.py::TestExtractParams`):
+  - `test_custom_prefix_abc` (3 variantes ABC_*)
+  - `test_custom_prefix_z_and_short` (ZX_FOO)
+  - `test_putmv_custom_prefix` (PutMV com prefix custom)
+- **540 testes verde** (era 537).
+
+### Recomendação pro usuário
+**Re-ingest necessário** pra colher os params que estavam perdidos:
+```
+plugadvpl ingest --no-incremental
+plugadvpl param ABC_GFE83F   # deve retornar >= 1 hit agora
+plugadvpl trace MV_RELT      # U1 com used_read/used_write
+```
+
+### Notes
+- Bug aberto desde v0.1.x — só foi pego graças ao `trace` agregador
+  expor a lacuna. Padrão a manter: features que cruzam universos
+  acabam expondo gaps de cobertura nos índices individuais.
+
 ## [0.5.3] - 2026-05-18
 
 ### 🔌 Trace estendido — +3 tipos de entidade (Universo 4 Feature A.2)

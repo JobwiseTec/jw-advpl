@@ -1647,7 +1647,11 @@ def trace(
         typer.Option(
             "--tipo",
             "-t",
-            help="Força tipo (campo|funcao|tabela). Default: auto-detect por regex.",
+            help=(
+                "Força tipo de entidade. Aceita: campo, funcao, tabela, "
+                "arquivo (.prw/.tlpp), parametro (MV_*/ABC_*/etc), pergunte "
+                "(SX1). Default: auto-detect."
+            ),
             case_sensitive=False,
         ),
     ] = None,
