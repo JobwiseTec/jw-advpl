@@ -1699,7 +1699,12 @@ def trace(
             universos=universos, max_per_edge=max_per_edge,
         ),
     )
-    tipo_detected = tipo_str or _detect_entity_type(entidade)
+    # v0.5.1 (#2): para display, usa lookup-first também (mesma classificação
+    # que trace_query usou internamente).
+    if tipo_str:
+        tipo_detected = tipo_str
+    else:
+        tipo_detected = _with_ro_db(ctx, lambda c: _detect_entity_type_db(c, entidade))
     title_parts = [f"Trace de '{entidade}' (tipo={tipo_detected})"]
     if universos:
         title_parts.append(f"universos={','.join(map(str, universos))}")
@@ -1734,8 +1739,8 @@ def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
     return []
 
 
-# Import lazy do _detect_entity_type (declarado em query.py).
-from plugadvpl.query import _detect_entity_type  # noqa: E402
+# Import lazy do _detect_entity_type / _detect_entity_type_db (declarados em query.py).
+from plugadvpl.query import _detect_entity_type, _detect_entity_type_db  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

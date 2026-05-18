@@ -31,3 +31,33 @@ class TestAutoDetect:
         """4+ chars uppercase (rotinas TOTVS) NÃO viram tabela."""
         assert _detect_entity_type("FINA050") == "funcao"
         assert _detect_entity_type("MATA410") == "funcao"
+
+    def test_campo_3_chars_before_underscore(self) -> None:
+        """v0.5.1 (#1): campos com 3 chars antes do '_' (módulos Comex/GFE).
+
+        Antes: regex exigia exatamente 2 chars. Falha em EE7_ZSUBEX,
+        DAI_NFISCA, EEC_PREEMB.
+        """
+        assert _detect_entity_type("EE7_ZSUBEX") == "campo"
+        assert _detect_entity_type("DAI_NFISCA") == "campo"
+        assert _detect_entity_type("EEC_PREEMB") == "campo"
+        assert _detect_entity_type("GV4_XMEMB") == "campo"
+        # 2 chars continua casando
+        assert _detect_entity_type("A1_COD") == "campo"
+
+    def test_tabela_modulos_non_standard_via_fallback_regex(self) -> None:
+        """v0.5.1 (#2 fallback): regex aceita prefixo ampliado quando
+        entidade não está no índice (sem lookup-first DB).
+
+        EE7/DA3/GV4/EEC/CCH/C09 são tabelas TOTVS válidas mas começam
+        com letras diferentes de [SZNQD]. Regex relaxado pra 3 chars
+        ASCII uppercase quando primeiro char é letra.
+        """
+        # Sem conn, é só regex fallback — esses devem virar 'tabela'
+        # quando passados sem outras pistas:
+        assert _detect_entity_type("EE7") == "tabela"
+        assert _detect_entity_type("DA3") == "tabela"
+        assert _detect_entity_type("DAI") == "tabela"
+        assert _detect_entity_type("GV4") == "tabela"
+        assert _detect_entity_type("EEC") == "tabela"
+        assert _detect_entity_type("CCH") == "tabela"

@@ -1449,28 +1449,85 @@ def render_pdoc_markdown(d: dict[str, Any]) -> str:
 # v0.5.0 — Universo 4 / Feature A: trace unificado
 # ---------------------------------------------------------------------------
 
-# Padrão TOTVS de tabela: 3 chars, [SZNQD]+letra+alfanum (SA1, SC5, ZA1, ND0).
-_TABLE_RE = re.compile(r"^[SZNQD][A-Z][A-Z0-9]$", re.IGNORECASE)
-# Padrão de campo SX3: <letra><digit>_<nome>, ex.: A1_COD, C5_NUM, F2_DOC.
-_CAMPO_RE = re.compile(r"^[A-Z]\d_[A-Z0-9_]+$", re.IGNORECASE)
+# v0.5.1 (#2 fallback): regex de tabela ampliado pra cobrir todos os módulos
+# Protheus (Comex EE*, GFE DA*/DAI/GV4, custom Z*, auxiliares CCH/C09, etc.).
+# Antes [SZNQD] hardcoded perdia ~30 prefixos válidos. Agora: 3 chars uppercase,
+# letra inicial + 2 alfanum. Conn-based lookup (em _detect_entity_type_db) tem
+# precedência quando disponível.
+_TABLE_RE = re.compile(r"^[A-Z][A-Z0-9]{2}$", re.IGNORECASE)
+# v0.5.1 (#1): regex de campo aceita 2 OU 3 chars antes do `_`.
+# Antes `[A-Z]\d_...` forçava letra+dígito (só 2 chars). Agora aceita
+# `EE7_ZSUBEX`/`DAI_NFISCA` (3 chars: letra + 2 alfanum).
+_CAMPO_RE = re.compile(r"^[A-Z][A-Z0-9]{1,2}_[A-Z0-9_]+$", re.IGNORECASE)
 
 
 def _detect_entity_type(value: str) -> str:
-    """Auto-detect tipo de entidade pra ``trace_query`` (v0.5.0).
+    """Auto-detect tipo de entidade pra ``trace_query`` (v0.5.0+).
 
-    Heurística por regex:
-      - 3 chars no padrão TOTVS (``SA1``/``ZA1``/``ND0``) → ``tabela``
-      - ``<letra><digit>_<nome>`` (``A1_COD``) → ``campo``
+    Heurística por regex (fallback quando não há lookup no DB):
+      - ``<letra>+<1-2 alfanum>_<nome>`` (``A1_COD``, ``EE7_ZSUBEX``) → ``campo``
+        — checado PRIMEIRO porque tabela tem regex mais permissivo agora
+      - 3 chars uppercase (``SA1``/``EE7``/``DAI``/``GV4``) → ``tabela``
       - Fallback: ``funcao``
 
-    Usuario pode forçar tipo via ``--tipo`` no CLI quando a heurística erra
-    (ex.: variável `SA1` na verdade é nome de função custom).
+    Use :func:`_detect_entity_type_db` quando ``conn`` disponível — lookup
+    direto no índice é mais robusto que regex pra entidades específicas
+    do codebase do cliente.
+
+    Override via ``--tipo`` no CLI quando heurística erra.
     """
-    if _TABLE_RE.match(value):
-        return "tabela"
     if _CAMPO_RE.match(value):
         return "campo"
+    if _TABLE_RE.match(value):
+        return "tabela"
     return "funcao"
+
+
+def _detect_entity_type_db(
+    conn: sqlite3.Connection, value: str
+) -> str:
+    """v0.5.1 (#2): auto-detect com lookup no índice (preferido sobre regex).
+
+    Estratégia:
+      1. ``tabelas.codigo`` (SX2 ingerido) → ``tabela``
+      2. ``fonte_chunks.funcao_norm`` (funções indexadas) → ``funcao``
+      3. ``campos.campo`` (SX3 ingerido) → ``campo``
+      4. ``fonte_tabela.tabela`` (tabela referenciada em fonte) → ``tabela``
+      5. Fallback: regex (:func:`_detect_entity_type`)
+
+    Vantagens vs regex puro:
+      - Sem falso-positivo: classifica como tabela só se existir no índice
+      - Auto-adapta a tabelas custom do cliente (sem regex hardcoded)
+      - Cobre tabelas TOTVS de qualquer módulo (EE*/DA*/GV*/etc) sem manter lista
+    """
+    value_u = value.upper()
+    # 1. SX2 indexado
+    row = conn.execute(
+        "SELECT 1 FROM tabelas WHERE upper(codigo) = ? LIMIT 1", (value_u,)
+    ).fetchone()
+    if row:
+        return "tabela"
+    # 2. Função indexada
+    funcao_norm = value_u.removeprefix("U_")
+    row = conn.execute(
+        "SELECT 1 FROM fonte_chunks WHERE funcao_norm = ? LIMIT 1", (funcao_norm,)
+    ).fetchone()
+    if row:
+        return "funcao"
+    # 3. Campo SX3 indexado
+    row = conn.execute(
+        "SELECT 1 FROM campos WHERE upper(campo) = ? LIMIT 1", (value_u,)
+    ).fetchone()
+    if row:
+        return "campo"
+    # 4. Tabela referenciada em fonte (sem registro SX)
+    row = conn.execute(
+        "SELECT 1 FROM fonte_tabela WHERE upper(tabela) = ? LIMIT 1", (value_u,)
+    ).fetchone()
+    if row:
+        return "tabela"
+    # 5. Fallback: regex
+    return _detect_entity_type(value)
 
 
 def _trace_hit(
@@ -1883,7 +1940,9 @@ def trace_query(
     """
     depth = max(1, min(depth, 3))
     if tipo is None:
-        tipo = _detect_entity_type(entidade)
+        # v0.5.1 (#2): lookup-first detect (DB > regex) — pega tabelas custom
+        # e prefixos não-standard (EE*/DA*/GV*/etc) sem falso positivo.
+        tipo = _detect_entity_type_db(conn, entidade)
 
     if tipo == "campo":
         hits = _trace_campo(conn, entidade, depth=depth, max_per_edge=max_per_edge)
