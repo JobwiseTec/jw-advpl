@@ -4,6 +4,76 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-18
+
+### 🛡️ QA pack — fecha 2 bugs médios + 2 UX reportados em uso real
+
+Usuário em produção (~2k fontes ADVPL, encoding cp1252) reportou 4 issues
+com repro confirmado contra v0.4.3. Esta release corrige todos os 4 em
+commits atômicos com TDD red→green.
+
+### Fixed
+- **BUG #1 — `grep` com padrão FTS5-inválido crashava com traceback**
+  ([commit 2fde446](https://github.com/JoniPraia/plugadvpl/commit/2fde446)).
+  Antes: `plugadvpl grep '//.*MsExecAuto' -m fts` propagava
+  `OperationalError` cru → Typer/Rich imprimia traceback de ~30 linhas
+  com paths internos vazando estrutura do plugin. Agora: catch
+  `sqlite3.OperationalError` no comando `grep` quando `mode==fts` + mensagem
+  amigável em stderr com sugestão de modo alternativo (`literal`/`identifier`).
+  Operadores FTS5 válidos (`+`, `*`, `"frase"`, `OR`, `AND`, `NEAR`)
+  continuam funcionando. Bug aberto desde v0.4.0.
+
+- **BUG #2 — `docs --funcao`/`--show` falhava em WSSTRUCT/WSSERVICE/WSRESTFUL/WSMETHOD**
+  ([commit b936616](https://github.com/JoniPraia/plugadvpl/commit/b936616)).
+  Antes: `_NEXT_DECL_RE` só matchava `Function name(` e `Method name(`.
+  Construtos de Web Service (sem parens) ficavam órfãos → coluna `funcao`
+  ficava NULL → `--funcao <nome>` e `--show <nome>` retornavam vazio
+  mesmo o doc estando indexado. Fix duplo:
+  1. Regex estendida com grupo capturando `WS(STRUCT|SERVICE|RESTFUL|METHOD)`
+  2. `protheus_docs_query`/`protheus_doc_show`/`protheus_doc_homonyms` agora
+     matcham via `funcao OR funcao_id` — cobre DBs antigos sem reingest e
+     blocos órfãos.
+  4 testes unit + 1 integration end-to-end. Bug novo na v0.4.3
+  (comando `docs` foi adicionado nessa versão).
+
+### Changed (UX)
+- **UX #3 — sugestão genérica de reingest em todo resultado vazio**
+  ([commit 84149b4](https://github.com/JoniPraia/plugadvpl/commit/84149b4)).
+  Antes: `workflow`/`execauto`/`docs` sempre sugeriam
+  `plugadvpl ingest --no-incremental` quando retorno era vazio — mesmo quando
+  o filtro com valor inexistente era a causa (não a tabela vazia). Usuário
+  podia re-rodar ingest caro de 2k+ fontes sem necessidade. Agora: helper
+  `_empty_result_hints(filters_applied, ...)` diferencia 2 cenários:
+  1. filtro aplicado + vazio → sugere verificar argumentos (`find`/`status`)
+  2. sem filtro + tabela vazia → sugere reingest
+
+- **UX #4 — filtros enumeráveis inválidos retornavam vazio silenciosamente**
+  ([commit 8550796](https://github.com/JoniPraia/plugadvpl/commit/8550796)).
+  Antes: `execauto --op invalida` e `workflow -k tipoinexistente` retornavam
+  vazio sem aviso. Agora: 2 Enums novos (`WorkflowKind`, `ExecAutoOp`) com
+  `case_sensitive=False` — Typer rejeita valores fora do enum antes de chegar
+  na query, com mensagem clara listando opções válidas.
+
+### Tests
+- **+8 testes novos** (1 integration pra cada fix + 4 unit pra cobertura
+  WSSTRUCT/WSSERVICE/WSRESTFUL/WSMETHOD):
+  - `TestGrep::test_grep_fts_invalid_syntax_friendly_error`
+  - `TestDocs::test_docs_show_ws_constructs_end_to_end`
+  - `TestExecauto::test_execauto_empty_with_filter_does_not_suggest_ingest`
+  - `TestExecauto::test_execauto_rejects_invalid_op`
+  - `TestWorkflow::test_workflow_rejects_invalid_kind`
+  - `TestFunctionResolution::test_funcao_resolved_for_wsstruct` (+ wsservice/wsrestful/wsmethod)
+- **498 testes verde** (era 489).
+
+### Notes
+- **Sem schema migration** — fix do BUG #2 inclui fallback na query (matcha
+  `funcao OR funcao_id`), permitindo que DBs antigos funcionem sem reingest.
+  Novos ingests via v0.4.4+ populam `funcao` corretamente pra WS constructs.
+- **Padrão a manter**: code review pós-feature + dogfooding com usuário real
+  + commits atômicos com TDD por fix continuam pegando bugs que tests sintéticos
+  não viam (caso WS constructs reportado por usuário em produção).
+- **Próximo grande tema**: pivot pra Universo 4 (a definir).
+
 ## [0.4.3] - 2026-05-15
 
 ### 🛡️ Polish pack — fecha 5 críticos + 4 importantes do code review pós-Universo 3
