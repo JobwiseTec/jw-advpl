@@ -4,6 +4,70 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-18
+
+### 🎯 `trace` polish — 5 itens reportados em uso real
+
+Reporter testou `trace` em corpus real do Cliente X e identificou bugs/UX
+gaps. v0.5.1 fecha **5 dos 6** itens (defer apenas decisão de design do #4).
+
+### Fixed
+- **#1 — Auto-detect de campo aceita 3 chars antes do `_`**
+  ([commit 6ddfd1e](https://github.com/JoniPraia/plugadvpl/commit/6ddfd1e)).
+  Antes regex `^[A-Z]\d_...` exigia exatamente 2 chars (letra+dígito),
+  perdendo campos de módulos Comex/GFE/custom (`EE7_ZSUBEX`, `DAI_NFISCA`,
+  `EEC_PREEMB`, `GV4_XMEMB`). Agora `^[A-Z][A-Z0-9]{1,2}_...` aceita 2 ou 3.
+- **#2 — Auto-detect de tabela cobre prefixos não-standard**
+  (mesmo commit). Antes `[SZNQD]` hardcoded perdia Comex `EE*`, GFE `DA*`/
+  `DAI`/`GV4`, auxiliares `CCH`/`C09`. Solução híbrida:
+  1. **Lookup-first**: `_detect_entity_type_db` consulta `tabelas`/
+     `fonte_chunks`/`campos`/`fonte_tabela` no índice (preferido quando
+     conn disponível — sem falso-positivo, auto-adapta a tabelas custom)
+  2. **Regex fallback** ampliado pra `[A-Z][A-Z0-9]{2}` (3 chars qualquer
+     letra) — cobre entidades não-indexadas ainda
+- **#6 — `defined_in.alvo` agora é nome do símbolo, não arquivo**
+  ([commit 5afbedf](https://github.com/JoniPraia/plugadvpl/commit/5afbedf)).
+  Antes `alvo == arquivo` (redundante com a coluna `arquivo`). Agora `alvo`
+  carrega o nome da função definida, consistente com outras edges. Bonus:
+  lookup mais robusto via variantes com/sem `U_` prefix (corrige
+  inconsistência entre schema doc e dados reais em `fonte_chunks.funcao_norm`).
+
+### Changed (UX)
+- **#3 — Hint inteligente quando trace retorna vazio**
+  ([commit dc614c7](https://github.com/JoniPraia/plugadvpl/commit/dc614c7)).
+  Antes sempre sugeria `plugadvpl ingest --no-incremental`. Em índice
+  populado (caso comum), isso induzia reingest caro de 2k+ fontes pra um
+  típo. Agora `_trace_empty_hints` checa `COUNT(*) FROM fontes`:
+  - Populado → sugere `find`/`grep -m identifier` (provável typo)
+  - Vazio → mantém sugestão de reingest
+- **#5 — Sort priority puxa edges informativos pro topo**
+  ([commit 514ada3](https://github.com/JoniPraia/plugadvpl/commit/514ada3)).
+  Antes `trace SC5 -t tabela` retornava 128 rows e `table_definition`
+  (descrição oficial SX2) aparecia na **última** row. Agora `_EDGE_PRIORITY`:
+  - Priority 0: `table_definition`, `field_definition`
+  - Priority 1: `n_fields`, `defined_in`
+  - Priority 50 (default): demais edges
+  Sort: `(universo, edge_priority, edge_name, arquivo, linha)`.
+
+### Tests
+- **+9 testes novos**:
+  - `test_trace.py::TestAutoDetect`: +2 (campo 3-char, tabela non-standard)
+  - `test_trace.py::TestSortPriority`: +4 (table/field/n_fields/universo order)
+  - `test_cli.py::TestTrace`: +3 (typo-vs-reingest, defined_in alvo, table_definition order)
+- **531 testes verde** (era 522).
+
+### Deferred (defer pra release dot futura)
+- **#4 — `contexto` como dict estruturado em JSON** (mantém string em table).
+  Decisão de design — pode quebrar compat de consumidores JSON. Avaliar em
+  v0.5.2+ com mais feedback do reporter.
+
+### Notes
+- **Estado pós-v0.5.1 no corpus do reporter**: bugs #1 e #2 zerados — `trace EE7`
+  e `trace EE7_ZSUBEX` agora funcionam sem precisar de `--tipo` explícito.
+  Hint de typo (#3) já não induz reingest. `table_definition` no topo (#5)
+  melhora UX de leitura humana. `defined_in.alvo` (#6) consistente com
+  outras edges.
+
 ## [0.5.0] - 2026-05-18
 
 ### 🚀 Universo 4 — Trace Unificado (Feature A)

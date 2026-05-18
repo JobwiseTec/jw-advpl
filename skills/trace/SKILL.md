@@ -57,7 +57,7 @@ Override: `--tipo campo` (ou `funcao`/`tabela`) força quando a heurística erra
 ## Execução
 
 ```bash
-uvx plugadvpl@0.5.0 --format md trace $ARGUMENTS
+uvx plugadvpl@0.5.1 --format md trace $ARGUMENTS
 ```
 
 ## Saída — schema unificado
