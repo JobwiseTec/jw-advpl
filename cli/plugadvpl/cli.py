@@ -1302,6 +1302,14 @@ def execauto(
             help="--dynamic só não-resolvíveis; --no-dynamic só resolvidas; default: ambos.",
         ),
     ] = None,
+    op_dynamic: Annotated[
+        bool | None,
+        typer.Option(
+            "--op-dynamic/--no-op-dynamic",
+            help="v0.4.6 (C): --op-dynamic só calls com op_code via variável/expressão; "
+            "--no-op-dynamic só com literal; default: ambos.",
+        ),
+    ] = None,
 ) -> None:
     """Lista chamadas MsExecAuto resolvidas (Universo 3 / Feature B).
 
@@ -1316,7 +1324,8 @@ def execauto(
     rows = _with_ro_db(
         ctx,
         lambda c: execauto_calls_query(
-            c, routine=routine, modulo=modulo, arquivo=arquivo, op=op, dynamic=dynamic,
+            c, routine=routine, modulo=modulo, arquivo=arquivo, op=op,
+            dynamic=dynamic, op_dynamic=op_dynamic,
         ),
     )
     display_rows = [
@@ -1326,7 +1335,7 @@ def execauto(
             "linha": r["linha"],
             "routine": r["routine"] or "(dynamic)",
             "module": r["module"] or "",
-            "op": r["op_label"] or (str(r["op_code"]) if r["op_code"] is not None else ""),
+            "op": r["op_label"] or (str(r["op_code"]) if r["op_code"] is not None else ("(var)" if r["op_dynamic"] else "")),
             "tabelas": ",".join(r["tables_resolved"]),
             "snippet": (r["snippet"] or "")[:80],
         }

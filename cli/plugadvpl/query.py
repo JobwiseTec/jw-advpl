@@ -980,6 +980,7 @@ def execauto_calls_query(
     arquivo: str | None = None,
     op: str | None = None,
     dynamic: bool | None = None,
+    op_dynamic: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Lista chamadas MsExecAuto resolvidas (Universo 3 Feature B).
 
@@ -990,6 +991,8 @@ def execauto_calls_query(
         arquivo: filtra por arquivo (basename).
         op: filtra por operação (`inc`/`alt`/`exc` ou full `inclusao`/...).
         dynamic: True = só dynamic_call, False = só resolved, None = ambos.
+        op_dynamic: v0.4.6 (C) — True = só calls com op_code via variável
+            ou expressão (não literal); False = só com literal; None = ambos.
 
     Returns:
         Lista de dicts com campos do schema `execauto_calls` + `tables_resolved`
@@ -997,7 +1000,8 @@ def execauto_calls_query(
     """
     sql = (
         "SELECT arquivo, funcao, linha, routine, module, routine_type, "
-        "op_code, op_label, tables_resolved_json, dynamic_call, arg_count, snippet "
+        "op_code, op_label, tables_resolved_json, dynamic_call, arg_count, snippet, "
+        "op_dynamic "
         "FROM execauto_calls"
     )
     where: list[str] = []
@@ -1020,13 +1024,16 @@ def execauto_calls_query(
     if dynamic is not None:
         where.append("dynamic_call = ?")
         params.append(1 if dynamic else 0)
+    if op_dynamic is not None:
+        where.append("op_dynamic = ?")
+        params.append(1 if op_dynamic else 0)
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY arquivo, linha"
     rows = conn.execute(sql, params).fetchall()
     out: list[dict[str, Any]] = []
     for (
-        arq, fn, ln, rt, mod, rtype, opc, oplbl, tjson, dyn, argc, snippet
+        arq, fn, ln, rt, mod, rtype, opc, oplbl, tjson, dyn, argc, snippet, opdyn
     ) in rows:
         from plugadvpl.parsing.execauto import parse_tables
         out.append({
@@ -1040,6 +1047,7 @@ def execauto_calls_query(
             "op_label": oplbl,
             "tables_resolved": parse_tables(tjson),
             "dynamic_call": bool(dyn),
+            "op_dynamic": bool(opdyn),
             "arg_count": argc,
             "snippet": snippet or "",
         })

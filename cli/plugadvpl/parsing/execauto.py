@@ -183,6 +183,11 @@ def extract_execauto_calls(content: str) -> list[dict[str, Any]]:
                 op_code = int(mn.group(1))
                 break
         op_label = _OP_LABELS.get(op_code) if op_code is not None else None
+        # v0.4.6 (C): op_dynamic distingue "sem args" de "op via variavel/
+        # expressao". True = ha args mas nenhum eh literal numerico.
+        op_dynamic = op_code is None and any(
+            arg.strip() for arg in parts[1:]
+        )
 
         linha = _line_at(content, m.start())
         snippet = _snippet_at(content, m.start())
@@ -195,6 +200,7 @@ def extract_execauto_calls(content: str) -> list[dict[str, Any]]:
                 "routine_type": routine_type,
                 "op_code": op_code,
                 "op_label": op_label,
+                "op_dynamic": op_dynamic,
                 "tables_resolved": tables_resolved,
                 "dynamic_call": dynamic,
                 "arg_count": arg_count,

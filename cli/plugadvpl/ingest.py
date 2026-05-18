@@ -636,14 +636,15 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
                 1 if c.get("dynamic_call") else 0,
                 c.get("arg_count"),
                 (c.get("snippet", "") or "")[:500],
+                1 if c.get("op_dynamic") else 0,  # v0.4.6 (C)
             ))
         conn.executemany(
             """
             INSERT INTO execauto_calls (
                 arquivo, funcao, linha, routine, module, routine_type,
                 op_code, op_label, tables_resolved_json, dynamic_call,
-                arg_count, snippet
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                arg_count, snippet, op_dynamic
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             execauto_rows,
         )

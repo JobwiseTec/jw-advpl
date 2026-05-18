@@ -136,6 +136,33 @@ class TestOpCodeDetection:
         c = extract_execauto_calls(src)[0]
         assert c["op_code"] is None
         assert c["op_label"] is None
+        # v0.4.6 (C): sem args = nao eh dynamic, eh ausente
+        assert c["op_dynamic"] is False
+
+    def test_op_dynamic_variable(self) -> None:
+        """v0.4.6 (C): op_code via variavel (`nOpc`) marca op_dynamic=True.
+
+        Antes: ficava op_code=None silenciosamente, indistinguivel de
+        'sem args'. Filtro --op nao pegava esses casos.
+        """
+        src = 'MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, nOpc)\n'
+        c = extract_execauto_calls(src)[0]
+        assert c["op_code"] is None
+        assert c["op_dynamic"] is True
+
+    def test_op_dynamic_expression(self) -> None:
+        """op_code via expressao tambem eh dynamic."""
+        src = 'MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, 3+nVar)\n'
+        c = extract_execauto_calls(src)[0]
+        assert c["op_code"] is None
+        assert c["op_dynamic"] is True
+
+    def test_op_literal_not_dynamic(self) -> None:
+        """op_code literal — op_dynamic=False (e op_code preenchido)."""
+        src = 'MsExecAuto({|x,y,z| MATA410(x,y,z)}, a, b, 3)\n'
+        c = extract_execauto_calls(src)[0]
+        assert c["op_code"] == 3
+        assert c["op_dynamic"] is False
 
 
 # --- Dynamic / nao-resolvivel ---------------------------------------------
