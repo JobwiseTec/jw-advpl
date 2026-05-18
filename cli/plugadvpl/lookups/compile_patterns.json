@@ -1,0 +1,37 @@
+[
+  {
+    "id": "advpls_en_paren_loc",
+    "lang": "en",
+    "pattern": "^(?P<arquivo>[^\\s()]+)\\((?P<linha>\\d+)(?:,(?P<coluna>\\d+))?\\)\\s+(?P<severidade>error|warning|info):\\s*(?P<mensagem>.+)$",
+    "severidade_group": "severidade",
+    "ordem": 10
+  },
+  {
+    "id": "advpls_pt_paren_loc",
+    "lang": "pt-BR",
+    "pattern": "^(?P<arquivo>[^\\s()]+)\\((?P<linha>\\d+)(?:,(?P<coluna>\\d+))?\\)\\s+(?P<severidade>erro|aviso|info):\\s*(?P<mensagem>.+)$",
+    "severidade_group": "severidade",
+    "ordem": 11
+  },
+  {
+    "id": "tdscli_pt_erro_ao_compilar",
+    "lang": "pt-BR",
+    "pattern": "^Erro\\s+ao\\s+compilar\\s+(?P<arquivo>\\S+):\\s*linha\\s+(?P<linha>\\d+)\\s*-\\s*(?P<mensagem>.+)$",
+    "severidade_fixed": "error",
+    "ordem": 20
+  },
+  {
+    "id": "tdscli_pt_aviso",
+    "lang": "pt-BR",
+    "pattern": "^Aviso\\s+em\\s+(?P<arquivo>\\S+):\\s*linha\\s+(?P<linha>\\d+)\\s*-\\s*(?P<mensagem>.+)$",
+    "severidade_fixed": "warning",
+    "ordem": 21
+  },
+  {
+    "id": "appre_include_not_found",
+    "lang": "any",
+    "pattern": "^Include\\s+['\"](?P<mensagem>[^'\"]+)['\"]\\s+not\\s+found\\s+in\\s+(?P<arquivo>\\S+)(?::(?P<linha>\\d+))?$",
+    "severidade_fixed": "error",
+    "ordem": 30
+  }
+]
