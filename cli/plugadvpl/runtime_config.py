@@ -76,7 +76,10 @@ def load(root: Path) -> RuntimeConfig | None:
         RuntimeConfigError: TOML malformado, campo obrigatório ausente, env var
             não setada, binary inexistente, etc.
     """
-    raise NotImplementedError("será implementado nos próximos steps")
+    toml_path = root / ".plugadvpl" / "runtime.toml"
+    if not toml_path.is_file():
+        return None
+    raise NotImplementedError("parse será no próximo step")
 
 
 def render_template() -> str:

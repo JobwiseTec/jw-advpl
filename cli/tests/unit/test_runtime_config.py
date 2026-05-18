@@ -70,3 +70,9 @@ show_console_output = true
     toml_path = cfg_dir / "runtime.toml"
     toml_path.write_text(content, encoding="utf-8")
     return toml_path
+
+
+class TestLoadAbsent:
+    def test_returns_none_when_toml_missing(self, tmp_path: Path) -> None:
+        """Sem runtime.toml → None (sem exceção). Modo appre funciona assim."""
+        assert load(tmp_path) is None
