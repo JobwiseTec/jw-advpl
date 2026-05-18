@@ -1608,6 +1608,95 @@ def _check_perf005_reccount_for_existence(
     return findings
 
 
+# --- v0.7.0 Fase 0: XF-001 cross-file ---------------------------------------
+
+# MsSeek/DbSeek(xFilial("XX") + ...) — captura grupo 1 = nome da tabela.
+_XF001_SEEK_XFILIAL_RE = re.compile(
+    r"\b(?:Ms|Db)Seek\s*\(\s*xFilial\s*\(\s*['\"](\w{2,7})['\"]",
+    re.IGNORECASE,
+)
+# Marcadores de ambiente preparado: RpcSetEnv ou PREPARE ENVIRONMENT.
+_XF001_RPCSETENV_RE = re.compile(r"\bRpcSetEnv\s*\(", re.IGNORECASE)
+_XF001_PREPARE_ENV_RE = re.compile(r"\bPREPARE\s+ENVIRONMENT\b", re.IGNORECASE)
+# Marcadores REST/JOB no content do chunk.
+_XF001_WSRESTFUL_HINT_RE = re.compile(r"\bWSRESTFUL\b|\bWSMETHOD\b", re.IGNORECASE)
+_XF001_JOB_HINT_RE = re.compile(r"\bStartJob\b|\bTHREAD\s+WAIT\b", re.IGNORECASE)
+
+
+def _check_xf001_xfilial_exclusiva_rest(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    """XF-001 (error): MsSeek/DbSeek(xFilial("XX")) em tabela x2_modo='E' dentro de
+    WSRESTFUL/JOB sem RpcSetEnv/PREPARE ENVIRONMENT precedente no mesmo escopo.
+
+    Em REST/JOB iniciado sem ambiente preparado, `cFilAnt` esta vazia → xFilial
+    retorna "" para tabela exclusiva → MsSeek localiza primeiro registro de
+    qualquer filial. Bug silencioso e critico.
+
+    Heuristica de contexto REST/JOB:
+      - tipo_simbolo == 'ws_method' (parser ja marca WSMETHOD assim), OU
+      - content contem WSRESTFUL/WSMETHOD/StartJob/THREAD WAIT.
+    """
+    # Set de tabelas exclusivas.
+    rows = conn.execute("SELECT codigo FROM tabelas WHERE modo = 'E'").fetchall()
+    exclusive_tabs = {(r[0] or "").upper() for r in rows}
+    if not exclusive_tabs:
+        return []
+
+    findings: list[dict[str, Any]] = []
+    chunks = conn.execute(
+        """
+        SELECT arquivo, funcao, tipo_simbolo, linha_inicio, content
+        FROM fonte_chunks
+        WHERE content IS NOT NULL AND content != ''
+        """
+    ).fetchall()
+
+    for arquivo, funcao, tipo_simbolo, linha_inicio, content in chunks:
+        if not content:
+            continue
+        # Contexto REST/JOB?
+        is_rest = (tipo_simbolo or "") == "ws_method"
+        if not is_rest:
+            if not (
+                _XF001_WSRESTFUL_HINT_RE.search(content)
+                or _XF001_JOB_HINT_RE.search(content)
+            ):
+                continue
+
+        for m in _XF001_SEEK_XFILIAL_RE.finditer(content):
+            tab = m.group(1).upper()
+            if tab not in exclusive_tabs:
+                continue
+            # Ha RpcSetEnv/PREPARE ENVIRONMENT antes desta posicao?
+            before = content[: m.start()]
+            if _XF001_RPCSETENV_RE.search(before) or _XF001_PREPARE_ENV_RE.search(before):
+                continue
+            offset_line = content.count("\n", 0, m.start())
+            linha = int(linha_inicio or 1) + offset_line
+            findings.append(
+                {
+                    "arquivo": arquivo,
+                    "funcao": (funcao or "").upper(),
+                    "linha": linha,
+                    "regra_id": "XF-001",
+                    "severidade": "error",
+                    "snippet": (
+                        f"MsSeek(xFilial('{tab}')) em REST/JOB sem RpcSetEnv — "
+                        f"{tab} eh x2_modo='E' (exclusiva)"
+                    )[:_SNIPPET_MAX],
+                    "sugestao_fix": (
+                        f"Tabela {tab} eh exclusiva (x2_modo='E'); em REST/JOB iniciado "
+                        "sem ambiente preparado, `cFilAnt` esta vazia e `xFilial` retorna "
+                        "''. Chame `RpcSetEnv(cEmp, cFil, ...)` antes ou use "
+                        f"`FwxFilial('{tab}')` passando a filial explicitamente."
+                    ),
+                }
+            )
+
+    return findings
+
+
 # --- v0.7.0 Fase 0: Webservice rules (WS-001/002/003) -------------------------
 
 
@@ -2578,6 +2667,8 @@ _CROSS_FILE_RULES: list[tuple[str, Any, bool]] = [
     ("SX-011", _check_sx011_x3_f3_consulta_inexistente, True),
     ("MOD-003", _check_mod003_static_funcs_to_class, False),
     ("PERF-006", _check_perf006_where_orderby_no_index, True),
+    # v0.7.0 Fase 0 #6
+    ("XF-001", _check_xf001_xfilial_exclusiva_rest, True),
 ]
 
 

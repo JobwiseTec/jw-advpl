@@ -5,9 +5,10 @@ Plus 2 integration tests (multiple violations sorted by linha; clean code = []).
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
-from plugadvpl.parsing.lint import lint_source
+from plugadvpl.parsing.lint import _check_xf001_xfilial_exclusiva_rest, lint_source
 from plugadvpl.parsing.parser import (
     add_function_ranges,
     extract_functions,
@@ -2225,3 +2226,172 @@ class TestENC001PrwUtf8:
         parsed = _parsed_with_encoding("foo.ch", "utf-8")
         findings = lint_source(parsed, "#define FOO 1\n")
         assert "ENC-001" not in _ids(findings)
+
+
+# --- XF-001: xFilial em tabela exclusiva sem cFilAnt (REST/JOB) -------------
+
+
+def _make_xf001_conn(
+    tabelas: list[tuple[str, str]],
+    chunks: list[dict[str, Any]],
+) -> sqlite3.Connection:
+    """Conexao SQLite in-memory minima para testar XF-001 (so tabelas + fonte_chunks)."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE tabelas (codigo TEXT PRIMARY KEY, modo TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE campos (tabela TEXT, campo TEXT)"
+    )  # SX presence marker
+    conn.execute(
+        """
+        CREATE TABLE fonte_chunks (
+            arquivo TEXT,
+            funcao TEXT,
+            funcao_norm TEXT,
+            tipo_simbolo TEXT,
+            linha_inicio INTEGER,
+            content TEXT
+        )
+        """
+    )
+    conn.executemany("INSERT INTO tabelas (codigo, modo) VALUES (?, ?)", tabelas)
+    for c in chunks:
+        conn.execute(
+            "INSERT INTO fonte_chunks (arquivo, funcao, funcao_norm, tipo_simbolo, linha_inicio, content) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                c.get("arquivo", "x.prw"),
+                c.get("funcao", "Get"),
+                (c.get("funcao", "") or "").upper(),
+                c.get("tipo_simbolo", "ws_method"),
+                int(c.get("linha_inicio", 1)),
+                c.get("content", ""),
+            ),
+        )
+    conn.commit()
+    return conn
+
+
+class TestXF001XFilialExclusivaRest:
+    """v0.7.0 (Fase 0 #6): xFilial em tabela x2_modo='E' dentro de WSRESTFUL/JOB
+    sem RpcSetEnv/PREPARE ENVIRONMENT antes — xFilial retorna '', MsSeek
+    encontra primeiro registro de qualquer filial. Bug silencioso e critico.
+    """
+
+    def test_positive_msseek_xfilial_exclusiva_in_wsrestful(self) -> None:
+        chunks = [
+            {
+                "arquivo": "api_sa1.prw",
+                "funcao": "Listar",
+                "tipo_simbolo": "ws_method",
+                "linha_inicio": 10,
+                "content": (
+                    "WSMETHOD GET listar WSSERVICE API_SA1\n"
+                    "  DbSelectArea('SA1')\n"
+                    "  MsSeek(xFilial('SA1') + cCod)\n"
+                    "Return .T.\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E"), ("SE1", "C")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert len(findings) == 1
+        assert findings[0]["regra_id"] == "XF-001"
+        assert findings[0]["severidade"] == "error"
+        assert "SA1" in findings[0]["snippet"] or "SA1" in findings[0]["sugestao_fix"]
+
+    def test_negative_msseek_xfilial_compartilhada(self) -> None:
+        """SE1 compartilhada — xFilial retorna '' por design, sem bug."""
+        chunks = [
+            {
+                "arquivo": "api_se1.prw",
+                "funcao": "Listar",
+                "tipo_simbolo": "ws_method",
+                "linha_inicio": 10,
+                "content": (
+                    "WSMETHOD GET listar WSSERVICE API_SE1\n"
+                    "  MsSeek(xFilial('SE1') + cCod)\n"
+                    "Return .T.\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E"), ("SE1", "C")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert findings == []
+
+    def test_negative_rpcsetenv_before_xfilial(self) -> None:
+        chunks = [
+            {
+                "arquivo": "api_sa1.prw",
+                "funcao": "Listar",
+                "tipo_simbolo": "ws_method",
+                "linha_inicio": 10,
+                "content": (
+                    "WSMETHOD GET listar WSSERVICE API_SA1\n"
+                    "  RpcSetEnv('99', '01', 'admin', 'totvs', 'FAT')\n"
+                    "  MsSeek(xFilial('SA1') + cCod)\n"
+                    "Return .T.\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert findings == []
+
+    def test_negative_prepare_environment_before_xfilial(self) -> None:
+        chunks = [
+            {
+                "arquivo": "job_sa1.prw",
+                "funcao": "MyJob",
+                "tipo_simbolo": "ws_method",
+                "linha_inicio": 10,
+                "content": (
+                    "WSMETHOD GET run WSSERVICE Job_SA1\n"
+                    "  PREPARE ENVIRONMENT EMPRESA '99' FILIAL '01'\n"
+                    "  MsSeek(xFilial('SA1') + cCod)\n"
+                    "Return .T.\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert findings == []
+
+    def test_negative_chunk_not_rest(self) -> None:
+        """Funcao user_function comum (nao REST/JOB) — nao dispara."""
+        chunks = [
+            {
+                "arquivo": "fata050.prw",
+                "funcao": "FATA050",
+                "tipo_simbolo": "user_function",
+                "linha_inicio": 1,
+                "content": (
+                    "User Function FATA050()\n"
+                    "  MsSeek(xFilial('SA1') + cCod)\n"
+                    "Return\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert findings == []
+
+    def test_positive_dbseek_alternative(self) -> None:
+        """Aceita DbSeek tambem (alias historico)."""
+        chunks = [
+            {
+                "arquivo": "api_sa1.prw",
+                "funcao": "Listar",
+                "tipo_simbolo": "ws_method",
+                "linha_inicio": 10,
+                "content": (
+                    "WSMETHOD GET listar WSSERVICE API_SA1\n"
+                    "  DbSeek(xFilial('SA1') + cCod)\n"
+                    "Return .T.\n"
+                ),
+            }
+        ]
+        conn = _make_xf001_conn([("SA1", "E")], chunks)
+        findings = _check_xf001_xfilial_exclusiva_rest(conn)
+        assert len(findings) == 1

@@ -427,5 +427,16 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_enc001_prw_utf8"
+  },
+  {
+    "regra_id": "XF-001",
+    "titulo": "MsSeek/DbSeek(xFilial(\"XX\")) em x2_modo='E' dentro de REST/JOB sem RpcSetEnv precedente",
+    "severidade": "error",
+    "categoria": "best-practice",
+    "descricao": "Em WSRESTFUL/JOB (heurística: chunk com `tipo_simbolo='ws_method'` ou conteúdo com `WSRESTFUL`/`WSMETHOD`/`StartJob`/`THREAD WAIT`), uso de `MsSeek(xFilial(\"XX\") + ...)` ou `DbSeek(xFilial(\"XX\") + ...)` em tabela com `x2_modo='E'` (Exclusiva) sem `RpcSetEnv(...)` ou `PREPARE ENVIRONMENT` precedente no mesmo escopo. `cFilAnt` está vazia, `xFilial` retorna '' e o seek localiza o primeiro registro de qualquer filial — bug silencioso e crítico.",
+    "fix_guidance": "Chame `RpcSetEnv(cEmp, cFil, ...)` ou `PREPARE ENVIRONMENT EMPRESA cEmp FILIAL cFil` antes da busca. Alternativa moderna: use `FwxFilial('XX')` passando a filial explicitamente sem depender de `cFilAnt`.",
+    "detection_kind": "cross-file",
+    "status": "active",
+    "impl_function": "_check_xf001_xfilial_exclusiva_rest"
   }
 ]
