@@ -8,6 +8,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,6 +161,29 @@ def _build_ini_script(
     lines.append(f"recompile={'T' if runtime_cfg.compile.recompile else 'F'}")
     lines.append(f"includes={';'.join(str(i).replace(chr(92), '/') for i in includes)}")
     return "\n".join(lines) + "\n"
+
+
+def _write_secure_ini(content: str) -> tuple[Path, Path]:
+    """Cria tempdir (0o700) + escreve ini (0o600) em CP1252.
+
+    Retorna (ini_path, tempdir_path) — caller é responsável por shutil.rmtree.
+    Em Windows, mode é ignorado mas o uuid no path do mkdtemp mitiga reading-by-name.
+    """
+    from plugadvpl.edit_prw import encode_cp1252_bytes
+
+    tempdir = Path(tempfile.mkdtemp(prefix="plugadvpl-"))
+    if os.name == "posix":
+        os.chmod(tempdir, 0o700)
+    ini_path = tempdir / "compile.ini"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_BINARY"):  # Windows
+        flags |= os.O_BINARY
+    fd = os.open(ini_path, flags, 0o600)
+    try:
+        os.write(fd, encode_cp1252_bytes(content))
+    finally:
+        os.close(fd)
+    return ini_path, tempdir
 
 
 def _build_appre_args(binary: Path, includes: list[Path], files: list[Path]) -> list[str]:

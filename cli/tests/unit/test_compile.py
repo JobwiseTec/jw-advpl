@@ -164,6 +164,34 @@ class TestRunAppre:
         assert not any(r["arquivo"] == "__unknown__" for r in result.rows)
 
 
+class TestTempIniFile:
+    def test_creates_secure_tempdir_and_file(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _write_secure_ini
+        content = "[auth]\nuser=admin\n"
+        ini_path, tempdir = _write_secure_ini(content)
+        try:
+            assert ini_path.is_file()
+            raw = ini_path.read_bytes()
+            assert raw == content.encode("cp1252", errors="replace")
+            import os as _os
+            if _os.name == "posix":
+                mode = _os.stat(ini_path).st_mode & 0o777
+                assert mode == 0o600
+        finally:
+            import shutil as _shutil
+            _shutil.rmtree(tempdir, ignore_errors=True)
+
+    def test_encoding_with_accent_password(self, tmp_path: Path) -> None:
+        from plugadvpl.compile import _write_secure_ini
+        content = "psw=açúcar\n"
+        ini_path, tempdir = _write_secure_ini(content)
+        try:
+            assert ini_path.read_bytes() == "psw=açúcar\n".encode("cp1252")
+        finally:
+            import shutil as _shutil
+            _shutil.rmtree(tempdir, ignore_errors=True)
+
+
 class TestBuildIni:
     def test_ini_contains_all_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from plugadvpl.compile import _build_ini_script
