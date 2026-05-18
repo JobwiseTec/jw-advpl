@@ -1530,6 +1530,33 @@ def _detect_entity_type_db(
     return _detect_entity_type(value)
 
 
+# v0.5.1 (#5): edges informativos vão pro topo do output (priority menor =
+# vem primeiro). Antes ordem era alfabética por edge, fazendo `table_definition`
+# (descrição oficial SX2) ficar no fim de 100+ rows. Agora destacado.
+_EDGE_PRIORITY: dict[str, int] = {
+    "table_definition": 0,
+    "field_definition": 0,
+    "n_fields": 1,
+    "defined_in": 1,
+}
+
+
+def _trace_sort_key(hit: dict[str, Any]) -> tuple[Any, ...]:
+    """Sort key padrão pra hits de trace_query.
+
+    Ordem: (universo, edge_priority, edge_name, arquivo, linha).
+    Edges informativos (table_definition/field_definition/n_fields/defined_in)
+    ficam no topo do bloco do universo via _EDGE_PRIORITY.
+    """
+    return (
+        hit.get("universo", 99),
+        _EDGE_PRIORITY.get(hit.get("edge", ""), 50),
+        hit.get("edge", ""),
+        hit.get("arquivo", ""),
+        int(hit.get("linha", 0) or 0),
+    )
+
+
 def _trace_hit(
     universo: int,
     edge: str,
@@ -1958,6 +1985,7 @@ def trace_query(
         wanted = set(universos)
         hits = [h for h in hits if h["universo"] in wanted]
 
-    # Sort estável.
-    hits.sort(key=lambda h: (h["universo"], h["edge"], h["arquivo"], h["linha"]))
+    # v0.5.1 (#5): sort com priority — edges informativos (table_definition,
+    # field_definition, n_fields, defined_in) vem no topo.
+    hits.sort(key=_trace_sort_key)
     return hits

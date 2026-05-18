@@ -1,7 +1,7 @@
 """Tests do trace_query (Universo 4 / Feature A v0.5.0)."""
 from __future__ import annotations
 
-from plugadvpl.query import _detect_entity_type
+from plugadvpl.query import _detect_entity_type, _trace_sort_key
 
 
 class TestAutoDetect:
@@ -61,3 +61,47 @@ class TestAutoDetect:
         assert _detect_entity_type("GV4") == "tabela"
         assert _detect_entity_type("EEC") == "tabela"
         assert _detect_entity_type("CCH") == "tabela"
+
+
+class TestSortPriority:
+    """v0.5.1 (#5): edges informativos vem no topo do output."""
+
+    def test_table_definition_before_other_u2(self) -> None:
+        """table_definition tem priority 0 — vem antes de in_relationship etc."""
+        hits = [
+            {"universo": 2, "edge": "in_relationship", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "table_definition", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "trigger_on_table", "arquivo": "", "linha": 0},
+        ]
+        sorted_hits = sorted(hits, key=_trace_sort_key)
+        assert sorted_hits[0]["edge"] == "table_definition"
+
+    def test_n_fields_priority_high(self) -> None:
+        """n_fields também é informativo — vem cedo no bloco U2."""
+        hits = [
+            {"universo": 2, "edge": "indexed_by", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "n_fields", "arquivo": "", "linha": 0},
+        ]
+        sorted_hits = sorted(hits, key=_trace_sort_key)
+        assert sorted_hits[0]["edge"] == "n_fields"
+
+    def test_field_definition_priority_in_u2_for_campo(self) -> None:
+        """field_definition (SX3 do campo) vem antes de gatilhos/perguntes."""
+        hits = [
+            {"universo": 2, "edge": "trigger_origin", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "field_definition", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "in_pergunte", "arquivo": "", "linha": 0},
+        ]
+        sorted_hits = sorted(hits, key=_trace_sort_key)
+        assert sorted_hits[0]["edge"] == "field_definition"
+
+    def test_u1_before_u2_before_u3(self) -> None:
+        """Universos mantêm ordem 1 < 2 < 3 (priority secundário)."""
+        hits = [
+            {"universo": 3, "edge": "via_execauto", "arquivo": "", "linha": 0},
+            {"universo": 1, "edge": "calls", "arquivo": "", "linha": 0},
+            {"universo": 2, "edge": "in_pergunte", "arquivo": "", "linha": 0},
+        ]
+        sorted_hits = sorted(hits, key=_trace_sort_key)
+        unis = [h["universo"] for h in sorted_hits]
+        assert unis == [1, 2, 3]

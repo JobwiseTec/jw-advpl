@@ -1584,6 +1584,42 @@ class TestTrace:
             f"esperado só U3, recebi universos={[r['universo'] for r in rows]}"
         )
 
+    def test_trace_table_definition_first_in_output(
+        self, trace_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.5.1 (#5): table_definition vem no TOPO do output quando
+        tipo=tabela (descrição oficial primeiro, antes da lista de reads/writes).
+
+        Antes aparecia no fim de 100+ rows, perdida. Sort priority puxa
+        edges informativos (table_definition, n_fields, field_definition)
+        pro topo do bloco U2.
+        """
+        result = runner.invoke(
+            app,
+            ["--root", str(trace_project), "--format", "json", "trace", "SA1"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        # Pega rows U2 (onde table_definition vive)
+        u2 = [r for r in rows if r["universo"] == 2]
+        if u2:
+            # Primeiro row de U2 deve ser table_definition se existir
+            tdef_idx = next(
+                (i for i, r in enumerate(u2) if r["edge"] == "table_definition"),
+                None,
+            )
+            if tdef_idx is not None:
+                # table_definition deve vir antes de qualquer in_*/indexed_by/trigger_on_table
+                outras_u2 = [
+                    i for i, r in enumerate(u2)
+                    if r["edge"] not in ("table_definition", "n_fields", "field_definition")
+                ]
+                if outras_u2:
+                    assert tdef_idx < min(outras_u2), (
+                        f"table_definition (idx={tdef_idx}) deve vir antes "
+                        f"de outras edges U2 (min idx={min(outras_u2)})"
+                    )
+
     def test_trace_tipo_override(
         self, trace_project: Path, runner: CliRunner
     ) -> None:
