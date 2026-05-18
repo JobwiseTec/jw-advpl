@@ -57,6 +57,7 @@ from plugadvpl.query import (
 )
 from plugadvpl.query import (
     doctor_diagnostics,
+    doctor_func_count_check,
     execauto_calls_query,
     execution_triggers_query,
     find_any,
@@ -959,10 +960,25 @@ def lint(
 
 
 @app.command()
-def doctor(ctx: typer.Context) -> None:
+def doctor(
+    ctx: typer.Context,
+    check_funcs: Annotated[
+        bool,
+        typer.Option(
+            "--check-funcs",
+            help="v0.4.6 (B): compara grep vs parser por arquivo (slow — re-le fontes). "
+            "Surface fontes onde funcoes foram perdidas no parsing.",
+        ),
+    ] = False,
+) -> None:
     """Diagnósticos do índice (encoding, órfãos, FTS sync, lookups)."""
 
     rows = _with_ro_db(ctx, doctor_diagnostics)
+    if check_funcs:
+        root: Path = ctx.obj["root"]
+        rows.append(
+            _with_ro_db(ctx, lambda c: doctor_func_count_check(c, root))
+        )
     _render_from_ctx(
         ctx,
         rows,

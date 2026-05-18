@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from plugadvpl.db import get_meta
@@ -346,6 +347,71 @@ def stale_files(
         if name not in db_state:
             out.append({"arquivo": name, "estado": "new", "fs_mtime": mtime})
     return out
+
+
+def doctor_func_count_check(
+    conn: sqlite3.Connection, root: Path
+) -> dict[str, Any]:
+    """v0.4.6 (B): compara grep vs parser por arquivo, surface discrepâncias.
+
+    Slow (re-lê todos os fontes do projeto). Opt-in via flag ``doctor --check-funcs``.
+
+    Retorna um dict no formato dos diagnósticos. ``count`` = número de arquivos
+    com discrepância. ``detail`` lista até 10 primeiros (basename + grep/parser
+    counts). Status ``warn`` se há discrepância (pode ser legítimo: commenting-out
+    intencional de função inteira via ``/* ... */``).
+    """
+    _FN_RE = re.compile(
+        r"^[ \t]*(?:Static|User|Main)[ \t]+Function[ \t]+\w+",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    # Conta funcs no DB por arquivo (fonte_chunks com tipo_simbolo de function).
+    parsed_by_file: dict[str, int] = {}
+    for row in conn.execute(
+        "SELECT arquivo, COUNT(*) FROM fonte_chunks "
+        "WHERE tipo_simbolo IN ('function', 'user_function', 'static_function', 'main_function') "
+        "GROUP BY arquivo"
+    ):
+        parsed_by_file[row[0]] = int(row[1])
+    # Itera fontes pra grep.
+    discrepancies: list[tuple[str, int, int]] = []
+    for arq_row in conn.execute(
+        "SELECT arquivo, caminho_relativo FROM fontes WHERE caminho_relativo IS NOT NULL"
+    ):
+        arquivo, caminho = arq_row[0], arq_row[1]
+        if not caminho:
+            continue
+        fp = root / caminho
+        if not fp.exists():
+            continue
+        try:
+            raw = fp.read_bytes()
+            content = raw.decode("cp1252", errors="replace")
+        except OSError:
+            continue
+        grep_count = len(_FN_RE.findall(content))
+        parsed_count = parsed_by_file.get(arquivo, 0)
+        if grep_count != parsed_count:
+            discrepancies.append((arquivo, grep_count, parsed_count))
+    n = len(discrepancies)
+    if n == 0:
+        return {
+            "check": "funcs_count_match",
+            "status": "ok",
+            "count": 0,
+            "detail": "grep == parser em todos os fontes",
+        }
+    sample = ", ".join(
+        f"{arq} (grep={g} parser={p})"
+        for arq, g, p in sorted(discrepancies)[:10]
+    )
+    suffix = f" (+{n - 10} mais)" if n > 10 else ""
+    return {
+        "check": "funcs_count_match",
+        "status": "warn",
+        "count": n,
+        "detail": f"{n} fontes com discrepância: {sample}{suffix}",
+    }
 
 
 def doctor_diagnostics(conn: sqlite3.Connection) -> list[dict[str, Any]]:

@@ -486,6 +486,46 @@ class TestDoctor:
         checks = {r["check"] for r in payload["rows"]}
         assert "fts_sync" in checks
 
+    def test_doctor_check_funcs_detects_discrepancy(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.4.6 (B): doctor --check-funcs compara grep vs parser nas fontes
+        e flagga arquivos onde o parser perdeu funcoes (ex.: block comment
+        nao-fechado em fonte com bug raw).
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        # Fonte com block comment de tamanho legitimo (<200) englobando funcao
+        # (commenting-out intencional). Grep ve 2, parser ve 1.
+        (src / "Sample.prw").write_bytes(
+            b'User Function FnAtiva()\n'
+            b'Return\n'
+            b'\n'
+            b'/*\n'
+            b'Static Function FnComentada()\n'
+            b'   Return\n'
+            b'Return\n'
+            b'*/\n'
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "doctor", "--check-funcs"],
+        )
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        checks = {r["check"]: r for r in payload["rows"]}
+        assert "funcs_count_match" in checks, (
+            f"esperado check 'funcs_count_match', recebido {list(checks)}"
+        )
+        # Status warn porque ha discrepancia (mas eh por commenting-out
+        # intencional, nao erro do parser). Detail deve mencionar Sample.prw.
+        chk = checks["funcs_count_match"]
+        assert chk["status"] == "warn"
+        assert chk["count"] >= 1
+        assert "Sample.prw" in chk["detail"]
+
 
 class TestGrep:
     def test_grep_fts_default(
