@@ -128,6 +128,39 @@ def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
     return Path(found)
 
 
+def _build_ini_script(
+    runtime_cfg: RuntimeConfig, files: list[Path], includes: list[Path]
+) -> str:
+    """Gera conteúdo do script .ini do advpls cli mode (formato §6 do spec)."""
+    user = os.environ[runtime_cfg.auth.user_env]
+    pwd = os.environ[runtime_cfg.auth.password_env]
+    asv = runtime_cfg.appserver
+    log = runtime_cfg.logging
+
+    lines: list[str] = []
+    lines.append(f"logToFile={log.log_to_file}")
+    lines.append(f"showConsoleOutput={'true' if log.show_console_output else 'false'}")
+    lines.append("")
+    lines.append("[auth]")
+    lines.append("action=authentication")
+    lines.append(f"server={asv.host}")
+    lines.append(f"port={asv.port}")
+    lines.append(f"secure={1 if asv.secure else 0}")
+    lines.append(f"build={asv.build}")
+    lines.append(f"environment={asv.environment}")
+    lines.append(f"user={user}")
+    lines.append(f"psw={pwd}")
+    lines.append("")
+    lines.append("[compile]")
+    lines.append("action=compile")
+    # Normaliza pra forward-slash — formato .ini aceito pelo advpls em Win/Linux
+    # e evita ambiguidade de escape de backslash em arquivo .ini.
+    lines.append(f"program={';'.join(str(f).replace(chr(92), '/') for f in files)}")
+    lines.append(f"recompile={'T' if runtime_cfg.compile.recompile else 'F'}")
+    lines.append(f"includes={';'.join(str(i).replace(chr(92), '/') for i in includes)}")
+    return "\n".join(lines) + "\n"
+
+
 def _build_appre_args(binary: Path, includes: list[Path], files: list[Path]) -> list[str]:
     args: list[str] = [str(binary), "appre"]
     for inc in includes:

@@ -162,3 +162,35 @@ class TestRunAppre:
         assert unmatched_rows[0]["counts"]["error"] == 1
         # NÃO existe row __unknown__ (nome antigo)
         assert not any(r["arquivo"] == "__unknown__" for r in result.rows)
+
+
+class TestBuildIni:
+    def test_ini_contains_all_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from plugadvpl.compile import _build_ini_script
+        monkeypatch.setenv("PROTHEUS_USER", "admin")
+        monkeypatch.setenv("PROTHEUS_PASS", "totvs")
+        runtime_cfg = MagicMock(
+            appserver=MagicMock(host="127.0.0.1", port=1234, secure=False,
+                                build="7.00.240223P", environment="P2510"),
+            auth=MagicMock(user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS"),
+            compile=MagicMock(recompile=True),
+            logging=MagicMock(log_to_file="", show_console_output=True),
+        )
+        files = [Path("foo.prw"), Path("bar.prw")]
+        includes = [Path("D:/inc1"), Path("D:/inc2")]
+        text = _build_ini_script(runtime_cfg, files, includes)
+        assert "[auth]" in text
+        assert "[compile]" in text
+        assert "action=authentication" in text
+        assert "action=compile" in text
+        assert "user=admin" in text
+        assert "psw=totvs" in text
+        assert "server=127.0.0.1" in text
+        assert "port=1234" in text
+        assert "secure=0" in text
+        assert "build=7.00.240223P" in text
+        assert "environment=P2510" in text
+        assert "program=foo.prw;bar.prw" in text
+        assert "recompile=T" in text
+        assert "includes=D:/inc1;D:/inc2" in text
+        assert "showConsoleOutput=true" in text
