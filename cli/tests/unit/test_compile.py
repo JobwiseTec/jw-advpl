@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from plugadvpl.compile import CompileRequest, CompileResult, run
+from plugadvpl.compile import CompileRequest, run
 
 
 class TestResolveFiles:
@@ -76,3 +76,65 @@ class TestPickMode:
         from plugadvpl.compile import pick_mode
         cfg = MagicMock(appserver_reachable=False)
         assert pick_mode("auto", runtime_cfg=cfg) == "appre"
+
+
+class TestRunAppre:
+    def test_clean_compile_appre(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        with patch("plugadvpl.compile.subprocess.Popen") as popen_mock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"", b"")
+            proc.returncode = 0
+            popen_mock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        assert result.exit_code == 0
+        assert result.summary["mode_used"] == "appre"
+        assert result.summary["total_files"] == 1
+        assert result.summary["ok"] == 1
+        assert result.summary["failed"] == 0
+
+    def test_compile_appre_with_error(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=10, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        with patch("plugadvpl.compile.subprocess.Popen") as popen_mock:
+            proc = MagicMock()
+            proc.communicate.return_value = (b"foo.prw(42) error: Unbalanced ENDIF", b"")
+            proc.returncode = 1
+            popen_mock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        assert result.exit_code == 1
+        assert result.summary["failed"] == 1
+        row = next(r for r in result.rows if r["arquivo"] == str(foo))
+        assert row["ok"] is False
+        assert row["counts"]["error"] == 1
+
+    def test_timeout_returns_synthetic_diagnostic(self, tmp_path: Path) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        request = CompileRequest(
+            files=[foo], mode="appre", no_warnings=False,
+            timeout_seconds=5, no_security_warning=True,
+            includes_override=None, changed_since=None,
+        )
+        with patch("plugadvpl.compile.subprocess.Popen") as popen_mock:
+            proc = MagicMock()
+            proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="advpls", timeout=5)
+            popen_mock.return_value = proc
+            with patch("plugadvpl.compile._resolve_advpls", return_value=Path("/fake/advpls")):
+                result = run(request, runtime_cfg=None, root=tmp_path)
+        assert result.exit_code == 1
+        assert result.summary["total_errors"] >= 1
+        proc.terminate.assert_called()
