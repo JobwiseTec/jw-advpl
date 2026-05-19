@@ -111,13 +111,13 @@ class TestExecuteCopy:
 class TestExecuteDownload:
     def _make_fake_vsix(self, tmp_path: Path) -> Path:
         """Cria .vsix fake com layout esperado da tds-vscode."""
+        from plugadvpl.compile_installer import _binary_filename, _os_subdir
+        # Usa as helpers de produção pra que o layout do VSIX casa com o
+        # que `execute_download` procura (darwin → "mac", não "linux").
         vsix = tmp_path / "fake.vsix"
-        os_sub = {"nt": "windows", "posix": "linux"}.get(os.name, "linux")
-        if os.name == "nt":
-            os_sub = "windows"
+        os_sub = _os_subdir()
         bin_in_vsix = (
-            f"extension/node_modules/@totvs/tds-ls/bin/{os_sub}/"
-            f"advpls{'.exe' if os.name == 'nt' else ''}"
+            f"extension/node_modules/@totvs/tds-ls/bin/{os_sub}/{_binary_filename()}"
         )
         companion_in_vsix = f"extension/node_modules/@totvs/tds-ls/bin/{os_sub}/qt.dll"
 

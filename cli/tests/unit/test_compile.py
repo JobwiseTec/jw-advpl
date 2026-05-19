@@ -624,12 +624,12 @@ class TestResolveAdvplsChecksInstalledDir:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from plugadvpl.compile import _resolve_advpls
-        # Mock home + cria advpls em ~/.plugadvpl/advpls/bin/<os>/
+        from plugadvpl.compile_installer import _binary_filename, _os_subdir
+        # Mock home + cria advpls em ~/.plugadvpl/advpls/bin/<os>/.
+        # Use a função de produção para que o teste fique alinhado com
+        # `installed_binary_path()` no macOS (darwin → "mac", não "linux").
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        import os as _os
-        os_sub = {"nt": "windows", "posix": "linux"}.get(_os.name, "linux")
-        bin_name = "advpls.exe" if _os.name == "nt" else "advpls"
-        target = tmp_path / ".plugadvpl" / "advpls" / "bin" / os_sub / bin_name
+        target = tmp_path / ".plugadvpl" / "advpls" / "bin" / _os_subdir() / _binary_filename()
         target.parent.mkdir(parents=True)
         target.write_text("", encoding="utf-8")
         monkeypatch.delenv("PLUGADVPL_ADVPLS_BINARY", raising=False)

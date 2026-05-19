@@ -50,6 +50,10 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
       - run: cd cli && uv sync --frozen
       - run: cd cli && uv run pytest tests/bench --benchmark-only --benchmark-json=output.json
+      # uv sync pode tocar timestamp/format de cli/uv.lock — restaura antes
+      # do benchmark-action que faz `git switch gh-pages` (falha se houver
+      # mudanças não-commitadas em arquivos trackeados).
+      - run: git checkout -- cli/uv.lock || true
       - uses: benchmark-action/github-action-benchmark@v1
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
