@@ -36,6 +36,77 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.9.0] - 2026-05-19
+
+### Added - Cofre nativo do OS pra credenciais (sem senha em env var toda sessão)
+
+Usuário levantou gap: "como o cara informa senha de forma segura sem TDS
+instalado, sem perder, mantendo segurança?". TDS-VSCode guarda token base64
+no JSON dele — não é grande coisa. Indústria (`gh`, `az`, `git-credential-
+manager`) usa cofre nativo do OS, é mais seguro. Adotado.
+
+**Resolução em camadas (primeira encontrada vence):**
+
+1. **Env var** (`$PROTHEUS_USER` / `$PROTHEUS_PASS`) — máximo controle,
+   CI/CD-friendly, integra com 1Password CLI / vault / etc.
+2. **Cofre do OS** — Win Credential Manager (DPAPI por usuário), macOS
+   Keychain, Linux Secret Service (gnome-keyring / kwallet). Senha cifrada
+   pelo OS, descriptografada on-demand pelo user logado.
+3. **Erro com 2 caminhos didáticos** se nada achou.
+
+Plugin **nunca grava senha em arquivo** — só o cofre nativo toca o byte.
+
+### Comandos novos
+
+- **`plugadvpl compile --set-credentials <server>`** — prompt seguro
+  (`getpass`, sem ecoar), salva no cofre do OS. Service name:
+  `"plugadvpl"`. Keys: `<server>:user` e `<server>:password`. Confirma a
+  senha pra evitar typo.
+- **`plugadvpl compile --clear-credentials <server>`** — remove do cofre,
+  idempotente.
+- **`plugadvpl compile --explain-config`** — JSON estruturado mostrando:
+  - Ordem de precedência completa (resolve gap "sem doc explícita" da
+    tabela de feedback do user)
+  - De onde veio runtime.toml, server, credenciais (env vs keyring vs none)
+  - Senha **redacted** (`<set>` / `<unset>`) — nunca vaza valor
+
+### Changed
+
+- `_apply_server_override` (cli.py) — substituiu `os.environ.get(...)` direto
+  por `resolve_credentials()` com fallback ordenado. Quando creds vêm do
+  keyring, são injetadas em `os.environ` só pro processo CLI (não vazam pra
+  shell pai).
+- Mensagem de erro quando faltam credenciais agora mostra **ambas as opções
+  lado a lado** (`--set-credentials` E `export VAR`), com hint se keyring
+  está indisponível no sistema.
+
+### Technical
+
+- Nova dependência: `keyring >=24` (~50KB, sem deps nativas obrigatórias,
+  fallback gracioso em ambiente sem cofre — Linux server sem D-Bus retorna
+  `keyring_available=False` em vez de crashear).
+- Novo módulo `credentials.py`:
+  - `CredentialResolution` dataclass imutável com `to_safe_dict()`
+    (password redacted).
+  - `resolve_credentials(server_name, user_env, password_env)` — função
+    central, sempre retorna dataclass, nunca lança.
+  - `set/get/clear_credentials_in_keyring` — wrappers que tratam backend
+    instável (`Linux server sem D-Bus`) com `_try_import_keyring` defensivo.
+  - `keyring_available()` — check público, detecta `NullBackend`/`FailKeyring`.
+- Testes: +17 unit (`test_credentials.py` com `FakeKeyring` in-memory) +
+  3 integration (`set→use→clear` cycle + `--explain-config` JSON shape).
+
+### Migration
+
+100% retrocompatível. Quem usa env var hoje continua igual. Pra migrar
+pro cofre:
+
+```bash
+plugadvpl compile --set-credentials dev-local
+# remove a env var do shell profile (~/.bashrc, $PROFILE)
+plugadvpl compile --use-server dev-local <fonte.prw>  # ainda funciona
+```
+
 ## [0.8.12] - 2026-05-19
 
 ### Added - `--probe-appserver host:port` (network mode, igual TDS-VSCode)

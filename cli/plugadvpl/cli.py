@@ -2357,6 +2357,27 @@ def compile_callback(
             help="Descobre build do AppServer via protheus.log (path do .log ou raiz Protheus)",
         ),
     ] = "",
+    set_credentials_for: Annotated[
+        str,
+        typer.Option(
+            "--set-credentials",
+            help="Salva user+pass do server no cofre do OS (Win Credential Manager / macOS Keychain / Linux Secret Service)",
+        ),
+    ] = "",
+    clear_credentials_for: Annotated[
+        str,
+        typer.Option(
+            "--clear-credentials",
+            help="Remove credenciais do server do cofre do OS",
+        ),
+    ] = "",
+    explain_config: Annotated[
+        bool,
+        typer.Option(
+            "--explain-config",
+            help="Mostra de onde vem cada campo (flag/runtime.toml/registry/keyring/env/auto-detect)",
+        ),
+    ] = False,
     use_environment: Annotated[
         str,
         typer.Option("--use-environment", help="Override do environment do server (opcional)"),
@@ -2408,6 +2429,18 @@ def compile_callback(
         _handle_probe_appserver(probe_appserver)
         return
 
+    if set_credentials_for:
+        _handle_set_credentials(set_credentials_for)
+        return
+
+    if clear_credentials_for:
+        _handle_clear_credentials(clear_credentials_for)
+        return
+
+    if explain_config:
+        _handle_explain_config(ctx, root, use_server, use_environment)
+        return
+
     if not files:
         typer.secho("nenhum fonte informado", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -2424,6 +2457,7 @@ def compile_callback(
         "--init-config", "--force", "--doctor", "--install-advpls",
         "--list-servers", "--add-server", "--remove-server",
         "--import-tds-servers", "--yes", "-y", "--probe-appserver",
+        "--set-credentials", "--clear-credentials", "--explain-config",
     }
     misplaced = [str(f) for f in files if str(f) in suspicious_flags]
     if misplaced:
@@ -2798,6 +2832,197 @@ def _probe_via_log(target: Path) -> None:
     )
 
 
+def _handle_set_credentials(server_name: str) -> None:
+    """Salva user+senha do server no cofre nativo do OS (v0.9.0)."""
+    from plugadvpl.compile_servers import get_server
+    from plugadvpl.credentials import (
+        KEYRING_SERVICE,
+        keyring_available,
+        set_credentials_in_keyring,
+    )
+
+    srv = get_server(server_name)
+    if srv is None:
+        typer.secho(
+            f"Server '{server_name}' não cadastrado.\n"
+            f"  Liste: plugadvpl compile --list-servers\n"
+            f"  Cadastre: plugadvpl compile --add-server",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if not keyring_available():
+        typer.secho(
+            "\nERRO: cofre do OS não disponível neste sistema.\n"
+            "  Possíveis causas:\n"
+            "    • Linux server sem D-Bus / sem gnome-keyring / sem kwallet\n"
+            "    • SSH sem forwarding de DBUS_SESSION_BUS_ADDRESS\n"
+            "  Use env vars como fallback:\n"
+            f"    export {srv.user_env}=<usuário>\n"
+            f"    export {srv.password_env}=<senha>",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    typer.echo(f"\n=== Salvar credenciais no cofre do OS ===")
+    typer.echo(f"  Server: {server_name} ({srv.host}:{srv.port})")
+    typer.echo(f"  Cofre service: {KEYRING_SERVICE}")
+    typer.echo(f"  Cofre key (user): {server_name}:user")
+    typer.echo(f"  Cofre key (pass): {server_name}:password\n")
+
+    user = typer.prompt(f"Usuário Protheus para {server_name}").strip()
+    if not user:
+        typer.secho("Usuário não pode ser vazio.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    password = typer.prompt(
+        "Senha (não será ecoada)",
+        hide_input=True,
+        confirmation_prompt=True,
+    )
+    if not password:
+        typer.secho("Senha não pode ser vazia.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        set_credentials_in_keyring(server_name, user, password)
+    except RuntimeError as exc:
+        typer.secho(f"\nERRO ao gravar no cofre: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.secho(
+        f"\n✓ Credenciais salvas no cofre do OS pra server '{server_name}'.\n"
+        f"  Próximas chamadas com `--use-server {server_name}` resolvem\n"
+        f"  user+pass automaticamente — sem precisar exportar env var.\n"
+        f"\n"
+        f"  Para remover: plugadvpl compile --clear-credentials {server_name}",
+        fg=typer.colors.GREEN,
+    )
+
+
+def _handle_clear_credentials(server_name: str) -> None:
+    """Remove credenciais do server do cofre (v0.9.0)."""
+    from plugadvpl.credentials import clear_credentials_from_keyring, keyring_available
+
+    if not keyring_available():
+        typer.secho(
+            "Cofre do OS não disponível — nada para limpar.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    removed_user, removed_pwd = clear_credentials_from_keyring(server_name)
+    if not (removed_user or removed_pwd):
+        typer.secho(
+            f"Nenhuma credencial encontrada no cofre para '{server_name}'.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    typer.secho(
+        f"✓ Credenciais removidas do cofre para '{server_name}'.\n"
+        f"  (user removido: {removed_user}, password removido: {removed_pwd})",
+        fg=typer.colors.GREEN,
+    )
+
+
+def _handle_explain_config(
+    ctx: typer.Context, root: Path, use_server: str, use_environment: str,
+) -> None:
+    """Mostra de onde vem cada campo da config resolvida (v0.9.0).
+
+    Atende ao gap "ordem de precedência sem doc" reportado pelo usuário.
+    Saída JSON-friendly (consumível por agente IA) com format=json.
+    """
+    from plugadvpl.compile_servers import default_server, get_server
+    from plugadvpl.credentials import resolve_credentials, keyring_available
+    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+
+    out: dict[str, object] = {
+        "resolution_order": [
+            "1. CLI flag (--use-server NAME, --use-environment ENV)",
+            "2. runtime.toml (<root>/.plugadvpl/runtime.toml)",
+            "3. Registry global (~/.plugadvpl/servers.json) — pelo nome do server",
+            "4. Keyring do OS (Win Cred Mgr / macOS Keychain / Linux Secret Service)",
+            "5. Env vars (nome configurado em [auth].user_env / password_env)",
+            "6. Auto-detect (advpls em PATH ou pasta interna ~/.plugadvpl/advpls/)",
+        ],
+        "fields": {},
+        "credentials": {},
+    }
+    fields = out["fields"]
+    assert isinstance(fields, dict)
+
+    # runtime.toml
+    runtime_cfg = None
+    try:
+        runtime_cfg = load_runtime_config(root)
+    except RuntimeConfigError as exc:
+        fields["runtime_toml"] = {"loaded": False, "error": str(exc)}
+    else:
+        if runtime_cfg is not None:
+            fields["runtime_toml"] = {
+                "loaded": True,
+                "path": str(runtime_cfg.source_path),
+                "appserver_host": runtime_cfg.appserver.host,
+                "appserver_port": runtime_cfg.appserver.port,
+                "appserver_build": runtime_cfg.appserver.build,
+                "appserver_reachable": runtime_cfg.appserver_reachable,
+                "tds_ls_binary": str(runtime_cfg.tds_ls.binary),
+                "auth_user_env": runtime_cfg.auth.user_env,
+                "auth_password_env": runtime_cfg.auth.password_env,
+            }
+        else:
+            fields["runtime_toml"] = {"loaded": False, "reason": "file_not_found"}
+
+    # Server escolhido (--use-server explícito OU default do registry)
+    server = None
+    if use_server:
+        server = get_server(use_server)
+        fields["server"] = {
+            "source": "cli_flag",
+            "name": use_server,
+            "found": server is not None,
+        }
+    else:
+        server = default_server()
+        fields["server"] = {
+            "source": "registry_default",
+            "name": server.name if server else None,
+            "found": server is not None,
+        }
+
+    if server is not None:
+        s_dict = fields["server"]
+        assert isinstance(s_dict, dict)
+        s_dict.update({
+            "host": server.host, "port": server.port, "build": server.build,
+            "environments": server.environments,
+            "default_environment": server.default_environment,
+            "user_env": server.user_env,
+            "password_env": server.password_env,
+            "includes_count": len(server.includes),
+            "secure": server.secure,
+        })
+        # Credenciais
+        creds = resolve_credentials(server.name, server.user_env, server.password_env)
+        out["credentials"] = creds.to_safe_dict()
+    else:
+        out["credentials"] = {
+            "user": "<no server selected>",
+            "password": "<no server selected>",
+            "keyring_available": keyring_available(),
+        }
+
+    # Output respeita --format json/md/table (passado em obj["format"])
+    from plugadvpl.output import render
+    render(
+        rows=[out],
+        format=ctx.obj["format"],
+        title="plugadvpl compile --explain-config",
+        next_steps=[],
+    )
+
+
 def _apply_server_override(
     runtime_cfg: object,  # RuntimeConfig | None
     server: object,  # Server
@@ -2846,29 +3071,48 @@ def _apply_server_override(
         )
         raise typer.Exit(code=2)
 
-    # v0.8.8 fix bug 4: valida env vars de auth ANTES de tentar compilar.
-    # Antes: env vars não setadas só viravam erro durante geração do .ini
-    # com mensagem cryptica do runtime_config. Agora avisa cedo.
-    import os as _os
-    user_val = _os.environ.get(server.user_env)
-    pass_val = _os.environ.get(server.password_env)
-    env_missing: list[str] = []
-    if not user_val:
-        env_missing.append(server.user_env)
-    if not pass_val:
-        env_missing.append(server.password_env)
-    if env_missing:
+    # v0.9.0: credenciais via env OU keyring do sistema (Win Credential Manager
+    # / macOS Keychain / Linux Secret Service). Resolve em camadas, falha clara
+    # se nenhuma fonte tem ambos.
+    from plugadvpl.credentials import resolve_credentials
+
+    creds = resolve_credentials(server.name, server.user_env, server.password_env)
+    if not creds.is_complete:
+        missing_parts: list[str] = []
+        if not creds.user:
+            missing_parts.append("user")
+        if not creds.password:
+            missing_parts.append("password")
+        kr_hint = (
+            f"    plugadvpl compile --set-credentials {server.name}\n"
+            f"    # prompt seguro (senha NÃO ecoada), salva no cofre do OS\n"
+        ) if creds.keyring_available else (
+            f"    # keyring backend não disponível neste sistema —\n"
+            f"    # use env vars (próxima opção)\n"
+        )
         typer.secho(
-            f"\nERRO: server '{server.name}' precisa das env vars de auth setadas: {env_missing}\n"
-            f"  Setar e re-rodar:\n"
-            + "\n".join(
-                f"    $env:{v} = \"<valor>\"   # PowerShell\n"
-                f"    export {v}=<valor>     # bash"
-                for v in env_missing
-            ),
+            f"\nERRO: server '{server.name}' sem credencial ({', '.join(missing_parts)}).\n"
+            f"\n"
+            f"  Opção A — keyring (recomendado, persiste no cofre do OS):\n"
+            f"{kr_hint}"
+            f"\n"
+            f"  Opção B — env vars (uso pontual, CI/CD):\n"
+            f"    $env:{server.user_env} = \"<usuário>\"     # PowerShell\n"
+            f"    $env:{server.password_env} = \"<senha>\"\n"
+            f"    # OU:\n"
+            f"    export {server.user_env}=<usuário>      # bash/zsh\n"
+            f"    export {server.password_env}=<senha>",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
+
+    # Se vieram do keyring, injeta em os.environ pra `compile._build_ini_script`
+    # ler como se fossem env. Mutação é só pro processo CLI (não vaza pra shell).
+    import os as _os
+    if creds.user_source == "keyring":
+        _os.environ[server.user_env] = creds.user
+    if creds.password_source == "keyring":
+        _os.environ[server.password_env] = creds.password
 
     env = env_override or server.default_environment
     if env not in server.environments:

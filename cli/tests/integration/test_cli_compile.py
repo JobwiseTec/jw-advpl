@@ -266,3 +266,105 @@ class TestBug4UseServerValidation:
         assert result.exit_code == 2
         combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
         assert "PROTHEUS_USER" in combined or "PROTHEUS_PASS" in combined
+
+
+class TestCredentialsKeyringIntegration:
+    """v0.9.0: --set-credentials → --use-server reads from keyring transparently."""
+
+    def test_keyring_resolves_when_env_missing(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Server tem creds no cofre, env vars vazias → resolve_credentials
+        deve achar e o erro de "env missing" NÃO deve aparecer."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("PROTHEUS_USER", raising=False)
+        monkeypatch.delenv("PROTHEUS_PASS", raising=False)
+        from plugadvpl.compile_servers import Server, add_server
+
+        # Monkeypatch keyring para in-memory
+        import sys
+        from tests.unit.test_credentials import FakeKeyring
+        fake = FakeKeyring()
+        monkeypatch.setitem(sys.modules, "keyring", fake)
+        monkeypatch.setitem(
+            sys.modules, "keyring.errors",
+            type("M", (), {"KeyringError": Exception}),
+        )
+
+        # Salva credenciais no fake keyring
+        from plugadvpl.credentials import set_credentials_in_keyring
+        set_credentials_in_keyring("kringsrv", "kr_admin", "kr_secret")
+
+        add_server(Server(
+            name="kringsrv", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["P2510"], default_environment="P2510",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--use-server", "kringsrv", "--mode", "cli", str(foo)],
+        )
+        # Pode falhar por motivos posteriores (advpls ausente, AppServer
+        # inacessível) — o que importa é que NÃO deu erro de "sem credencial".
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "sem credencial" not in combined.lower()
+        assert "--set-credentials" not in combined  # erro de cofre não apareceu
+
+    def test_no_creds_anywhere_shows_both_options(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sem env, sem keyring (mock vazio) → erro com 2 opções
+        (Opção A keyring, Opção B env var)."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("PROTHEUS_USER", raising=False)
+        monkeypatch.delenv("PROTHEUS_PASS", raising=False)
+
+        import sys
+        from tests.unit.test_credentials import FakeKeyring
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring())
+        monkeypatch.setitem(
+            sys.modules, "keyring.errors",
+            type("M", (), {"KeyringError": Exception}),
+        )
+
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="empty", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["P2510"], default_environment="P2510",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--use-server", "empty", "--mode", "cli", str(foo)],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        # Erro mostra ambas as opções
+        assert "set-credentials" in combined or "Opção A" in combined
+        assert "PROTHEUS_USER" in combined or "Opção B" in combined
+
+
+class TestExplainConfig:
+    """v0.9.0: --explain-config mostra de onde vem cada campo."""
+
+    def test_explain_includes_resolution_order(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        result = runner.invoke(
+            app, ["--format", "json", "--root", str(tmp_path),
+                  "compile", "--explain-config"],
+        )
+        assert result.exit_code == 0, result.output
+        import json
+        payload = json.loads(result.stdout)
+        # Estrutura conhecida
+        row = payload["rows"][0]
+        assert "resolution_order" in row
+        assert "fields" in row
+        assert "credentials" in row
+        assert any("keyring" in step.lower() for step in row["resolution_order"])

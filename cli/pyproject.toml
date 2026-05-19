@@ -23,6 +23,10 @@ dependencies = [
     "rich >=13.7",
     "chardet >=5.0",
     "psutil >=5.9",
+    # v0.9.0: cofre nativo do OS (Win Credential Manager / macOS Keychain /
+    # Linux Secret Service) pra guardar senha do Protheus sem env var.
+    # Fallback gracioso em ambientes sem backend (ex: Linux server sem D-Bus).
+    "keyring >=24.0",
 ]
 
 [project.urls]
