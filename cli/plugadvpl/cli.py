@@ -2142,6 +2142,13 @@ def compile_callback(
         bool, typer.Option("--init-config", help="Gera template runtime.toml")
     ] = False,
     force: Annotated[bool, typer.Option("--force", help="Sobrescreve config existente")] = False,
+    doctor: Annotated[
+        bool,
+        typer.Option(
+            "--doctor",
+            help="Pre-flight check do ambiente (advpls + includes + AppServer)",
+        ),
+    ] = False,
 ) -> None:
     """Compila fontes ADVPL via wrapper sobre advpls."""
     if ctx.invoked_subcommand is not None:
@@ -2152,6 +2159,10 @@ def compile_callback(
 
     if init_config:
         _handle_init_config(root, force)
+        return
+
+    if doctor:
+        _handle_doctor(ctx, root)
         return
 
     if not files:
@@ -2198,6 +2209,27 @@ def compile_callback(
     )
 
     raise typer.Exit(code=result.exit_code)
+
+
+def _handle_doctor(ctx: typer.Context, root: Path) -> None:
+    """Pre-flight check do ambiente compile. Saída JSON estruturada pra agente."""
+    from plugadvpl.compile_doctor import run_doctor
+    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+
+    try:
+        runtime_cfg = load_runtime_config(root)
+    except RuntimeConfigError as exc:
+        typer.secho(f"runtime config error: {exc}", fg=typer.colors.YELLOW, err=True)
+        runtime_cfg = None
+
+    result = run_doctor(root, runtime_cfg)
+    _render_from_ctx(
+        ctx,
+        [result.to_dict()],
+        title=f"compile doctor — {result.status}",
+    )
+    # Exit 0 se ready, 1 se precisa setup (agente decide)
+    raise typer.Exit(code=0 if result.status == "ready" else 1)
 
 
 def _handle_init_config(root: Path, force: bool) -> None:

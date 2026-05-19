@@ -4,6 +4,28 @@ Como deixar o subcomando `compile` funcional do zero, em qualquer máquina.
 
 ---
 
+## 🤖 Uso pelo agente Claude
+
+Se você é o agente IA recebendo "quero compilar X.PRW", o workflow é **simples**:
+
+```bash
+# 1. Sempre primeiro: pre-flight check
+plugadvpl --format json compile --doctor
+
+# 2. Se status="needs_setup", processe cada item em next_actions
+#    (cada um diz exatamente o que perguntar ao usuário e o que fazer com a resposta)
+
+# 3. Re-rode --doctor até status="ready"
+
+# 4. Compile (flags ANTES do nome do arquivo!)
+plugadvpl compile --mode appre --includes <pasta> X.PRW
+```
+
+Detalhes do workflow agente em [`skills/compile/SKILL.md`](../skills/compile/SKILL.md).
+O resto deste doc é **referência humana** com explicação dos pré-requisitos.
+
+---
+
 ## TL;DR (3 minutos)
 
 | Modo | Precisa | Pra que serve |
