@@ -616,6 +616,29 @@ class TestAppreErrprwIntegration:
         assert by_file == {}
 
 
+class TestResolveAdvplsChecksInstalledDir:
+    """v0.8.8 bug 3: _resolve_advpls precisa checar ~/.plugadvpl/advpls/
+    (não só env var + runtime.toml + PATH)."""
+
+    def test_resolves_from_installed_dir_when_no_env_no_cfg(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from plugadvpl.compile import _resolve_advpls
+        # Mock home + cria advpls em ~/.plugadvpl/advpls/bin/<os>/
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import os as _os
+        os_sub = {"nt": "windows", "posix": "linux"}.get(_os.name, "linux")
+        bin_name = "advpls.exe" if _os.name == "nt" else "advpls"
+        target = tmp_path / ".plugadvpl" / "advpls" / "bin" / os_sub / bin_name
+        target.parent.mkdir(parents=True)
+        target.write_text("", encoding="utf-8")
+        monkeypatch.delenv("PLUGADVPL_ADVPLS_BINARY", raising=False)
+        with patch("plugadvpl.compile.shutil.which", return_value=None):
+            with patch("plugadvpl.compile_doctor._ADVPLS_WIN_CANDIDATES", []):
+                result = _resolve_advpls(None)
+        assert result == target
+
+
 class TestOkFlagConsidersSubprocessFailure:
     """v0.8.1 bug #3: ok=true ignorava advpls crash que não produz diagnostic.
     Agora ok requer (zero errors) AND (subprocess ok OR diagnostics estruturados)."""

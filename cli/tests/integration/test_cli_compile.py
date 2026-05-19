@@ -185,3 +185,84 @@ class TestSchemaContract:
                               "mensagem", "codigo", "raw"):
                     assert field in diag, f"missing diagnostic field: {field}"
                 assert diag["severidade"] in ("error", "warning", "info", "unknown")
+
+
+class TestBug1FlagAfterPositional:
+    """v0.8.8 bug 1 (smoke real): typer positional variadic consome flags
+    posteriores. ANTES: caía silenciosamente em --mode auto/appre.
+    AGORA: detecta flags conhecidas em `files` e erra com exit 2 + mensagem."""
+
+    def test_mode_after_positional_errors_loud(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  str(foo), "--mode", "cli", "--includes", "/inc"],
+        )
+        assert result.exit_code == 2
+        # Mensagem inclui as 2 flags detectadas + exemplo CERTO/ERRADO
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "--mode" in combined
+        assert "--includes" in combined
+
+    def test_flags_before_positional_still_works(
+        self, runner: CliRunner, tmp_path: Path, fake_advpls: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        monkeypatch.setenv("PLUGADVPL_ADVPLS_BINARY", str(fake_advpls))
+        # Ordem correta: flags ANTES
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "--format", "json", "compile",
+                  "--mode", "appre", str(foo)],
+        )
+        assert result.exit_code == 0, result.output
+
+
+class TestBug4UseServerValidation:
+    """v0.8.8 bug 4: --use-server com server incompleto OU env vars ausentes
+    deve errar cedo com mensagem clara."""
+
+    def test_server_missing_build_errors_early(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="incomplete", host="127.0.0.1", port=1234, build="",
+            environments=["P2510"], default_environment="P2510",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--use-server", "incomplete", "--mode", "cli", str(foo)],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "build" in combined.lower()
+
+    def test_server_missing_env_vars_errors_early(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("PROTHEUS_USER", raising=False)
+        monkeypatch.delenv("PROTHEUS_PASS", raising=False)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="needauth", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["P2510"], default_environment="P2510",
+            user_env="PROTHEUS_USER", password_env="PROTHEUS_PASS",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--use-server", "needauth", "--mode", "cli", str(foo)],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "PROTHEUS_USER" in combined or "PROTHEUS_PASS" in combined

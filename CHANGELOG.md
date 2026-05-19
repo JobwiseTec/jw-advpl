@@ -36,6 +36,68 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.8] - 2026-05-19
+
+### 🐛 4 bugs achados em smoke real de uso real (reporter externo)
+
+Reporter testou v0.8.7 em uso real e reportou 4 bugs/quirks. Todos
+reproduzidos e corrigidos com testes de regressão.
+
+### Fixed
+
+- **Bug 1 (CRITICAL silencioso) — ordem das flags**: typer com positional
+  variadic `files: list[Path]` consumia flags `--mode`/`--includes`/etc
+  como nomes de arquivo quando vinham DEPOIS do positional. Resultado:
+  `plugadvpl compile FOO.PRW --mode cli` caía silenciosamente em
+  `--mode auto → appre` sem includes, sem aviso. **Fix**: detector
+  pré-execução em `compile_callback` checa se algum item de `files` está
+  na lista de flags conhecidas (~20 flags do compile) e erra com exit 2
+  + mensagem mostrando `❌ ERRADO`/`✓ CERTO`.
+
+- **Bug 2 — `--includes` em appre falhava com C2090**: era sintoma do
+  Bug 1. Reporter rodava `compile FOO.PRW --mode appre --includes <dir>`,
+  `--includes <dir>` era engolido como files, advpls rodava sem `-I`,
+  falhava com `PRTOPDEF.CH not found`. Resolvido junto com Bug 1
+  (agora o usuário recebe erro útil antes de chegar ao advpls).
+
+- **Bug 3 (CRITICAL) — `compile` real não auto-detectava advpls**:
+  `compile --doctor` detectava `~/.plugadvpl/advpls/bin/<os>/advpls.exe`
+  (instalado por `--install-advpls`) mas o `compile` real falhava com
+  "advpls not found in PATH". Causa: `compile._resolve_advpls` tinha sua
+  própria lógica de busca (só env + runtime.toml + PATH), não delegava
+  pra `compile_doctor._detect_advpls`. **Fix**: `_resolve_advpls` agora
+  delega pra `_detect_advpls` quando não acha em env/runtime.toml.
+  Mensagem de erro atualizada com 4 opções (`--install-advpls`, env var,
+  runtime.toml, PATH).
+
+- **Bug 4 — `--use-server` quebrava sem feedback útil**: server com
+  `build=""` (ex: importado de TDS-VSCode antigo) ou env vars de auth
+  não-setadas chegavam ao advpls quebrados, com mensagens cripticas.
+  **Fix**: `_apply_server_override` agora valida **antes** de tentar
+  compilar — checa server tem host/port/build/environments/default_env
+  preenchidos, env vars `user_env`/`password_env` resolvem pra valores
+  não-vazios. Erra com exit 2 + lista do que falta + comando pra setar.
+
+### Tests
+
+- **+5 testes de regressão** garantem que os 4 bugs não voltem:
+  - `test_compile.py::TestResolveAdvplsChecksInstalledDir` (bug 3)
+  - `test_cli_compile.py::TestBug1FlagAfterPositional` (2 testes — erro
+    quando flag depois do positional, sucesso quando antes)
+  - `test_cli_compile.py::TestBug4UseServerValidation` (2 testes — server
+    com build vazio + env vars ausentes)
+- **785 testes total** (era 780, +5).
+
+### Notes
+
+- Origem do report: smoke real do reporter — exatamente o tipo de
+  validação que o spec da Fase 1 §11.5 previu. Loop "smoke → fixture
+  → fix → teste" funcionou conforme esperado.
+- Bug 1 era o MAIS perigoso porque era silencioso (CI passaria com
+  `--mode auto` quando user pediu `--mode cli`). Detector agora também
+  cobre flags de outros comandos (`--init-config`, `--doctor`, etc.)
+  caso usuário misture.
+
 ## [0.8.7] - 2026-05-19
 
 ### 🖥️ Registry global de AppServers (`~/.plugadvpl/servers.json`)

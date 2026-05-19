@@ -115,19 +115,32 @@ def _decode_advpls_output(raw: bytes) -> str:
 
 
 def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
-    # Test hook + escape hatch (não documentado publicamente — só CI/testes).
+    """Resolve path do advpls. MESMA ordem que ``compile_doctor._detect_advpls``.
+
+    v0.8.8 fix: bug em que ``--install-advpls`` instalava em
+    ``~/.plugadvpl/advpls/`` e ``--doctor`` detectava sozinho, mas o
+    ``compile`` real não — porque essa função só olhava PATH/env/runtime_cfg.
+    Agora delega pra ``_detect_advpls`` do doctor (fonte única de verdade).
+    """
+    # 1. Env var tem prioridade absoluta
     env_override = os.environ.get("PLUGADVPL_ADVPLS_BINARY")
     if env_override:
         return Path(env_override)
+    # 2. runtime.toml [tds_ls].binary explícito
     if runtime_cfg is not None:
         return runtime_cfg.tds_ls.binary
-    found = shutil.which("advpls") or shutil.which("advpls.exe")
-    if not found:
-        raise RuntimeError(
-            "advpls not found in PATH. Set tds_ls.binary in runtime.toml or "
-            "install tds-vscode extension."
-        )
-    return Path(found)
+    # 3. Auto-detect (pasta interna ~/.plugadvpl/advpls/, PATH, extensão VSCode)
+    from plugadvpl.compile_doctor import _detect_advpls
+    detected = _detect_advpls()
+    if detected is not None:
+        return detected
+    raise RuntimeError(
+        "advpls não encontrado. Opções:\n"
+        "  • plugadvpl compile --install-advpls   (instala em ~/.plugadvpl/advpls/)\n"
+        "  • export PLUGADVPL_ADVPLS_BINARY=<path>\n"
+        "  • configure [tds_ls].binary no runtime.toml\n"
+        "  • adicione advpls ao PATH"
+    )
 
 
 def _build_ini_script(

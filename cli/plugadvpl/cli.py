@@ -2227,6 +2227,34 @@ def compile_callback(
         typer.secho("nenhum fonte informado", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
 
+    # v0.8.8 fix bug 1: typer com positional variadic (list[Path]) consome
+    # flags posteriores como elementos do `files`. Resultado catastrófico:
+    # `compile FOO.PRW --mode cli --includes <dir>` faz mode/includes
+    # virarem None silenciosamente e cai em --mode auto → appre sem includes.
+    # Detecta isso e erra com mensagem útil ANTES de chamar o compile.
+    suspicious_flags = {
+        "--mode", "--includes", "-I", "--changed-since",
+        "--no-warnings", "--timeout", "--no-security-warning",
+        "--use-server", "--use-environment", "--format", "-f",
+        "--init-config", "--force", "--doctor", "--install-advpls",
+        "--list-servers", "--add-server", "--remove-server",
+        "--import-tds-servers", "--yes", "-y",
+    }
+    misplaced = [str(f) for f in files if str(f) in suspicious_flags]
+    if misplaced:
+        typer.secho(
+            f"\nERRO: flag(s) {misplaced} apareceu(ram) APÓS o(s) nome(s) "
+            "de arquivo.\n"
+            "  Typer/Click com positional variadic consome flags como nomes "
+            "de arquivo (silenciosamente).\n"
+            "  Convenção UNIX: flags `--xxx` SEMPRE antes do positional.\n"
+            "\n"
+            "  ❌ ERRADO: plugadvpl compile FOO.PRW --mode cli --includes <dir>\n"
+            "  ✓ CERTO:  plugadvpl compile --mode cli --includes <dir> FOO.PRW",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
     from plugadvpl.compile import CompileRequest, run as compile_run
     from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
 
@@ -2456,6 +2484,55 @@ def _apply_server_override(
     )
 
     assert isinstance(server, Server)
+
+    # v0.8.8 fix bug 4: valida que o server tem TODOS os campos preenchidos
+    # ANTES de tentar compilar. Antes: --import-tds-servers ou --add-server
+    # podia gravar server com build="" e quebrava silenciosamente depois
+    # (advpls recebe build vazio, falha na auth sem mensagem útil).
+    missing: list[str] = []
+    if not server.host:
+        missing.append("host")
+    if not server.port:
+        missing.append("port")
+    if not server.build:
+        missing.append("build (versão do AppServer, ex: 7.00.240223P)")
+    if not server.environments:
+        missing.append("environments (lista, ex: ['P2510'])")
+    if not server.default_environment:
+        missing.append("default_environment")
+    if missing:
+        typer.secho(
+            f"\nERRO: server '{server.name}' está incompleto. Faltam: {', '.join(missing)}\n"
+            f"  Rode `plugadvpl compile --add-server` pra recadastrar OU edite\n"
+            f"  ~/.plugadvpl/servers.json manualmente preenchendo esses campos.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    # v0.8.8 fix bug 4: valida env vars de auth ANTES de tentar compilar.
+    # Antes: env vars não setadas só viravam erro durante geração do .ini
+    # com mensagem cryptica do runtime_config. Agora avisa cedo.
+    import os as _os
+    user_val = _os.environ.get(server.user_env)
+    pass_val = _os.environ.get(server.password_env)
+    env_missing: list[str] = []
+    if not user_val:
+        env_missing.append(server.user_env)
+    if not pass_val:
+        env_missing.append(server.password_env)
+    if env_missing:
+        typer.secho(
+            f"\nERRO: server '{server.name}' precisa das env vars de auth setadas: {env_missing}\n"
+            f"  Setar e re-rodar:\n"
+            + "\n".join(
+                f"    $env:{v} = \"<valor>\"   # PowerShell\n"
+                f"    export {v}=<valor>     # bash"
+                for v in env_missing
+            ),
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
     env = env_override or server.default_environment
     if env not in server.environments:
         typer.secho(
