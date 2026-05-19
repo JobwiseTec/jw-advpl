@@ -94,7 +94,20 @@ Se já tem `uv` e quer só forçar pull da versão nova (uv às vezes segura cac
 ```powershell
 uv cache clean plugadvpl
 uv tool install plugadvpl --reinstall --force
-plugadvpl version
+plugadvpl --version
+```
+
+**Erro `os error 32` no Windows** durante `uv tool upgrade`? Significa que algum
+terminal/processo está com `plugadvpl.exe` aberto (Defender, VSCode terminal,
+outro shell). Soluções:
+
+```powershell
+# 1. Feche outros terminais com plugadvpl e:
+uv tool install --reinstall plugadvpl
+
+# 2. Se o uv ficou em estado bugado ("Nothing to upgrade" mas versão antiga):
+uv tool uninstall plugadvpl
+uv tool install plugadvpl
 ```
 
 ### O plugin Claude Code é separado da CLI
@@ -242,21 +255,32 @@ O CLI Python expõe **~30 subcomandos** (Universo 1-4 + Fase 0 + Fase 1), espelh
 | `/plugadvpl:hotspots` | Top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor |
 | `/plugadvpl:cobertura-doc` | % de funções com Protheus.doc por módulo ou tipo de source |
 
-### Fase 0 / Fase 1 — Runtime ADVPL (v0.7/v0.8)
+### Fase 0 / Fase 1 — Runtime ADVPL (v0.7/v0.8/v0.9)
 
 | Comando | Função |
 |---|---|
-| `/plugadvpl:edit-prw {check\|open\|save}` | **(v0.7.0)** Conversão CP1252↔UTF-8 in-place. Detecta encoding via BOM + ASCII + UTF-8 strict + fallback CP1252. Cria `.bak` |
+| `/plugadvpl:edit-prw {check\|open\|save\|stage\|commit}` | **(v0.7.0+)** Conversão CP1252↔UTF-8 in-place. Workflow `stage`→edita→`commit` evita corromper acentos ao editar `.prw` com Claude |
+| `/plugadvpl:edit-prw clean [target]` | **(v0.8.11)** Remove `.bak` acumulado dos ciclos stage/commit. `--dry-run` lista sem deletar, `--yes` skipa confirmação |
 | `/plugadvpl:compile <fonte>` | **(v0.8.0+)** Compila ADVPL via wrapper sobre binário oficial `advpls` (TOTVS). 2 modos: `appre` (local, pré-processador) ou `cli` (full via AppServer TCP) |
 | `/plugadvpl:compile --doctor` | **(v0.8.4)** Pre-flight check estruturado em JSON. Auto-detecta advpls + includes + AppServer. Retorna `next_actions` ordenadas pro agente seguir |
 | `/plugadvpl:compile --install-advpls` | **(v0.8.6)** Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
-| `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | **(v0.8.7)** Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto |
+| `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | **(v0.8.7+)** Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto. Em v0.8.11, `--import-tds-servers` passou a ler `buildVersion` + `includes` corretamente |
+| `/plugadvpl:compile --probe-appserver <host:port \| path>` | **(v0.8.11/0.8.12)** Descobre build do AppServer. Modo **network** (`host:port`) invoca `advpls cli action=validate` — mesmo mecanismo que o TDS-VSCode usa, retorna build + flag SSL. Modo **log** (path) parseia `protheus.log` como fallback offline |
+| `/plugadvpl:compile --set-credentials <server>` / `--clear-credentials <server>` | **(v0.9.0)** Salva user+senha no **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service). Prompt seguro com `getpass`. Plugin nunca grava senha em arquivo |
+| `/plugadvpl:compile --explain-config` | **(v0.9.0)** JSON estruturado mostrando ordem de precedência (CLI flag > runtime.toml > registry > keyring > env > auto-detect) + de onde veio cada campo + estado das credenciais (senha sempre redacted) |
 
-**Setup zero-config recomendado**:
+**Setup zero-config recomendado (v0.9.1+)**:
 ```bash
-plugadvpl compile --install-advpls           # baixa/copia advpls (1x por máquina)
-plugadvpl compile --import-tds-servers       # se já tem TDS-VSCode (importa servers)
-plugadvpl compile --use-server <nome> --mode cli FONTE.PRW
+# 1x na vida em cada máquina:
+plugadvpl compile --install-advpls               # baixa/copia advpls (~118MB)
+plugadvpl compile --import-tds-servers --yes     # se já tem TDS-VSCode
+plugadvpl compile --set-credentials <nome>       # prompt seguro, salva no cofre
+
+# Daí em diante, em qualquer projeto, qualquer shell — zero env var, zero runtime.toml:
+plugadvpl compile --mode cli --use-server <nome> FONTE.PRW
+
+# appre (sem AppServer) nem precisa de credencial desde v0.9.1:
+plugadvpl compile --mode appre --use-server <nome> FONTE.PRW
 ```
 
 Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info conversacional do que coletar) e [docs/setup-compile.md](docs/setup-compile.md) (guia técnico passo-a-passo).
@@ -481,7 +505,7 @@ Crédito completo do `advpls` na seção [Créditos](#créditos).
 | **`cli`** | AppServer TCP (RPC) | TUDO — semântica + binding + gera RPO | CI rigoroso, build final |
 | **`auto`** (default) | `cli` se AppServer responde, senão `appre` | depende | Default sensato |
 
-### Workflow zero-config para usuário novo
+### Workflow zero-config para usuário novo (v0.9.1+)
 
 ```bash
 # 1. Instala advpls (1x por máquina)
@@ -489,12 +513,20 @@ plugadvpl compile --install-advpls
 #   interativo: copia de path local OU baixa Marketplace (~118MB, confirma antes)
 
 # 2. Cadastra servers (1x por máquina, opcional se já usa TDS-VSCode)
-plugadvpl compile --import-tds-servers           # se já tem TDS-VSCode
+plugadvpl compile --import-tds-servers --yes     # se já tem TDS-VSCode
 # OU
 plugadvpl compile --add-server                   # interativo: name, host, port, build, envs
+# OU descobre build do AppServer remoto sem ter TDS-VSCode:
+plugadvpl compile --probe-appserver 192.168.0.10:1234
 
-# 3. Compila qualquer fonte de qualquer projeto:
+# 3. Salva credencial 1x no cofre do OS — sem mais $env:PROTHEUS_USER!
+plugadvpl compile --set-credentials <nome>       # prompt seguro (getpass)
+
+# 4. Compila qualquer fonte de qualquer projeto, qualquer shell:
 plugadvpl compile --use-server <nome> --mode cli FONTE.PRW
+
+# Debug — vê de onde cada campo veio:
+plugadvpl compile --explain-config --format json
 ```
 
 ### Workflow do agente IA (skill `/plugadvpl:compile`)
@@ -516,12 +548,14 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ### Segurança
 
-- **Credenciais NUNCA gravadas em arquivo** — só nomes de env var no `runtime.toml` e no `servers.json`
+- **Credenciais NUNCA gravadas em arquivo do plugin** — só nomes de env var no `runtime.toml` e no `servers.json`. Senha vive em UM destes lugares (em ordem de precedência): env var → **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service, v0.9.0+, cifrado por DPAPI/Keychain/SecretService) → erro didático
+- **Prompt seguro** em `--set-credentials` usa `getpass` (senha não ecoa, confirmação dupla)
+- **`--explain-config` redacted** — campo `password` aparece como `<set>` / `<unset>`, nunca o valor
 - **Tempfile `.ini` em CP1252 + permissão 0o600** (POSIX); tempdir 0o700 via `mkdtemp`
 - **Cleanup garantido** no `finally` em todos os caminhos (success/timeout/KeyboardInterrupt)
 - **Redact patterns externos** (`lookups/redact_patterns.json`) aplicados em stdout/stderr/diagnostic.raw antes de gravar — cobre `password`/`psw`/`senha`/`pwd`/`aut_file`/hex keys
 - **Security warning** quando `appserver.host` não é localhost (recomenda SSH tunnel)
-- **5+ testes objetivos** confirmam regex de credencial ausente do output em cenários reais
+- **Fallback gracioso** quando keyring não disponível (Linux server sem D-Bus): retorna `keyring_available=False`, fluxo cai pra env var sem crashear
 
 ---
 
@@ -536,16 +570,25 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ## Status
 
-**v0.8.7 — Fase 1 completa (compile wrapper TDS-LS) com registry global de servers.**
+**v0.9.1 — Fase 1 completa + zero-config flow (cofre nativo do OS pra credenciais).**
 
-- **~30 subcomandos** incluindo `compile {<fonte>, --doctor, --install-advpls, --list-servers, --add-server, --use-server, --import-tds-servers, --init-config}`
+- **~35 subcomandos** incluindo `compile {<fonte>, --doctor, --install-advpls, --list-servers, --add-server, --use-server, --import-tds-servers, --probe-appserver, --set-credentials, --clear-credentials, --explain-config, --init-config}` + `edit-prw {check, open, save, stage, commit, clean}`
 - **40+ skills** (knowledge + slash command wrappers), 4 agents especializados, 1 SessionStart hook
 - **27 tabelas físicas** + 2 FTS5 + 7 lookups embarcados
-- **780 testes verde** (unit + integration + bench + smoke real opcional)
+- **809 testes verde** (unit + integration + bench + smoke real opcional)
 - Bench em ~2.000 fontes: `ingest` <60s com `--workers 8`; `ingest-sx` do dicionário completo (~420k rows) <30s
 - Schema v10 — migrations 005-007 (Universo 3) + 008 (índices polish) + 010 (Universo 4 métricas)
 - **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **Fase 1 compile** validada end-to-end contra `advpls` real (extensão TDS-VSCode v3.x) + includes Protheus reais
+
+**Highlights recentes (v0.8.11 → v0.9.1):**
+
+| Versão | Destaque |
+|---|---|
+| **v0.9.1** | `--use-server + --mode appre` parou de exigir credencial (appre é local, não conecta no AppServer) |
+| **v0.9.0** | Cofre nativo do OS pra credencial Protheus (`--set-credentials`, `--clear-credentials`, `--explain-config`) — nunca mais exportar senha em env var por sessão |
+| **v0.8.12** | `--probe-appserver host:port` descobre build via `advpls cli action=validate` (mesmo mecanismo do TDS-VSCode) — funciona via SSH tunnel/VPN |
+| **v0.8.11** | 4 gaps de uso real corrigidos: TDS `buildVersion`+`includes`, `[auth]` opcional, `edit-prw clean`, `--probe-appserver` log mode |
 
 **Roadmap.**
 
