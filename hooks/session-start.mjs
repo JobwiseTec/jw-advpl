@@ -72,21 +72,40 @@ function checkUvxAvailable() {
   }
 }
 
-function checkStaleViaCli(root) {
+function checkPlugadvplOnPath() {
   try {
-    const out = execFileSync(
-      'uvx',
-      ['plugadvpl@0.3.1', 'status', '--check-stale', '--quiet', '--format', 'json'],
-      {
-        cwd: root,
-        encoding: 'utf-8',
-        timeout: 5000,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
-    );
-    return JSON.parse(out);
+    execFileSync('plugadvpl', ['--version'], { stdio: 'ignore', timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// v0.9.2 (QA PERF #5): preferir `plugadvpl` do PATH (usuário instalou via
+// `uv tool install plugadvpl` — versão acompanhada de upgrade). Fallback
+// pro `uvx plugadvpl` sem pin (pega latest) só se não estiver no PATH.
+// Antes: estava pinned em `plugadvpl@0.3.1`, 3 schemas atrás (atual: v10) —
+// queries novas falhavam silenciosamente em projetos modernos.
+function checkStaleViaCli(root) {
+  const args = ['status', '--check-stale', '--quiet', '--format', 'json'];
+  const opts = {
+    cwd: root,
+    encoding: 'utf-8',
+    timeout: 5000,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  };
+  try {
+    if (checkPlugadvplOnPath()) {
+      const out = execFileSync('plugadvpl', args, opts);
+      return JSON.parse(out);
+    }
+    if (checkUvxAvailable()) {
+      const out = execFileSync('uvx', ['plugadvpl', ...args], opts);
+      return JSON.parse(out);
+    }
+    return null;
   } catch (err) {
-    return null; // uvx missing, timeout, or parse error — silent
+    return null; // CLI missing, timeout, schema mismatch, parse error — silent
   }
 }
 

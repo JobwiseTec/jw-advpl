@@ -128,6 +128,54 @@ class TestIngest:
         finally:
             conn.close()
 
+    def test_ingest_no_content_metrics_still_correct_v0_9_2(
+        self, tmp_path: Path
+    ) -> None:
+        """v0.9.2 (QA PERF #3): métricas devem ser corretas mesmo com --no-content.
+
+        Antes: chunk_content="" → body=""→ extract_function_metrics em string
+        vazia → CC=1, nesting=0 silenciosamente (corrompia métricas em modo
+        privacy).
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        # Função com complexidade real: 4 IFs aninhados + 1 WHILE + 1 OR.
+        # Mínimo esperado: CC ~6+, nesting ~3+.
+        (src / "ComplexFunc.prw").write_bytes(
+            b"User Function MyComplex()\n"
+            b"  Local i\n"
+            b"  If A == 1 .Or. B == 2\n"
+            b"    If C == 3\n"
+            b"      While i < 10\n"
+            b"        If D == 4\n"
+            b"          i++\n"
+            b"        EndIf\n"
+            b"      EndDo\n"
+            b"    EndIf\n"
+            b"  EndIf\n"
+            b"Return\n"
+        )
+        ingest(src, workers=0, no_content=True)
+        conn = _connect(src / ".plugadvpl" / "index.db")
+        try:
+            row = conn.execute(
+                "SELECT cc, nesting, loc FROM fonte_metrics WHERE funcao='MyComplex'"
+            ).fetchone()
+            assert row is not None, "fonte_metrics deve ter a função MyComplex"
+            cc, nesting, loc = row
+            # Antes do fix: cc=1, nesting=0, loc=12 (LOC sempre correto, vinha de linha_inicio/fim)
+            # Depois: cc deve refletir os 4 IFs + WHILE + OR (CC >= 5)
+            assert cc >= 5, f"CC esperado >=5, veio {cc} (bug v0.9.2 não corrigido)"
+            assert nesting >= 3, f"nesting esperado >=3, veio {nesting}"
+            assert loc == 12
+            # Confirma que o content do chunk continua vazio (modo privacy ativo)
+            content_row = conn.execute(
+                "SELECT content FROM fonte_chunks WHERE funcao='MyComplex'"
+            ).fetchone()
+            assert content_row[0] in ("", None)
+        finally:
+            conn.close()
+
     def test_ingest_redact_secrets(self, tmp_path: Path) -> None:
         src = tmp_path / "src"
         src.mkdir()

@@ -570,21 +570,22 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ## Status
 
-**v0.9.1 — Fase 1 completa + zero-config flow (cofre nativo do OS pra credenciais).**
+**v0.9.2 — Fase 1 completa + zero-config flow + 3 fixes de performance/robustez (QA antigos).**
 
 - **~35 subcomandos** incluindo `compile {<fonte>, --doctor, --install-advpls, --list-servers, --add-server, --use-server, --import-tds-servers, --probe-appserver, --set-credentials, --clear-credentials, --explain-config, --init-config}` + `edit-prw {check, open, save, stage, commit, clean}`
 - **40+ skills** (knowledge + slash command wrappers), 4 agents especializados, 1 SessionStart hook
-- **27 tabelas físicas** + 2 FTS5 + 7 lookups embarcados
-- **809 testes verde** (unit + integration + bench + smoke real opcional)
+- **27 tabelas físicas** + 2 FTS5 (`fonte_chunks_fts` unicode61 + `fonte_chunks_fts_tri` trigram) + 7 lookups embarcados
+- **812 testes verde** (unit + integration + bench + smoke real opcional)
 - Bench em ~2.000 fontes: `ingest` <60s com `--workers 8`; `ingest-sx` do dicionário completo (~420k rows) <30s
 - Schema v10 — migrations 005-007 (Universo 3) + 008 (índices polish) + 010 (Universo 4 métricas)
 - **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **Fase 1 compile** validada end-to-end contra `advpls` real (extensão TDS-VSCode v3.x) + includes Protheus reais
 
-**Highlights recentes (v0.8.11 → v0.9.1):**
+**Highlights recentes (v0.8.11 → v0.9.2):**
 
 | Versão | Destaque |
 |---|---|
+| **v0.9.2** | 3 fixes HIGH: `metrics --no-content` agora calcula CC correto; hook SessionStart deixou de pinar `plugadvpl@0.3.1`; `grep --mode literal` usa índice trigram FTS (10-50× speedup) |
 | **v0.9.1** | `--use-server + --mode appre` parou de exigir credencial (appre é local, não conecta no AppServer) |
 | **v0.9.0** | Cofre nativo do OS pra credencial Protheus (`--set-credentials`, `--clear-credentials`, `--explain-config`) — nunca mais exportar senha em env var por sessão |
 | **v0.8.12** | `--probe-appserver host:port` descobre build via `advpls cli action=validate` (mesmo mecanismo do TDS-VSCode) — funciona via SSH tunnel/VPN |

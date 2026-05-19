@@ -350,3 +350,29 @@ class TestGrep:
         rows = grep_fts(conn, "U_FATA050", mode="identifier", limit=20)
         # 'FATA050' (sem U_) deve aparecer no conteúdo de MATA010 ou FATA050.
         assert any("FATA050" in (r["snippet"] or "").upper() for r in rows)
+
+    def test_grep_literal_uses_trigram_v0_9_2(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """v0.9.2 (QA PERF #1): pattern >=3 chars passa pelo trigram FTS
+        pré-filtro + LIKE confirmador. Resultado equivalente ao LIKE puro
+        anterior, mas com I/O drasticamente menor em bases grandes.
+
+        Assertion mínima: o caminho novo continua retornando o mesmo match.
+        """
+        _, conn = db_with_three_sources
+        rows = grep_fts(conn, "C5_NUM", mode="literal", limit=20)
+        assert any(r["arquivo"] == "FATA050.prw" for r in rows)
+        # Snippet deve conter o pattern (LIKE pós-filtro garante exact substring)
+        assert all("C5_NUM" in (r["snippet"] or "") for r in rows)
+
+    def test_grep_literal_short_pattern_fallback_v0_9_2(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """v0.9.2: pattern <3 chars não usa trigram (não há trigrams nesse
+        tamanho); faz LIKE puro sem erro."""
+        _, conn = db_with_three_sources
+        # Pattern de 1-2 chars deve funcionar (cair no else do branch)
+        rows = grep_fts(conn, "If", mode="literal", limit=5)
+        # Não estoura erro; pode achar ou não — o que importa é não crashear
+        assert isinstance(rows, list)

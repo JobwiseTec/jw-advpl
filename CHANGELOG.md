@@ -36,6 +36,49 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.9.2] - 2026-05-19
+
+### Fixed - 3 bugs HIGH descobertos na triagem de gaps/ antigos
+
+Auditoria dos 6 docs antigos em `gaps/` (versões 0.4.3 → 0.7) contra v0.9.1
+fechou 23/36 bugs já resolvidos (arquivados em `gaps/archived/`). Restavam 3
+bugs HIGH ainda válidos, todos endereçados nesta release.
+
+- **QA PERF #3 — métricas corrompidas silenciosamente em `--no-content`**
+  ([cli/plugadvpl/ingest.py:319](cli/plugadvpl/ingest.py)): no modo privacy,
+  `chunk_content=""` ia vazio pro DB E também era usado pra calcular
+  CC/nesting → toda função tinha CC=1, nesting=0. Fix: separar
+  `body_for_metrics` (sempre real) de `chunk_content` (vazio em --no-content).
+  Métricas voltam a ser corretas mesmo escondendo o source do DB.
+- **QA PERF #5 — Hook SessionStart pinned em `plugadvpl@0.3.1`**
+  ([hooks/session-start.mjs:79](hooks/session-start.mjs)): plugin está em
+  v0.9.x / schema v10, hook chamava CLI 3 schemas atrás → check-stale podia
+  reportar incorreto ou falhar silenciosamente em queries novas. Fix: prefere
+  `plugadvpl` do PATH (usuário instalou via `uv tool install`), fallback pro
+  `uvx plugadvpl` sem pin (latest).
+- **QA PERF #1 — `grep --mode literal` ignorava índice trigram FTS**
+  ([cli/plugadvpl/query.py:558](cli/plugadvpl/query.py)): migration 001 cria
+  `fonte_chunks_fts_tri` (FTS5 trigram), ingest popula, mas `grep_fts(mode=
+  "literal")` fazia full table scan via `LIKE`. Fix: pattern ≥3 chars usa
+  trigram MATCH como pré-filtro + `LIKE` confirmador (preserva
+  case-sensitivity). Pattern <3 chars cai no LIKE puro (trigram não cobre).
+  Fallback gracioso se trigram indisponível.
+
+### Maintenance
+
+- 6 docs `gaps/*.md` arquivados em `gaps/archived/` com README explicativo
+  (bugs já resolvidos confirmados via grep + CHANGELOG + testes existentes).
+- `gaps/PLUGADVPL_QA_TECNICO_PERFORMANCE_2026-05-18.md` agora é o roadmap
+  natural da v0.10.0 (10/10 itens válidos: 3 HIGH endereçados aqui + 4 MED +
+  4 LOW pendentes).
+
+### Technical
+
+- Testes: +3 regressão (`test_ingest_no_content_metrics_still_correct_v0_9_2`,
+  `test_grep_literal_uses_trigram_v0_9_2`,
+  `test_grep_literal_short_pattern_fallback_v0_9_2`). Suite total: 812
+  passed.
+
 ## [0.9.1] - 2026-05-19
 
 ### Fixed - `--use-server + --mode appre` parou de exigir credencial

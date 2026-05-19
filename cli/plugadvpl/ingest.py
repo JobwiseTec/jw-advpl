@@ -307,6 +307,10 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
     # fonte_chunks — uma row por função (skip mvc_hook que não vira chunk real).
     lines = content.splitlines()
     chunk_rows: list[tuple[Any, ...]] = []
+    # v0.9.2 (QA PERF #3): body_for_metrics separado de chunk_content. Modo
+    # --no-content esconde o conteúdo do DB mas as métricas (CC/nesting/LOC)
+    # ainda precisam do corpo real — antes eram computadas em "" silenciosamente.
+    body_by_chunk_id: dict[str, str] = {}
     for f in funcoes_list:
         kind = f.get("kind", "function")
         if kind in _NON_CHUNK_KINDS:
@@ -316,17 +320,20 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
         fim = int(f.get("linha_fim", ini))
         # Assinatura = primeira linha do header (best-effort)
         assinatura = lines[ini - 1].strip() if 1 <= ini <= len(lines) else ""
+        body_for_metrics = "\n".join(lines[ini - 1 : fim])
         if no_content:
             chunk_content = ""
         else:
-            chunk_content = "\n".join(lines[ini - 1 : fim])
+            chunk_content = body_for_metrics
             if redact_secrets:
                 chunk_content = _redact(chunk_content)
+        chunk_id = f"{arquivo}::{nome}@{ini}"
+        body_by_chunk_id[chunk_id] = body_for_metrics
         chunk_rows.append(
             (
                 # ID inclui linha_inicio para distinguir funções com mesmo nome no
                 # mesmo arquivo (Static + User, redefinições, overloads).
-                f"{arquivo}::{nome}@{ini}",
+                chunk_id,
                 arquivo,
                 nome,
                 nome.upper().strip(),
@@ -357,8 +364,11 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
         # depois que chamadas_funcao e protheus_docs estão populados.
         metric_rows: list[tuple[Any, ...]] = []
         for chunk in chunk_rows:
-            chunk_id, arq_c, fn_c, _norm, _kind, _classe, ini_c, fim_c, assin, cont, _mod = chunk
-            body = cont or ""
+            chunk_id, arq_c, fn_c, _norm, _kind, _classe, ini_c, fim_c, assin, _cont, _mod = chunk
+            # v0.9.2 (QA PERF #3): usa body_for_metrics (corpo real) em vez de
+            # cont (vazio em --no-content). Antes: métricas viravam CC=1
+            # silenciosamente em modo privacy.
+            body = body_by_chunk_id.get(chunk_id, "")
             mets = extract_function_metrics(body)
             params_count = _count_signature_params(assin or "")
             loc = max(0, int(fim_c or 0) - int(ini_c or 0) + 1)
