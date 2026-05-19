@@ -30,21 +30,20 @@ Output traz `status` (`ready` | `needs_setup`) e `next_actions` (lista ordenada 
 Para cada item em `next_actions`, agir conforme `action`:
 
 #### `set_advpls_binary`
-- **Se `candidates` não-vazio**: mostre candidates ao usuário e pergunte qual usar
-- **Se vazio**: peça o path do `advpls.exe`. Se usuário não tem, ofereça baixar:
-  ```powershell
-  # Windows
-  Invoke-WebRequest "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/TOTVS/vsextensions/tds-vscode/latest/vspackage" -OutFile tds-vscode.vsix
-  Expand-Archive tds-vscode.vsix -DestinationPath tds-vscode/
-  # advpls fica em: tds-vscode/extension/node_modules/@totvs/tds-ls/bin/windows/advpls.exe
-  ```
-  ```bash
-  # Linux/macOS — ajuste 'linux'→'mac' se macOS
-  curl -L -o tds.vsix "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/TOTVS/vsextensions/tds-vscode/latest/vspackage"
-  unzip -q tds.vsix -d tds-vscode/
-  chmod +x tds-vscode/extension/node_modules/@totvs/tds-ls/bin/linux/advpls
-  ```
-- **Salvar**: `export PLUGADVPL_ADVPLS_BINARY=<path>` OU editar `[tds_ls].binary` no `runtime.toml`
+
+**Caminho preferido**: orientar o user a rodar:
+```bash
+plugadvpl compile --install-advpls
+```
+
+Comando interativo que pergunta "copiar de local existente" ou "baixar do Marketplace",
+mostra plano (tamanho, paths, se precisa rede) + pede confirmação antes de cada ação.
+Instala em `~/.plugadvpl/advpls/bin/<os>/` — `--doctor` detecta automaticamente nas
+próximas chamadas. **Não precisa configurar nada** após `--install-advpls`.
+
+Se o user quiser fazer manual:
+- Path de advpls existente → `export PLUGADVPL_ADVPLS_BINARY=<path>` ou editar `[tds_ls].binary` no `runtime.toml`
+- Baixar manual → instruções em [`docs/compile-checklist.md`](docs/compile-checklist.md) §1
 
 #### `set_includes`
 - **Se `candidates` não-vazio**: mostre ao usuário ("Detectei estas pastas com PRTOPDEF.CH e protheus.ch, qual usar?")

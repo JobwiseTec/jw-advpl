@@ -2149,6 +2149,20 @@ def compile_callback(
             help="Pre-flight check do ambiente (advpls + includes + AppServer)",
         ),
     ] = False,
+    install_advpls: Annotated[
+        bool,
+        typer.Option(
+            "--install-advpls",
+            help="Instala advpls em ~/.plugadvpl/advpls/ (interativo: copia ou baixa)",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", "-y",
+            help="Pula confirmações interativas (use com cuidado em --install-advpls)",
+        ),
+    ] = False,
 ) -> None:
     """Compila fontes ADVPL via wrapper sobre advpls."""
     if ctx.invoked_subcommand is not None:
@@ -2163,6 +2177,10 @@ def compile_callback(
 
     if doctor:
         _handle_doctor(ctx, root)
+        return
+
+    if install_advpls:
+        _handle_install_advpls(yes=yes)
         return
 
     if not files:
@@ -2209,6 +2227,117 @@ def compile_callback(
     )
 
     raise typer.Exit(code=result.exit_code)
+
+
+def _handle_install_advpls(yes: bool) -> None:
+    """Install/replace advpls em ~/.plugadvpl/advpls/. Interativo.
+
+    Sempre explica o que vai fazer ANTES + pede confirmação (unless --yes).
+    Não toca em filesystem antes do user confirmar cada operação.
+    """
+    from plugadvpl.compile_installer import (
+        execute_copy,
+        execute_download,
+        install_dir,
+        installed_binary_path,
+        is_installed,
+        plan_copy,
+        plan_download,
+    )
+
+    # 1. Estado atual
+    target = installed_binary_path()
+    typer.echo(f"\n=== plugadvpl install-advpls ===")
+    typer.echo(f"Pasta interna: {install_dir()}")
+    if is_installed():
+        size_mb = target.stat().st_size // (1024 * 1024)
+        typer.echo(
+            f"Status: JÁ INSTALADO em {target} ({size_mb} MB)"
+        )
+        if not yes and not typer.confirm(
+            "Já existe. Quer SUBSTITUIR (vai sobrescrever)?",
+            default=False,
+        ):
+            typer.echo("Cancelado. Nada foi alterado.")
+            raise typer.Exit(code=0)
+    else:
+        typer.echo(f"Status: NÃO instalado (esperado em {target})")
+
+    # 2. Escolher source
+    typer.echo("\nDe onde obter o advpls?")
+    typer.echo("  (1) Copiar de um path local (você informa onde está)")
+    typer.echo("  (2) Baixar do Marketplace VSCode público (~118MB)")
+    typer.echo("  (3) Cancelar")
+
+    if yes:
+        typer.secho(
+            "ERROR: --yes requer escolha não-interativa, mas --install-advpls "
+            "sempre pergunta a fonte. Rode sem --yes ou contribua flag "
+            "--install-source={copy|download} no plugin.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    choice = typer.prompt("Escolha 1/2/3", type=int)
+    if choice == 3:
+        typer.echo("Cancelado.")
+        raise typer.Exit(code=0)
+    if choice not in (1, 2):
+        typer.secho("Opção inválida.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    # 3. Construir plano
+    if choice == 1:
+        src_str = typer.prompt(
+            "Path do advpls (ex: D:/IA/Tools/tds-vscode/extracted/extension/"
+            "node_modules/@totvs/tds-ls/bin/windows/advpls.exe)"
+        )
+        src_path = Path(src_str)
+        if not src_path.is_file():
+            typer.secho(
+                f"Arquivo não existe: {src_path}",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        plan = plan_copy(src_path)
+    else:
+        plan = plan_download()
+
+    # 4. Mostrar plano + confirmar
+    typer.echo("\n=== PLANO DE INSTALAÇÃO ===")
+    typer.echo(plan.description)
+    typer.echo(f"\nTamanho estimado: ~{plan.estimated_size_mb} MB")
+    typer.echo(f"Precisa de rede: {'sim' if plan.needs_network else 'não'}")
+    typer.echo()
+
+    if not typer.confirm("Confirma e prossegue?", default=True):
+        typer.echo("Cancelado. Nada foi feito.")
+        raise typer.Exit(code=0)
+
+    # 5. Executar
+    def _progress(msg: str) -> None:
+        typer.echo(f"  ... {msg}")
+
+    typer.echo("\nExecutando...")
+    if plan.action == "copy":
+        result = execute_copy(plan, progress=_progress)
+    else:
+        result = execute_download(plan, progress=_progress)
+
+    if not result.ok:
+        typer.secho(f"\nFALHOU: {result.error}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    size_mb = result.bytes_written // (1024 * 1024)
+    typer.secho(
+        f"\n✓ Instalado: {result.binary_path} ({size_mb} MB)",
+        fg=typer.colors.GREEN,
+    )
+    typer.echo(
+        "\nPróximos passos:\n"
+        "  plugadvpl compile --doctor    # confirma detecção\n"
+        "  plugadvpl compile --mode appre --includes <pasta> <fonte.prw>"
+    )
 
 
 def _handle_doctor(ctx: typer.Context, root: Path) -> None:

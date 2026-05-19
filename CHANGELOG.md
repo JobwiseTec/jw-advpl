@@ -36,6 +36,72 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.6] - 2026-05-19
+
+### 🤝 `compile --install-advpls` — instalação gerenciada do binário
+
+User pediu: agente deveria verificar pasta interna do plugin, e se não
+tiver advpls, perguntar caminho local OU oferecer baixar — sempre com
+autorização explícita e explicação. Implementado.
+
+### Added
+
+- **`plugadvpl compile --install-advpls`** — comando interativo que
+  instala advpls em `~/.plugadvpl/advpls/bin/<os>/`. 2 modos:
+  - **(1) Copiar de path local**: usuário informa onde está advpls
+    existente (instalação antiga, máquina virtual, etc.) e o sistema
+    copia a pasta `bin/<os>/` inteira (binário + DLLs companion).
+  - **(2) Baixar do Marketplace VSCode**: baixa `.vsix` público
+    da Microsoft (~118MB), extrai **apenas** o subdir `bin/<os>/`
+    (~40MB), descarta o resto. Sem precisar do VSCode instalado.
+  - SEMPRE mostra **plano de instalação** (paths, tamanho estimado,
+    se precisa rede) + pede **confirmação explícita** antes de qualquer
+    operação destrutiva ou pesada. UX safe-by-default.
+- **`compile_installer.py`** módulo novo (~200 linhas) com:
+  - `plan_copy()` / `plan_download()` — funções puras geram `InstallPlan`
+    sem efeitos colaterais. Permite mostrar antes de executar.
+  - `execute_copy()` / `execute_download()` — efeitos colaterais
+    isolados, retornam `InstallResult` com ok/binary_path/bytes_written.
+  - `installed_binary_path()` / `is_installed()` — helpers de detecção.
+
+### Changed
+
+- **`_detect_advpls()`** em `compile_doctor.py` agora checa a pasta
+  interna `~/.plugadvpl/advpls/` com **prioridade alta** (depois de env
+  var, antes do PATH). Resultado: após `--install-advpls`, próximas
+  chamadas de `--doctor`/`compile` detectam advpls automaticamente,
+  sem precisar configurar `PLUGADVPL_ADVPLS_BINARY` nem `runtime.toml`.
+- **`--doctor` hint do `set_advpls_binary`** atualizado pra recomendar
+  `--install-advpls` em vez de só listar opções manuais.
+- **`docs/compile-checklist.md` §1** simplificado: "se não tem, roda
+  `plugadvpl compile --install-advpls`" — uma linha em vez de 5 opções.
+- **`skills/compile/SKILL.md`** atualizada: agente agora orienta
+  `--install-advpls` como caminho preferido em vez de baixar manual.
+
+### Tests
+
+- **+8 testes** em `test_compile_installer.py`: paths internos, plan_copy
+  com source dir multi-arquivo, plan_download (URL/tamanho/needs_network),
+  execute_copy com binário + companion DLL, execute_copy fail quando
+  binário falta na source, execute_download com .vsix fake (zipfile
+  in-memory mockando layout real da tds-vscode), execute_download tratando
+  .vsix corrompido.
+- **763 testes total** (era 755, +8 installer).
+- Validado smoke real: copy de 36MB executou em <1s, `--doctor` posterior
+  auto-detectou `~/.plugadvpl/advpls/bin/windows/advpls.exe`.
+
+### Notes
+
+- Pasta interna `~/.plugadvpl/advpls/` é per-user (não per-projeto). Uma
+  instalação serve pra todos os projetos plugadvpl da máquina.
+- Limitação atual: `--install-advpls` é sempre interativo. CI/scripts
+  precisam mockar stdin OU usar variantes manuais
+  (`PLUGADVPL_ADVPLS_BINARY=<path>` ou `[tds_ls].binary` no runtime.toml).
+  Flags non-interactive (`--install-source={copy|download}`) podem ser
+  adicionadas em release futuro se demanda surgir.
+- `--yes` reservada mas requer flag explícita de source pra ser útil —
+  hoje só serve pra pular confirmação de SUBSTITUIR instalação existente.
+
 ## [0.8.5] - 2026-05-19
 
 ### 📋 Checklist conversacional + perguntas `--doctor` mais didáticas

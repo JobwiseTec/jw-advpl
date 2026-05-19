@@ -36,11 +36,19 @@ ls ~/.vscode/extensions/totvs.tds-vscode-*/node_modules/@totvs/tds-ls/bin/*/advp
 ```
 Se aparecer um path → tem. Se sair vazio → não tem.
 
-**Se não tem**:
-- **Opção A** (recomendada): instale a extensão **TDS-VSCode** no VSCode (Marketplace → busca "TOTVS"). Aceite e ele baixa tudo.
-- **Opção B** (CI/sem VSCode): peça pro agente baixar — ele tem comando pronto pra baixar o `.vsix` (~118MB) e extrair só o que precisa.
+**Se não tem** — rode:
 
-**O agente vai perguntar**: "Onde está o `advpls.exe`?" — responda com o path completo OU diga "baixe".
+```bash
+plugadvpl compile --install-advpls
+```
+
+Comando interativo que pergunta:
+- **(1) Copiar de um path local** — se você já tem advpls em alguma pasta (de instalação antiga, máquina virtual, etc.), informe o path e ele copia pra `~/.plugadvpl/advpls/`
+- **(2) Baixar do Marketplace** — sem precisar do VSCode instalado, baixa `.vsix` público da Microsoft (~118MB), extrai só o que precisa (~40MB de binário + companions), descarta o resto
+
+**O comando sempre mostra plano + pede confirmação antes de qualquer operação destrutiva ou pesada.** Não baixa surpresa.
+
+Depois de instalar, `--doctor` detecta automaticamente — não precisa configurar nada.
 
 ---
 

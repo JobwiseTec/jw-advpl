@@ -93,13 +93,28 @@ class DoctorResult:
 
 
 def _detect_advpls() -> Path | None:
-    """Procura advpls em paths comuns. Retorna Path do primeiro encontrado."""
-    # Env var tem prioridade
+    """Procura advpls em paths comuns. Retorna Path do primeiro encontrado.
+
+    Ordem de prioridade:
+    1. Env var ``PLUGADVPL_ADVPLS_BINARY``
+    2. Pasta interna ``~/.plugadvpl/advpls/bin/<os>/`` (instalada via
+       ``plugadvpl compile --install-advpls``)
+    3. PATH do sistema
+    4. Paths Windows canônicos (D:\\TOTVS\\..., D:\\IA\\Tools\\...)
+    5. Extensão tds-vscode em ~/.vscode/extensions/totvs.tds-vscode-*/
+    """
+    # 1. Env var tem prioridade absoluta (escape hatch + test hook)
     env_path = os.environ.get("PLUGADVPL_ADVPLS_BINARY")
     if env_path and Path(env_path).is_file():
         return Path(env_path)
 
-    # PATH
+    # 2. Pasta interna do plugadvpl (instalação gerenciada)
+    from plugadvpl.compile_installer import installed_binary_path
+    internal = installed_binary_path()
+    if internal.is_file():
+        return internal
+
+    # 3. PATH
     found = shutil.which("advpls") or shutil.which("advpls.exe")
     if found:
         return Path(found)
@@ -193,12 +208,15 @@ def run_doctor(
             next_actions.append(NextAction(
                 action="set_advpls_binary",
                 question=(
-                    "PRECISO: caminho do binário advpls (compilador oficial TOTVS, ~38MB).\n"
-                    "  Como obter:\n"
-                    "    (a) Instale extensão TDS-VSCode no VSCode (Marketplace, busca 'TOTVS')\n"
-                    "        e informe o path: ~/.vscode/extensions/totvs.tds-vscode-X/node_modules/@totvs/tds-ls/bin/<os>/advpls\n"
-                    "    (b) Sem VSCode? Posso baixar o .vsix (~118MB) do Marketplace público e extrair\n"
-                    "    (c) Já tem em outro lugar? Informe o path manual\n"
+                    "PRECISO: binário advpls (compilador oficial TOTVS, ~38MB).\n"
+                    "  RECOMENDADO: rode `plugadvpl compile --install-advpls` — modo\n"
+                    "  interativo que pergunta se você quer:\n"
+                    "    (a) Copiar de um path local (se já tem advpls instalado)\n"
+                    "    (b) Baixar do Marketplace VSCode público (~118MB, sem precisar VSCode)\n"
+                    "  O comando explica tudo + pede confirmação antes de qualquer ação.\n"
+                    "  Após instalar, advpls fica em ~/.plugadvpl/advpls/bin/<os>/ e o\n"
+                    "  --doctor detecta automaticamente nas próximas chamadas.\n"
+                    "  Alternativa manual: setar PLUGADVPL_ADVPLS_BINARY=<path>\n"
                     "  Mais info: docs/compile-checklist.md §1"
                 ),
                 candidates=[],
