@@ -10,7 +10,7 @@
         "source": "github",
         "repo": "JoniPraia/plugadvpl"
       },
-      "description": "Indexa fontes ADVPL/TLPP em SQLite + FTS5 para Claude consultar antes de ler arquivo cru",
+      "description": "Plugin Claude Code + CLI pra ADVPL/TLPP (Protheus): indexa em SQLite/FTS5, compila via advpls, edita .prw cp1252 e guarda credenciais no cofre do OS. ~16× menos contexto.",
       "version": "0.9.1"
     }
   ]

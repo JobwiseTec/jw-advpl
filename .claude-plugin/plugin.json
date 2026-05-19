@@ -1,7 +1,7 @@
 {
   "name": "plugadvpl",
   "version": "0.9.1",
-  "description": "Indexa fontes ADVPL/TLPP em SQLite + FTS5 para Claude consultar metadados antes de ler .prw cru (economiza 10-15x tokens)",
+  "description": "Plugin Claude Code + CLI pra ADVPL/TLPP (TOTVS Protheus): indexa em SQLite/FTS5, compila via advpls, edita .prw cp1252 sem corromper acentos e guarda credenciais no cofre nativo do OS. ~16× menos contexto consultando o Protheus.",
   "author": {
     "name": "JoniPraia"
   },
