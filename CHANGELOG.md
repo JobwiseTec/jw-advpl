@@ -36,6 +36,55 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.12] - 2026-05-19
+
+### Added - `--probe-appserver host:port` (network mode, igual TDS-VSCode)
+
+Usuário perguntou: "como o TDS-VSCode descobre a build só com host+port?".
+Pesquisa em [totvs/tds-vscode](https://github.com/totvs/tds-vscode) revelou
+que ele invoca o `advpls cli` (que o plugadvpl já chama!) com action
+`validate`, mecanismo público documentado em
+[tds-ls/TDS-cli-script.md](https://github.com/totvs/tds-ls/blob/master/TDS-cli-script.md).
+Sem autenticação. Retorna build + flag SSL.
+
+Antes (v0.8.11): `--probe-appserver` só aceitava path pra `protheus.log` —
+inútil pra AppServer remoto ou usuário sem acesso ao filesystem do servidor.
+
+Agora (v0.8.12): mesmo flag auto-detecta entre 2 modos:
+
+- **`plugadvpl compile --probe-appserver 127.0.0.1:1234`** → network mode
+  (novo, recomendado). Gera INI `[validate]` em tempdir, invoca `advpls cli`,
+  parseia "Appserver detected with build version: X and secure: Y", limpa
+  tempdir. Funciona via SSH tunnel, VPN, host remoto. Detecta SSL/TLS.
+- **`plugadvpl compile --probe-appserver D:/TOTVS/protheus`** → log mode
+  (v0.8.11, agora fallback). Útil quando AppServer está down ou versão Lobo
+  Guara antiga não responde ao validate (issue tds-vscode#390).
+
+Detecção via regex `^[\w.\-]+:\d+$` — paths Windows tipo `D:\TOTVS\...`
+continuam casando o modo log (último `:` em path tem letras, não dígitos).
+Edge case `host:1234` que também existe como path no FS → log mode ganha.
+
+### Changed
+
+- Output do `--probe-appserver` reescrito com passo-a-passo didático
+  (`[1/3]` localizando binário → `[2/3]` invocando advpls → `[3/3]`
+  parseando). Em falha, troubleshooting com comandos `Test-NetConnection` /
+  `nc` + sugestão de fallback pro modo log.
+- Na sucesso, output mostra comando pronto pra cadastrar o server (com
+  build e secure já preenchidos pra colar no prompt do `--add-server` ou
+  no JSON do `~/.plugadvpl/servers.json`).
+
+### Technical
+
+- Novo módulo `compile_probe.py`:
+  - `NetworkProbeResult` (dataclass: host/port/build/secure/error/raw_output).
+  - `probe_appserver_network(host, port, advpls_binary, timeout=20)` — sempre
+    retorna dataclass, nunca lança exceção (composição amigável).
+  - `is_host_port(target)` — detecção tolerante a paths Windows (FS check).
+  - `_parse_validate_output` — regex pública pra build + secure.
+- Testes: +18 unit (is_host_port, parse, build_ini, network probe com
+  subprocess mockado incluindo timeout/FileNotFound/tempdir cleanup).
+
 ## [0.8.11] - 2026-05-19
 
 ### Fixed - 4 gaps reportados em uso real (v0.8.10)

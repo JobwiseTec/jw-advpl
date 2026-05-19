@@ -2648,54 +2648,153 @@ def _handle_import_tds_servers(yes: bool) -> None:
 
 
 def _handle_probe_appserver(target_str: str) -> None:
-    """Parseia protheus.log e imprime build + dica de como usar.
+    """Descobre build do AppServer. Auto-detecta entre 2 modos.
 
-    v0.8.11 fix bug 2: usuário sem TDS-VSCode não tinha como descobrir build
-    do AppServer sem caçar manualmente em log. Este probe automatiza.
+    v0.8.11 (log): parseia protheus.log local.
+    v0.8.12 (network): invoca ``advpls cli action=validate`` — mesmo
+        mecanismo que o TDS-VSCode usa (LSP $totvsserver/validation).
     """
-    from plugadvpl.compile_probe import probe_appserver_log
+    from plugadvpl.compile_probe import is_host_port
+
+    if is_host_port(target_str):
+        host, _, port_str = target_str.rpartition(":")
+        _probe_via_network(host=host, port=int(port_str))
+        return
 
     target = Path(target_str)
     if not target.exists():
         typer.secho(
-            f"Path não existe: {target}\n"
-            f"  Use o caminho do protheus.log ou da raiz do Protheus.",
+            f"Path não existe e não parece host:port: {target_str}\n"
+            f"\n"
+            f"  Use UM de:\n"
+            f"    plugadvpl compile --probe-appserver 127.0.0.1:1234   (network)\n"
+            f"    plugadvpl compile --probe-appserver D:/TOTVS/protheus  (log)\n",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
+    _probe_via_log(target)
 
-    result = probe_appserver_log(target)
-    if result is None:
+
+def _probe_via_network(host: str, port: int) -> None:
+    """Network probe via ``advpls cli action=validate`` (v0.8.12)."""
+    from plugadvpl.compile_doctor import _detect_advpls
+    from plugadvpl.compile_probe import probe_appserver_network
+
+    typer.echo(f"\n=== probe-appserver (modo network) ===")
+    typer.echo(f"  alvo: {host}:{port}\n")
+
+    typer.echo(f"  [1/3] Localizando binário advpls...")
+    binary = _detect_advpls()
+    if binary is None:
         typer.secho(
-            f"protheus.log não encontrado a partir de {target}.\n"
-            f"  Tentativas: <root>/log/protheus.log, <root>/bin/Appserver/log/protheus.log,\n"
-            f"  <root>/bin/Appserver/protheus.log, <root>/protheus.log.\n"
-            f"  Aponte direto para o arquivo .log se ele estiver em outro local.",
-            fg=typer.colors.YELLOW, err=True,
+            "        ✗ advpls não encontrado.\n"
+            "        Instale com: plugadvpl compile --install-advpls",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    typer.echo(f"        ✓ {binary}\n")
+
+    typer.echo(f"  [2/3] Gerando INI [validate] em tempdir e invocando advpls cli...")
+    typer.echo(f"        (mesmo mecanismo que o TDS-VSCode usa via LSP)")
+    result = probe_appserver_network(host, port, binary)
+
+    if not result.build:
+        typer.secho(f"        ✗ Probe falhou.\n", fg=typer.colors.RED)
+        typer.secho(f"  Erro: {result.error}", fg=typer.colors.RED, err=True)
+        if result.raw_output:
+            typer.echo(f"\n  Output parcial do advpls (primeiros 1KB):")
+            for line in result.raw_output.splitlines()[:15]:
+                typer.echo(f"    | {line}")
+        typer.echo(
+            f"\n  Troubleshooting:\n"
+            f"    • AppServer em {host}:{port} está rodando?\n"
+            f"      Teste TCP: Test-NetConnection {host} -Port {port}  (PowerShell)\n"
+            f"      Ou:        nc -zv {host} {port}                     (bash)\n"
+            f"    • Se está em SSL/TLS, advpls precisa de --secure (TODO).\n"
+            f"    • Para AppServers Lobo Guara antigos (≤19.3.0.5), o validate\n"
+            f"      pode não funcionar (issue tds-vscode#390). Use o fallback log:\n"
+            f"      plugadvpl compile --probe-appserver <path-pra-protheus.log>"
         )
         raise typer.Exit(code=1)
 
-    typer.echo(f"\n=== probe-appserver ===")
-    typer.echo(f"  log:           {result.log_path}")
-    typer.echo(f"  lines_scanned: {result.lines_scanned}")
+    typer.echo(f"        ✓ AppServer respondeu\n")
+    typer.echo(f"  [3/3] Parseando resposta...")
+    typer.secho(f"        ✓ build:  {result.build}", fg=typer.colors.GREEN)
+    if result.secure is not None:
+        secure_label = "SSL/TLS habilitado" if result.secure else "TCP plano"
+        typer.echo(f"        ✓ secure: {result.secure}  ({secure_label})")
+
+    typer.echo("")
+    typer.secho("=== Pronto pra cadastrar o server ===", fg=typer.colors.GREEN)
+    typer.echo(
+        f"\nOpção 1 (interativo) — pula o prompt de build:\n"
+        f"  plugadvpl compile --add-server\n"
+        f"  # quando perguntar Build, cole: {result.build}\n"
+        f"  # quando perguntar HTTPS/TLS, responda: "
+        f"{'sim' if result.secure else 'não'}\n"
+        f"\n"
+        f"Opção 2 (manual) — edite ~/.plugadvpl/servers.json:\n"
+        f'  {{"host": "{host}", "port": {port}, "build": "{result.build}", '
+        f'"secure": {str(bool(result.secure)).lower()}, ...}}'
+    )
+
+
+def _probe_via_log(target: Path) -> None:
+    """Log probe parseia ``protheus.log`` (v0.8.11 — fallback offline)."""
+    from plugadvpl.compile_probe import probe_appserver_log
+
+    typer.echo(f"\n=== probe-appserver (modo log) ===")
+    typer.echo(f"  alvo: {target}\n")
+
+    typer.echo(f"  [1/2] Procurando protheus.log...")
+    result = probe_appserver_log(target)
+    if result is None:
+        typer.secho(
+            f"        ✗ protheus.log não encontrado.\n"
+            f"\n"
+            f"  Procuramos em (relativo a {target}):\n"
+            f"    log/protheus.log\n"
+            f"    bin/Appserver/log/protheus.log\n"
+            f"    bin/Appserver/protheus.log\n"
+            f"    protheus.log\n"
+            f"\n"
+            f"  Se o log está em outro lugar, aponte direto pro arquivo:\n"
+            f"    plugadvpl compile --probe-appserver <caminho-completo>/protheus.log\n"
+            f"\n"
+            f"  Ou tente o modo network (mais robusto):\n"
+            f"    plugadvpl compile --probe-appserver <host>:<port>",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        raise typer.Exit(code=1)
+    typer.echo(f"        ✓ {result.log_path}\n")
+
+    typer.echo(f"  [2/2] Parseando primeiras {result.lines_scanned} linhas...")
     if not result.build:
         typer.secho(
-            f"\nLog encontrado mas não contém linha 'TOTVS - Build X - Date'.\n"
-            f"  Build não pôde ser detectada. Possíveis causas:\n"
+            f"        ✗ Linha 'TOTVS - Build X - Date' não encontrada.\n"
+            f"\n"
+            f"  Possíveis causas:\n"
             f"    • AppServer nunca foi iniciado (log vazio de boot)\n"
             f"    • Log foi truncado (linha de boot ficou fora das primeiras 5000)\n"
-            f"    • Versão muito antiga do Protheus com formato diferente",
+            f"    • Versão muito antiga do Protheus com formato diferente\n"
+            f"\n"
+            f"  Alternativa: tente o modo network:\n"
+            f"    plugadvpl compile --probe-appserver <host>:<port>",
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(code=1)
 
-    typer.secho(f"  build:         {result.build}", fg=typer.colors.GREEN)
-    typer.echo(f"  build_date:    {result.build_date}")
+    typer.secho(f"        ✓ build:      {result.build}", fg=typer.colors.GREEN)
+    typer.echo(f"        ✓ build_date: {result.build_date}")
+    typer.echo("")
+    typer.secho("=== Pronto pra cadastrar o server ===", fg=typer.colors.GREEN)
     typer.echo(
-        f"\nPróximos passos:\n"
-        f"  • Cadastre o server: plugadvpl compile --add-server\n"
-        f"    (use build={result.build} quando perguntar)\n"
-        f"  • OU edite runtime.toml: [appserver].build = \"{result.build}\""
+        f"\nOpção 1 (interativo):\n"
+        f"  plugadvpl compile --add-server\n"
+        f"  # quando perguntar Build, cole: {result.build}\n"
+        f"\n"
+        f"Opção 2 (runtime.toml):\n"
+        f'  [appserver].build = "{result.build}"'
     )
 
 
