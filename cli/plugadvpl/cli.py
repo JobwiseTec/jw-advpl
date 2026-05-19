@@ -2494,7 +2494,9 @@ def compile_callback(
                 fg=typer.colors.RED, err=True,
             )
             raise typer.Exit(code=2)
-        runtime_cfg = _apply_server_override(runtime_cfg, srv, use_environment)
+        runtime_cfg = _apply_server_override(
+            runtime_cfg, srv, use_environment, requested_mode=mode,
+        )
 
     if mode == "cli" and runtime_cfg is None:
         typer.secho(
@@ -3027,12 +3029,18 @@ def _apply_server_override(
     runtime_cfg: object,  # RuntimeConfig | None
     server: object,  # Server
     env_override: str = "",
+    requested_mode: str = "auto",
 ) -> object:
     """Constrói runtime_cfg com [appserver] vindo do registry global.
 
     Se runtime_cfg=None, cria um do zero usando defaults (modo "compile sem
     runtime.toml mas com --use-server"). Se runtime_cfg existe, sobrescreve
     apenas [appserver] e [auth] preservando [tds_ls]/[compile]/[logging].
+
+    Args:
+        requested_mode: ``"auto"``, ``"appre"`` ou ``"cli"``. Se ``"appre"``
+            explícito, pula validação de credenciais (appre é só
+            pré-processador local, não conecta no AppServer).
     """
     from plugadvpl.compile_servers import Server
     from plugadvpl.runtime_config import (
@@ -3071,13 +3079,19 @@ def _apply_server_override(
         )
         raise typer.Exit(code=2)
 
+    # v0.9.1: credenciais só são exigidas se vai conectar no AppServer (mode=cli).
+    # Em mode=appre (pré-processador local), advpls não autentica.
+    # Em mode=auto, validamos pra ser conservador — se appserver_reachable
+    # cair pra appre depois, o build_ini_script nem é chamado mesmo.
+    needs_credentials = requested_mode != "appre"
+
     # v0.9.0: credenciais via env OU keyring do sistema (Win Credential Manager
     # / macOS Keychain / Linux Secret Service). Resolve em camadas, falha clara
     # se nenhuma fonte tem ambos.
     from plugadvpl.credentials import resolve_credentials
 
     creds = resolve_credentials(server.name, server.user_env, server.password_env)
-    if not creds.is_complete:
+    if needs_credentials and not creds.is_complete:
         missing_parts: list[str] = []
         if not creds.user:
             missing_parts.append("user")
@@ -3108,10 +3122,11 @@ def _apply_server_override(
 
     # Se vieram do keyring, injeta em os.environ pra `compile._build_ini_script`
     # ler como se fossem env. Mutação é só pro processo CLI (não vaza pra shell).
+    # Em mode=appre creds podem estar vazias — não injeta nada nesse caso.
     import os as _os
-    if creds.user_source == "keyring":
+    if creds.user and creds.user_source == "keyring":
         _os.environ[server.user_env] = creds.user
-    if creds.password_source == "keyring":
+    if creds.password and creds.password_source == "keyring":
         _os.environ[server.password_env] = creds.password
 
     env = env_override or server.default_environment

@@ -348,6 +348,46 @@ class TestCredentialsKeyringIntegration:
         assert "PROTHEUS_USER" in combined or "Opção B" in combined
 
 
+class TestAppreSkipsCredentials:
+    """v0.9.1: --use-server + --mode appre NÃO deve exigir credenciais
+    (appre é pré-processador local, não conecta no AppServer)."""
+
+    def test_use_server_appre_runs_without_credentials(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("PROTHEUS_USER", raising=False)
+        monkeypatch.delenv("PROTHEUS_PASS", raising=False)
+
+        # Sem keyring tampouco
+        import sys
+        from tests.unit.test_credentials import FakeKeyring
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring())
+        monkeypatch.setitem(
+            sys.modules, "keyring.errors",
+            type("M", (), {"KeyringError": Exception}),
+        )
+
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="appre-only", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["P2510"], default_environment="P2510",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--use-server", "appre-only", "--mode", "appre", str(foo)],
+        )
+        # Pode falhar depois (advpls ausente, etc) — o que NÃO pode é o
+        # erro de credencial. exit_code 2 do _apply_server_override é o gate.
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "sem credencial" not in combined.lower()
+        assert "Opção A" not in combined
+        assert "Opção B" not in combined
+
+
 class TestExplainConfig:
     """v0.9.0: --explain-config mostra de onde vem cada campo."""
 

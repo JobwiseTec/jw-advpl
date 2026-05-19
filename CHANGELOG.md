@@ -36,6 +36,33 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.9.1] - 2026-05-19
+
+### Fixed - `--use-server + --mode appre` parou de exigir credencial
+
+Fechando o último ⚪ do veredito v0.9.0 do usuário: "appre tecnicamente
+exige cred mesmo a UX da mensagem tendo amortecido". appre é
+pré-processador local, nunca conecta no AppServer — não tem razão pra
+validar user/pass.
+
+Agora:
+
+```bash
+# Funciona sem env var, sem keyring, sem nada:
+plugadvpl compile --use-server local --mode appre fonte.prw
+```
+
+Validação de credencial mantida em `--mode cli` e `--mode auto`
+(conservador: auto pode resolver pra cli se AppServer reachable).
+
+### Technical
+
+- `_apply_server_override` aceita `requested_mode: str = "auto"` e pula
+  o bloco `resolve_credentials` quando mode explícito é `"appre"`.
+- Injeção em `os.environ` (creds vindas do keyring) ganhou guard
+  contra strings vazias.
+- Teste regressão: `TestAppreSkipsCredentials.test_use_server_appre_runs_without_credentials`.
+
 ## [0.9.0] - 2026-05-19
 
 ### Added - Cofre nativo do OS pra credenciais (sem senha em env var toda sessão)
