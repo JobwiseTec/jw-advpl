@@ -42,6 +42,19 @@ class Diagnostic:
 
 _PT_SEVERIDADE_MAP = {"erro": "error", "aviso": "warning", "info": "info"}
 
+# Linhas de log interno do advpls que SEMPRE acompanham erro estruturado em .errprw
+# (não são erros novos — redundância de telemetria). Filtra do output pra não
+# poluir o bucket __unmatched__.
+_NOISE_PATTERNS = [
+    re.compile(r"connection_manager\.cc.*has no valid content after precompiled"),
+    re.compile(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+\(\s*\d"),  # timestamp loguru
+]
+
+
+def _is_noise(line: str) -> bool:
+    """True se a linha é log interno do advpls (não diagnostic real)."""
+    return any(rx.search(line) for rx in _NOISE_PATTERNS)
+
 
 @functools.lru_cache(maxsize=1)
 def _load_patterns() -> list[dict[str, object]]:
@@ -150,6 +163,10 @@ def parse_diagnostics(
 
     for line in (stdout + "\n" + stderr).splitlines():
         if not line.strip():
+            continue
+        if _is_noise(line):
+            # Log interno do advpls — não vira diagnostic. Reduz ruído no
+            # bucket __unmatched__ sem perder erro real (que vem do .errprw).
             continue
         hit = False
         for entry, rx in compiled:

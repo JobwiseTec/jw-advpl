@@ -36,6 +36,54 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.2] - 2026-05-18
+
+### 🐛 Mais 2 bugs achados no smoke real (compilação end-to-end funcional)
+
+Continuação do smoke iniciado em v0.8.1. Após o fix dos 3 bugs anteriores,
+tentamos compilar fontes reais com includes Protheus de verdade
+(`D:\PrjProtheus\protheus\Include`, ~1130 `.ch`) e descobrimos:
+
+### Fixed
+
+- **`--includes` ignorado silenciosamente pelo typer**: declarar
+  `includes: list[Path] | None = None` em sub-comando typer com `files: list[Path]`
+  Argument variadic faz Click parsear `--includes <path>` como elemento da
+  lista `files` (variadic consome tudo até EOF). Resultado: `--includes` virava
+  silenciosamente `None` no `CompileRequest`.
+  - Fix em `cli.py`: trocar default de `None` para `[]` e tipo de `list[Path] | None`
+    para `list[Path]` (padrão typer pra optional list). Alias `-I` adicionado.
+  - **Convenção UNIX preservada**: flags `--xxx` SEMPRE antes de positional
+    variadic args. Documentado em `docs/cli-reference.md` §compile.
+- **Ruído `connection_manager.cc ... has no valid content after precompiled`
+  poluindo bucket `__unmatched__`**: advpls SEMPRE cospe esse log interno
+  quando há erro estruturado em `.errprw` — é redundância de telemetria, não
+  erro novo. Cada erro real gerava 2 rows (1 estruturada + 1 unknown ruído).
+  - Fix em `compile_parser.py`: novo `_NOISE_PATTERNS` filtra linhas de log
+    interno do advpls (timestamp loguru `YYYY-MM-DD HH:MM:SS.fff` + padrão
+    `connection_manager.cc`) antes de virar `unknown`.
+
+### Validação end-to-end (smoke real)
+
+Compilação contra `advpls.exe` real (extensão `totvs.tds-vscode` v3.x.x) +
+includes Protheus reais:
+
+| Cenário | Antes (v0.8.1) | Depois (v0.8.2) |
+|---|---|---|
+| Fonte limpo (`User Function` + `#include "protheus.ch"`) | `ok=false`, `C2090 PRTOPDEF.CH` (`--includes` ignorado) | `ok=true`, `exit_code=0`, `.ppx_prw` gerado em ~60ms |
+| Fonte com erro real (`#include "naoexiste.ch"`) | 2 rows: row estruturada + `__unmatched__` ruidoso | 1 row limpa: `error C2090 linha=1 "File not found naoexiste.ch"` |
+
+### Notes
+
+- Confirmado: pipeline `plugadvpl compile --mode appre` **funciona end-to-end**
+  com binário advpls real + includes Protheus. Fase 1 oficialmente validada
+  contra ambiente real (não só mock).
+- `appre` é só pré-processador — detecta erros de include/macro/sintaxe básica,
+  NÃO erros semânticos (`If` sem `EndIf`, tipo incompatível). Pra esses,
+  necessário modo `cli` com AppServer rodando.
+- Documentação atualizada em `docs/cli-reference.md` com pré-requisitos
+  explícitos do modo `appre` (binário + includes reais).
+
 ## [0.8.1] - 2026-05-18
 
 ### 🐛 3 bugs achados no smoke real contra advpls

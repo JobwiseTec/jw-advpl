@@ -2132,8 +2132,12 @@ def compile_callback(
         bool, typer.Option("--no-security-warning", help="Suprime warning host remoto")
     ] = False,
     includes: Annotated[
-        list[Path] | None, typer.Option("--includes", help="Override includes")
-    ] = None,
+        list[Path],
+        typer.Option(
+            "--includes", "-I",
+            help="Override includes (repita: --includes A --includes B)",
+        ),
+    ] = [],
     init_config: Annotated[
         bool, typer.Option("--init-config", help="Gera template runtime.toml")
     ] = False,
@@ -2176,7 +2180,8 @@ def compile_callback(
         mode=cast(Literal["auto", "appre", "cli"], mode),
         no_warnings=no_warnings,
         timeout_seconds=timeout, no_security_warning=no_security_warning,
-        includes_override=includes, changed_since=changed_since,
+        includes_override=includes if includes else None,
+        changed_since=changed_since,
     )
     try:
         result = compile_run(request, runtime_cfg=runtime_cfg, root=root)

@@ -331,19 +331,30 @@ Exit codes:
 - `1` — check mismatch ou erro de conversão (`--from` inválido)
 - `2` — arquivo não encontrado
 
-### <a id="compile"></a>`compile <fonte...>` (v0.8.0 Fase 1)
+### <a id="compile"></a>`compile <fonte...>` (v0.8.0+)
 
 Compila fontes ADVPL via wrapper sobre o binário `advpls` (TOTVS). Dois modos:
 `appre` (pré-processador local, sem AppServer) ou `cli` (full compile via
 AppServer TCP, requer `runtime.toml`).
 
 ```
-plugadvpl compile <fontes...> [--mode auto|appre|cli]
-                              [--changed-since <git-ref>]
-                              [--no-warnings] [--timeout <seg>]
-                              [--no-security-warning] [--includes <path>]
+plugadvpl compile [--mode auto|appre|cli]
+                  [--changed-since <git-ref>]
+                  [--no-warnings] [--timeout <seg>]
+                  [--no-security-warning]
+                  [--includes <path> [--includes <path>...]]
+                  <fontes...>
 plugadvpl compile --init-config [--force]
 ```
+
+> ⚠️ **Ordem dos args importa**: flags `--xxx` **antes** dos `<fontes>` positional.
+> Caso contrário, o typer/Click consome `--mode appre --includes X` como nomes de
+> arquivo. Convenção UNIX: `[OPTIONS] ARGS...`.
+
+**Pré-requisitos do modo `appre`**:
+- Binário `advpls` (vem com extensão [tds-vscode](https://marketplace.visualstudio.com/items?itemName=TOTVS.tds-vscode), pasta `node_modules/@totvs/tds-ls/bin/<os>/advpls`)
+- Includes Protheus reais (`PRTOPDEF.CH`, `protheus.ch`, `topconn.ch` etc.). Não vem com tds-vscode — precisa instalação SDK Protheus/AppServer. Tipicamente em `<protheus-root>/Include/` (~1100 arquivos `.ch`)
+- Passar `--includes <pasta>` apontando pra esse diretório, OU configurar `[compile].includes` no `runtime.toml`
 
 **Setup uma vez por projeto:**
 ```bash
