@@ -122,6 +122,29 @@ Antes de confiar em consultas, em sessao nova rode `/plugadvpl:status` para conf
 
 Para checar integridade do indice (encoding, orfaos, FTS dessincronizado): `/plugadvpl:doctor`.
 
+## Edit/Write em `.prw` cp1252 — ⚠️ OBRIGATORIO
+
+**Read/Edit tools do Claude sao UTF-8 only.** Se voce fizer `Edit` num `.prw` cp1252 sem
+preparar o encoding antes, os acentos nao-editados viram `?` no arquivo final
+(silencioso, corrompe historico). Bug critico.
+
+**Workflow obrigatorio antes de QUALQUER Edit/Write em `.prw`:**
+
+```bash
+plugadvpl edit-prw stage <arquivo.prw>     # cp1252 -> utf-8 (cria .bak)
+# Agora Read/Edit/Write normalmente — acentos preservados
+plugadvpl edit-prw commit <arquivo.prw>    # utf-8 -> cp1252 (volta ao original)
+```
+
+Quando NAO precisa stage/commit:
+- `.tlpp` (UTF-8 nativo) — sem risco
+- `.prw` que `/plugadvpl:edit-prw check` mostra `detected_encoding: utf-8` (raro)
+- Arquivo ASCII puro (sem `?` no Read output)
+- Edicao via PowerShell/script externo (workflow Caminho B em `advpl-encoding`)
+
+Detalhes completos: `/plugadvpl:edit-prw` (skill operacional) ou `[[advpl-encoding]]`
+(politica geral de encoding).
+
 ## Versao do plugin — `runtime` vs `indice`
 
 O `status` mostra **duas versoes** desde v0.3.12:

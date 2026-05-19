@@ -9,6 +9,8 @@
 
 > Plugin Claude Code + CLI Python que indexa fontes **ADVPL/TLPP** (TOTVS Protheus) em SQLite com FTS5 — para o Claude responder sobre o seu Protheus sem queimar contexto lendo `.prw` cru.
 
+> ⚠️ **EDITANDO `.prw` cp1252?** Read/Edit do Claude são UTF-8 only — bytes acentuados viram `?` e o Edit corrompe acentos não-editados. **Use sempre `plugadvpl edit-prw stage <arq>` ANTES e `commit <arq>` DEPOIS** (v0.8.9+). Detalhes: skill `/plugadvpl:edit-prw` ou seção [Encoding](#encoding) abaixo.
+
 ---
 
 ## Por que plugadvpl
@@ -271,7 +273,8 @@ Além dos ~30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o p
 |---|---|
 | `plugadvpl-index-usage` | Skill-chefe — força consulta ao índice antes de qualquer `Read` em fonte ADVPL |
 | `advpl-fundamentals` | Notação húngara, naming, prefixos de módulo, 195 funções restritas |
-| `advpl-encoding` | cp1252 (.prw) vs utf-8 (.tlpp) — preserve-by-default |
+| `advpl-encoding` | cp1252 (.prw) vs utf-8 (.tlpp) — **inclui workflow seguro de Edit (stage/commit)** |
+| `edit-prw` | **Workflow operacional pra editar `.prw` cp1252 com Claude sem corromper acentos** |
 | `advpl-mvc` | MenuDef/ModelDef/ViewDef, hooks bCommit/bTudoOk, FWFormStruct |
 | `advpl-mvc-avancado` | Eventos MVC, validações cruzadas, FWMVCRotAuto |
 | `advpl-tlpp` | TLPP moderno — OO, namespaces, annotations |

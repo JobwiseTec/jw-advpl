@@ -14,11 +14,21 @@ modernos. Cada um tem **gatilho de detecção** (como achar via `plugadvpl`),
 1. **Antes de propor refactor**: rode `/plugadvpl:arch <arquivo>` pra entender escopo,
    `/plugadvpl:callers <funcao>` pra impacto downstream, e `/plugadvpl:lint <arquivo>`
    pra confirmar que há findings.
-2. **Critical/error do lint geralmente é refactor candidato** — comece pelos worst offenders.
-3. **Refactor um padrão por commit**. Misturar 3 refactors num diff só gera review impossível
+2. **🚨 Refactor envolve Edit em massa — `.prw` cp1252 precisa stage/commit OBRIGATÓRIO**:
+   ```bash
+   plugadvpl edit-prw stage <arquivo.prw>   # cp1252 -> utf-8 (cria .bak)
+   # ... agora aplique os refactors via Edit/Write ...
+   plugadvpl edit-prw commit <arquivo.prw>  # utf-8 -> cp1252 (restaura)
+   ```
+   Sem isso, acentos nos comentários/strings não-editados viram `?` e o compilador
+   AppServer rejeita o arquivo. Bug silencioso. Detalhes: `/plugadvpl:edit-prw`.
+3. **Critical/error do lint geralmente é refactor candidato** — comece pelos worst offenders.
+4. **Refactor um padrão por commit**. Misturar 3 refactors num diff só gera review impossível
    e bug oculto.
-4. **Depois do refactor**: `/plugadvpl:reindex <arquivo>` + `/plugadvpl:lint <arquivo>` pra
+5. **Depois do refactor**: `/plugadvpl:reindex <arquivo>` + `/plugadvpl:lint <arquivo>` pra
    confirmar que não introduziu regressão (findings que não existiam antes).
+6. **Antes de commitar git**: `/plugadvpl:edit-prw check <arquivo>` confirma que voltou
+   pra cp1252 (`match: true`).
 
 ---
 

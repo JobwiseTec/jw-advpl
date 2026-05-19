@@ -452,11 +452,31 @@ Padrões inválidos comuns (não tente):
 - `$env:COLUMNS=400; plugadvpl ...` → workaround frágil; mistura sintaxe PS/Bash. Correto: `--format md`.
 - Posicionar `--format` depois do subcomando funciona em alguns casos mas é frágil — **sempre** antes do subcomando.
 
-### Encoding (importante para Edit/Write)
+### Encoding — ⚠️ CRÍTICO para Edit/Write em .prw cp1252
 
-Fontes legados são `cp1252` (.prw/.prx). TLPP moderno (.tlpp) pode ser `utf-8`.
-**Preserve sempre o encoding detectado em `fontes.encoding`** quando editar — gravar em
-encoding errado quebra acentuação e o compilador AppServer.
+Fontes legados são `cp1252` (`.prw`/`.prx`). TLPP moderno (`.tlpp`) é `utf-8`.
+
+**🚨 PERIGO**: Read/Edit tools do Claude Code são **UTF-8 only**. Quando lêem `.prw`
+cp1252, bytes acentuados (0x80-0xFF) viram `�` (U+FFFD). Se você fizer `Edit` nessa
+visão, o `Edit` regrava o arquivo **inteiro** em UTF-8 — incluindo os `�` no lugar
+dos acentos não-editados. **Acentos não-editados ficam corrompidos.**
+
+**Workflow obrigatório pra editar `.prw` cp1252 com Claude (Caminho A — stage/commit)**:
+
+```bash
+# 1. ANTES de Read/Edit — converte cp1252 -> utf-8 (cria .bak com original)
+plugadvpl edit-prw stage <fonte.prw>
+
+# 2. Agora Read mostra acentos certos. Edit/Write operam sem perda.
+
+# 3. DEPOIS das edições — volta pra cp1252 (acentos novos viram bytes corretos)
+plugadvpl edit-prw commit <fonte.prw>
+```
+
+Alternativas em `skills/edit-prw/SKILL.md` e `skills/advpl-encoding/SKILL.md`.
+
+Quando NÃO precisa stage/commit: `.tlpp` (utf-8 nativo), `.prw` que `edit-prw check`
+mostra `utf-8`, edição via PowerShell/script externo, arquivo ASCII puro sem acentos.
 
 ### Manutenção do índice
 

@@ -36,6 +36,49 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.10] - 2026-05-19
+
+### 🛡️ Warnings de Edit-PRW espalhados nos 5 pontos críticos
+
+User questionou: "atualizou as skills e onde precisa? ou precisa refinar
+mais?". Auditoria honesta achou 5 lugares que ainda não tinham o warning
+sobre stage/commit. Todos corrigidos.
+
+### Changed
+
+- **Fragment CLAUDE.md do `plugadvpl init`** (`cli.py` §Encoding) reescrito
+  de 4 linhas superficiais pra warning destacado + workflow stage/commit
+  + quando NÃO precisa. Próximas instalações de plugadvpl em projeto novo
+  já saem com o aviso no `CLAUDE.md` (lido pelo Claude em toda sessão).
+- **Skill-chefe `plugadvpl-index-usage`** ganhou seção "Edit/Write em
+  `.prw` cp1252 — ⚠️ OBRIGATORIO" com workflow 3 passos. Como é skill
+  carregada antes de QUALQUER consulta, agente vê isso cedo.
+- **Skill `advpl-refactoring`** §Workflow agora tem passo 2 explicitando
+  stage/commit antes de Edit em massa (refactor envolve muito Edit por
+  natureza — alto risco de corrupção).
+- **README** ganhou callout `⚠️` no header (logo abaixo do tagline) +
+  bullet pra `edit-prw` na tabela de skills.
+- **`compile --doctor`** agora roda sample de até 20 `.prw` no `--root` e
+  reporta quantos parecem cp1252. Quando encontra, adiciona check
+  `edit_prw_safety` (informativo, não bloqueia) com hint pra usar
+  stage/commit antes de Edit. Novo helper `_count_prw_cp1252()`.
+
+### Notes
+
+- 5 pontos atualizados nesta release. Resumo dos canais por onde o
+  Claude descobre o workflow agora:
+  1. **Memory automática** (`feedback_edit_prw_workflow.md`) — minha
+     pessoa em qualquer sessão
+  2. **Fragment CLAUDE.md** — qualquer agente em projeto que rodou `init`
+  3. **Skill `plugadvpl-index-usage`** — skill-chefe carregada cedo
+  4. **Skill `edit-prw`** — slash command operacional
+  5. **Skill `advpl-encoding`** — política geral
+  6. **Skill `advpl-refactoring`** — refactor envolve Edit pesado
+  7. **`--doctor` proativo** — detecta `.prw` cp1252 no root e avisa
+  8. **README** — callout visual logo no topo
+- Suite continua **787 PASS** (mudanças foram textos + função
+  informativa que não afeta exit code do doctor).
+
 ## [0.8.9] - 2026-05-19
 
 ### ✍️ `edit-prw stage/commit` + skill explícita pro workflow seguro de Edit em .prw cp1252

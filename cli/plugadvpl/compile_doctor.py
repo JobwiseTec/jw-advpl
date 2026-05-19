@@ -169,6 +169,34 @@ def _tcp_ping(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
+def _count_prw_cp1252(root: Path, sample_limit: int = 20) -> tuple[int, int]:
+    """Sample rápido: quantos .prw há no root e quantos parecem cp1252.
+
+    Caro pra rodar full scan — limita a sample_limit arquivos.
+    Retorna (total_prw_sampled, count_cp1252).
+    """
+    total = 0
+    cp1252_count = 0
+    try:
+        for p in root.rglob("*.[Pp][Rr][Ww]"):
+            if total >= sample_limit:
+                break
+            total += 1
+            try:
+                head = p.read_bytes()[:512]
+            except OSError:
+                continue
+            # Heuristica simples: bytes 0x80-0xFF presentes mas nao decoda como utf-8 strict
+            if any(b >= 0x80 for b in head):
+                try:
+                    head.decode("utf-8")
+                except UnicodeDecodeError:
+                    cp1252_count += 1
+    except OSError:
+        pass
+    return total, cp1252_count
+
+
 def run_doctor(
     root: Path, runtime_cfg: RuntimeConfig | None
 ) -> DoctorResult:
@@ -386,6 +414,24 @@ def run_doctor(
                 ),
                 candidates=[],
             ))
+
+    # --- 6. Edit safety: avisa se houver .prw cp1252 no root (info-only) ---
+    total_prw, cp1252_count = _count_prw_cp1252(root)
+    if cp1252_count > 0:
+        checks.append(Check(
+            name="edit_prw_safety",
+            ok=True,  # informativo — não bloqueia compile
+            detail=(
+                f"detectei {cp1252_count}/{total_prw} .prw em cp1252 no root "
+                f"(sample). Antes de Edit/Write nesses, use `plugadvpl edit-prw "
+                f"stage <arq>` e depois `commit`."
+            ),
+            hint=(
+                "Read/Edit do Claude são UTF-8 only → bytes acentuados viram "
+                "'?' → Edit corrompe acentos não-editados. "
+                "Ver skill /plugadvpl:edit-prw."
+            ),
+        ))
 
     # --- Status global ---
     modes: list[str] = []
