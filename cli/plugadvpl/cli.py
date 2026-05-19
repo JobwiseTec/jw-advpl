@@ -2100,6 +2100,82 @@ def edit_prw_save(
     )
 
 
+@edit_prw_app.command("stage")
+def edit_prw_stage(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Fonte .prw cp1252 a converter para UTF-8 antes de editar.")],
+    no_backup: Annotated[
+        bool,
+        typer.Option("--no-backup", help="Nao criar arquivo .bak com bytes originais."),
+    ] = False,
+) -> None:
+    """Converte .prw cp1252 → utf-8 ANTES de editar com Claude/IDE moderna.
+
+    Workflow seguro pra editar .prw com Claude Code (Read/Edit tools são
+    UTF-8 only — leem bytes cp1252 como '?' e perdem acentos não-editados):
+
+      plugadvpl edit-prw stage FOO.PRW   # cp1252 -> utf-8 (com .bak)
+      # ... agora Claude pode Read/Edit normalmente, acentos preservados
+      plugadvpl edit-prw commit FOO.PRW  # utf-8 -> cp1252 (volta ao original)
+    """
+    from plugadvpl.edit_prw import convert_and_save
+
+    if not arquivo.exists():
+        typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    try:
+        src, dst, bak = convert_and_save(
+            arquivo, from_encoding="cp1252", to_encoding="utf-8",
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    typer.secho(
+        f"\n✓ Staged: {arquivo} agora em utf-8 (acentos preservados)\n"
+        f"  Backup cp1252 original: {bak}\n"
+        f"  Edite normalmente com Read/Edit do Claude. Depois:\n"
+        f"    plugadvpl edit-prw commit {arquivo.name}",
+        fg=typer.colors.GREEN,
+    )
+
+
+@edit_prw_app.command("commit")
+def edit_prw_commit(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Fonte .prw em UTF-8 (após stage) a converter de volta para cp1252.")],
+    no_backup: Annotated[
+        bool,
+        typer.Option("--no-backup", help="Nao criar arquivo .bak."),
+    ] = False,
+) -> None:
+    """Converte .prw utf-8 → cp1252 DEPOIS de editar (reverso de stage).
+
+    Reverte a conversão temporária feita por `stage`. O arquivo volta ao
+    encoding cp1252 esperado pelo compilador appserver legado, com acentos
+    novos (digitados durante a edição) corretamente convertidos pra bytes
+    cp1252.
+    """
+    from plugadvpl.edit_prw import convert_and_save
+
+    if not arquivo.exists():
+        typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    try:
+        src, dst, bak = convert_and_save(
+            arquivo, from_encoding="utf-8", to_encoding="cp1252",
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    typer.secho(
+        f"\n✓ Committed: {arquivo} volta em cp1252 (pronto pra compilar)\n"
+        f"  Backup utf-8 intermediário: {bak}",
+        fg=typer.colors.GREEN,
+    )
+
+
 # ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------

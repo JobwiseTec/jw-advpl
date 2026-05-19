@@ -117,11 +117,53 @@ TotvsAppServer.exe -console
 
 Pra Linux/WSL: locale `pt_BR.iso-8859-1` ou converter o log com `iconv` na hora de ler.
 
-## Workflow correto antes de Edit
+## Workflow correto antes de Edit — ⚠️ CRÍTICO
 
-1. **Consulte o encoding indexado**: `/plugadvpl:doctor` ou `SELECT encoding FROM fontes WHERE arquivo='X.prw'`.
-2. **Se Claude vê mojibake no `Read`**, **não é o arquivo que está corrompido** — é a tool/IDE lendo errado. Confirme com `/plugadvpl:doctor`.
-3. **Ao editar**, mantenha bytes literais: não cole texto de outra fonte UTF-8 num arquivo cp1252 sem converter.
+> 🚨 **PERIGO**: o Read tool do Claude Code lê `.prw` cp1252 como UTF-8.
+> Bytes acentuados (0x80-0xFF) viram `�` (U+FFFD). Se você fizer `Edit`
+> nessa visão, o `Edit` regrava o arquivo **inteiro** em UTF-8, com `�`
+> no lugar dos acentos não-editados. **Acentos não-editados ficam
+> corrompidos.** Bug clássico do reporter, v0.8.8 doc.
+
+### Workflow obrigatório pra editar `.prw` cp1252 com Claude (Caminho A)
+
+```bash
+# 1. ANTES de Read/Edit: converte cp1252 -> utf-8 (preserva acentos)
+plugadvpl edit-prw stage <fonte.prw>
+# Atalho de: plugadvpl edit-prw save <fonte> --from cp1252 --to utf-8
+# Cria .bak automático com bytes cp1252 originais
+
+# 2. Agora Read mostra "Função" certinho. Edit/Write podem operar sem perda.
+#    O ARQUIVO está temporariamente em UTF-8 — não compila assim, mas
+#    o Claude vê tudo correto.
+
+# 3. DEPOIS das edições: volta pra cp1252 (acentos novos viram bytes 0xE7 etc.)
+plugadvpl edit-prw commit <fonte.prw>
+# Atalho de: plugadvpl edit-prw save <fonte> --from utf-8 --to cp1252
+# Detecta automático que o arquivo está em utf-8 agora
+```
+
+### Caminhos alternativos
+
+**Caminho B — edição cirúrgica via PowerShell em cp1252 nativo** (zero conversão):
+```powershell
+$path = "Customizados\FOO.PRW"
+$enc  = [System.Text.Encoding]::GetEncoding(1252)
+$txt  = $enc.GetString([System.IO.File]::ReadAllBytes($path))
+$txt  = $txt -replace 'PADRAO_VELHO', 'PADRAO_NOVO'
+[System.IO.File]::WriteAllBytes($path, $enc.GetBytes($txt))
+```
+Bom quando a mudança é mecânica (find/replace). Verboso pra refactor complexo.
+
+**Caminho C — restringir Edit a trechos ASCII puro** (frágil):
+Só edita linhas sem `�` no Read output. Mas o `Edit` regrava arquivo inteiro
+e os `�` ficam → bug. **NÃO RECOMENDADO**.
+
+### Regras gerais
+
+1. **Consulte o encoding indexado primeiro**: `plugadvpl --format json doctor` (ou `SELECT encoding FROM fontes WHERE arquivo='X.prw'`).
+2. **Se Claude vê mojibake no `Read`** (`Funç...`, `Ã§`, `�`), **não é o arquivo que está corrompido** — é a tool lendo errado. Confirme com `plugadvpl edit-prw check <fonte>`.
+3. **Ao editar**: ou use Caminho A (stage/commit), ou Caminho B (PowerShell nativo). NUNCA edite direto via Claude `Edit` se o `Read` mostrou `�`.
 4. **Para arquivos novos**: siga a extensão. `.prw` novo → cp1252; `.tlpp` novo → UTF-8.
 5. **Scripts auxiliares** (`.ps1`, `.sh`, `.bat`) que rodam em terminal cp1252 → **ASCII-only é mais portável**. UTF-8 BOM nesses scripts atrapalha mais que ajuda (causa parse errors em PS 5.1).
 

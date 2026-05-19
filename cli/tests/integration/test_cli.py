@@ -2048,3 +2048,38 @@ class TestEditPrwOpen:
         assert result.exit_code == 0
         # CliRunner captura stdout em bytes via mix_stderr; conteudo logico esta certo
         assert "Função" in result.stdout
+
+
+class TestEditPrwStageCommit:
+    """v0.8.9: aliases stage (cp1252→utf-8 antes de editar) +
+    commit (utf-8→cp1252 depois). Workflow seguro pra editar .prw com Claude."""
+
+    def test_stage_then_commit_roundtrip_preserves_bytes(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        fp = tmp_path / "foo.prw"
+        original_bytes = "User Function Foo()\n  ConOut(\"Função\")\nReturn".encode("cp1252")
+        fp.write_bytes(original_bytes)
+
+        result = runner.invoke(app, ["edit-prw", "stage", str(fp)])
+        assert result.exit_code == 0, result.output
+        # Após stage: bytes 0xC3 0xA7 (utf-8) em vez de 0xE7 (cp1252)
+        staged = fp.read_bytes()
+        assert b"\xc3\xa7" in staged  # 'ç' utf-8
+        assert b"\xe7" not in staged   # 'ç' cp1252 não está mais
+
+        result2 = runner.invoke(app, ["edit-prw", "commit", str(fp)])
+        assert result2.exit_code == 0, result2.output
+        # Round-trip: bytes voltam ao original
+        committed = fp.read_bytes()
+        assert committed == original_bytes
+
+    def test_stage_creates_backup(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        original = "Função".encode("cp1252")
+        fp.write_bytes(original)
+        result = runner.invoke(app, ["edit-prw", "stage", str(fp)])
+        assert result.exit_code == 0
+        bak = tmp_path / "foo.prw.bak"
+        assert bak.exists()
+        assert bak.read_bytes() == original

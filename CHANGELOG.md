@@ -36,6 +36,61 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.9] - 2026-05-19
+
+### ✍️ `edit-prw stage/commit` + skill explícita pro workflow seguro de Edit em .prw cp1252
+
+Reporter levantou problema crítico do workflow Edit do Claude Code em
+`.prw` cp1252: Read/Edit tools são UTF-8 only → bytes acentuados (0x80-0xFF)
+viram `�` no Read → Edit regrava arquivo inteiro em UTF-8 com `�` no lugar
+dos acentos não-editados → **acentos não-editados ficam corrompidos**.
+
+### Added
+
+- **`plugadvpl edit-prw stage <arq>`** — atalho de
+  `edit-prw save --from cp1252 --to utf-8`. Converte `.prw` cp1252 → utf-8
+  ANTES do agente usar Read/Edit. Cria `.bak` automático com bytes
+  cp1252 originais.
+- **`plugadvpl edit-prw commit <arq>`** — atalho de
+  `edit-prw save --from utf-8 --to cp1252`. Reverte a conversão DEPOIS das
+  edições. Acentos novos digitados durante edição viram bytes cp1252
+  corretamente.
+- **Skill nova `/plugadvpl:edit-prw`** — slash command operacional que
+  documenta o workflow obrigatório de 3 passos (stage → editar → commit),
+  alternativas (PowerShell nativo) e quando NÃO precisa.
+- **Memory persistida** `feedback_edit_prw_workflow.md` pro Claude seguir
+  automaticamente em sessões futuras: detectar `.prw` no path antes de
+  Read/Edit, rodar `stage`, editar, `commit`. Listado em `MEMORY.md`.
+
+### Changed
+
+- **Skill `advpl-encoding` §"Workflow correto antes de Edit"** reescrita
+  com:
+  - Warning visual destacando o PERIGO do Edit em cp1252 não-staged
+  - Caminho A (stage/commit) como recomendado
+  - Caminho B (PowerShell nativo) como alternativa pra mudanças mecânicas
+  - Caminho C (restringir Edit a ASCII) explicitamente marcado como
+    NÃO RECOMENDADO com motivo
+
+### Tests
+
+- **+2 testes integration** `TestEditPrwStageCommit`:
+  - Round-trip stage→commit preserva bytes exatos (cp1252 → utf-8 → cp1252)
+  - Stage cria backup `.bak` com bytes cp1252 originais
+- **787 testes total** (era 785, +2).
+
+### Notes
+
+- Validado smoke real:
+  - Bytes originais: `E7 E3 E7 E3` (cp1252)
+  - Pós-stage: `C3 A7 C3 A3 C3 A7 C3 A3` (utf-8)
+  - Pós-commit: `E7 E3 E7 E3` (cp1252 — idêntico)
+- `save --from X --to Y` continua disponível pra conversões manuais
+  genéricas. Stage/commit são apenas wrappers convenientes pro caso de
+  uso mais frequente (cp1252↔utf-8 antes/depois de Edit).
+- Memory feedback ativada — próximas sessões do Claude vão aplicar
+  automaticamente quando user pedir Edit em `.prw`.
+
 ## [0.8.8] - 2026-05-19
 
 ### 🐛 4 bugs achados em smoke real de uso real (reporter externo)
