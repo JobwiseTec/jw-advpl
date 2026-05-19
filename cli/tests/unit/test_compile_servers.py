@@ -191,3 +191,68 @@ class TestImportTdsVscode:
         tds_path.parent.mkdir(parents=True, exist_ok=True)
         tds_path.write_text("invalid", encoding="utf-8")
         assert import_from_tds_vscode() == []
+
+    def test_reads_buildVersion_field_v0_8_11(self, fake_home: Path) -> None:
+        """v0.8.11 bug 1: TDS-VSCode usa 'buildVersion', não 'build'.
+
+        Regressão: antes do fix, build vinha vazio e --use-server quebrava.
+        """
+        tds_path = tds_vscode_servers_path()
+        tds_path.parent.mkdir(parents=True, exist_ok=True)
+        tds_path.write_text(json.dumps({
+            "configurations": [
+                {
+                    "name": "from-tds",
+                    "address": "127.0.0.1",
+                    "port": 1234,
+                    "buildVersion": "7.00.240223P",  # campo correto do TDS
+                    "environments": [{"name": "P2510"}],
+                },
+            ],
+        }), encoding="utf-8")
+        imported = import_from_tds_vscode()
+        assert len(imported) == 1
+        assert imported[0].build == "7.00.240223P"
+
+    def test_imports_includes_from_tds_v0_8_11(self, fake_home: Path) -> None:
+        """v0.8.11 bug 1: TDS-VSCode tem 'includes', plugin perdia antes."""
+        tds_path = tds_vscode_servers_path()
+        tds_path.parent.mkdir(parents=True, exist_ok=True)
+        tds_path.write_text(json.dumps({
+            "configurations": [
+                {
+                    "name": "with-includes",
+                    "address": "127.0.0.1",
+                    "port": 1234,
+                    "buildVersion": "7.00.240223P",
+                    "environments": [{"name": "P2510"}],
+                    "includes": [
+                        "D:/TOTVS/protheus/Include",
+                        "D:/Custom/Include",
+                    ],
+                },
+            ],
+        }), encoding="utf-8")
+        imported = import_from_tds_vscode()
+        assert len(imported) == 1
+        assert imported[0].includes == [
+            "D:/TOTVS/protheus/Include",
+            "D:/Custom/Include",
+        ]
+
+    def test_includes_default_empty_when_missing(self, fake_home: Path) -> None:
+        tds_path = tds_vscode_servers_path()
+        tds_path.parent.mkdir(parents=True, exist_ok=True)
+        tds_path.write_text(json.dumps({
+            "configurations": [
+                {
+                    "name": "no-includes",
+                    "address": "127.0.0.1",
+                    "port": 1234,
+                    "buildVersion": "7.00.240223P",
+                    "environments": [{"name": "P2510"}],
+                },
+            ],
+        }), encoding="utf-8")
+        imported = import_from_tds_vscode()
+        assert imported[0].includes == []

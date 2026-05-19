@@ -2196,6 +2196,84 @@ def edit_prw_commit(
     )
 
 
+@edit_prw_app.command("clean")
+def edit_prw_clean(
+    ctx: typer.Context,
+    target: Annotated[
+        Path,
+        typer.Argument(help="Pasta (varre recursivamente) OU arquivo .prw específico."),
+    ] = Path("."),
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Pula confirmação antes de remover."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Lista o que removeria sem deletar."),
+    ] = False,
+) -> None:
+    """Remove arquivos .bak deixados por stage/commit anteriores.
+
+    v0.8.11 fix bug 4: ciclo stage→edit→commit cria 2 .bak por fonte e
+    eles se acumulam em pastas com muitas edições. Este comando faz a
+    limpeza em lote (dry-run por padrão se você quiser ver antes).
+
+    Procura: <fonte>.prw.bak, <fonte>.prx.bak, <fonte>.tlpp.bak.
+    """
+    if not target.exists():
+        typer.secho(f"Path não existe: {target}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    baks: list[Path]
+    if target.is_file():
+        # Modo single-file: limpa o .bak do arquivo apontado (se houver)
+        bak = target.with_suffix(target.suffix + ".bak")
+        baks = [bak] if bak.is_file() else []
+    else:
+        baks = sorted(
+            p for p in target.rglob("*.bak")
+            if p.is_file() and any(
+                p.name.lower().endswith(ext + ".bak")
+                for ext in (".prw", ".prx", ".tlpp", ".tlpp.ch", ".ch")
+            )
+        )
+
+    if not baks:
+        typer.secho(f"Nenhum .bak encontrado em {target}.", fg=typer.colors.GREEN)
+        return
+
+    total_bytes = sum(p.stat().st_size for p in baks)
+    typer.echo(f"\n=== edit-prw clean ===")
+    typer.echo(f"  candidatos: {len(baks)} arquivo(s), {total_bytes:,} bytes")
+    for p in baks[:20]:
+        typer.echo(f"    {p}")
+    if len(baks) > 20:
+        typer.echo(f"    ... ({len(baks) - 20} a mais)")
+
+    if dry_run:
+        typer.secho("\n(dry-run — nada foi removido)", fg=typer.colors.YELLOW)
+        return
+
+    if not yes and not typer.confirm(f"\nRemover {len(baks)} .bak(s)?", default=False):
+        typer.echo("Cancelado.")
+        raise typer.Exit(code=0)
+
+    removed = 0
+    failed: list[tuple[Path, str]] = []
+    for p in baks:
+        try:
+            p.unlink()
+            removed += 1
+        except OSError as exc:
+            failed.append((p, str(exc)))
+
+    typer.secho(f"\n✓ Removidos {removed}/{len(baks)} .bak(s).", fg=typer.colors.GREEN)
+    if failed:
+        typer.secho(f"  Falhas: {len(failed)}", fg=typer.colors.YELLOW)
+        for p, err in failed[:10]:
+            typer.echo(f"    {p}: {err}")
+
+
 # ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------
@@ -2272,6 +2350,13 @@ def compile_callback(
         str,
         typer.Option("--use-server", help="Compila usando server do registry (sobrescreve [appserver])"),
     ] = "",
+    probe_appserver: Annotated[
+        str,
+        typer.Option(
+            "--probe-appserver",
+            help="Descobre build do AppServer via protheus.log (path do .log ou raiz Protheus)",
+        ),
+    ] = "",
     use_environment: Annotated[
         str,
         typer.Option("--use-environment", help="Override do environment do server (opcional)"),
@@ -2319,6 +2404,10 @@ def compile_callback(
         _handle_import_tds_servers(yes=yes)
         return
 
+    if probe_appserver:
+        _handle_probe_appserver(probe_appserver)
+        return
+
     if not files:
         typer.secho("nenhum fonte informado", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -2334,7 +2423,7 @@ def compile_callback(
         "--use-server", "--use-environment", "--format", "-f",
         "--init-config", "--force", "--doctor", "--install-advpls",
         "--list-servers", "--add-server", "--remove-server",
-        "--import-tds-servers", "--yes", "-y",
+        "--import-tds-servers", "--yes", "-y", "--probe-appserver",
     }
     misplaced = [str(f) for f in files if str(f) in suspicious_flags]
     if misplaced:
@@ -2428,14 +2517,15 @@ def _handle_list_servers(ctx: typer.Context) -> None:
             "name": s.name + (" *" if s.name == default_name else ""),
             "host": s.host,
             "port": s.port,
-            "build": s.build,
+            "build": s.build or "(MISSING)",
             "envs": ",".join(s.environments) or "(none)",
             "default_env": s.default_environment,
             "user_env": s.user_env,
+            "includes_count": len(s.includes),
         })
     _render_from_ctx(
         ctx, rows,
-        columns=["name", "host", "port", "build", "envs", "default_env", "user_env"],
+        columns=["name", "host", "port", "build", "envs", "default_env", "user_env", "includes_count"],
         title=f"AppServers cadastrados (* = default)",
         next_steps=[f"plugadvpl compile --use-server {servers[0].name} <fonte>"],
     )
@@ -2557,6 +2647,58 @@ def _handle_import_tds_servers(yes: bool) -> None:
     )
 
 
+def _handle_probe_appserver(target_str: str) -> None:
+    """Parseia protheus.log e imprime build + dica de como usar.
+
+    v0.8.11 fix bug 2: usuário sem TDS-VSCode não tinha como descobrir build
+    do AppServer sem caçar manualmente em log. Este probe automatiza.
+    """
+    from plugadvpl.compile_probe import probe_appserver_log
+
+    target = Path(target_str)
+    if not target.exists():
+        typer.secho(
+            f"Path não existe: {target}\n"
+            f"  Use o caminho do protheus.log ou da raiz do Protheus.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    result = probe_appserver_log(target)
+    if result is None:
+        typer.secho(
+            f"protheus.log não encontrado a partir de {target}.\n"
+            f"  Tentativas: <root>/log/protheus.log, <root>/bin/Appserver/log/protheus.log,\n"
+            f"  <root>/bin/Appserver/protheus.log, <root>/protheus.log.\n"
+            f"  Aponte direto para o arquivo .log se ele estiver em outro local.",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\n=== probe-appserver ===")
+    typer.echo(f"  log:           {result.log_path}")
+    typer.echo(f"  lines_scanned: {result.lines_scanned}")
+    if not result.build:
+        typer.secho(
+            f"\nLog encontrado mas não contém linha 'TOTVS - Build X - Date'.\n"
+            f"  Build não pôde ser detectada. Possíveis causas:\n"
+            f"    • AppServer nunca foi iniciado (log vazio de boot)\n"
+            f"    • Log foi truncado (linha de boot ficou fora das primeiras 5000)\n"
+            f"    • Versão muito antiga do Protheus com formato diferente",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=1)
+
+    typer.secho(f"  build:         {result.build}", fg=typer.colors.GREEN)
+    typer.echo(f"  build_date:    {result.build_date}")
+    typer.echo(
+        f"\nPróximos passos:\n"
+        f"  • Cadastre o server: plugadvpl compile --add-server\n"
+        f"    (use build={result.build} quando perguntar)\n"
+        f"  • OU edite runtime.toml: [appserver].build = \"{result.build}\""
+    )
+
+
 def _apply_server_override(
     runtime_cfg: object,  # RuntimeConfig | None
     server: object,  # Server
@@ -2657,8 +2799,11 @@ def _apply_server_override(
             )
             raise typer.Exit(code=2)
         tds_ls = TdsLsConfig(binary=binary.resolve(), binary_is_symlink=False)
+        # v0.8.11 bug 1: usa includes do server (vindos do TDS-VSCode via
+        # buildVersion/includes) quando o server tem essa info.
+        includes_from_server = tuple(Path(p) for p in server.includes)
         compile_cfg = CompileConfig(
-            recompile=True, includes=(), mode="cli",
+            recompile=True, includes=includes_from_server, mode="cli",
             timeout_seconds=120, include_warnings=True,
         )
         logging_cfg = LoggingConfig(log_to_file="", show_console_output=True)

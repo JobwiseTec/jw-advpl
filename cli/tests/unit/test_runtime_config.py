@@ -122,12 +122,46 @@ class TestLoadInvalid:
         with pytest.raises(RuntimeConfigError, match="advpls not found"):
             load(tmp_path)
 
-    def test_env_var_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_var_missing_does_not_raise_v0_8_11(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """v0.8.11 bug 3: env var faltando NÃO falha mais no load.
+
+        Validação migrou pra compile._build_ini_script (só cli mode precisa).
+        appre mode roda sem env vars de auth.
+        """
         monkeypatch.delenv("PROTHEUS_USER", raising=False)
-        monkeypatch.setenv("PROTHEUS_PASS", "y")
+        monkeypatch.delenv("PROTHEUS_PASS", raising=False)
         _write_minimal_toml(tmp_path)
-        with pytest.raises(RuntimeConfigError, match="env var PROTHEUS_USER"):
-            load(tmp_path)
+        with patch("plugadvpl.runtime_config._tcp_ping", return_value=False):
+            cfg = load(tmp_path)
+        assert cfg is not None
+        # Nomes preservados pra validação downstream
+        assert cfg.auth.user_env == "PROTHEUS_USER"
+        assert cfg.auth.password_env == "PROTHEUS_PASS"
+
+    def test_auth_section_completely_omitted_ok_v0_8_11(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """v0.8.11 bug 3: [auth] inteiro pode ser omitido (defaults PROTHEUS_*).
+
+        Caso real: user só vai compilar em mode=appre e não tem AppServer.
+        """
+        toml_path = _write_minimal_toml(tmp_path)
+        full = toml_path.read_text(encoding="utf-8")
+        # Remove o bloco [auth] inteiro
+        stripped = full.replace(
+            '[auth]\nuser_env = "PROTHEUS_USER"\n'
+            'password_env = "PROTHEUS_PASS"\naut_file = ""\n',
+            "",
+        )
+        toml_path.write_text(stripped, encoding="utf-8")
+        with patch("plugadvpl.runtime_config._tcp_ping", return_value=False):
+            cfg = load(tmp_path)
+        assert cfg is not None
+        assert cfg.auth.user_env == "PROTHEUS_USER"
+        assert cfg.auth.password_env == "PROTHEUS_PASS"
+        assert cfg.auth.aut_file is None
 
     def test_aut_file_missing_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PROTHEUS_USER", "x")

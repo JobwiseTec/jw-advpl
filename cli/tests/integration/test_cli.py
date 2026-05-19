@@ -2083,3 +2083,48 @@ class TestEditPrwStageCommit:
         bak = tmp_path / "foo.prw.bak"
         assert bak.exists()
         assert bak.read_bytes() == original
+
+
+class TestEditPrwClean:
+    """v0.8.11 fix bug 4: edit-prw clean remove .bak acumulado."""
+
+    def test_clean_removes_baks_in_folder(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        (tmp_path / "a.prw.bak").write_bytes(b"old")
+        (tmp_path / "b.tlpp.bak").write_bytes(b"old")
+        (tmp_path / "c.txt.bak").write_bytes(b"unrelated - nao deve sumir")
+        result = runner.invoke(app, ["edit-prw", "clean", str(tmp_path), "--yes"])
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / "a.prw.bak").exists()
+        assert not (tmp_path / "b.tlpp.bak").exists()
+        # .txt.bak não é de fonte ADVPL — preservado
+        assert (tmp_path / "c.txt.bak").exists()
+
+    def test_clean_dry_run_keeps_files(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        (tmp_path / "a.prw.bak").write_bytes(b"x")
+        result = runner.invoke(
+            app, ["edit-prw", "clean", str(tmp_path), "--dry-run"]
+        )
+        assert result.exit_code == 0
+        assert (tmp_path / "a.prw.bak").exists()
+        assert "dry-run" in result.output
+
+    def test_clean_empty_folder_no_error(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(app, ["edit-prw", "clean", str(tmp_path), "--yes"])
+        assert result.exit_code == 0
+        assert "Nenhum .bak" in result.output
+
+    def test_clean_single_file(self, tmp_path: Path, runner: CliRunner) -> None:
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes(b"src")
+        bak = tmp_path / "foo.prw.bak"
+        bak.write_bytes(b"old")
+        result = runner.invoke(app, ["edit-prw", "clean", str(fp), "--yes"])
+        assert result.exit_code == 0
+        assert not bak.exists()
+        assert fp.exists()  # fonte original preservada

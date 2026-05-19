@@ -146,9 +146,22 @@ def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
 def _build_ini_script(
     runtime_cfg: RuntimeConfig, files: list[Path], includes: list[Path]
 ) -> str:
-    """Gera conteúdo do script .ini do advpls cli mode (formato §6 do spec)."""
-    user = os.environ[runtime_cfg.auth.user_env]
-    pwd = os.environ[runtime_cfg.auth.password_env]
+    """Gera conteúdo do script .ini do advpls cli mode (formato §6 do spec).
+
+    v0.8.11: env vars validadas aqui (não mais no load do TOML), porque
+    [auth] virou opcional no runtime.toml — só mode=cli precisa.
+    """
+    user_env = runtime_cfg.auth.user_env
+    pwd_env = runtime_cfg.auth.password_env
+    user = os.environ.get(user_env)
+    pwd = os.environ.get(pwd_env)
+    if not user or not pwd:
+        missing = [v for v, val in ((user_env, user), (pwd_env, pwd)) if not val]
+        raise RuntimeError(
+            f"cli mode needs env vars set: {', '.join(missing)} "
+            f"(referenced by [auth] in runtime.toml). "
+            f"Either export them or use --mode appre (no AppServer connection)."
+        )
     asv = runtime_cfg.appserver
     log = runtime_cfg.logging
 

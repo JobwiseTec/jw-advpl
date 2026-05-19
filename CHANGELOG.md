@@ -36,6 +36,62 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.11] - 2026-05-19
+
+### Fixed - 4 gaps reportados em uso real (v0.8.10)
+
+Usuário rodou v0.8.10 em projeto real e mandou 4 bugs prioritizados.
+Todos endereçados, com regressão.
+
+- **Bug 1 (HIGH) — `--import-tds-servers` lia 0 campos úteis**:
+  TDS-VSCode `~/.totvsls/servers.json` usa `buildVersion` (não `build`)
+  e tem lista `includes` por server. Plugadvpl ignorava ambos →
+  `--use-server` quebrava silenciosamente com build vazio. Corrigido
+  em `compile_servers.import_from_tds_vscode`: aceita ambos os nomes
+  de campo + persiste `includes` no novo `Server.includes`. Em
+  `_apply_server_override`, includes do server são passados pra
+  `CompileConfig` quando não há runtime.toml — permite zero-config
+  total (sem TOML, sem variáveis hardcoded).
+- **Bug 2 (MED) — `--probe-appserver` descobre build sem TDS-VSCode**:
+  novo módulo `compile_probe.py` parseia `protheus.log` à procura da
+  linha de boot (`* TOTVS - Build 7.00.240223P - Oct 3 2025`).
+  Aceita path direto pro `.log` ou raiz Protheus (procura em
+  `log/`, `bin/Appserver/log/`, etc). Imprime build pronto pra colar
+  no `--add-server` ou em `[appserver].build` do runtime.toml.
+- **Bug 3 (MED) — `[auth]` agora opcional no runtime.toml**:
+  modo `appre` não conecta no AppServer → não precisa user/pass.
+  Antes, `runtime_config.load` exigia a seção + validava env vars
+  (mesmo quem só fosse rodar appre). Validação migrou pra
+  `compile._build_ini_script` (chamado só em `mode=cli`). Seção
+  pode ser omitida inteira; defaults `PROTHEUS_USER` / `PROTHEUS_PASS`
+  preenchidos automaticamente. Template do `--init-config` agora
+  documenta `[auth]` como opcional.
+- **Bug 4 (LOW) — `edit-prw clean` pra limpar `.bak` acumulado**:
+  ciclo stage→edit→commit cria 2 `.bak` por fonte. Em refactor
+  grande viram dezenas. Novo subcomando varre pasta (ou arquivo
+  único) e remove `.bak` correspondentes a fontes ADVPL (`.prw`,
+  `.prx`, `.tlpp`, `.tlpp.ch`, `.ch`). Default exige confirmação;
+  `--yes` skipa; `--dry-run` lista sem deletar. `.bak` de outros
+  arquivos (ex: `.txt.bak`) preservados — escopo intencional.
+
+### Added
+
+- `plugadvpl compile --probe-appserver <path>` — discovery de build
+  via log (bug 2).
+- `plugadvpl edit-prw clean [target] [--yes] [--dry-run]` — limpeza
+  em lote de `.bak` (bug 4).
+- `Server.includes` no registry global de servers (bug 1) — inclui
+  no JSON via `~/.plugadvpl/servers.json` quando vem do TDS-VSCode.
+
+### Changed
+
+- `runtime_config.load`: seção `[auth]` virou opcional. Env vars
+  PROTHEUS_USER/PASS deixaram de ser validadas no load — validação
+  agora em `compile._build_ini_script` com mensagem clara apontando
+  o uso (`cli mode needs env vars set: X, Y`).
+- Template do `--init-config` (`runtime.toml`) ganhou comentário
+  explicando que `[auth]` só é necessário em `mode = "cli"`.
+
 ## [0.8.10] - 2026-05-19
 
 ### 🛡️ Warnings de Edit-PRW espalhados nos 5 pontos críticos

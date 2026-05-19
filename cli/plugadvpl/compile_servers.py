@@ -34,6 +34,7 @@ class Server:
     password_env: str = "PROTHEUS_PASS"
     secure: bool = False
     notes: str = ""
+    includes: list[str] = field(default_factory=list)  # v0.8.11: vem do TDS-VSCode
 
 
 @dataclass(frozen=True)
@@ -203,14 +204,25 @@ def import_from_tds_vscode() -> list[Server]:
             port = 1234
         secure_raw = cfg.get("secure", 0)
         secure = bool(secure_raw) if isinstance(secure_raw, bool) else (secure_raw == 1)
+        # v0.8.11 fix bug 1: TDS-VSCode usa "buildVersion" (não "build").
+        # Aceita ambos pra compat com formatos antigos.
+        build_str = str(
+            cfg.get("buildVersion") or cfg.get("build") or ""
+        )
+        # v0.8.11: também importa includes do TDS — antes eram perdidos
+        includes_raw = cfg.get("includes") or []
+        includes_list: list[str] = []
+        if isinstance(includes_raw, list):
+            includes_list = [str(p) for p in includes_raw if p]
         out.append(Server(
             name=name,
             host=str(cfg.get("address") or "127.0.0.1"),
             port=port,
-            build=str(cfg.get("build") or ""),
+            build=build_str,
             environments=envs,
             default_environment=default_env,
             secure=secure,
             notes="imported from TDS-VSCode",
+            includes=includes_list,
         ))
     return out

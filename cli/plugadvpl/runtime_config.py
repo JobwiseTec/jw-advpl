@@ -155,12 +155,13 @@ def load(root: Path) -> RuntimeConfig | None:
         environment=str(_require_key(asv, "environment", toml_path, "appserver")),
     )
 
-    # auth
-    auth_raw = _require_section(raw, "auth", toml_path)
-    user_env = str(_require_key(auth_raw, "user_env", toml_path, "auth"))
-    password_env = str(_require_key(auth_raw, "password_env", toml_path, "auth"))
-    _require_env(user_env, "auth.user_env")
-    _require_env(password_env, "auth.password_env")
+    # auth — v0.8.11 bug 3: seção OPCIONAL agora. Só é exigida no modo cli
+    # (onde a authsantion contra AppServer é real). Validação das env vars
+    # também sai daqui — quem precisa é o builder do .ini em compile.py.
+    auth_raw_obj = raw.get("auth", {})
+    auth_raw: dict[str, object] = auth_raw_obj if isinstance(auth_raw_obj, dict) else {}
+    user_env = str(auth_raw.get("user_env", "PROTHEUS_USER"))
+    password_env = str(auth_raw.get("password_env", "PROTHEUS_PASS"))
     aut_file_str = str(auth_raw.get("aut_file", ""))
     aut_file: Path | None = None
     if aut_file_str:
@@ -227,6 +228,8 @@ build = "7.00.240223P"
 environment = "P2510"
 
 [auth]
+# OPCIONAL — só necessário para mode = "cli" (conexão real ao AppServer).
+# Para mode = "appre" (pré-processador local) pode ser omitido inteiramente.
 # Convenção: NUNCA valor literal. Sempre nome da env var.
 # export PROTHEUS_USER=admin / export PROTHEUS_PASS='senha'
 user_env = "PROTHEUS_USER"
