@@ -2156,6 +2156,30 @@ def compile_callback(
             help="Instala advpls em ~/.plugadvpl/advpls/ (interativo: copia ou baixa)",
         ),
     ] = False,
+    list_servers_flag: Annotated[
+        bool,
+        typer.Option("--list-servers", help="Lista AppServers cadastrados (~/.plugadvpl/servers.json)"),
+    ] = False,
+    add_server_flag: Annotated[
+        bool,
+        typer.Option("--add-server", help="Cadastra novo AppServer (interativo)"),
+    ] = False,
+    remove_server_name: Annotated[
+        str,
+        typer.Option("--remove-server", help="Remove server cadastrado por nome"),
+    ] = "",
+    import_tds_servers: Annotated[
+        bool,
+        typer.Option("--import-tds-servers", help="Importa servers do TDS-VSCode (~/.totvsls/servers.json)"),
+    ] = False,
+    use_server: Annotated[
+        str,
+        typer.Option("--use-server", help="Compila usando server do registry (sobrescreve [appserver])"),
+    ] = "",
+    use_environment: Annotated[
+        str,
+        typer.Option("--use-environment", help="Override do environment do server (opcional)"),
+    ] = "",
     yes: Annotated[
         bool,
         typer.Option(
@@ -2183,6 +2207,22 @@ def compile_callback(
         _handle_install_advpls(yes=yes)
         return
 
+    if list_servers_flag:
+        _handle_list_servers(ctx)
+        return
+
+    if add_server_flag:
+        _handle_add_server()
+        return
+
+    if remove_server_name:
+        _handle_remove_server(remove_server_name)
+        return
+
+    if import_tds_servers:
+        _handle_import_tds_servers(yes=yes)
+        return
+
     if not files:
         typer.secho("nenhum fonte informado", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -2196,10 +2236,23 @@ def compile_callback(
         typer.secho(f"runtime config error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
 
+    # --use-server: sobrescreve [appserver] do runtime.toml com server do registry global
+    if use_server:
+        from plugadvpl.compile_servers import get_server
+        srv = get_server(use_server)
+        if srv is None:
+            typer.secho(
+                f"server '{use_server}' não cadastrado. Liste com: "
+                f"plugadvpl compile --list-servers",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        runtime_cfg = _apply_server_override(runtime_cfg, srv, use_environment)
+
     if mode == "cli" and runtime_cfg is None:
         typer.secho(
             f"runtime.toml required for cli mode at {root}/.plugadvpl/runtime.toml. "
-            "Run: plugadvpl compile --init-config",
+            "Run: plugadvpl compile --init-config OU passe --use-server <nome>",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
@@ -2227,6 +2280,239 @@ def compile_callback(
     )
 
     raise typer.Exit(code=result.exit_code)
+
+
+def _handle_list_servers(ctx: typer.Context) -> None:
+    """Lista servers cadastrados em ~/.plugadvpl/servers.json."""
+    from plugadvpl.compile_servers import list_servers, registry_path, default_server
+
+    servers = list_servers()
+    if not servers:
+        typer.secho(
+            f"Nenhum server cadastrado em {registry_path()}.\n"
+            "  --add-server: cadastra interativo\n"
+            "  --import-tds-servers: importa do TDS-VSCode (se já usa)",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    default = default_server()
+    default_name = default.name if default else ""
+    rows: list[dict[str, object]] = []
+    for s in servers:
+        rows.append({
+            "name": s.name + (" *" if s.name == default_name else ""),
+            "host": s.host,
+            "port": s.port,
+            "build": s.build,
+            "envs": ",".join(s.environments) or "(none)",
+            "default_env": s.default_environment,
+            "user_env": s.user_env,
+        })
+    _render_from_ctx(
+        ctx, rows,
+        columns=["name", "host", "port", "build", "envs", "default_env", "user_env"],
+        title=f"AppServers cadastrados (* = default)",
+        next_steps=[f"plugadvpl compile --use-server {servers[0].name} <fonte>"],
+    )
+
+
+def _handle_add_server() -> None:
+    """Cadastra novo server interativo em ~/.plugadvpl/servers.json."""
+    from plugadvpl.compile_servers import Server, add_server, registry_path
+
+    typer.echo("\n=== Cadastro de novo AppServer ===")
+    typer.echo(f"Será gravado em: {registry_path()}\n")
+
+    name = typer.prompt("Nome (ex: 'dev-local', 'hml-cliente')").strip()
+    if not name:
+        typer.secho("Nome obrigatório.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    host = typer.prompt("Host", default="127.0.0.1").strip()
+    port = typer.prompt("Port", type=int, default=1234)
+    secure = typer.confirm("HTTPS/TLS?", default=False)
+    build = typer.prompt("Build (ex: 7.00.240223P)").strip()
+    envs_raw = typer.prompt(
+        "Environments (separados por vírgula, ex: 'P2510,TEST,PROD')"
+    ).strip()
+    envs = [e.strip() for e in envs_raw.split(",") if e.strip()]
+    if not envs:
+        typer.secho("Pelo menos 1 environment é obrigatório.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    default_env = typer.prompt(
+        "Default environment", default=envs[0]
+    ).strip()
+    if default_env not in envs:
+        typer.secho(
+            f"'{default_env}' não está na lista {envs}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    user_env = typer.prompt(
+        "Nome da env var de USUÁRIO", default="PROTHEUS_USER"
+    ).strip()
+    password_env = typer.prompt(
+        "Nome da env var de SENHA (NUNCA valor literal!)",
+        default="PROTHEUS_PASS",
+    ).strip()
+    notes = typer.prompt("Notas (opcional)", default="").strip()
+    make_default = typer.confirm(
+        "Marcar como server DEFAULT do registry?", default=False,
+    )
+
+    server = Server(
+        name=name, host=host, port=port, build=build, environments=envs,
+        default_environment=default_env, user_env=user_env,
+        password_env=password_env, secure=secure, notes=notes,
+    )
+    add_server(server, make_default=make_default)
+    typer.secho(
+        f"\n✓ Cadastrado: '{name}' em {registry_path()}",
+        fg=typer.colors.GREEN,
+    )
+    typer.echo(
+        f"\nPara compilar usando este server:\n"
+        f"  export {user_env}=<usuário>\n"
+        f"  export {password_env}=<senha>\n"
+        f"  plugadvpl compile --use-server {name} --mode cli <fonte.prw>"
+    )
+
+
+def _handle_remove_server(name: str) -> None:
+    """Remove server do registry."""
+    from plugadvpl.compile_servers import remove_server, registry_path
+    if remove_server(name):
+        typer.secho(f"✓ Removido: '{name}' de {registry_path()}", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"Server '{name}' não encontrado.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=1)
+
+
+def _handle_import_tds_servers(yes: bool) -> None:
+    """Importa servers do TDS-VSCode (~/.totvsls/servers.json)."""
+    from plugadvpl.compile_servers import (
+        add_server,
+        import_from_tds_vscode,
+        tds_vscode_servers_path,
+    )
+
+    path = tds_vscode_servers_path()
+    if not path.is_file():
+        typer.secho(
+            f"TDS-VSCode servers.json não encontrado em {path}.\n"
+            f"Você usa TDS-VSCode? Se sim, cadastre ao menos 1 server lá primeiro.",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        raise typer.Exit(code=1)
+
+    imported = import_from_tds_vscode()
+    if not imported:
+        typer.secho(
+            f"Nenhum server encontrado em {path}.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
+    typer.echo(f"\n=== Servers em {path} ===")
+    for s in imported:
+        envs = ",".join(s.environments) or "(none)"
+        typer.echo(f"  {s.name} — {s.host}:{s.port} build={s.build} envs={envs}")
+
+    if not yes and not typer.confirm(
+        f"\nImportar {len(imported)} server(s) pra registry plugadvpl?",
+        default=True,
+    ):
+        typer.echo("Cancelado.")
+        raise typer.Exit(code=0)
+
+    for s in imported:
+        add_server(s)
+    typer.secho(
+        f"\n✓ Importados {len(imported)} server(s). Veja com: plugadvpl compile --list-servers",
+        fg=typer.colors.GREEN,
+    )
+
+
+def _apply_server_override(
+    runtime_cfg: object,  # RuntimeConfig | None
+    server: object,  # Server
+    env_override: str = "",
+) -> object:
+    """Constrói runtime_cfg com [appserver] vindo do registry global.
+
+    Se runtime_cfg=None, cria um do zero usando defaults (modo "compile sem
+    runtime.toml mas com --use-server"). Se runtime_cfg existe, sobrescreve
+    apenas [appserver] e [auth] preservando [tds_ls]/[compile]/[logging].
+    """
+    from plugadvpl.compile_servers import Server
+    from plugadvpl.runtime_config import (
+        AppserverConfig,
+        AuthConfig,
+        CompileConfig,
+        LoggingConfig,
+        RuntimeConfig,
+        TdsLsConfig,
+        _tcp_ping,
+    )
+
+    assert isinstance(server, Server)
+    env = env_override or server.default_environment
+    if env not in server.environments:
+        typer.secho(
+            f"Environment '{env}' não está em {server.environments}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    new_appserver = AppserverConfig(
+        host=server.host, port=server.port, secure=server.secure,
+        build=server.build, environment=env,
+    )
+    new_auth = AuthConfig(
+        user_env=server.user_env, password_env=server.password_env,
+        aut_file=None,
+    )
+
+    if runtime_cfg is None:
+        # Sem runtime.toml: tds_ls/compile/logging vêm de defaults sensatos
+        from plugadvpl.compile_doctor import _detect_advpls
+        binary = _detect_advpls()
+        if binary is None:
+            typer.secho(
+                "advpls não detectado. Rode: plugadvpl compile --install-advpls",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        tds_ls = TdsLsConfig(binary=binary.resolve(), binary_is_symlink=False)
+        compile_cfg = CompileConfig(
+            recompile=True, includes=(), mode="cli",
+            timeout_seconds=120, include_warnings=True,
+        )
+        logging_cfg = LoggingConfig(log_to_file="", show_console_output=True)
+        warn_remote = server.host not in {"127.0.0.1", "localhost", "::1"}
+        reachable = _tcp_ping(server.host, server.port)
+        return RuntimeConfig(
+            tds_ls=tds_ls, appserver=new_appserver, auth=new_auth,
+            compile=compile_cfg, logging=logging_cfg,
+            warn_remote_host=warn_remote,
+            appserver_reachable=reachable,
+            source_path=Path("<--use-server>"),
+        )
+
+    # Com runtime.toml: sobrescreve só appserver/auth, re-pinga TCP
+    assert isinstance(runtime_cfg, RuntimeConfig)
+    warn_remote = server.host not in {"127.0.0.1", "localhost", "::1"}
+    reachable = _tcp_ping(server.host, server.port)
+    return RuntimeConfig(
+        tds_ls=runtime_cfg.tds_ls,
+        appserver=new_appserver,
+        auth=new_auth,
+        compile=runtime_cfg.compile,
+        logging=runtime_cfg.logging,
+        warn_remote_host=warn_remote,
+        appserver_reachable=reachable,
+        source_path=runtime_cfg.source_path,
+    )
 
 
 def _handle_install_advpls(yes: bool) -> None:

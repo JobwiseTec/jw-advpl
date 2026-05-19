@@ -111,6 +111,33 @@ Isso evita expor credenciais em TCP cru pela internet.
 
 ---
 
+### ⚡ Atalho — cadastre seus servers UMA vez (`~/.plugadvpl/servers.json`)
+
+Se você compila pra **vários servers** (dev local, hml, prod, cliente A, cliente B), não precisa repetir `host`/`port`/`build`/`environment` em todo `runtime.toml`. Cadastra **uma vez** e usa em qualquer projeto:
+
+```bash
+# Tem TDS-VSCode? Importa direto:
+plugadvpl compile --import-tds-servers
+# Detecta ~/.totvsls/servers.json (do TDS-VSCode), pergunta confirmação, importa
+
+# OU cadastra manual:
+plugadvpl compile --add-server
+# Interativo: pergunta nome, host, port, build, environments, default
+
+# Lista o que tem cadastrado:
+plugadvpl compile --list-servers
+
+# Compila usando server cadastrado (sem precisar de runtime.toml):
+plugadvpl compile --use-server dev-local --mode cli SEU_FONTE.PRW
+
+# Override de environment pontual (servers podem ter vários: P2510, TEST, HML):
+plugadvpl compile --use-server dev-local --use-environment TEST --mode cli SEU_FONTE.PRW
+```
+
+**Registry global** em `~/.plugadvpl/servers.json` (per-user, NUNCA grava senha — só nome das env vars). Permissão `0o600` em POSIX.
+
+---
+
 ### ☐ 4. `build` e `environment` do AppServer
 
 **O que é**: identificadores que o AppServer espera receber pra autenticar.

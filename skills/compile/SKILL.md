@@ -51,6 +51,9 @@ Se o user quiser fazer manual:
 - **Salvar**: passar via `--includes <path>` nas próximas execuções OU editar `[compile].includes = ["<path>"]` no `runtime.toml`
 
 #### `create_runtime_toml`
+- **CAMINHO PREFERIDO** (se já há servers cadastrados ou TDS-VSCode disponível):
+  use `--use-server <nome>` em vez de criar runtime.toml. Mais rápido e cobre
+  múltiplos AppServers (dev/hml/prod) sem editar arquivo a cada compilação.
 - Rode: `plugadvpl compile --init-config`
 - Edite `<root>/.plugadvpl/runtime.toml` preenchendo:
   - `[tds_ls].binary` — path do advpls
@@ -58,6 +61,19 @@ Se o user quiser fazer manual:
   - `[auth]` — `user_env`/`password_env` (nome das env vars, NUNCA valor)
   - `[compile].includes` — pasta com includes
 - Mostre o conteúdo final ao usuário pra confirmação ANTES de gravar
+
+#### `use_server`
+- **PREFERIDO sobre create_runtime_toml** quando user já tem servers cadastrados.
+- `candidates` = nomes de servers já registrados em `~/.plugadvpl/servers.json`
+- Mostre lista, pergunte qual usar
+- Comando: `plugadvpl compile --use-server <nome> --mode cli <fonte.prw>`
+- User pode também especificar environment alternativo: `--use-environment TEST`
+
+#### `import_tds_servers`
+- Aparece quando `~/.totvsls/servers.json` (TDS-VSCode) existe mas registry plugadvpl está vazio
+- Comando: `plugadvpl compile --import-tds-servers` (interativo, pede confirmação)
+- Lê servers do TDS-VSCode + adiciona ao registry plugadvpl
+- Depois usa `--use-server <nome>` normalmente
 
 #### `set_env_var`
 - **Se `secret: true`** (PROTHEUS_PASS): **NUNCA** logue valor. Oriente:

@@ -293,17 +293,43 @@ def run_doctor(
             hint="Rode `plugadvpl compile --init-config` para gerar template.",
         ))
         cli_ok = False
+        # Verifica se há servers cadastrados globalmente — se sim, sugere --use-server
+        from plugadvpl.compile_servers import list_servers, tds_vscode_servers_path
+        cadastrados = list_servers()
+        if cadastrados:
+            next_actions.append(NextAction(
+                action="use_server",
+                question=(
+                    f"OPCAO RAPIDA: voce ja tem {len(cadastrados)} server(s) cadastrado(s)!\n"
+                    "  Em vez de criar runtime.toml, compile direto com:\n"
+                    f"    plugadvpl compile --use-server <nome> --mode cli <fonte>\n"
+                    "  Liste com: plugadvpl compile --list-servers"
+                ),
+                candidates=[s.name for s in cadastrados],
+            ))
+        elif tds_vscode_servers_path().is_file():
+            next_actions.append(NextAction(
+                action="import_tds_servers",
+                question=(
+                    "OPCAO RAPIDA: detectei TDS-VSCode servers.json — posso importar.\n"
+                    "  Rode: plugadvpl compile --import-tds-servers\n"
+                    "  Depois: plugadvpl compile --use-server <nome> --mode cli <fonte>"
+                ),
+                candidates=[],
+            ))
         next_actions.append(NextAction(
             action="create_runtime_toml",
             question=(
-                f"PRECISO: arquivo runtime.toml em {runtime_toml_path}.\n"
+                f"OUTRO CAMINHO: arquivo runtime.toml em {runtime_toml_path}.\n"
                 "  Rode: plugadvpl compile --init-config\n"
                 "  Depois edite o TOML preenchendo 5 dados:\n"
                 "    1. [tds_ls].binary    — path do advpls\n"
                 "    2. [appserver].host/port/build/environment — info do AppServer\n"
                 "    3. [auth].user_env/password_env — NOMES das env vars (não valores!)\n"
                 "    4. [compile].includes — lista de pastas .ch\n"
-                "  Como descobrir cada dado: docs/compile-checklist.md §3-§5"
+                "  Como descobrir cada dado: docs/compile-checklist.md §3-§5\n"
+                "  ALTERNATIVA: cadastre o server uma vez via 'plugadvpl compile --add-server'\n"
+                "  e use --use-server <nome> em qualquer projeto sem criar runtime.toml."
             ),
             candidates=[],
         ))

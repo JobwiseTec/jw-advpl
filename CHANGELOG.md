@@ -36,6 +36,71 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.7] - 2026-05-19
+
+### 🖥️ Registry global de AppServers (`~/.plugadvpl/servers.json`)
+
+User pediu: "onde fica as informações dos servers/ambientes que o cliente
+pode compilar para ele não ter que te enviar toda hora?". Implementado um
+registry **global per-user** estilo TDS-VSCode — cadastra uma vez,
+usa em qualquer projeto via `--use-server <nome>`.
+
+### Added
+
+- **`~/.plugadvpl/servers.json`** — registry global de AppServers
+  (host/port/build/environments/user_env/password_env). Permissão `0o600`
+  em POSIX. **NUNCA grava senha** — só nomes das env vars.
+- **`compile_servers.py`** módulo novo com:
+  - `Server` / `ServersRegistry` dataclasses
+  - `load_registry()` / `save_registry()` (funções puras)
+  - `add_server()` / `remove_server()` / `get_server()` / `default_server()`
+  - `import_from_tds_vscode()` — parsea `~/.totvsls/servers.json` e devolve
+    lista de `Server` pronta pra adicionar
+- **4 novas flags do `compile`**:
+  - `--list-servers` — lista cadastrados (com indicação de default)
+  - `--add-server` — cadastro interativo (pergunta name, host, port, build,
+    environments, user_env, password_env, notes)
+  - `--remove-server <nome>` — remove do registry
+  - `--import-tds-servers` — importa do TDS-VSCode (`~/.totvsls/servers.json`)
+    com confirmação prévia
+- **`--use-server <nome>`** + **`--use-environment <env>`** — compila usando
+  server do registry, sobrescreve `[appserver]` do `runtime.toml`. Funciona
+  até **sem `runtime.toml`** (combinado com `--install-advpls`, agente IA
+  pode compilar do zero conhecendo só o nome do server).
+
+### Changed
+
+- **`--doctor` agora detecta servers cadastrados** e sugere caminho rápido
+  em vez de criar `runtime.toml` por projeto:
+  - Se há servers no registry → próxima ação `use_server` com `candidates`
+    populadas (agente mostra lista pro usuário)
+  - Se há TDS-VSCode mas registry vazio → próxima ação `import_tds_servers`
+    (agente sugere importação)
+  - Senão → mantém ação `create_runtime_toml` como antes
+- **`docs/compile-checklist.md` §3-4** ganhou seção "⚡ Atalho — cadastre
+  servers UMA vez" com 5 comandos chave (import, add, list, use, use+env).
+- **`skills/compile/SKILL.md`** atualizada com 2 novas actions
+  (`use_server`, `import_tds_servers`) + nota que `create_runtime_toml`
+  agora é fallback (não default) quando há atalho disponível.
+
+### Tests
+
+- **+17 testes** em `test_compile_servers.py`: paths, load/save round-trip,
+  malformed JSON tratado, add/remove/get/default semantics, import TDS-VSCode
+  formato real (2 servers + secure/insecure).
+- **780 testes total** (era 763 + 17 servers).
+
+### Notes
+
+- Servers são per-user (em `~`, não em `<projeto>/.plugadvpl/`). Decisão do
+  user: prefere global (estilo TDS-VSCode) — cobre 90% dos casos. Caso
+  futuro de "servers compartilhados por equipe via repo" pode ser feature
+  opcional num release posterior.
+- Diferente de `runtime.toml`, registry **NÃO precisa de --init-config**.
+  Existe quando o primeiro `--add-server` / `--import-tds-servers` roda.
+- Fluxo zero-config para um novo projeto: `plugadvpl compile --use-server
+  <nome> --mode cli FONTE.PRW` (mais `--includes <pasta>` se modo `appre`).
+
 ## [0.8.6] - 2026-05-19
 
 ### 🤝 `compile --install-advpls` — instalação gerenciada do binário
