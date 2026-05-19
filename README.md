@@ -319,6 +319,7 @@ Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e s
 ## Documentação
 
 - [docs/cli-reference.md](docs/cli-reference.md) — reference completa dos 18 subcomandos com sintaxe, opções e exemplos
+- [docs/setup-compile.md](docs/setup-compile.md) — guia passo-a-passo de `plugadvpl compile` (advpls + includes Protheus + AppServer + CI)
 - [docs/schema.md](docs/schema.md) — schema SQLite (22 tabelas + 2 FTS5 + diagrama Mermaid + queries úteis)
 - [docs/architecture.md](docs/architecture.md) — fluxo, componentes, decisões-chave e guia para contribuir com novas extrações
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup local, fixtures, estilo, commits

@@ -293,7 +293,6 @@ def _build_timeout_result(files: list[Path], timeout: int | None, mode: str) -> 
 
 
 def _build_next_steps(rows: list[dict[str, object]], mode: str) -> list[str]:
-    _ = mode  # reservado p/ contextualizar próximos passos por modo (Task 5+)
     if all(r["ok"] for r in rows):
         return []
     failed_files = [
@@ -301,9 +300,33 @@ def _build_next_steps(rows: list[dict[str, object]], mode: str) -> list[str]:
         if not r["ok"] and r["arquivo"] != "__unmatched__"
     ]
     steps: list[str] = []
+
+    # Hint específico pro erro mais comum: include Protheus faltando (C2090).
+    # Detecta varrendo diagnostics de todas as rows.
+    has_c2090 = any(
+        any(
+            isinstance(d, dict) and d.get("codigo") == "C2090"
+            for d in (r.get("diagnostics") or [])
+            if isinstance(d, dict)
+        )
+        for r in rows
+        if isinstance(r.get("diagnostics"), list)
+    )
+    if has_c2090:
+        steps.append(
+            "# Erro C2090 = include Protheus faltando. Setup completo em "
+            "docs/setup-compile.md. Tipicamente: "
+            "--includes <pasta-com-PRTOPDEF.CH-e-protheus.ch>"
+        )
+
     if failed_files:
         steps.append(f"plugadvpl arch {failed_files[0]}   # contexto arquitetural")
-    steps.append("plugadvpl compile <file> --no-warnings   # filtra warnings")
+    if mode == "appre":
+        steps.append(
+            "# appre é só pré-processador. Pra erros semânticos use "
+            "--mode cli com AppServer rodando (ver docs/setup-compile.md §cli)."
+        )
+    steps.append("plugadvpl compile --no-warnings <file>   # filtra warnings")
     return steps
 
 

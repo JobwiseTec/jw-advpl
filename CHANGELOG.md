@@ -36,6 +36,41 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.3] - 2026-05-19
+
+### 📘 Docs onboarding + skill `compile` + hints contextuais
+
+Release de polish pra fechar a Fase 1: tudo que o usuário precisa pra
+botar o `compile` pra rodar do zero, sem ler código-fonte.
+
+### Added
+
+- **[`docs/setup-compile.md`](docs/setup-compile.md)** — guia definitivo de
+  setup. Cobre Windows/Linux/macOS, como obter o binário `advpls` (extensão
+  TDS-VSCode + comando para baixar `.vsix` sem instalar VSCode), como obter
+  includes Protheus reais, setup CI (GitHub Actions completo), SSH tunnel
+  pra AppServer remoto, troubleshooting dos 6 erros mais comuns.
+- **[`skills/compile/SKILL.md`](skills/compile/SKILL.md)** — slash command
+  `/plugadvpl:compile` no plugin Claude Code. Tabela de pré-requisitos por
+  modo, schema do JSON, exit codes, troubleshooting rápido.
+- **Hints contextuais no `next_steps`** do output JSON:
+  - Detecta diagnostic com `codigo=C2090` → sugere `--includes <pasta>` +
+    link pro guia
+  - Modo `appre` → lembra que é só pré-processador, sugere `--mode cli` pra
+    erros semânticos + link pra seção §cli do guia
+
+### Changed
+
+- **`docs/cli-reference.md`** §compile — link 📘 explícito pra
+  `setup-compile.md` no header da seção
+- **`README.md` §Documentação** — bullet novo apontando pro guia de setup
+
+### Notes
+
+- Validado com user real: smoke compilou fonte limpo em ~60ms +
+  detectou erro `C2090` linha=1 corretamente após v0.8.2.
+- Sem mudança funcional além dos hints — release de docs/UX puro.
+
 ## [0.8.2] - 2026-05-18
 
 ### 🐛 Mais 2 bugs achados no smoke real (compilação end-to-end funcional)

@@ -356,6 +356,8 @@ plugadvpl compile --init-config [--force]
 - Includes Protheus reais (`PRTOPDEF.CH`, `protheus.ch`, `topconn.ch` etc.). Não vem com tds-vscode — precisa instalação SDK Protheus/AppServer. Tipicamente em `<protheus-root>/Include/` (~1100 arquivos `.ch`)
 - Passar `--includes <pasta>` apontando pra esse diretório, OU configurar `[compile].includes` no `runtime.toml`
 
+📘 **[Setup completo passo-a-passo em docs/setup-compile.md](setup-compile.md)** — cobre Windows + Linux + macOS + CI + troubleshooting dos erros comuns.
+
 **Setup uma vez por projeto:**
 ```bash
 plugadvpl compile --init-config     # gera .plugadvpl/runtime.toml comentado
