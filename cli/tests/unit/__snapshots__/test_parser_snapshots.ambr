@@ -86,6 +86,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -101,6 +103,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -157,6 +161,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -172,6 +178,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -236,6 +244,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -251,6 +261,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -354,6 +366,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'main_function',
@@ -369,6 +383,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -429,6 +445,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -446,6 +464,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -628,6 +648,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'mvc',
@@ -643,6 +665,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -766,6 +790,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'mvc',
@@ -781,6 +807,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -828,6 +856,9 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+      'MT100LOK',
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'pe',
@@ -844,6 +875,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -895,6 +928,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -910,6 +945,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -958,6 +995,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -976,6 +1015,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -1023,6 +1064,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -1041,6 +1084,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -1086,6 +1131,8 @@
     'parametros_uso': list([
     ]),
     'perguntas_uso': list([
+    ]),
+    'pontos_entrada': list([
     ]),
     'rest_endpoints': list([
     ]),
@@ -1141,6 +1188,8 @@
     'ws_structures': dict({
       'ws_methods': list([
       ]),
+      'ws_restfuls': list([
+      ]),
       'ws_services': list([
       ]),
       'ws_structs': list([
@@ -1191,6 +1240,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'user_function',
@@ -1206,6 +1257,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -1271,6 +1324,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
       dict({
         'annotation_style': '@verb_tlpp',
@@ -1302,6 +1357,8 @@
     }),
     'ws_structures': dict({
       'ws_methods': list([
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
       ]),
@@ -1356,6 +1413,8 @@
     ]),
     'perguntas_uso': list([
     ]),
+    'pontos_entrada': list([
+    ]),
     'rest_endpoints': list([
     ]),
     'source_type': 'webservice',
@@ -1383,6 +1442,8 @@
           'send': 'cNome',
           'service': 'WSVendas',
         }),
+      ]),
+      'ws_restfuls': list([
       ]),
       'ws_services': list([
         dict({
