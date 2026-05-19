@@ -148,7 +148,7 @@ Pronto. A partir daqui o Claude já consulta o índice antes de abrir qualquer `
 
 Além da CLI, o plugadvpl também é um **plugin Claude Code** que adiciona:
 - Slash commands `/plugadvpl:arch`, `/plugadvpl:find`, `/plugadvpl:callers`, etc.
-- 15 knowledge skills temáticas que Claude carrega automaticamente (advpl-mvc, advpl-tlpp, advpl-pontos-entrada, etc.)
+- 18 knowledge skills temáticas que Claude carrega automaticamente (advpl-mvc, advpl-tlpp, advpl-pontos-entrada, etc.)
 - Hook `SessionStart` que detecta projetos ADVPL e sugere `/plugadvpl:init`
 - 4 subagents especializados (analyzer, impact-analyzer, code-generator, reviewer-bot)
 
@@ -193,7 +193,7 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ## Comandos disponíveis
 
-O CLI Python expõe **21 subcomandos** (a partir do v0.4.0), espelhados em slash commands do plugin Claude Code.
+O CLI Python expõe **~30 subcomandos** (Universo 1-4 + Fase 0 + Fase 1), espelhados em slash commands do plugin Claude Code.
 
 ### Universo 1 — Fontes (v0.1)
 
@@ -231,13 +231,41 @@ O CLI Python expõe **21 subcomandos** (a partir do v0.4.0), espelhados em slash
 | **`/plugadvpl:execauto`** | **(v0.4.1)** Resolve `MsExecAuto({\|x,y,z\| MATA410(x,y,z)}, ...)` → rotina canônica + módulo + tabelas inferidas (filtros `--routine`/`--modulo`/`--op`/`--dynamic`) |
 | **`/plugadvpl:docs [modulo]`** | **(v0.4.2)** Catálogo de Protheus.doc agregado por módulo/autor/tipo. Modo `--show <fn>` em Markdown estruturado, `--orphans` cruza com BP-007 |
 
-Reference completa: [docs/cli-reference.md](docs/cli-reference.md).
+### Universo 4 — Trace + Qualidade (v0.5/v0.6)
+
+| Comando | Função |
+|---|---|
+| `/plugadvpl:trace <entidade>` | Grafo unificado cross-universo: dado um `campo`/`funcao`/`tabela`/`arquivo`/`parametro`/`pergunte`, devolve TODOS os pontos onde aparece (fontes + SX + workflow + jobs + ExecAuto + Protheus.doc) |
+| `/plugadvpl:metrics [arq]` | Métricas por função: complexidade ciclomática McCabe (`cc`), LOC, nesting, fan-out, params, `has_doc` |
+| `/plugadvpl:hotspots` | Top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor |
+| `/plugadvpl:cobertura-doc` | % de funções com Protheus.doc por módulo ou tipo de source |
+
+### Fase 0 / Fase 1 — Runtime ADVPL (v0.7/v0.8)
+
+| Comando | Função |
+|---|---|
+| `/plugadvpl:edit-prw {check\|open\|save}` | **(v0.7.0)** Conversão CP1252↔UTF-8 in-place. Detecta encoding via BOM + ASCII + UTF-8 strict + fallback CP1252. Cria `.bak` |
+| `/plugadvpl:compile <fonte>` | **(v0.8.0+)** Compila ADVPL via wrapper sobre binário oficial `advpls` (TOTVS). 2 modos: `appre` (local, pré-processador) ou `cli` (full via AppServer TCP) |
+| `/plugadvpl:compile --doctor` | **(v0.8.4)** Pre-flight check estruturado em JSON. Auto-detecta advpls + includes + AppServer. Retorna `next_actions` ordenadas pro agente seguir |
+| `/plugadvpl:compile --install-advpls` | **(v0.8.6)** Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
+| `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | **(v0.8.7)** Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto |
+
+**Setup zero-config recomendado**:
+```bash
+plugadvpl compile --install-advpls           # baixa/copia advpls (1x por máquina)
+plugadvpl compile --import-tds-servers       # se já tem TDS-VSCode (importa servers)
+plugadvpl compile --use-server <nome> --mode cli FONTE.PRW
+```
+
+Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info conversacional do que coletar) e [docs/setup-compile.md](docs/setup-compile.md) (guia técnico passo-a-passo).
+
+Reference completa de todos os subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
 
 ---
 
 ## Skills incluídas
 
-Além dos 21 command wrappers (1 por subcomando do CLI + `help` + `setup`), o plugin traz **18 knowledge skills** carregadas pelo Claude conforme contexto:
+Além dos ~30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o plugin traz **18 knowledge skills** carregadas pelo Claude conforme contexto:
 
 | Skill | Quando carrega |
 |---|---|
@@ -266,16 +294,231 @@ Também incluídos: **4 agents** especializados (`advpl-analyzer`, `advpl-impact
 
 ## Como funciona
 
+Visão geral do pipeline:
+
 ```
 .prw / .tlpp           parser strip-first         SQLite + FTS5         slash command
-(seu projeto)   ───▶   (regex sobre conteúdo  ─▶  25 tabelas físicas  ─▶ /plugadvpl:*
-                       sem comentário/string)     + 2 FTS5 virtuais     (Claude consulta)
-                       paralelo adaptive          + 7 lookups TOTVS
+(seu projeto)   ───▶   (regex sobre conteúdo  ─▶  27 tabelas físicas  ─▶ /plugadvpl:*
+                       sem comentário/string)     + 2 FTS5 virtuais     (Claude consulta
+                       paralelo adaptive          + 7 lookups TOTVS      ~700 tokens)
 ```
 
-O `plugadvpl ingest` escaneia o projeto, parseia cada fonte em paralelo (`ProcessPoolExecutor` com fallback single-thread para projetos < 200 arquivos), persiste metadados (funções, chamadas, tabelas, MV_*, SQL embarcado, PEs, REST endpoints, jobs, etc.) em SQLite, e rebuilda dois índices FTS5 — um `unicode61` com `tokenchars '_-'` (mantém `A1_COD` e `FW-Browse` como um token) e um trigram para busca substring exata (`SA1->A1_COD`, `%xfilial%`).
+O plugin é dividido em **camadas independentes** — cada uma adiciona um tipo de informação ao índice SQLite e seus próprios subcomandos. Você pode usar só as que fazem sentido pro seu projeto.
 
-Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma query barata no SQLite e devolve só o que importa — função, range de linhas, callers, tabelas — em ~700 tokens. Detalhes em [docs/architecture.md](docs/architecture.md).
+### Universo 1 — Ingestão de fontes (v0.1)
+
+**O que faz**: `plugadvpl ingest` escaneia recursivamente o `--root`, encontra arquivos `.prw`/`.prx`/`.tlpp`/`.apw`/`.ptm`/`.aph`, e parseia cada um em paralelo (`ProcessPoolExecutor` com `min(8, cpu_count())` para projetos ≥200 arquivos; single-thread para projetos pequenos). De cada fonte extrai:
+
+- **Funções** (User/Static/Main Function, Method) com `linha_inicio`/`linha_fim` e assinatura
+- **Chamadas de função** (`U_NOME()`, `StaticFunc()`, `obj:Method()`) → grafo direcionado
+- **Tabelas usadas** (`SA1->A1_COD`, `DbSelectArea("SA1")`, alias dinâmico) com modo `read`/`write`/`reclock`
+- **SQL embarcado** (`BeginSql ... EndSql`, `TCQuery`) com macros (`%xfilial%`, `%notDel%`, `%table:SA1%`)
+- **Parâmetros MV_*** (`GetMV`, `PutMV`, `SuperGetMv` — qualquer prefixo: `MV_*`, `ABC_*`, customizados)
+- **Pontos de entrada** (PEs com 1º arg `PARAMIXB`)
+- **REST endpoints** (`WSRESTFUL`, `@Get`/`@Post`, rotas)
+- **HTTP outbound** (`HttpPost`, `HTTPSGet`, `WSDLService`)
+- **Workflow / Jobs** (`StartJob`, `MsRunInThread`, `MsWorkflow`, `TWFProcess`, `Schedule`)
+- **Includes** (`#include "totvs.ch"`) — resolvidos ou não
+- **Encoding** (detecta CP1252 vs UTF-8 strict — vira lint ENC-001 quando `.prw` é UTF-8)
+- **Capabilities** computadas: source_type (mvc/rest/cadastro/relatorio/PE/job), tem RecLock, tem REST, tem MVC, etc.
+- **Lint findings** single-file (38 regras: best-practice, security, performance, modernization, webservice, encoding)
+
+Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_-'` (mantém `A1_COD`/`FW-Browse` como um token só) e um **trigram** para busca substring exata (`SA1->A1_COD`, `%xfilial%`).
+
+**Comandos**: `init`, `ingest`, `reindex`, `find`, `callers`, `callees`, `tables`, `param`, `arch`, `lint`, `grep`, `doctor`, `status`.
+
+### Universo 2 — Dicionário SX (v0.3)
+
+**O que faz**: `plugadvpl ingest-sx <pasta-csv>` ingere o dicionário SX exportado do Configurador (SIGACFG → Misc → Exportar Dicionário em CSV) em 11 tabelas: `tabelas` (SX2), `campos` (SX3), `gatilhos` (SX7), `parametros` (SX6), `perguntas` (SX1), `consultas` (SXB), `pastas` (SXA), `relacionamentos` (SX9), `indices` (SIX), `tabelas_genericas` (SX5), `grupos_campo` (SXG).
+
+**Por design**: ingere apenas customizações do cliente (`X3_NIVEL > 1`). O padrão TOTVS é ignorado — o plugin **não redistribui dicionário TOTVS** (questão de licença).
+
+**Cruzamento**: campos do SX3 são cruzados com `fonte_chunks.content` (busca substring) → quem usa o campo. SX7 (gatilhos) origem→destino vira cadeia rastreável. SX1 (perguntas) cruza com `Pergunte("XXX", .F.)` nos fontes.
+
+**Killer feature**: `plugadvpl impacto <campo>` cruza referências do campo em **3 camadas** (fontes + SX3 trigger fontes + SX7 destino + SX1 onde aparece) com profundidade `--depth 1..3`. Em um campo central tipo `A1_COD` retorna grafo de impacto que ajuda a estimar refactors.
+
+**Comandos**: `ingest-sx`, `impacto`, `gatilho`, `sx-status` + **11 regras cross-file** `SX-001..SX-011` (X3_VALID chama função inexistente, X7_REGRA aponta pra campo inexistente, MV_PAR* não usado em fonte, etc.).
+
+### Universo 3 — Rastreabilidade (v0.4)
+
+**O que faz**: indexa formas de execução **não-direta** que `callers`/`callees` não pegam (porque não há call literal):
+
+- **Workflow / Schedule / Job standalone / Mail** (`MsWorkflow`, `TWFProcess`, `WFPrepEnv`, `Schedule`, `StartJob` daemon, `MailSendMail`)
+- **ExecAuto chain**: `MsExecAuto({|x,y,z| MATA410(x,y,z)}, aHeader, aItems, nOpcAuto)` — resolve a **rotina canônica** (`MATA410` → "Pedido de Venda"), o módulo (SIGAFAT), e infere as tabelas afetadas (SC5/SC6 pra MATA410, SE1 pra MATA440, etc.) via lookup `lookups/execauto_routines.json`
+- **Protheus.doc agregado**: parse de blocos `/*/{Protheus.doc} NomeFn ... /*/`  e cruzamento com `funcoes` da fonte_chunks → catálogo navegável por módulo/autor/tipo
+
+**Comandos**: `workflow`, `execauto`, `docs` (`--show <fn>` em Markdown, `--orphans` cruza com BP-007).
+
+### Universo 4 — Trace + Qualidade (v0.5/v0.6)
+
+**O que faz**: 2 features distintas que fecham o ciclo de análise.
+
+**Feature A — Trace unificado** (`plugadvpl trace <entidade>`): dado um nome (campo SX3, função ADVPL, tabela, arquivo, parâmetro MV_*, pergunte SX1), o auto-detect decide o tipo e cruza **TODOS os universos** em uma resposta única: aparece em quais fontes, quais validações SX, quais gatilhos, quais workflows, quais jobs, quais chamadas ExecAuto, qual Protheus.doc. Mata necessidade de rodar 5 comandos diferentes pra entender uma entidade.
+
+**Feature B — Qualidade & métricas** (schema v10, tabela `fonte_metrics`):
+- `plugadvpl metrics [arq]` — McCabe cyclomatic complexity, LOC, max nesting, fan-out, params_count, has_doc por função
+- `plugadvpl hotspots` — top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor
+- `plugadvpl cobertura-doc` — % de funções com Protheus.doc por módulo ou source_type
+
+### Fase 0 — Quick wins (v0.7)
+
+**Lint rules de runtime** que só faziam sentido depois do parser maduro:
+
+- **WS-001/002/003** — WSMETHOD sem WSSERVICE, `GetContent`+`FromJson` sem `DecodeUtf8`, `SetResponse` sem `EncodeUtf8` em WSRESTFUL
+- **XF-001** — `MsSeek(xFilial("XX"))` em tabela `x2_modo='E'` dentro de REST/JOB sem `RpcSetEnv` precedente (bug silencioso crítico: `cFilAnt` vazia, xFilial retorna "")
+- **ENC-001** — `.prw`/`.prx` salvo em UTF-8 quebra compilador appserver legado
+- **Comando `edit-prw`** — conversão CP1252↔UTF-8 com backup
+- **Contract doc `U_EXEC`** + reference impl MIT (`docs/examples/uexec.prw`) pra execução headless de função ADVPL via REST (pavimenta Fase 2)
+
+### Fase 1 — Compilação (v0.8) ← NOVO
+
+**`plugadvpl compile <fonte>`** é um **wrapper Python sobre o binário oficial `advpls`** (TOTVS — distribuído na extensão TDS-VSCode pública). Devolve **JSON estruturado** consumível por CI, com auto-detect de includes, modo `appre` (local) ou `cli` (full via AppServer).
+
+Veja a seção dedicada [**Compilação ADVPL**](#compilação-advpl) logo abaixo pra entender a estrutura e o que chama quando.
+
+---
+
+## Compilação ADVPL
+
+Camada de runtime entregue nas versões v0.7/v0.8 — fecha o ciclo "ler/analisar → **compilar** → executar → testar".
+
+### O que NÃO fazemos
+
+O plugin **não reimplementa o compilador**. ADVPL é proprietário TOTVS, sem fork open-source. O `plugadvpl compile`:
+- Invoca o binário oficial `advpls` (distribuído publicamente na extensão TDS-VSCode no Microsoft Marketplace) via `subprocess.Popen`
+- Captura stdout/stderr + arquivos `.errprw` que o advpls gera
+- Parseia output em texto livre usando regex patterns externalizados (`lookups/compile_patterns.json`)
+- Devolve resultado estruturado em JSON pra agente IA / CI consumir
+
+Crédito completo do `advpls` na seção [Créditos](#créditos).
+
+### Arquitetura
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ plugadvpl compile <fonte.prw> --mode cli --use-server dev-local    │
+└────────────────────────────┬───────────────────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+    ┌──────────────────┐         ┌──────────────────────┐
+    │ compile_doctor   │         │ compile_servers      │
+    │ ────────────────│         │ ────────────────────│
+    │ pre-flight check │         │ ~/.plugadvpl/        │
+    │ auto-detecta:    │         │   servers.json       │
+    │  • advpls        │         │ (host/port/build/    │
+    │  • includes      │         │  envs/user_env/      │
+    │  • AppServer TCP │         │  password_env)       │
+    │  • env vars      │         └──────────┬───────────┘
+    │ → next_actions   │                    │
+    │   pro agente     │                    │
+    └────────┬─────────┘                    │
+             │                              │
+             ▼                              ▼
+    ┌──────────────────────────────────────────────────┐
+    │ runtime_config (runtime.toml por projeto, opt-in)│
+    │ + override do --use-server                       │
+    └────────────────────────┬─────────────────────────┘
+                             ▼
+                  ┌─────────────────────┐
+                  │ compile.py          │
+                  │ ───────────────────│
+                  │ • resolve files     │
+                  │ • pick mode (appre/cli/auto)
+                  │ • build args        │
+                  │ • write secure .ini │ ← (modo cli, CP1252, 0o600)
+                  │ • Popen subprocess  │ ─────────────────┐
+                  └──┬──────────────────┘                  │
+                     │                                     ▼
+                     │                       ┌─────────────────────────────┐
+                     │                       │ advpls (binário TOTVS)      │
+                     │                       │ ────────────────────────────│
+                     │                       │ ~/.plugadvpl/advpls/bin/<os>/
+                     │                       │ instalado via               │
+                     │                       │ --install-advpls            │
+                     │                       │ (copy local OU download     │
+                     │                       │  do Marketplace VSCode)     │
+                     │                       └─────────────┬───────────────┘
+                     │                                     │
+                     │       ┌───── stdout/stderr ─────────┤
+                     │       │                             │
+                     │       │       ┌── .errprw files ────┘
+                     │       ▼       ▼
+                     │  ┌───────────────────────────┐
+                     │  │ compile_parser            │
+                     │  │ ─────────────────────────│
+                     │  │ • regex patterns          │
+                     │  │ • UTF-16 BOM / CP1252     │
+                     │  │ • redact credenciais      │
+                     │  │ • bucket __unmatched__    │
+                     │  └─────────┬─────────────────┘
+                     │            │
+                     └────────────┼───→ CompileResult (JSON)
+                                  │     {rows, summary, next_steps,
+                                  │      exit_code}
+                                  ▼
+```
+
+### Módulos da Fase 1
+
+| Módulo | Responsabilidade |
+|---|---|
+| **`compile_doctor.py`** | Pre-flight check: detecta advpls (env var + `~/.plugadvpl/` + PATH + extensão TDS-VSCode), includes Protheus, AppServer TCP. Retorna JSON com `status`/`mode_supported`/`checks`/`next_actions` pro agente seguir |
+| **`compile_servers.py`** | Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo `~/.totvsls/servers.json` do TDS-VSCode — inclusive auto-importa de lá). Permissão `0o600`, NUNCA grava senha |
+| **`compile_installer.py`** | Instalação gerenciada do advpls em `~/.plugadvpl/advpls/`. Modo copy (de path local) ou download (.vsix do Marketplace VSCode, extrai só `bin/<os>/`). Sempre mostra plano + pede confirmação |
+| **`compile_parser.py`** | Parse de output do advpls com regex patterns externalizados (`lookups/compile_patterns.json`). Trata UTF-16 BOM, CP1252 fallback, redact credenciais (`lookups/redact_patterns.json`), normaliza paths via `Path.resolve()` |
+| **`runtime_config.py`** | Carrega `<root>/.plugadvpl/runtime.toml` (config por projeto, opt-in). Valida tudo no load. Credenciais sempre via nome de env var, nunca valor literal |
+| **`compile.py`** | Orchestrator único com side effects. Cria tempfile `.ini` em CP1252 com `os.open(O_EXCL\|0o600)`, gerencia subprocess lifecycle (timeout, KeyboardInterrupt, cleanup), agrega `CompileResult` |
+
+### Modos de compilação
+
+| Modo | Onde compila | Pega | Quando usar |
+|---|---|---|---|
+| **`appre`** | Local (sem AppServer) | Sintaxe, `#include` faltando, macros, defines | Validação rápida em CI/dev. ~60ms/fonte. **NÃO pega** erros semânticos |
+| **`cli`** | AppServer TCP (RPC) | TUDO — semântica + binding + gera RPO | CI rigoroso, build final |
+| **`auto`** (default) | `cli` se AppServer responde, senão `appre` | depende | Default sensato |
+
+### Workflow zero-config para usuário novo
+
+```bash
+# 1. Instala advpls (1x por máquina)
+plugadvpl compile --install-advpls
+#   interativo: copia de path local OU baixa Marketplace (~118MB, confirma antes)
+
+# 2. Cadastra servers (1x por máquina, opcional se já usa TDS-VSCode)
+plugadvpl compile --import-tds-servers           # se já tem TDS-VSCode
+# OU
+plugadvpl compile --add-server                   # interativo: name, host, port, build, envs
+
+# 3. Compila qualquer fonte de qualquer projeto:
+plugadvpl compile --use-server <nome> --mode cli FONTE.PRW
+```
+
+### Workflow do agente IA (skill `/plugadvpl:compile`)
+
+```
+1. plugadvpl --format json compile --doctor    ← SEMPRE primeiro
+2. Para cada item em next_actions, processar:
+   • set_advpls_binary → sugerir --install-advpls
+   • use_server (candidates) → mostrar lista, perguntar qual
+   • import_tds_servers → sugerir --import-tds-servers
+   • set_includes → confirmar candidate detectada
+   • create_runtime_toml → último recurso, se sem servers
+   • set_env_var (secret=true) → orientar export sem logar valor
+3. Re-rodar --doctor até status=ready
+4. Compilar: plugadvpl compile --use-server X --mode cli <fonte>
+```
+
+Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (humano), [docs/setup-compile.md](docs/setup-compile.md) (técnico) e [skills/compile/SKILL.md](skills/compile/SKILL.md) (agente).
+
+### Segurança
+
+- **Credenciais NUNCA gravadas em arquivo** — só nomes de env var no `runtime.toml` e no `servers.json`
+- **Tempfile `.ini` em CP1252 + permissão 0o600** (POSIX); tempdir 0o700 via `mkdtemp`
+- **Cleanup garantido** no `finally` em todos os caminhos (success/timeout/KeyboardInterrupt)
+- **Redact patterns externos** (`lookups/redact_patterns.json`) aplicados em stdout/stderr/diagnostic.raw antes de gravar — cobre `password`/`psw`/`senha`/`pwd`/`aut_file`/hex keys
+- **Security warning** quando `appserver.host` não é localhost (recomenda SSH tunnel)
+- **5+ testes objetivos** confirmam regex de credencial ausente do output em cenários reais
 
 ---
 
@@ -290,27 +533,35 @@ Quando você pergunta algo ao Claude sobre o projeto, o slash command roda uma q
 
 ## Status
 
-**v0.8.0 — Fase 1 (compile wrapper TDS-LS) entregue.**
+**v0.8.7 — Fase 1 completa (compile wrapper TDS-LS) com registry global de servers.**
 
-- **25 subcomandos** (incluindo `compile` com `--init-config`), **40 skills**, 4 agents, 1 hook
-- **27 tabelas físicas** (22 fontes/SX + 3 Universo 3 + 1 Universo 4 + 1 lint) + 2 FTS5 + 7 lookups
-- **702 testes verde** (unit + integration + bench + e2e_local)
-- Bench em ~2.000 fontes: ingest <60s com `--workers 8`; ingest-sx
-  do dicionário completo (~420k rows) <30s
+- **~30 subcomandos** incluindo `compile {<fonte>, --doctor, --install-advpls, --list-servers, --add-server, --use-server, --import-tds-servers, --init-config}`
+- **40+ skills** (knowledge + slash command wrappers), 4 agents especializados, 1 SessionStart hook
+- **27 tabelas físicas** + 2 FTS5 + 7 lookups embarcados
+- **780 testes verde** (unit + integration + bench + smoke real opcional)
+- Bench em ~2.000 fontes: `ingest` <60s com `--workers 8`; `ingest-sx` do dicionário completo (~420k rows) <30s
 - Schema v10 — migrations 005-007 (Universo 3) + 008 (índices polish) + 010 (Universo 4 métricas)
-- **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo
-  best-practice, security, performance, modernization, dicionário SX e webservice
+- **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
+- **Fase 1 compile** validada end-to-end contra `advpls` real (extensão TDS-VSCode v3.x) + includes Protheus reais
 
 **Roadmap.**
 
 - **v0.1** *(shipped)* — Universo 1: parser de fontes, FTS5, 13 regras lint single-file, 14 subcomandos CLI.
 - **v0.2** *(shipped)* — 21k linhas de referência ADVPL/TLPP embutidas em 5 skills novas + 6 reforçadas.
-- **v0.3** *(shipped)* — Universo 2 (Dicionário SX): ingest SX1..SXG, comandos `impacto`/`gatilho`/`sx-status`, 11 regras cross-file SX-001..SX-011.
-- **v0.4** *(shipped)* — Universo 3 (Rastreabilidade): execução não-direta (`workflow`/schedule/job/mail), ExecAuto chain (`execauto`), Protheus.doc agregada (`docs`).
-- **v0.5/v0.6** *(shipped)* — Universo 4 (Trace unificado + Qualidade & métricas): `trace`, `metrics`, `hotspots`, `cobertura-doc`. Schema v10 (`fonte_metrics`).
-- **v0.7** *(shipped)* — Fase 0 (Quick Wins): lint rules WS-001/002/003 + XF-001 + ENC-001, comando `edit-prw`, contract doc `U_EXEC` + reference impl MIT.
-- **v0.8** *(shipped)* — Fase 1 (compile wrapper TDS-LS): `plugadvpl compile` com modos `appre`/`cli`, `--init-config`, schema JSON estável, lint patterns externalizados, 140+ novos testes.
-- **Fases 2-5** *(planejado)* — runtime ADVPL completo: `exec` (cliente U_EXEC), `deploy` (hot-swap RPO), `smoke`+`test`, hooks Claude Code.
+- **v0.3** *(shipped)* — Universo 2 (Dicionário SX): ingest SX1..SXG, `impacto`/`gatilho`/`sx-status`, 11 cross-file `SX-001..SX-011`.
+- **v0.4** *(shipped)* — Universo 3 (Rastreabilidade): `workflow`/`execauto`/`docs`.
+- **v0.5/v0.6** *(shipped)* — Universo 4 (Trace + Qualidade): `trace`, `metrics`, `hotspots`, `cobertura-doc`. Schema v10.
+- **v0.7** *(shipped)* — Fase 0 (Quick Wins): `WS-001/002/003`, `XF-001`, `ENC-001`, `edit-prw`, contract doc `U_EXEC` + reference MIT.
+- **v0.8.0-0.8.7** *(shipped)* — Fase 1 (compile wrapper):
+  - v0.8.0: base `plugadvpl compile` com modos `appre`/`cli`, schema JSON estável
+  - v0.8.1: 3 bugs do smoke real (.errprw + exit_code + ok flag)
+  - v0.8.2: fix `--includes` typer + filtro ruído output advpls
+  - v0.8.3: onboarding (`docs/setup-compile.md` + skill workflow + hints)
+  - v0.8.4: `compile --doctor` pre-flight check + skill como workflow agente
+  - v0.8.5: `docs/compile-checklist.md` conversacional
+  - v0.8.6: `compile --install-advpls` (copy local ou download Marketplace)
+  - v0.8.7: `compile --list-servers/--add-server/--use-server/--import-tds-servers` (registry global)
+- **Fases 2-5** *(planejado)* — `exec` (cliente U_EXEC), `deploy` (hot-swap RPO), `smoke`+`test`, hooks Claude Code.
 
 Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo3/`, `docs/universo4/`, `docs/fase0/`, `docs/fase1/`.
 
@@ -331,9 +582,24 @@ Detalhes em [docs/ROADMAP.md](docs/ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) e s
 
 ## Créditos
 
+### Análise estática (Universos 1-4 + Fase 0)
+
 - **Parser de fontes** portado de projeto interno anterior do autor (~750 linhas, validado em aproximadamente 2.000 fontes ADVPL).
 - **Lookup catalogs** (funções nativas, restritas, lint rules, SQL macros, módulos ERP, PEs) extraídos de [advpl-specialist](https://github.com/thalysjuvenal/advpl-specialist) por **Thalys Augusto** (MIT) — crédito em [NOTICE](NOTICE).
-- Construído pela e para a comunidade **Protheus/ADVPL brasileira**. PRs são muito bem-vindos.
+
+### Compilação (Fase 1)
+
+O `plugadvpl compile` é **wrapper Python** sobre componentes oficiais da TOTVS — o plugin **NÃO** reimplementa compilador ADVPL, **NÃO** redistribui código TOTVS proprietário:
+
+- **`advpls`** — compilador ADVPL/TLPP oficial da **TOTVS S.A.** Distribuído publicamente como parte da extensão [TDS-VSCode](https://marketplace.visualstudio.com/items?itemName=TOTVS.tds-vscode) no Microsoft Visual Studio Marketplace. Path típico após instalação: `<ext>/node_modules/@totvs/tds-ls/bin/<os>/advpls[.exe]`. Repositórios públicos relacionados: [`totvs/tds-vscode`](https://github.com/totvs/tds-vscode), [`totvs/tds-ls`](https://github.com/totvs/tds-ls).
+- **`tds-ls`** (TOTVS Developer Studio Language Server) — protocolo LSP+CLI desenvolvido pela TOTVS. O modo `cli` invocado pelo `plugadvpl compile` segue o formato `.ini` documentado em [`tds-ls/TDS-CLi.md`](https://github.com/totvs/tds-ls/blob/master/TDS-CLi.md) e [`TDS-cli-script.md`](https://github.com/totvs/tds-ls/blob/master/TDS-cli-script.md).
+- **`servers.json`** (`~/.totvsls/servers.json`) — formato de configuração da extensão TDS-VSCode. O `compile_servers.py` lê esse arquivo via `--import-tds-servers` sem alterá-lo, replicando estrutura compatível em `~/.plugadvpl/servers.json` (estilo dela).
+- **Microsoft Visual Studio Marketplace** — hospeda o `.vsix` da extensão TDS-VSCode. O `compile --install-advpls --download` baixa do endpoint público `marketplace.visualstudio.com/_apis/public/gallery/publishers/TOTVS/vsextensions/tds-vscode/latest/vspackage` sob os [Marketplace Terms of Use](https://marketplace.visualstudio.com/terms).
+- **Patterns de erro do compilador** (`lookups/compile_patterns.json`) — referenciam mensagens textuais do `advpls` documentadas publicamente em [TDN — TOTVS Developers Network](https://tdn.totvs.com/) e blogs da comunidade ([Terminal de Informação](https://terminaldeinformacao.com/), entre outros). Nenhum trecho de código binário ou fonte oficial TOTVS é distribuído neste repo.
+
+### Comunidade
+
+Construído pela e para a comunidade **Protheus/ADVPL brasileira**. PRs são muito bem-vindos — especialmente parser, lint rules, skills temáticas e exemplos `.prw`/`.tlpp` de produção (sanitizados).
 
 ---
 
