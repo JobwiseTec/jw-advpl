@@ -193,10 +193,13 @@ def run_doctor(
             next_actions.append(NextAction(
                 action="set_advpls_binary",
                 question=(
-                    "Onde está o advpls.exe? Opções:\n"
-                    "  (a) Tem extensão tds-vscode instalada? Informe o caminho do advpls.exe\n"
-                    "  (b) Quer que eu baixe? Confirme — baixarei ~118MB do Marketplace público\n"
-                    "  (c) Informe um caminho manual"
+                    "PRECISO: caminho do binário advpls (compilador oficial TOTVS, ~38MB).\n"
+                    "  Como obter:\n"
+                    "    (a) Instale extensão TDS-VSCode no VSCode (Marketplace, busca 'TOTVS')\n"
+                    "        e informe o path: ~/.vscode/extensions/totvs.tds-vscode-X/node_modules/@totvs/tds-ls/bin/<os>/advpls\n"
+                    "    (b) Sem VSCode? Posso baixar o .vsix (~118MB) do Marketplace público e extrair\n"
+                    "    (c) Já tem em outro lugar? Informe o path manual\n"
+                    "  Mais info: docs/compile-checklist.md §1"
                 ),
                 candidates=[],
             ))
@@ -228,8 +231,9 @@ def run_doctor(
             next_actions.append(NextAction(
                 action="set_includes",
                 question=(
-                    f"Encontrei {len(detected)} pasta(s) com includes Protheus reais. "
-                    "Confirme qual usar ou informe outra:"
+                    f"PRECISO: pasta com includes Protheus (PRTOPDEF.CH, protheus.ch, ~1100 .ch).\n"
+                    f"  Detectei {len(detected)} pasta(s) candidata(s) — confirme qual usar OU informe outra:\n"
+                    "  Mais info: docs/compile-checklist.md §2"
                 ),
                 candidates=[str(p) for p in detected],
             ))
@@ -240,16 +244,16 @@ def run_doctor(
                 detail="nenhuma pasta de includes Protheus detectada",
                 hint=(
                     "Includes não vêm com tds-vscode — precisam vir de instalação Protheus. "
-                    "Ver docs/setup-compile.md §Includes."
+                    "Ver docs/compile-checklist.md §2."
                 ),
             ))
             next_actions.append(NextAction(
                 action="set_includes",
                 question=(
-                    "Onde está sua pasta Include do Protheus? Ela deve conter PRTOPDEF.CH, "
-                    "protheus.ch e ~1100 outros .ch. Tipicamente em "
-                    "<protheus-root>/Include/. Se não tem AppServer/SDK Protheus instalado, "
-                    "use --mode cli apontando pra AppServer remoto (compila lá)."
+                    "PRECISO: pasta com includes Protheus (contém PRTOPDEF.CH, protheus.ch + ~1100 .ch).\n"
+                    "  Tipicamente em <protheus-root>/Include/ — vem com instalação do AppServer.\n"
+                    "  Sem AppServer/SDK local? Use --mode cli (compila no AppServer remoto, que já tem).\n"
+                    "  Mais info: docs/compile-checklist.md §2"
                 ),
                 candidates=[],
             ))
@@ -274,9 +278,14 @@ def run_doctor(
         next_actions.append(NextAction(
             action="create_runtime_toml",
             question=(
-                "Modo cli (compilação full via AppServer) precisa de runtime.toml. "
-                "Rode: plugadvpl compile --init-config "
-                f"(criará {runtime_toml_path})"
+                f"PRECISO: arquivo runtime.toml em {runtime_toml_path}.\n"
+                "  Rode: plugadvpl compile --init-config\n"
+                "  Depois edite o TOML preenchendo 5 dados:\n"
+                "    1. [tds_ls].binary    — path do advpls\n"
+                "    2. [appserver].host/port/build/environment — info do AppServer\n"
+                "    3. [auth].user_env/password_env — NOMES das env vars (não valores!)\n"
+                "    4. [compile].includes — lista de pastas .ch\n"
+                "  Como descobrir cada dado: docs/compile-checklist.md §3-§5"
             ),
             candidates=[],
         ))

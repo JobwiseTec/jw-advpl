@@ -9,6 +9,11 @@ allowed-tools: [Bash]
 
 > 🤖 **Para o agente**: este skill tem um **workflow obrigatório de 4 passos**.
 > NUNCA tente compilar direto. Sempre rode `--doctor` primeiro.
+>
+> Se o usuário **não sabe** o que precisa fornecer, aponte pra
+> [`docs/compile-checklist.md`](docs/compile-checklist.md) — explica os 5
+> dados (advpls, includes, host/port, build/env, credenciais) que ele
+> precisa reunir, com instruções de onde achar cada um.
 
 ## Workflow obrigatório
 

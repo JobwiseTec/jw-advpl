@@ -36,6 +36,51 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.8.5] - 2026-05-19
+
+### 📋 Checklist conversacional + perguntas `--doctor` mais didáticas
+
+User reportou que faltava um guia tipo "o que você precisa fornecer pra
+compilar" — explicando os 5 dados (advpls, includes, host/port,
+build/environment, credenciais) com contexto humano, não só comandos
+técnicos.
+
+### Added
+
+- **[`docs/compile-checklist.md`](docs/compile-checklist.md)** — guia
+  conversacional do que reunir antes de chamar o agente. Estrutura:
+  - Pergunta inicial: `appre` ou `cli`?
+  - Checklist `appre` (2 itens) + Checklist `cli` (+3 itens)
+  - Para cada item: o que é, como saber se já tem (com comando), o que
+    fazer se não tem
+  - Tabela resumo dos 5 dados com exemplo + onde achar cada um
+  - Cenário "começando do zero" + "tenho TDS-VSCode" (replicar config)
+- **Links pro checklist** em README, `setup-compile.md` e
+  `skills/compile/SKILL.md` (pro agente recomendar quando user não souber
+  o que fornecer)
+
+### Changed
+
+- **`compile --doctor` agora retorna perguntas mais didáticas em
+  `next_actions`**. Cada `question` começa com "PRECISO: ..." explicando
+  o quê + lista de opções de como obter + link pra seção específica do
+  `compile-checklist.md`. Exemplo do `set_advpls_binary`:
+  ```
+  PRECISO: caminho do binário advpls (compilador oficial TOTVS, ~38MB).
+    Como obter:
+      (a) Instale extensão TDS-VSCode no VSCode...
+      (b) Sem VSCode? Posso baixar o .vsix (~118MB) e extrair
+      (c) Já tem em outro lugar? Informe o path manual
+    Mais info: docs/compile-checklist.md §1
+  ```
+
+### Notes
+
+- Sem mudança de schema do JSON do `--doctor` — só conteúdo das
+  perguntas. Agentes/scripts existentes continuam funcionando.
+- 8 testes do doctor continuam verdes (perguntas validadas só pela
+  presença das chaves, não pelo texto).
+
 ## [0.8.4] - 2026-05-19
 
 ### 🤖 `compile --doctor` + skill como workflow agente + CI verde

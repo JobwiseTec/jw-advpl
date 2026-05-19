@@ -1,6 +1,9 @@
-# Setup `plugadvpl compile` — guia completo
+# Setup `plugadvpl compile` — guia técnico completo
 
 Como deixar o subcomando `compile` funcional do zero, em qualquer máquina.
+
+> 👤 **Primeira vez?** Comece pelo [`compile-checklist.md`](compile-checklist.md) — explica
+> os 5 dados que você precisa reunir, antes de mergulhar em comandos.
 
 ---
 
