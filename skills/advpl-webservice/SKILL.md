@@ -1,5 +1,5 @@
 ---
-description: Web Services em ADVPL/TLPP — REST clássico (WSRESTFUL) vs REST tlppCore (annotations @Get/@Post) vs SOAP (WSSERVICE). PrepareIn + TenantId pra multi-tenancy. JWT via /api/oauth2/v1/token. NUNCA RpcSetEnv em endpoint REST. Use ao criar/editar API REST/SOAP, integrar Protheus com sistema externo, ou revisar SEC-001 (RpcSetEnv em REST).
+description: Use ao criar/editar API REST ou SOAP no Protheus, escolher entre WSRESTFUL (clássico) e @Get/@Post (notation tlppCore — ~3x mais rápido, suporta @Patch + Swagger), migrar de uma pra outra, configurar PrepareIn + TenantId, validar JWT/OAuth2, ou revisar SEC-001 (RpcSetEnv em REST). Inclui pegadinhas como ::SetResponse cumulativo, WSMETHOD sub-nome, requisitos de versão (notation precisa AppServer 20+).
 ---
 
 # advpl-webservice — REST e SOAP no Protheus
@@ -9,12 +9,27 @@ ADVPL/TLPP suporta três famílias de Web Service:
 | Família           | Sintaxe                                    | Quando usar                                    |
 |-------------------|--------------------------------------------|------------------------------------------------|
 | **REST clássico** | `WSRESTFUL` + `WSMETHOD GET/POST`           | Mantida pra compat; ainda OK em código existente |
-| **REST tlppCore** | `@Get(endpoint=...)` em `User Function`     | **Padrão moderno para novas APIs** (TLPP 17.3+) |
+| **REST tlppCore** | `@Get(endpoint=...)` em `User Function`     | **Padrão moderno para novas APIs** (TLPP/AppServer 20+) |
 | **SOAP**          | `WSSERVICE` + `WSDATA` + `WSMETHOD`         | Legado; integração com sistema que exige WSDL  |
 
 REST tlppCore **não é evolução do REST ADVPL** — é recurso novo, sem compat automática com autenticação user-based clássica nem pré-carga de banco. Cada cenário tem trade-offs.
 
 O AppServer Protheus expõe ambos via porta HTTP configurada em `appserver.ini` (`[HTTPV11]` para REST 2.0).
+
+### Por que TOTVS recomenda notation pra projetos novos
+
+A TOTVS reescreveu a camada de accept REST em C++ no binário Lobo-Guará. O notation usa essa camada nova; o WSRESTFUL clássico continua na camada ADVPL antiga. Resultado documentado pela comunidade:
+
+| Métrica | WSRESTFUL clássico | Notation (`@Get/@Post/...`) |
+|---|---|---|
+| **Throughput** | linha-base | **~3× mais rápido** ([Every System](https://everysys.com.br/blog/tl-rest/), [gworks](https://www.gworks.com.br/post/totvs-rest)) |
+| **Verbos** | GET, POST, PUT, DELETE | **+ `@Patch`, `@Options`** (clássico não tem PATCH) |
+| **Path params** | `::aURLParms[1]` posicional | `oRest:getPathParamsRequest()['id']` **nomeado** |
+| **Múltiplos endpoints/arquivo** | precisa `WSMETHOD GET Main`/`Detalhe` sub-nome | basta colar outro `@Get(...)` em cima de outra função |
+| **Swagger/OpenAPI** | ❌ não nativo | ✅ via **REST-DOC** (tlppCore 01.04.02+) |
+| **Pré-requisito** | qualquer Protheus 12.x | binário com tlppCore ativo + **AppServer 20.x+** (Lobo-Guará) |
+
+Repositório oficial [github.com/totvs/tlpp-sample-rest](https://github.com/totvs/tlpp-sample-rest) trata WSRESTFUL como API "legada" — diretório `server/migrate-FWrest-2-tlpp/` é literalmente o roteiro de migração.
 
 ## Quando usar
 
@@ -60,6 +75,42 @@ User Function GetCliente()
 Return .T.
 ```
 
+### Path params nomeados (notation) vs posicionais (clássico)
+
+```advpl
+// NOTATION — nomeado, refactor-safe
+@Get("/cliente/:cod/pedido/:num")
+User Function GetPedidoCli()
+    Local jPath := oRest:getPathParamsRequest()      // JSON nomeado
+    Local cCod  := jPath['cod']                       // por NOME
+    Local cNum  := jPath['num']
+    // se você inverter pra /cliente/:num/pedido/:cod, código aqui NÃO quebra
+Return
+
+// CLÁSSICO — posicional, frágil em refactor
+WSMETHOD GET WSSERVICE XYZPedido
+    Local cCod := ::aURLParms[1]                      // por POSIÇÃO
+    Local cNum := ::aURLParms[2]
+    // se você inverter a URL, valores trocam silenciosamente — bug clássico
+Return .T.
+```
+
+`oRest:getPathParamsRequest()` retorna **`Nil` se o endpoint não declara `:param`** — sempre testar `if jPath != Nil` antes de indexar.
+
+### `@Patch` — exclusivo do notation
+
+```advpl
+@Patch("/cliente/:cod")
+User Function PatchCliente()
+    Local jBody := JsonObject():New()
+    jBody:FromJson(oRest:getBodyRequest())
+    // só atualiza os campos presentes no body (semântica PATCH RFC 5789)
+    // PUT seria substituição completa; PATCH é parcial
+Return
+```
+
+WSRESTFUL clássico **não suporta PATCH** — confirmado no README de [tlpp-sample-rest/migrate-FWrest-2-tlpp](https://github.com/totvs/tlpp-sample-rest/tree/master/server/migrate-FWrest-2-tlpp). Projetos que precisam de PATCH têm que migrar (ou faker via POST com `X-HTTP-Method-Override`, gambiarra que não recomendo).
+
 ## REST clássico (WSRESTFUL)
 
 ```advpl
@@ -83,6 +134,51 @@ WSMETHOD POST WSSERVICE XYZCli
     // ... validacao + logica
 Return .T.
 ```
+
+### `WSMETHOD <verb> <subnome>` — múltiplos paths por verbo
+
+WSRESTFUL clássico só permite **1 WSMETHOD por verbo** por padrão. Pra ter `GET /sample` E `GET /sample/{id}` na mesma classe, use sub-nome:
+
+```advpl
+WSRESTFUL Sample
+    WSMETHOD GET Main     DESCRIPTION "Lista"   PATH "/sample"
+    WSMETHOD GET Detalhe  DESCRIPTION "Detalhe" PATH "/sample/{id}"
+END WSRESTFUL
+
+WSMETHOD GET Main    WSSERVICE Sample  // ... Return .T.
+WSMETHOD GET Detalhe WSSERVICE Sample  // ... Return .T.
+```
+
+Esquecer o sub-nome (`WSMETHOD GET WSSERVICE Sample` sozinho repetido) **compila silenciosamente mas dá 404** — o segundo handler nunca registra. Pegadinha #2 do clássico, depois do `SetResponse` cumulativo.
+
+### `SECURITY <rotina>` — controle de acesso via permissão da rotina
+
+Exclusivo do clássico. Reaproveita o esquema de permissão do Configurador (SIGACFG):
+
+```advpl
+WSRESTFUL MATA030Api SECURITY MATA030      // só quem tem permissão na MATA030 acessa
+    WSMETHOD GET DESCRIPTION "Lista clientes" PATH "/v1/cliente"
+END WSRESTFUL
+```
+
+Quem chama precisa estar logado como user com permissão na rotina `MATA030`. No notation isso é **manual** — você lê `Authorization`, chama `MsLogin()`, e checa permissão você mesmo.
+
+### Pegadinha #1 do clássico: `::SetResponse` é **cumulativo**
+
+```advpl
+// ❌ ERRADO — concatena, não substitui
+::SetResponse('{"primeira":"chamada"}')
+::SetResponse('{"segunda":"chamada"}')
+// Cliente recebe: '{"primeira":"chamada"}{"segunda":"chamada"}'  ← JSON malformado!
+
+// ✓ CERTO — acumula em variável, uma chamada única no fim
+Local cResp := ""
+cResp += '{"primeira":"valor"}'
+// ... mais lógica
+::SetResponse(cResp)
+```
+
+No notation `oRest:setResponse()` tem o **mesmo bug histórico** — convenção é igual: acumular local e chamar 1 vez. Cuidado especial em loops + paginação.
 
 ## SOAP com WSSERVICE
 
@@ -148,6 +244,47 @@ User Function CriaPedido()
 Return .T.
 ```
 
+## Quando escolher cada abordagem
+
+| Cenário | Escolha | Por quê |
+|---|---|---|
+| API nova, build moderno (AppServer 20+) | **Notation** | Performance, sintaxe, Swagger, suporte continuado |
+| Build antigo de 2020 sem tlppCore ativo | Clássico | Notation **não retroporta** — `@Get` vira comentário em build velho, endpoint nunca sobe |
+| Precisa de `@Patch` | **Notation** | Clássico não suporta |
+| Precisa de Swagger/OpenAPI nativo | **Notation** | REST-DOC só na notation |
+| Endpoint sobre cadastro padrão SX (CRUD MVC) | **Clássico** | `FWAdapterBaseV2` gera CRUD inteiro a partir do dicionário |
+| Precisa de `SECURITY <rotina>` (controle via menu) | **Clássico** | Notation exige validação manual |
+| Performance crítica (alto throughput) | **Notation** | ~3× speedup (C++ accept layer) |
+| Múltiplos endpoints/path por arquivo | **Notation** | Sem precisar `WSMETHOD GET Main`/`Detalhe` sub-nome |
+| Equipe só sabe ADVPL puro (sem TL++) | Clássico | Curva mais conhecida |
+
+## Migration path WSRESTFUL → Notation (10 passos)
+
+1. **Trocar includes**: `totvs.ch` + `restful.ch` → `tlpp-core.th` + `tlpp-rest.th`
+2. **Remover bloco** `WSRESTFUL ... END WSRESTFUL` inteiro
+3. **Cada `WSMETHOD VERB ... WSSERVICE x`** vira **`User Function`** isolada com `@Verb(endpoint)` em cima
+4. **`WSDATA id` + `::id`** → `oRest:getQueryRequest()['id']`
+5. **`::aURLParms[1]`** → declarar `:id` no endpoint e usar `oRest:getPathParamsRequest()['id']`
+6. **`::GetContent()`** → `oRest:getBodyRequest()`
+7. **`::SetResponse(c)`** (cumulativo) → **acumular em variável local** e fazer **uma chamada única** `oRest:setResponse(cAcumulado)` no fim
+8. **`SetRestFault(404, msg)`** → `oRest:setStatusCode(404)` + `oRest:setFault(msg)`
+9. **Tirar `Return .T./.F.`** — só `Return` (status é via `oRest:setStatusCode`)
+10. **Re-testar `tenantId`** — mesmo comportamento, mas convém validar
+
+Referência oficial: [TDN - Migração WsRESTful para REST tlppCore](https://tdn.totvs.com/pages/viewpage.action?pageId=553337101).
+
+## Requisitos mínimos de versão
+
+| Feature | Mínimo |
+|---|---|
+| WSRESTFUL clássico | Qualquer Protheus 12.x com FWREST presente |
+| Notation `@Get/@Post/...` | Binário **com tlppCore ativo** (TL++ habilitado) + **AppServer ~20.x** (Lobo-Guará) |
+| `@Patch` | tlppCore 01.04+ |
+| REST-DOC (Swagger automático) | **tlppCore 01.04.02** + **AppServer 20.3.1.10** |
+| `TLPP COMPONENT` (componentes Swagger reutilizáveis) | tlppCore 01.04.02+ |
+
+Em build sem tlppCore, `@Get` compila como **comentário silencioso** — fonte sobe sem erro, endpoint nunca registra, debugar quebra a cabeça. Sempre checar via `/api/swagger` (se REST-DOC ativo) ou `/rest` (lista nativa) se o endpoint aparece.
+
 ## Autenticação JWT (Bearer Token)
 
 REST 2.0 do Protheus tem endpoint built-in pra issuance de token:
@@ -184,6 +321,43 @@ Configurar JWT em `appserver.ini`:
 Security=1
 JWTSecret=meu-segredo-super-longo-do-cliente
 ```
+
+## REST-DOC — Swagger/OpenAPI automático (exclusivo notation)
+
+A partir de **tlppCore 01.04.02 + AppServer 20.3.1.10**, anotações alimentam um gerador OpenAPI 3.0.3 nativo. Sintaxe:
+
+```advpl
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+#include "tlpp-doc.th"
+
+// Componente reutilizável (vai pra `components.schemas` do OpenAPI)
+TLPP COMPONENT Pessoa
+    TLPP COMPONENT nome     character "José da Silva"
+    TLPP COMPONENT idade    numeric   42
+    TLPP COMPONENT ativo    logical   .T.
+TLPP COMPONENT END
+
+@Get(endpoint="/v1/pessoa/:id", description="[GetPessoaDoc]")
+User Function GetPessoa()
+    Local jPath := oRest:getPathParamsRequest()
+    // ... lógica
+Return
+
+// Função que devolve o JSON OpenAPI dessa operação
+Function GetPessoaDoc()
+    Local jDoc := JsonObject():New()
+    jDoc['summary']     := 'Busca pessoa por id'
+    jDoc['parameters']  := {{'name' => 'id', 'in' => 'path', 'required' => .T.}}
+    jDoc['responses']   := {'200' => {'$ref' => '#/components/schemas/Pessoa'}}
+Return jDoc:ToJson()
+```
+
+Acessar:
+- `GET /api/swagger` → JSON OpenAPI completo (cole em [editor.swagger.io](https://editor.swagger.io) pra ver o Swagger UI)
+- Suporta i18n via `Localize()` no fonte + `translate:` na annotation
+
+Sem REST-DOC, a documentação fica em README à parte (deriva fácil). Com, vira **source of truth** sincronizada com o código.
 
 ## Regra crítica: NUNCA `RpcSetEnv` em REST (`SEC-001` impl)
 
@@ -300,38 +474,55 @@ Sem isso, acentos viram `Ã§`/`Ã£` no consumidor. Veja `[[advpl-encoding]]`.
 
 ## Anti-padrões
 
+**Comuns aos dois (cláusico e notation):**
 - **`RpcSetEnv` em REST** → `SEC-001` crítico (impl real). Use `PrepareIn` + `TenantId`.
-- **`GetContent()` direto em SQL** sem validação ou bind (`%exp:`) → SQL injection (catálogo `SEC-001` legacy).
+- **`GetContent()`/`getBodyRequest()` direto em SQL** sem validação ou bind (`%exp:`) → SQL injection (catálogo `SEC-001` legacy).
 - **Devolver stack trace na response** (`Errorblock` que vaza interno) → expõe estrutura.
 - **Endpoint sem `Begin Sequence`/`Recover`** em operações críticas → 500 sem log estruturado.
 - **Hardcode de credenciais no fonte** (basic auth, token, conn string) → SEC-004 (catálogo).
 - **Log de body cru com PII** em `ConOut` → SEC-003 (catálogo).
-- **Falta de `oRest:SetStatusCode`** → cliente recebe 200 com erro no body (confunde monitoring).
+- **Falta de `setStatusCode`** → cliente recebe 200 com erro no body (confunde monitoring).
 - **Esquecer `EncodeUTF8`/`DecodeUTF8`** nos boundaries cp1252 ↔ UTF-8 → acentos quebram.
 - **`PrepareIn` em produção apontando empresa de teste** → request multi-tenant cai no ambiente errado.
 - **`Security=0` em produção** → endpoint público sem auth.
 - **CORS `*` em endpoint que escreve** sem validação de origin → CSRF.
 
+**Específicos do clássico:**
+- **`::SetResponse` chamado 2× no mesmo handler** → concatena em vez de substituir → JSON malformado. Acumule em variável local + 1 chamada no fim.
+- **`WSMETHOD GET` repetido sem `Main`/`Detalhe` sub-nome** → 2º handler nunca registra (404 silencioso).
+- **`WSDATA` sem `WSRECEIVE` no WSMETHOD** → `::var` sempre `Nil`.
+- **Esquecer `DEFAULT ::var := ""`** em param OPTIONAL → concat com `Nil` quebra.
+
+**Específicos do notation:**
+- **Endpoint duplicado em fontes diferentes** → colisão silenciosa, último compilado ganha. Padronize prefixos por módulo.
+- **`@Get` em build sem tlppCore** → vira comentário, endpoint nunca sobe. Checar `/api/swagger` ou `/rest`.
+- **Decorator NÃO imediatamente acima da função** (comentário entre) → invalida o decorator.
+- **`oRest:getPathParamsRequest()` quando endpoint não tem `:param`** → retorna `Nil`, indexação quebra. Sempre `if jPath != Nil`.
+- **Chamar `User Function` decorada via `U_FUNC` no SmartClient** → `oRest` não existe nesse contexto, crasha com "variable does not exist".
+
 ## Referência rápida
 
-| Funcionalidade           | TLPP `@annotation` / Classic `WSMETHOD`               |
-|--------------------------|--------------------------------------------------------|
-| GET                      | `@Get(endpoint="...")` / `WSMETHOD GET`                |
-| POST                     | `@Post(endpoint="...")` / `WSMETHOD POST`              |
-| PUT                      | `@Put` / `WSMETHOD PUT`                                |
-| DELETE                   | `@Delete` / `WSMETHOD DELETE`                          |
-| OPTIONS (CORS preflight) | `@Options` / `WSMETHOD OPTIONS`                        |
-| URL param                | `oRest:GetUrlParam("nome")`                            |
-| Query string             | `oRest:GetQueryParam("nome")`                          |
-| Body                     | `oRest:GetBodyRequest()` / `::GetContent()`            |
-| Header read              | `oRest:GetHeaderRequest("Auth")`                       |
-| Header write             | `oRest:SetHeader("X-Foo","bar")`                       |
-| Status                   | `oRest:SetStatusCode(404)`                             |
-| Response body            | `oRest:SetResponse(cJson)`                             |
-| Content-Type             | `oRest:SetContentType("application/json")`             |
-| User logado              | `oRest:GetUserName()`                                  |
-| JSON parse               | `JsonObject():New()` + `oJ:FromJson(cBody)`            |
-| JSON build               | `oJ["chave"] := val` + `oJ:ToJson()`                   |
+| Funcionalidade           | Notation (`oRest`)                                  | Clássico (`::Self`)                          |
+|--------------------------|------------------------------------------------------|----------------------------------------------|
+| GET                      | `@Get("/path")`                                      | `WSMETHOD GET`                               |
+| POST                     | `@Post("/path")`                                     | `WSMETHOD POST`                              |
+| PUT                      | `@Put("/path")`                                      | `WSMETHOD PUT`                               |
+| **PATCH** (parcial)      | `@Patch("/path")`                                    | ❌ não suportado                              |
+| DELETE                   | `@Delete("/path")`                                   | `WSMETHOD DELETE`                            |
+| OPTIONS (CORS preflight) | `@Options("/path")`                                  | `WSMETHOD OPTIONS`                           |
+| Path param **nomeado**   | `oRest:getPathParamsRequest()['id']`                 | `::aURLParms[1]` (posicional)                |
+| Query string             | `oRest:getQueryRequest()['campo']`                   | `::aQueryString` + `WSRECEIVE id` + `::id`   |
+| Body                     | `oRest:getBodyRequest()`                             | `::GetContent()`                             |
+| Header read              | `oRest:getHeaderRequest("Auth")`                     | iterar `::aHeadStr`                          |
+| Header write             | `oRest:setHeaderResponse("X-Foo","bar")`             | `::SetHeaderResponse("X-Foo","bar")`         |
+| Status                   | `oRest:setStatusCode(404)`                           | `::SetStatus(404)`                           |
+| Response body            | `oRest:setResponse(c)` *(cuidado: cumulativo!)*      | `::SetResponse(c)` *(cuidado: cumulativo!)*  |
+| Erro/fault               | `oRest:setFault(cMsg)` + `setStatusCode`             | `SetRestFault(404, cMsg)` *(função global)*  |
+| Content-Type             | `oRest:setContentType("application/json")`           | `::SetContentType("application/json")`       |
+| User logado              | `oRest:getUserName()`                                | `::GetUserName()`                            |
+| JSON parse               | `JsonObject():New()` + `oJ:FromJson(cBody)`          | idem                                         |
+| JSON build               | `oJ["chave"] := val` + `oJ:ToJson()`                 | idem                                         |
+| Doc Swagger              | `description="[funcDoc]"` + `TLPP COMPONENT`         | ❌ não nativo                                 |
 
 ## Cross-references com outras skills
 
@@ -357,24 +548,40 @@ Sem isso, acentos viram `Ã§`/`Ã£` no consumidor. Veja `[[advpl-encoding]]`.
 
 ## Referência profunda
 
-Para detalhes completos (~1.5k linhas), consulte [`reference.md`](reference.md) ao lado deste arquivo:
+Dois arquivos ao lado, focos diferentes:
 
-- Anatomia completa de `WSRESTFUL`/`WSSERVICE`/`WSMETHOD`/`WSDATA`/`WSSTRUCT`.
-- Configuração detalhada de `appserver.ini` para REST + SOAP (HTTPV11, HTTPURI, Security, CORS, JWT).
-- Autenticação Basic/Bearer/OAuth2 e integração com `RestAuthenticator` do framework.
-- Catálogo de métodos de `oRest` (TLPP moderno) e `::Self` (classic) com exemplos.
-- Padrões de paginação, streaming, upload/download binário em REST.
-- Documentação automática via annotations + geração de OpenAPI/Swagger.
-- Consumo de APIs externas (`FwRest`, `HttpPost`, autenticação OAuth2 client-side).
+- **[`reference-rest.md`](reference-rest.md)** — REST moderno (notation + clássico):
+  - CRUD completo em ambas as abordagens (Cliente como exemplo end-to-end).
+  - `oRest:*` catálogo completo (path/query/body/header/status/response).
+  - JWT/OAuth2 fluxo + endpoint `/api/oauth2/v1/token` + validação custom.
+  - REST-DOC / Swagger / OpenAPI 3.0.3 + `TLPP COMPONENT` reutilizáveis.
+  - `FWAdapterBaseV2` (CRUD MVC sobre tabelas SX com pouco código).
+  - Multi-tenancy detalhado (PrepareIn + tenantId + RPCSetEnv auto).
+  - Endpoints aninhados (`/cliente/:cod/pedido/:num`).
+  - Paginação, upload/download binário, streaming.
+  - CORS detalhado, content negotiation.
+  - Consumo de APIs externas (`FwRest`, `HttpPost`, OAuth2 client-side).
+  - 20+ pegadinhas testadas.
+
+- **[`reference.md`](reference.md)** — SOAP/WSDL/UDDI (~1.5k linhas):
+  - Anatomia completa de `WSSERVICE`/`WSDATA`/`WSSTRUCT` SOAP.
+  - WSDL, TWsdlManager pra consumir SOAP externo.
+  - Configuração HTTP/WEBEX legada.
+  - Histórico/contexto pré-REST.
 
 ## Sources
 
-- [TL++ REST - Every System](https://everysys.com.br/blog/tl-rest/)
+- [Migração WsRESTful para REST tlppCore - TDN](https://tdn.totvs.com/pages/viewpage.action?pageId=553337101) (oficial)
+- [GitHub totvs/tlpp-sample-rest](https://github.com/totvs/tlpp-sample-rest) (oficial — exemplos CRUD + migrate)
+- [GitHub totvs/tlpp-sample-rest-documentation](https://github.com/totvs/tlpp-sample-rest-documentation/wiki) (oficial — REST-DOC/Swagger)
+- [Entendendo as novidades do REST - TDN](https://tdn.totvs.com/display/public/framework/Entendendo+as+novidades+do+REST)
+- [TL++ REST - Every System](https://everysys.com.br/blog/tl-rest/) (benchmark ~3× speedup)
+- [TOTVS REST - gworks](https://www.gworks.com.br/post/totvs-rest)
 - [Diferença REST clássico vs Annotation - Terminal de Informação](https://terminaldeinformacao.com/2023/07/12/qual-diferenca-do-rest-classico-com-o-annotation/)
-- [Migração WsRESTful para REST tlppCore - TDN](https://tdn.totvs.com/pages/viewpage.action?pageId=553337101)
-- [Entendendo as novidades do REST - TDN](https://tdn-homolog.totvs.com/display/public/framework/Entendendo+as+novidades+do+REST)
+- [Action GET REST ADVPL vs TLPP - Universo do Desenvolvedor](https://udesenv.com.br/post/advpl-action-get-rest-advpl-vs-action-get-rest-tlpp)
+- [Como Definir Empresa e Filial em REST - Terminal de Informação](https://terminaldeinformacao.com/2025/08/25/como-definir-empresa-e-filial-numa-requisicao-em-rest/)
 - [Requisição para Token JWT REST - TOTVS Central](https://centraldeatendimento.totvs.com/hc/pt-br/articles/360044883213)
 - [REST com segurança - TOTVS Central](https://centraldeatendimento.totvs.com/hc/pt-br/articles/8919254403735)
 - [PrepareIn / TenantId - TOTVS Central](https://centraldeatendimento.totvs.com/hc/pt-br/articles/4410465974167)
-- [Criando WebService REST WsRestFul - Maratona AdvPL TL++ 535](https://terminaldeinformacao.com/2024/07/13/criando-um-webservice-rest-com-wsrestful-maratona-advpl-e-tl-535/)
+- [Maratona AdvPL TL++ 535 - WSRESTFUL](https://terminaldeinformacao.com/2024/07/13/criando-um-webservice-rest-com-wsrestful-maratona-advpl-e-tl-535/)
 - [Consumindo APIs externas REST - Terminal de Informação](https://terminaldeinformacao.com/2025/06/28/consumindo-apis-externas-em-rest-com-e-sem-token-no-protheus-via-advpl-tlpp-ti-especial-0005/)
