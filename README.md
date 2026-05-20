@@ -75,6 +75,10 @@ plugadvpl status
 
 ## Atualizando para uma versão nova
 
+> **CLI** (`plugadvpl`, Python) e **plugin Claude Code** (skills + agents + hook + slash commands) são **duas coisas separadas**. Atualizar uma **não toca na outra** — siga os dois fluxos quando sair release nova.
+
+### 1. Atualizando a CLI Python (`plugadvpl ingest/compile/grep/...`)
+
 A forma simples — funciona em qualquer plataforma — é **rodar o one-liner de
 instalação de novo**. Ele detecta `uv` ausente, instala se preciso, e
 reinstala `plugadvpl` apontando para a versão atual do PyPI.
@@ -97,31 +101,108 @@ uv tool install plugadvpl --reinstall --force
 plugadvpl --version
 ```
 
-**Erro `os error 32` no Windows** durante `uv tool upgrade`? Significa que algum
-terminal/processo está com `plugadvpl.exe` aberto (Defender, VSCode terminal,
-outro shell). Soluções:
+**Erro `os error 32` (Windows)** durante `uv tool upgrade` → algum terminal
+tem `plugadvpl.exe` aberto (Defender, VSCode terminal, outro shell):
 
 ```powershell
-# 1. Feche outros terminais com plugadvpl e:
+# Feche outros terminais com plugadvpl e:
 uv tool install --reinstall plugadvpl
 
-# 2. Se o uv ficou em estado bugado ("Nothing to upgrade" mas versão antiga):
+# Se o uv ficou em estado bugado ("Nothing to upgrade" mas versão antiga):
 uv tool uninstall plugadvpl
 uv tool install plugadvpl
 ```
 
-### O plugin Claude Code é separado da CLI
+**Erro `os error 5` (Acesso negado)** → mesma coisa, mas Windows Defender
+provavelmente está com handle no `.exe`. Mesma solução acima, ou adicione
+exclusão:
 
-CLI (`plugadvpl`, Python) e plugin Claude Code (skills + agents + hook) são
-**duas coisas que se atualizam separadamente**. Atualizar uma não toca na outra.
+```powershell
+# PowerShell admin (1x na vida):
+Add-MpPreference -ExclusionPath "$env:APPDATA\uv\tools"
+```
 
-Pra atualizar o plugin:
+### 2. Atualizando o plugin Claude Code (skills, slash commands, hooks)
+
+#### Cenário A — quem já tem o plugin instalado
+
+No chat do Claude Code:
+
+```
+/plugin
+```
+
+Vai abrir o painel **Manage Plugins**. Navegue:
+
+1. Aba **Marketplaces** → seleciona `plugadvpl-marketplace`
+2. **Update marketplace** (puxa o `marketplace.json` atualizado do GitHub)
+3. Volta pra aba **Plugins** ou **Installed**
+4. Se aparecer indicador de update no `plugadvpl` → seleciona → **Update**
+
+No CLI puro do Claude Code (terminal `claude`), também funciona:
 
 ```
 /plugin marketplace update plugadvpl-marketplace
+/plugin update plugadvpl
 ```
 
-(no Claude Code CLI; na extensão VSCode use a UI `/plugin`).
+Depois **reinicia o Claude Code** pra garantir que skills + hooks + slash commands recarregam.
+
+#### Cenário B — primeira instalação (nunca instalou ainda)
+
+No chat do Claude Code:
+
+```
+/plugin marketplace add https://github.com/JoniPraia/plugadvpl.git
+/plugin install plugadvpl
+```
+
+Na extensão VSCode (que não aceita `/plugin install` direto), use `/plugin` → UI → **Marketplaces** → **Add** com a mesma URL → aba **Plugins** → **Install for you (user scope)**.
+
+#### Cenário C — install travado em "Permission denied (publickey)"
+
+Sintoma: ao instalar/atualizar, recebe:
+```
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+```
+
+**Causa:** versões `< 0.9.4` do `marketplace.json` usavam o formato `source: github` que o Claude Code v2.1.x deduz pra SSH (`git@github.com:...`) — quebra pra qualquer usuário sem chave SSH cadastrada no GitHub, mesmo o repo sendo público.
+
+**Fix (a partir de v0.9.4 já está corrigido — siga estes passos pra puxar):**
+
+```
+/plugin
+```
+1. Aba **Marketplaces** → `plugadvpl-marketplace` → **Update marketplace**
+   *(isso baixa o `marketplace.json` v0.9.4+ que usa `source: url` com HTTPS explícita)*
+2. **Browse plugins** → `plugadvpl` → **Install for you (user scope)**
+
+Se mesmo assim insistir em SSH (cache muito antigo do Claude Code):
+
+```
+/plugin
+```
+1. **Marketplaces** → `plugadvpl-marketplace` → **Remove marketplace**
+2. Reinicia o Claude Code
+3. Adiciona de novo: `/plugin marketplace add https://github.com/JoniPraia/plugadvpl.git`
+4. Install normal
+
+### 3. Verificar o que ficou instalado
+
+PowerShell (mostra todos os plugins ativos):
+
+```powershell
+Get-Content "$env:USERPROFILE\.claude\plugins\installed_plugins.json"
+```
+
+No chat (slash command):
+
+```
+/plugadvpl:status
+```
+
+Se aparecer counters do índice e versão `v0.9.4+` → tudo OK.
 
 Se algo travar (`uv` sumiu, plugin atualiza mas slash command parece velho,
 cache de uvx segurando versão antiga), veja [Troubleshooting de atualização](docs/FAQ.md#troubleshooting-de-atualização) no FAQ.
