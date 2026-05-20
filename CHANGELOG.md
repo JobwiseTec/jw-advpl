@@ -36,6 +36,33 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.9.3] - 2026-05-20
+
+### Changed
+
+- Skill `advpl-webservice` reescrita e expandida (380 → 587 linhas) cobrindo
+  WSRESTFUL vs notation (`@Get/@Post/...`) com benchmark de performance
+  (~3× speedup do notation via accept layer C++ do Lobo-Guará), tabela de
+  decisão "quando escolher cada", migration path 10 passos, requisitos
+  precisos de versão (notation precisa AppServer 20+, REST-DOC precisa
+  tlppCore 01.04.02 + AppServer 20.3.1.10) e pegadinhas separadas por
+  abordagem.
+- Novo `skills/advpl-webservice/reference-rest.md` (819 linhas, foco 100%
+  em REST moderno): CRUD completo em ambas abordagens (Cliente/SA1),
+  catálogos `oRest:*` e `::Self`, multi-tenancy detalhado, JWT/OAuth2 +
+  endpoint built-in `/api/oauth2/v1/token`, REST-DOC/Swagger com
+  `TLPP COMPONENT`, FWAdapterBaseV2, endpoints aninhados, paginação
+  cursor-based, upload/download binário, consumo de APIs externas
+  (`FwRest`/`HttpPost`/`TWsdlManager`), 22 pegadinhas testadas.
+- `skills/advpl-webservice/reference.md` (SOAP/WSDL/UDDI legado) preservado
+  intacto.
+
+### Note
+
+Bump só pra `marketplace.json` detectar versão nova e oferecer update do
+plugin Claude Code (`/plugin update plugadvpl`). CLI Python continua igual
+à v0.9.2 — sem mudanças de código, só docs/skills.
+
 ## [0.9.2] - 2026-05-19
 
 ### Fixed - 3 bugs HIGH descobertos na triagem de gaps/ antigos
