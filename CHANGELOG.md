@@ -36,6 +36,42 @@ e TDN TOTVS).
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
 
+## [0.9.4] - 2026-05-20
+
+### Fixed - Install do plugin Claude Code falhava com "Permission denied (publickey)"
+
+Bug reportado por usuário: `/plugin install plugadvpl` falhava com
+`git@github.com: Permission denied (publickey)` mesmo com `~/.gitconfig`
+limpo (sem `insteadOf`), `gh` configurado pra HTTPS e clone manual via
+HTTPS funcionando do mesmo path de destino.
+
+**Causa raiz:** `marketplace.json` usava `source.source = "github"` +
+`source.repo = "JoniPraia/plugadvpl"`. Claude Code v2.1.x está deduzindo
+URL `git@github.com:...` (SSH) ao invés de `https://github.com/...` desse
+formato. Bug do Claude Code, mas dá pra contornar do nosso lado.
+
+**Fix:** trocado pra `source.source = "url"` com URL HTTPS explícita —
+mesmo padrão que outros marketplaces que funcionam (ex: superpowers):
+
+```json
+"source": {
+  "source": "url",
+  "url": "https://github.com/JoniPraia/plugadvpl.git"
+}
+```
+
+Adicionado `"strict": true` também (mesmo padrão dos marketplaces que
+funcionam — força validação no install).
+
+Sem isso, qualquer usuário sem SSH key configurada no GitHub não consegue
+instalar o plugin Claude Code, mesmo o repo sendo público.
+
+### Note
+
+Apenas mudança em `marketplace.json` — sem alteração em CLI, skills,
+agents ou hooks. Bump pra forçar Claude Code detectar e oferecer
+re-instalação com a config corrigida.
+
 ## [0.9.3] - 2026-05-20
 
 ### Changed

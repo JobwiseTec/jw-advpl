@@ -570,7 +570,7 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ## Status
 
-**v0.9.3 — skill `advpl-webservice` reescrita: WSRESTFUL clássico vs notation moderna (TLPP), com benchmark, migration path e reference-rest.md dedicado.**
+**v0.9.4 — fix de install do plugin Claude Code (HTTPS explícita no marketplace.json).**
 
 - **~35 subcomandos** incluindo `compile {<fonte>, --doctor, --install-advpls, --list-servers, --add-server, --use-server, --import-tds-servers, --probe-appserver, --set-credentials, --clear-credentials, --explain-config, --init-config}` + `edit-prw {check, open, save, stage, commit, clean}`
 - **40+ skills** (knowledge + slash command wrappers), 4 agents especializados, 1 SessionStart hook
@@ -581,10 +581,11 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 - **38 lint rules** (24 single-file + 13 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **Fase 1 compile** validada end-to-end contra `advpls` real (extensão TDS-VSCode v3.x) + includes Protheus reais
 
-**Highlights recentes (v0.8.11 → v0.9.3):**
+**Highlights recentes (v0.8.11 → v0.9.4):**
 
 | Versão | Destaque |
 |---|---|
+| **v0.9.4** | Fix install: `marketplace.json` trocou `source: github` → `source: url` com HTTPS explícita. Resolve `Permission denied (publickey)` em usuários sem SSH key configurada no GitHub |
 | **v0.9.3** | Skill `advpl-webservice` reescrita: comparação detalhada WSRESTFUL vs notation (`@Get/@Post`), ~3× speedup do notation, `@Patch` exclusivo, migration path 10 passos, REST-DOC/Swagger automático + `reference-rest.md` com CRUD completo nos 2 estilos |
 | **v0.9.2** | 3 fixes HIGH: `metrics --no-content` agora calcula CC correto; hook SessionStart deixou de pinar `plugadvpl@0.3.1`; `grep --mode literal` usa índice trigram FTS (10-50× speedup) |
 | **v0.9.1** | `--use-server + --mode appre` parou de exigir credencial (appre é local, não conecta no AppServer) |
