@@ -1,48 +1,56 @@
-"""Cliente HTTP do COLETADB — consome o contrato REST descrito em
+"""Cliente HTTP do COLETADB — consome o contrato bundle-pattern descrito em
 ``docs/coletadb-contract.md``.
 
-Stdlib only (``urllib.request``) — sem dep nova. Padrao espelhado de
-:mod:`plugadvpl.compile_installer` que ja usa ``urllib`` pra download
-da extensao TDS-VSCode.
+Protocolo real (validado contra ``gaps/COLETADB.tlpp`` em 2026-05-21):
 
-Cobertura:
+- ``POST /coletadb/run`` -> servidor gera CSVs em ``base_dir`` + retorna manifest
+- ``POST /coletadb/file`` -> cliente baixa bytes em chunks de 4MB
 
-- ``health()`` — probe + descoberta de versao
-- ``list_tables()`` — metadata (row_count, last_modified)
-- ``get_dump(tables, ...)`` — bulk com paginacao automatica
-- Auth: bearer ou basic
-- Retry exponencial em 5xx
-- Erros tipados: :class:`ColetaDBError`
+Auth: HTTP Basic via ``Security=1`` do AppServer (reusa mesmo user/senha do
+compile via ``credentials.py``). Sem bearer tokens.
 
-Nao implementa Fase 4c (auto-install do COLETADB) — esse fica pro
-``plugadvpl.compile`` ser invocado pelo CLI quando ``health()`` retornar
-404, fora do escopo desta classe.
+Stdlib only (``urllib.request``) — sem dep nova. Pattern espelha
+:mod:`plugadvpl.compile_installer`.
 """
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-DEFAULT_TIMEOUT_S = 30
+DEFAULT_TIMEOUT_RUN_S = 300.0      # /run pode demorar (gera CSV do dicionario)
+DEFAULT_TIMEOUT_FILE_S = 60.0      # /file le 4MB de disk
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_RETRY_BACKOFF_S = 2.0
-DEFAULT_PAGINATE_LIMIT = 10_000
+DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024  # 4MB, casa com CDB_API_CHUNK do servidor
 
 
 @dataclass(frozen=True)
-class HealthResponse:
-    """Resposta canonical de ``GET /health``."""
+class BundleFile:
+    """Um arquivo do bundle gerado pelo /run."""
 
-    version: str
-    protheus_build: str
-    protheus_environment: str
-    exposed_tables: list[str]
-    extras: list[str] = field(default_factory=list)
+    name: str          # "SX3.csv"
+    path: str          # full path NO SERVIDOR (usado em /file)
+    size_bytes: int
+    chunks: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class Manifest:
+    """Resposta de ``POST /coletadb/run``."""
+
+    bundle_id: str
+    bundle_dir: str
+    modo: str
+    threshold: int
+    chunk_size: int
+    files: list[BundleFile] = field(default_factory=list)
 
 
 class ColetaDBError(Exception):
@@ -66,201 +74,222 @@ class ColetaDBClient:
     """Cliente do COLETADB. Stateless — pode ser instanciado por chamada.
 
     Args:
-        endpoint: base URL (ex: ``http://protheus:8181/rest/coletadb``).
-            Trailing slash e tolerado.
-        token: bearer token (quando ``auth_method='bearer'``).
-        user/password: credenciais (quando ``auth_method='basic'``).
-        auth_method: ``'bearer'`` (default) ou ``'basic'``.
-        timeout_s: timeout por request.
+        endpoint: base URL (ex: ``http://protheus:8181/rest``).
+            Trailing slash e tolerado. NAO inclui ``/coletadb`` — os
+            endpoints sao ``{endpoint}/coletadb/run`` e ``/coletadb/file``.
+        user/password: credenciais HTTP Basic (validadas pelo AppServer
+            via ``Security=1``).
+        timeout_run_s: timeout do ``/run`` (gera CSVs, pode demorar).
+        timeout_file_s: timeout do ``/file`` (chunk de 4MB).
         retry_count: tentativas em caso de 5xx (default 3).
-        retry_backoff_s: base do backoff exponencial (default 2s -> 2, 4, 8).
-        paginate_limit: limit query param em paginacao (default 10_000).
-        extra_headers: dict de headers adicionais (ex: tenant id).
+        retry_backoff_s: base do backoff exponencial.
+        chunk_size: bytes por chunk no /file (default 4MB).
     """
 
     def __init__(
         self,
         *,
         endpoint: str,
-        token: str | None = None,
-        user: str | None = None,
-        password: str | None = None,
-        auth_method: Literal["bearer", "basic"] = "bearer",
-        timeout_s: float = DEFAULT_TIMEOUT_S,
+        user: str,
+        password: str,
+        timeout_run_s: float = DEFAULT_TIMEOUT_RUN_S,
+        timeout_file_s: float = DEFAULT_TIMEOUT_FILE_S,
         retry_count: int = DEFAULT_RETRY_COUNT,
         retry_backoff_s: float = DEFAULT_RETRY_BACKOFF_S,
-        paginate_limit: int = DEFAULT_PAGINATE_LIMIT,
-        extra_headers: dict[str, str] | None = None,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
-        self._token = token
         self._user = user
         self._password = password
-        self._auth_method = auth_method
-        self._timeout_s = timeout_s
+        self._timeout_run_s = timeout_run_s
+        self._timeout_file_s = timeout_file_s
         self._retry_count = max(1, retry_count)
         self._retry_backoff_s = max(0.0, retry_backoff_s)
-        self._paginate_limit = max(1, paginate_limit)
-        self._extra_headers = dict(extra_headers or {})
+        self._chunk_size = max(1, chunk_size)
 
     # ---------------------------------------------------------------------
     # API publica
     # ---------------------------------------------------------------------
 
-    def health(self) -> HealthResponse:
-        """``GET /health`` — probe + descoberta de versao."""
-        data = self._get_json("/health")
-        return HealthResponse(
-            version=data.get("version", ""),
-            protheus_build=data.get("protheus_build", ""),
-            protheus_environment=data.get("protheus_environment", ""),
-            exposed_tables=list(data.get("exposed_tables", [])),
-            extras=list(data.get("extras", [])),
+    def run(
+        self,
+        *,
+        modo: str = "enxuto",
+        threshold: int = 10,
+        base_dir: str = "",
+        ini_dir: str = "",
+    ) -> Manifest:
+        """``POST /coletadb/run`` — gera bundle no servidor + retorna manifest."""
+        body: dict[str, Any] = {"modo": modo, "threshold": threshold}
+        if base_dir:
+            body["base_dir"] = base_dir
+        if ini_dir:
+            body["ini_dir"] = ini_dir
+        data = self._post_json("/coletadb/run", body, timeout=self._timeout_run_s)
+        files = [
+            BundleFile(
+                name=f.get("name", ""),
+                path=f.get("path", ""),
+                size_bytes=int(f.get("size_bytes", 0)),
+                chunks=int(f.get("chunks", 0)),
+                sha256=f.get("sha256", ""),
+            )
+            for f in data.get("files", [])
+        ]
+        return Manifest(
+            bundle_id=data.get("bundle_id", ""),
+            bundle_dir=data.get("bundle_dir", ""),
+            modo=data.get("modo", modo),
+            threshold=int(data.get("threshold", threshold)),
+            chunk_size=int(data.get("chunk_size", self._chunk_size)),
+            files=files,
         )
 
-    def list_tables(self) -> list[dict[str, Any]]:
-        """``GET /tables`` — metadata por tabela."""
-        data = self._get_json("/tables")
-        return list(data.get("tables", []))
-
-    def get_dump(
+    def download_file(
         self,
-        tables: list[str],
+        bundle_file: BundleFile,
+        dest_path: Any,  # Path or str (avoid pathlib import in client module hot path)
         *,
-        offset: int = 0,
-        limit: int | None = None,
-    ) -> dict[str, dict[str, Any]]:
-        """``GET /dump?tables=...`` — bulk de uma ou mais tabelas.
+        progress_callback: Any = None,  # Callable[[int, int], None] | None
+    ) -> int:
+        """Baixa ``bundle_file`` em chunks pra ``dest_path``, com verificacao
+        sha256 ao final. Retorna bytes baixados.
 
-        Em caso de paginacao (``has_more=True``), faz loop seguindo
-        ``next_offset`` ate consumir tudo. Concatena rows de cada pagina.
-
-        Retorna ``{table_name: {row_count, rows}}``.
+        Loop interno faz ``POST /coletadb/file`` em sequencia, incrementando
+        ``offset`` ate consumir o arquivo todo. Verifica sha256 no fim — se
+        nao bater, raise :class:`ColetaDBError`.
         """
-        if not tables:
-            return {}
-        effective_limit = limit if limit is not None else self._paginate_limit
-        params = {
-            "tables": ",".join(tables),
-            "offset": str(offset),
-            "limit": str(effective_limit),
-        }
-        accumulated: dict[str, dict[str, Any]] = {}
-        current_offset = offset
-        while True:
-            params["offset"] = str(current_offset)
-            data = self._get_json("/dump", params=params)
-            tables_data = data.get("tables", {})
-            has_more = False
-            next_offset = None
-            for table_name, table_payload in tables_data.items():
-                if table_name not in accumulated:
-                    accumulated[table_name] = {
-                        "row_count": table_payload.get("row_count", 0),
-                        "rows": [],
-                    }
-                accumulated[table_name]["rows"].extend(
-                    table_payload.get("rows", [])
-                )
-                # has_more pode estar em qualquer tabela; se uma diz True,
-                # ainda precisamos buscar mais.
-                if table_payload.get("has_more", False):
-                    has_more = True
-                    next_offset = table_payload.get("next_offset", current_offset + effective_limit)
-            if not has_more or next_offset is None:
-                break
-            current_offset = int(next_offset)
-        return accumulated
+        from pathlib import Path
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        hasher = hashlib.sha256()
+        total_written = 0
 
-    def get_table(self, name: str) -> dict[str, Any]:
-        """``GET /table/{nome}`` — atalho pra uma tabela so."""
-        data = self._get_json(f"/table/{name}")
-        return data
+        with dest.open("wb") as f:
+            offset = 0
+            while True:
+                payload = {
+                    "path": bundle_file.path,
+                    "offset": offset,
+                    "limit": self._chunk_size,
+                }
+                chunk_bytes, headers = self._post_bytes(
+                    "/coletadb/file", payload, timeout=self._timeout_file_s,
+                )
+                if not chunk_bytes:
+                    break
+                f.write(chunk_bytes)
+                hasher.update(chunk_bytes)
+                total_written += len(chunk_bytes)
+                if progress_callback is not None:
+                    progress_callback(total_written, bundle_file.size_bytes)
+
+                # Para o loop quando atingimos o tamanho esperado.
+                # X-Total-Size header e fonte de verdade — confirma EOF.
+                total_size = int(headers.get("X-Total-Size", "0") or "0")
+                if total_size > 0 and offset + len(chunk_bytes) >= total_size:
+                    break
+                # Defesa contra loop infinito: se o servidor retornou menos
+                # bytes que pedimos, e provavelmente EOF.
+                if len(chunk_bytes) < self._chunk_size:
+                    break
+                offset += len(chunk_bytes)
+
+        # Verifica integridade
+        actual_sha = hasher.hexdigest()
+        if bundle_file.sha256 and actual_sha != bundle_file.sha256:
+            raise ColetaDBError(
+                f"sha256 mismatch em {bundle_file.name}: "
+                f"esperado {bundle_file.sha256[:16]}..., "
+                f"obtido {actual_sha[:16]}...",
+                code="SHA256_MISMATCH",
+                hint="Arquivo corrompido durante transfer. Tente rodar novamente.",
+            )
+        return total_written
 
     # ---------------------------------------------------------------------
     # Internals
     # ---------------------------------------------------------------------
 
-    def _build_url(self, path: str, params: dict[str, str] | None = None) -> str:
-        path = path if path.startswith("/") else f"/{path}"
-        url = self._endpoint + path
-        if params:
-            from urllib.parse import urlencode
-            url += "?" + urlencode(params)
-        return url
-
     def _auth_header(self) -> dict[str, str]:
-        if self._auth_method == "bearer" and self._token:
-            return {"Authorization": f"Bearer {self._token}"}
-        if self._auth_method == "basic" and self._user is not None:
-            cred = f"{self._user}:{self._password or ''}".encode("utf-8")
-            encoded = base64.b64encode(cred).decode("ascii")
-            return {"Authorization": f"Basic {encoded}"}
-        return {}
+        cred = f"{self._user}:{self._password}".encode("utf-8")
+        encoded = base64.b64encode(cred).decode("ascii")
+        return {"Authorization": f"Basic {encoded}"}
 
-    def _get_json(
+    def _build_url(self, path: str) -> str:
+        path = path if path.startswith("/") else f"/{path}"
+        return self._endpoint + path
+
+    def _post_with_retry(
         self,
-        path: str,
-        params: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
-        """GET + JSON parse com retry exponencial em 5xx/URLError."""
-        url = self._build_url(path, params)
-        headers = {
-            "Accept": "application/json",
-            **self._auth_header(),
-            **self._extra_headers,
-        }
+        url: str,
+        body_bytes: bytes,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[bytes, dict[str, str]]:
+        """POST com retry exponencial. Retorna (response_bytes, response_headers)."""
         last_exc: Exception | None = None
         for attempt in range(self._retry_count):
             try:
-                req = Request(url, headers=headers, method="GET")
-                with urlopen(req, timeout=self._timeout_s) as resp:
-                    body = resp.read()
-                    return json.loads(body.decode("utf-8"))
+                req = Request(url, data=body_bytes, headers=headers, method="POST")
+                with urlopen(req, timeout=timeout) as resp:
+                    resp_body = resp.read()
+                    resp_headers = {k: v for k, v in resp.headers.items()}
+                    return resp_body, resp_headers
             except HTTPError as exc:
                 last_exc = exc
                 if exc.code == 401:
                     raise ColetaDBError(
-                        f"401 Unauthorized em {url} — token invalido ou expirado",
+                        f"401 Unauthorized em {url} — user/senha invalidos",
                         status=401, code="UNAUTHORIZED",
-                        hint="Atualize o token com 'ingest-protheus --set-token <server>'",
+                        hint="Confira credenciais do Protheus (mesmas do compile)",
                     ) from exc
                 if exc.code == 403:
                     raise ColetaDBError(
                         f"403 Forbidden em {url} — sem permissao",
                         status=403, code="FORBIDDEN",
-                        hint="Confirme escopo do token com o admin do AppServer",
                     ) from exc
                 if exc.code == 404:
                     raise ColetaDBError(
-                        f"404 Not Found em {url} — COLETADB pode nao estar instalado no AppServer",
+                        f"404 Not Found em {url} — endpoint nao encontrado",
                         status=404, code="NOT_FOUND",
                         hint=(
                             "1) Confirme URL em [coletadb] do runtime.toml; "
                             "2) Peca ao TI compilar COLETADB.tlpp no AppServer; "
-                            "3) Em release futura, '--install-server-component' fara isso automatico"
+                            "3) Confirme [HTTPV11]/[HTTPURI] habilitados no appserver.ini"
                         ),
                     ) from exc
+                if exc.code == 416:
+                    # 416 Range Not Satisfiable: offset alem do EOF — sinal de fim
+                    # de download. Cliente deve tratar como "fim normal", nao erro.
+                    # Para isso, lemos o body e retornamos pra caller decidir.
+                    try:
+                        body = exc.read()
+                    except Exception:  # pragma: no cover
+                        body = b""
+                    return body, {"X-Total-Size": "0"}
+                if exc.code == 422:
+                    raise ColetaDBError(
+                        f"422 em {url}: {exc.reason}",
+                        status=422, code="VALIDATION_ERROR",
+                    ) from exc
                 if 500 <= exc.code < 600:
-                    # 5xx: retry com backoff exponencial
                     if attempt < self._retry_count - 1:
-                        sleep_for = self._retry_backoff_s * (2**attempt)
-                        time.sleep(sleep_for)
+                        time.sleep(self._retry_backoff_s * (2**attempt))
                         continue
                     raise ColetaDBError(
                         f"{exc.code} server error em {url} apos {self._retry_count} tentativas",
                         status=exc.code, code="SERVER_ERROR",
                     ) from exc
-                # Outros codes (400, 429, etc) — sem retry
+                # Outros codes — sem retry
                 raise ColetaDBError(
-                    f"HTTP {exc.code} em {url}",
+                    f"HTTP {exc.code} em {url}: {exc.reason}",
                     status=exc.code,
                 ) from exc
             except URLError as exc:
                 last_exc = exc
                 if attempt < self._retry_count - 1:
-                    sleep_for = self._retry_backoff_s * (2**attempt)
-                    time.sleep(sleep_for)
+                    time.sleep(self._retry_backoff_s * (2**attempt))
                     continue
                 raise ColetaDBError(
                     f"Conectividade falhou em {url}: {exc.reason}",
@@ -268,10 +297,50 @@ class ColetaDBClient:
                     hint=(
                         "1) Confirme que AppServer esta rodando; "
                         "2) Verifique VPN/firewall; "
-                        "3) Teste com 'ingest-protheus --check'"
+                        "3) Confirme porta REST configurada em [HTTPV11]"
                     ),
                 ) from exc
-        # Defensive — nunca deve chegar aqui (raises acima cobrem todas as branches)
-        raise ColetaDBError(
-            f"Falha desconhecida em {url}: {last_exc}",
-        )
+        # Defensive
+        raise ColetaDBError(f"Falha desconhecida em {url}: {last_exc}")
+
+    def _post_json(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        """POST + JSON response. Usado pelo /run e por outras chamadas que
+        retornam JSON estruturado."""
+        url = self._build_url(path)
+        body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+            **self._auth_header(),
+        }
+        resp_bytes, _ = self._post_with_retry(url, body_bytes, headers, timeout)
+        try:
+            return json.loads(resp_bytes.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ColetaDBError(
+                f"Response do {path} nao e JSON valido: {exc}",
+                code="INVALID_RESPONSE",
+            ) from exc
+
+    def _post_bytes(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> tuple[bytes, dict[str, str]]:
+        """POST + binary response. Usado pelo /file (octet-stream)."""
+        url = self._build_url(path)
+        body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/octet-stream",
+            **self._auth_header(),
+        }
+        return self._post_with_retry(url, body_bytes, headers, timeout)

@@ -1,17 +1,16 @@
-"""Testes do adapter REST → DB (U5 / Fase 3c).
+"""Testes do adapter REST → DB (U5 / Fase 3c — post-pivot).
+
+Workflow real do COLETADB:
+1. /coletadb/run -> manifest
+2. /coletadb/file -> chunks
+3. ingest_sx no tmp dir local (reusa machinery)
 
 Crucial: garante **paridade funcional** com `ingest_sx` (CSV path).
-Mesmo dataset ingerido via REST deve produzir DB identico ao ingerido
-via CSV.
-
-Estrategia:
-- Carrega fixtures CSV existentes (cli/tests/fixtures/sx_synthetic/)
-- Constroi JSON response equivalente (mesmas linhas)
-- Ingere via REST (com client mockado)
-- Compara DB resultante com DB ingerido via CSV
+Mesmo dataset baixado via REST -> mesmo DB que ingest_sx faria local.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -19,90 +18,85 @@ from unittest import mock
 
 import pytest
 
-from plugadvpl.coletadb_client import ColetaDBClient, HealthResponse
+from plugadvpl.coletadb_client import (
+    BundleFile,
+    ColetaDBClient,
+    Manifest,
+)
 from plugadvpl.db import open_db
 from plugadvpl.ingest_rest import ingest_via_rest
 from plugadvpl.ingest_sx import ingest_sx
-from plugadvpl.parsing.sx_csv import _read_csv
 
 SX_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "sx_synthetic"
 
 
-def _csv_to_rows(csv_path: Path) -> list[dict[str, str]]:
-    """Le um CSV SX e retorna list[dict] com chaves do header (X3_*/X2_*/etc).
-
-    Reusa ``_read_csv`` da sx_csv pra garantir paridade exata de encoding
-    detection — sem isso, o mock leria com encoding diferente do CSV path
-    e a comparacao de DB falharia por mojibake espurio.
-    """
-    if not csv_path.exists():
-        return []
-    return _read_csv(csv_path)
-
-
-# Mapeamento CSV → "tabela protheus" no JSON. Espelha o que o
-# COLETADB.tlpp emitiria.
-_CSV_TO_PROTHEUS_TABLE = {
-    "sx1.csv": "SX1",
-    "sx2.csv": "SX2",
-    "sx3.csv": "SX3",
-    "sx5.csv": "SX5",
-    "sx6.csv": "SX6",
-    "sx7.csv": "SX7",
-    "sx9.csv": "SX9",
-    "sxa.csv": "SXA",
-    "sxb.csv": "SXB",
-    "sxg.csv": "SXG",
-    "six.csv": "SIX",
-}
+def _build_manifest_from_csv_dir(csv_dir: Path) -> tuple[Manifest, dict[str, bytes]]:
+    """Simula o servidor COLETADB: le os CSVs do dir + monta manifest + bytes."""
+    files: list[BundleFile] = []
+    contents: dict[str, bytes] = {}  # name -> bytes
+    for csv_file in sorted(csv_dir.glob("*.csv")):
+        # COLETADB emite com nome upper (SX3.csv), nossas fixtures sao lower.
+        name_upper = csv_file.name.upper()
+        data = csv_file.read_bytes()
+        contents[name_upper] = data
+        sha = hashlib.sha256(data).hexdigest()
+        files.append(
+            BundleFile(
+                name=name_upper,
+                path=f"\\temp\\fake-bundle\\{name_upper}",
+                size_bytes=len(data),
+                chunks=max(1, (len(data) + 4194303) // 4194304),
+                sha256=sha,
+            )
+        )
+    manifest = Manifest(
+        bundle_id="fake-bundle-uuid",
+        bundle_dir="\\temp\\fake-bundle\\",
+        modo="enxuto",
+        threshold=10,
+        chunk_size=4194304,
+        files=files,
+    )
+    return manifest, contents
 
 
 def _build_mock_client(csv_dir: Path) -> ColetaDBClient:
-    """Constroi um ColetaDBClient com mock que serve as fixtures CSV como JSON."""
+    """Cliente mockado que entrega CSVs do ``csv_dir`` via protocolo bundle."""
+    manifest, contents = _build_manifest_from_csv_dir(csv_dir)
 
-    def mock_health() -> HealthResponse:
-        return HealthResponse(
-            version="1.0.0",
-            protheus_build="test-build",
-            protheus_environment="TST",
-            exposed_tables=list(_CSV_TO_PROTHEUS_TABLE.values()),
-            extras=[],
-        )
+    def mock_run(**kwargs: Any) -> Manifest:
+        return manifest
 
-    def mock_get_dump(tables: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = {}
-        for protheus_table in tables:
-            # Encontra o csv correspondente
-            csv_name = next(
-                (c for c, t in _CSV_TO_PROTHEUS_TABLE.items() if t == protheus_table),
-                None,
-            )
-            if csv_name is None:
-                continue
-            csv_path = csv_dir / csv_name
-            rows = _csv_to_rows(csv_path)
-            result[protheus_table] = {
-                "row_count": len(rows),
-                "rows": rows,
-            }
-        return result
+    def mock_download_file(
+        bundle_file: BundleFile, dest_path: Any, *,
+        progress_callback: Any = None,
+    ) -> int:
+        # "Servidor" entrega bytes do CSV correspondente
+        data = contents.get(bundle_file.name, b"")
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        if progress_callback is not None:
+            progress_callback(len(data), len(data))
+        return len(data)
 
     client = mock.MagicMock(spec=ColetaDBClient)
-    client.health = mock_health
-    client.get_dump = mock_get_dump
+    client.run = mock_run
+    client.download_file = mock_download_file
     return client
 
 
 class TestIngestViaRestBasic:
-    def test_health_check_called_first(self, tmp_path: Path) -> None:
-        """Antes do dump, ingest_via_rest chama health() pra validar conectividade."""
+    def test_run_called_first(self, tmp_path: Path) -> None:
+        """Antes de baixar arquivos, ingest_via_rest chama run() pra obter manifest."""
         client = _build_mock_client(SX_FIXTURES_DIR)
-        client.health = mock.MagicMock(side_effect=client.health)
+        original_run = client.run
+        client.run = mock.MagicMock(side_effect=original_run)
 
         db_path = tmp_path / "index.db"
         ingest_via_rest(client, db_path)
 
-        client.health.assert_called_once()
+        client.run.assert_called_once()
 
     def test_ingest_returns_counters(self, tmp_path: Path) -> None:
         client = _build_mock_client(SX_FIXTURES_DIR)
@@ -110,42 +104,62 @@ class TestIngestViaRestBasic:
 
         counters = ingest_via_rest(client, db_path)
 
-        assert counters["tables_total"] > 0
-        assert counters["tables_ok"] > 0
-        assert counters["total_rows"] > 0
-        assert "per_table" in counters
+        assert counters["files_total"] > 0
+        assert counters["files_downloaded"] > 0
+        assert counters["bytes_downloaded"] > 0
         assert "duration_ms" in counters
+        assert "bundle_id" in counters
+        assert counters["bundle_id"] == "fake-bundle-uuid"
 
-    def test_filter_tables(self, tmp_path: Path) -> None:
-        """Apenas tabelas listadas em --tables sao baixadas."""
-        client = _build_mock_client(SX_FIXTURES_DIR)
-        client.get_dump = mock.MagicMock(side_effect=client.get_dump)
+    def test_skips_non_mvp_files(self, tmp_path: Path) -> None:
+        """COLETADB emite XXA/MPMENU/SCHEDULES/JOBS/RECORD_COUNTS — MVP pula."""
+        # Manifest com mix: 2 MVP (SX2, SX3) + 3 nao-MVP (XXA, MPMENU_MENU, JOBS)
+        manifest = Manifest(
+            bundle_id="x", bundle_dir="\\temp\\x\\", modo="enxuto", threshold=10,
+            chunk_size=4194304,
+            files=[
+                BundleFile(name="SX2.csv", path="p1", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="SX3.csv", path="p2", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="XXA.csv", path="p3", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="MPMENU_MENU.csv", path="p4", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="JOBS.csv", path="p5", size_bytes=10, chunks=1, sha256=""),
+            ],
+        )
 
-        db_path = tmp_path / "index.db"
-        ingest_via_rest(client, db_path, tables=["SX2", "SX3"])
+        downloaded = []
 
-        # get_dump foi chamado com tables=["SX2","SX3"] (em alguma ordem)
-        called_with = client.get_dump.call_args
-        called_tables = set(called_with[0][0]) if called_with[0] else set(called_with[1].get("tables", []))
-        assert called_tables == {"SX2", "SX3"}
+        def mock_download(bf, dest, **kw):  # noqa: ARG001
+            downloaded.append(bf.name)
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            # Mini CSV valido pra cada
+            Path(dest).write_text("X2_CHAVE,X2_NOME,X2_MODO,D_E_L_E_T_\n", encoding="cp1252")
+            return 50
+
+        client = mock.MagicMock(spec=ColetaDBClient)
+        client.run = lambda **kw: manifest
+        client.download_file = mock_download
+
+        ingest_via_rest(client, tmp_path / "index.db")
+
+        # Apenas SX2 e SX3 devem ter sido baixados; XXA/MPMENU/JOBS pulados
+        assert set(downloaded) == {"SX2.csv", "SX3.csv"}
 
 
 class TestParidadeFuncional:
-    """Critical: REST e CSV devem produzir DBs identicos pro mesmo dataset.
+    """REST e CSV devem produzir DBs equivalentes pro mesmo dataset.
 
-    Esse e o critério de aceitação #2 da spec.
+    Post-pivot ficou trivial: o adapter REST simplesmente baixa os CSVs e
+    chama o mesmo ``ingest_sx``. Se os CSVs sao os mesmos, o DB e o mesmo.
     """
 
     @pytest.fixture
     def db_via_csv(self, tmp_path: Path) -> sqlite3.Connection:
-        """Ingere via CSV e retorna conexao com o DB resultante."""
         db = tmp_path / "via_csv.db"
         ingest_sx(SX_FIXTURES_DIR, db)
         return open_db(db)
 
     @pytest.fixture
     def db_via_rest(self, tmp_path: Path) -> sqlite3.Connection:
-        """Ingere via REST (mock) e retorna conexao com o DB resultante."""
         db = tmp_path / "via_rest.db"
         client = _build_mock_client(SX_FIXTURES_DIR)
         ingest_via_rest(client, db)
@@ -201,7 +215,6 @@ class TestParidadeFuncional:
         db_via_csv: sqlite3.Connection,
         db_via_rest: sqlite3.Connection,
     ) -> None:
-        """Sanity check: cada tabela SX tem o mesmo numero de rows em ambos os DBs."""
         sx_tables = [
             "tabelas", "campos", "gatilhos", "parametros", "perguntas",
             "tabelas_genericas", "relacionamentos", "pastas",
@@ -216,19 +229,38 @@ class TestParidadeFuncional:
 
 
 class TestErrors:
-    def test_404_on_health_raises(self, tmp_path: Path) -> None:
-        """Se health() falha, ingest aborta antes de tentar dump."""
+    def test_404_on_run_propagates(self, tmp_path: Path) -> None:
+        """Se /run falha, ingest aborta limpo (CSVs nao foram baixados)."""
         from plugadvpl.coletadb_client import ColetaDBError
         client = mock.MagicMock(spec=ColetaDBClient)
-        client.health = mock.MagicMock(
+        client.run = mock.MagicMock(
             side_effect=ColetaDBError(
-                "404", status=404, code="NOT_FOUND", hint="install COLETADB",
+                "404", status=404, code="NOT_FOUND",
+                hint="compilar COLETADB.tlpp",
             )
         )
 
-        db_path = tmp_path / "index.db"
         with pytest.raises(ColetaDBError):
-            ingest_via_rest(client, db_path)
+            ingest_via_rest(client, tmp_path / "index.db")
 
-        # DB nem foi criado (abortou cedo)
-        # (ou criado mas vazio — qualquer um e ok)
+
+class TestMetaTracking:
+    def test_meta_tracks_rest_source_and_bundle_id(self, tmp_path: Path) -> None:
+        """Meta deve registrar que o ultimo ingest foi via REST + bundle_id."""
+        client = _build_mock_client(SX_FIXTURES_DIR)
+        db_path = tmp_path / "index.db"
+        ingest_via_rest(client, db_path)
+
+        conn = open_db(db_path)
+        try:
+            source = conn.execute(
+                "SELECT valor FROM meta WHERE chave='last_sx_source'"
+            ).fetchone()
+            bundle_id = conn.execute(
+                "SELECT valor FROM meta WHERE chave='coletadb_bundle_id'"
+            ).fetchone()
+            assert source is not None and source[0] == "rest"
+            assert bundle_id is not None and bundle_id[0] == "fake-bundle-uuid"
+        finally:
+            from plugadvpl.db import close_db
+            close_db(conn)

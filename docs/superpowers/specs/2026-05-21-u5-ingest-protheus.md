@@ -2,13 +2,14 @@
 
 | Item | Valor |
 |---|---|
-| **Data** | 2026-05-21 |
-| **Status** | Draft — aguarda aprovação antes de implementação |
+| **Data** | 2026-05-21 (rev 2 — pivot após receber `COLETADB.tlpp` real) |
+| **Status** | Spec aprovada; Fase 3 em pivot para contract real |
 | **Issue tracker** | [#3](https://github.com/JoniPraia/plugadvpl/issues/3) |
 | **Universo** | U5 — Live Protheus Inspector |
 | **Target release** | v0.10.0 (core) |
 | **Volume** | ~5-7 dias implementação distribuídos em 2-3 semanas |
-| **Bloqueador atual** | `COLETADB.tlpp` ainda não compartilhado pelo autor — contrato neste doc é **especulativo** e será validado quando o source chegar |
+| **Bloqueador anterior** | ✅ Resolvido — `COLETADB.tlpp` recebido em [`gaps/COLETADB.tlpp`](../../../gaps/COLETADB.tlpp) (2026-05-21) |
+| **Pivot** | Contract real é **bundle pattern (CSV chunks via REST)**, não JSON inline. Veja Seção 5-bis. Seção 5 fica como histórico/aprendizado |
 
 ## 1. Propósito
 
@@ -73,7 +74,142 @@ Detalhes completos no [issue #3](https://github.com/JoniPraia/plugadvpl/issues/3
 
 **Princípio**: separar **transporte** (`coletadb_client`) de **persistência** (`ingest_rest`). Cliente HTTP é testável standalone com mocks. Adapter reusa lógica de insert do `ingest_sx.py` (não duplica).
 
-## 5. Contrato REST (**ESPECULATIVO** — valida pós-Fase 0)
+## 5-bis. Contrato REST REAL (após receber `COLETADB.tlpp` em 2026-05-21)
+
+**Esta seção substitui a Seção 5 (que fica como histórico de aprendizado).**
+
+O `COLETADB.tlpp` real implementa um **workflow bundle**: servidor gera arquivos CSV locais, cliente baixa em chunks de 4MB. Mais simples que JSON inline e reusa toda a machinery existente do `ingest_sx`.
+
+### 5-bis.1 Endpoints (2, ambos POST)
+
+```
+POST /coletadb/run      -> gera CSVs no servidor + retorna manifest JSON
+POST /coletadb/file     -> baixa bytes de um arquivo em chunks
+```
+
+Pré-requisito appserver.ini: `[HTTPV11]`/`[HTTPURI]` com `Security=1` (Basic auth nativa do AppServer).
+
+### 5-bis.2 POST `/coletadb/run`
+
+**Request** (body JSON, todos opcionais):
+```json
+{
+  "modo": "enxuto",
+  "threshold": 10,
+  "base_dir": "\\temp\\",
+  "ini_dir": "<path do AppServer*.ini>"
+}
+```
+
+- `modo`: `"enxuto"` (só tabelas com ≥ threshold rows) ou `"completo"` (todas as SX)
+- `threshold`: mínimo de linhas pra tabela contar como ativa (default 10)
+- `base_dir`: pasta onde o bundle é criado (default `\temp\`)
+- `ini_dir`: pasta dos `appserver*.ini` pra extrair jobs (default `DescobreRootPath()`)
+
+**Response 200**:
+```json
+{
+  "bundle_id": "abc123-uuid...",
+  "bundle_dir": "\\temp\\20260521_153000_abc\\",
+  "modo": "enxuto",
+  "threshold": 10,
+  "chunk_size": 4194304,
+  "files": [
+    {
+      "name": "SX3.csv",
+      "path": "\\temp\\20260521_153000_abc\\SX3.csv",
+      "size_bytes": 12345678,
+      "chunks": 3,
+      "sha256": "abc..."
+    }
+  ]
+}
+```
+
+**Errors**: 400 (JSON inválido), 422 (modo inválido), 500 (DB inacessível, etc.)
+
+### 5-bis.3 POST `/coletadb/file`
+
+**Request** (body JSON):
+```json
+{
+  "path": "\\temp\\20260521_153000_abc\\SX3.csv",
+  "offset": 0,
+  "limit": 4194304
+}
+```
+
+- `path`: full path do arquivo (do manifest)
+- `offset`: byte offset (default 0)
+- `limit`: bytes a ler (default 4MB, máximo 4MB)
+
+**Response 200**:
+- Body: bytes do chunk (binário, `Content-Type: application/octet-stream`)
+- Header `X-Total-Size`: tamanho total do arquivo
+- Header `X-Chunk-Range`: `<start>-<end>/<total>`
+- Header `Content-Length`: bytes deste chunk
+
+**Errors**:
+- 400 — path ausente, path traversal (`..`), extensão não-csv
+- 404 — arquivo não existe ou inacessível
+- 416 — offset alem do EOF
+
+### 5-bis.4 Cobertura — mais rica que esperado
+
+Spec original previa 11 tabelas SX. COLETADB real entrega **muito mais**:
+
+| Bloco | Conteúdo |
+|---|---|
+| SX padrão | SIX, SX1, SX2, SX3, SX5, SX6, SX7, SX9, SXA, SXB, SXG (11) |
+| **SX extras** | **XXA, XAM, XAL** (+3 — novos no plugadvpl) |
+| **MPMENU** | MPMENU_MENU, _FUNCTION, _ITEM, _I18N, _KEY_WORDS, _RW (6) |
+| **SCHEDULES** | Agendamentos do scheduler interno (DBSelectArea sob SCHEDULES) |
+| **JOBS** | Parse do `appserver*.ini` (multi-INI, recursivo) |
+| **RECORD_COUNTS** | Inventário de rows físicas por tabela (DBMS query) |
+
+MVP foca em **só SX padrão** (paridade com `ingest_sx`). XXA/XAM/XAL + MPMENU/SCHEDULES/JOBS/RECORD_COUNTS ficam pra **Fase 4** (extends schema, comandos novos).
+
+### 5-bis.5 Auth
+
+Não há `Authorization` no fluxo de `oRest:` do `.tlpp` — usa **Basic auth nativa do AppServer** via `Security=1` em `[HTTPURI]` do appserver.ini. Cliente envia `Authorization: Basic <base64>` direto, AppServer valida user/senha do dicionário Protheus.
+
+**Implicação prática**: plugin reusa `credentials.py` (keyring) — **mesmo user/senha** do `compile` funciona aqui. Sem necessidade de bearer token separado.
+
+### 5-bis.6 Encoding
+
+- **JSON envelope**: UTF-8 (`DecodeUtf8`/`EncodeUtf8` no fonte)
+- **CSVs gerados**: **CP1252** (encoding canonical do Configurador)
+- Detecção via `chardet` no `_read_csv` já existente — já funciona
+
+### 5-bis.7 Versionamento
+
+Sem `/health` dedicado. Versão é `CDB_VERSION = "1.0.0"` hardcoded no fonte, retornada no manifest do `/run` (no MVP, **não exposta** — mas dá pra ler do response body). Health check standalone do plugin = fazer `/run` em modo=enxuto threshold=999999 (extrai zero, valida só conectividade).
+
+### 5-bis.8 Workflow do cliente (plugin)
+
+```
+1. POST /coletadb/run com {"modo":"enxuto","threshold":10}
+2. Recebe manifest com files[]
+3. Para cada file no manifest:
+   a. Loop POST /coletadb/file com offset += chunk_size
+   b. Reassembly em tmp local
+   c. Verifica sha256
+4. Chama ingest_sx(tmp_dir, db_path) -- REUSA machinery existente
+5. Cleanup tmp
+```
+
+### 5-bis.9 Não cobertos no MVP (pra Fase 4)
+
+- XXA/XAM/XAL — exigem migrations novas no schema
+- MPMENU — outro Universo (menus)
+- SCHEDULES/JOBS — Universo 3 (workflow)
+- RECORD_COUNTS — popula tabela `tabelas.num_rows` (já existe column placeholder)
+
+---
+
+## 5. Contrato REST original (**OBSOLETO** — mantido como histórico)
+
+> Esta seção foi a especulação inicial antes de receber o `COLETADB.tlpp`. Documentei errado: assumi JSON inline, endpoints `/health`/`/tables`/`/dump`, bearer token. Real é bundle CSV + 2 endpoints POST + Basic auth do AppServer. Veja Seção 5-bis acima.
 
 ### 5.1 Endpoints
 
@@ -163,43 +299,57 @@ Quando `COLETADB.tlpp` chegar:
 - Adaptar `coletadb_client.py` pra normalizar diffs (rename de chaves, ordem diferente, etc.)
 - Atualizar este doc com schema validado, remover marcador "ESPECULATIVO"
 
-## 6. Config em `runtime.toml`
+## 6. Config (alinhada ao protocolo real)
+
+Auth reusa `credentials.py` (mesmo padrão do `compile`) — não precisa seção `[coletadb]` separada para auth. Resolução por camadas:
+1. `--user`/`--password` direto
+2. Env vars `PROTHEUS_USER`/`PROTHEUS_PASS` (mesmo padrão do compile)
+3. Keyring do OS (`plugadvpl` service, key `<endpoint>:user`/`<endpoint>:password`)
+
+Endpoint pode vir de `--endpoint` flag ou `[coletadb] endpoint = "..."` no `runtime.toml`:
 
 ```toml
 [coletadb]
 endpoint = "http://protheus-cliente:8181/rest/coletadb"
-auth_method = "bearer"            # "bearer" | "basic"
-token_env = "COLETADB_TOKEN"      # nome da env var (mesmo padrao do [auth])
-timeout_s = 30
+modo = "enxuto"                   # "enxuto" | "completo"
+threshold = 10                    # rows minimas pra tabela contar como ativa
+base_dir = "\\temp\\"             # path NO SERVIDOR onde bundle e criado
+ini_dir = ""                      # vazio = DescobreRootPath() no servidor
+timeout_s = 60                    # timeout do /run pode ser alto (gera CSVs)
 retry_count = 3
-retry_backoff_s = 2
-paginate_limit = 10000            # batch size para tabelas grandes
-verify_ssl = true                 # opt-out apenas pra dev/qa, nunca prod
+verify_ssl = true
+chunk_size = 4194304              # 4MB, deve casar com CDB_API_CHUNK do servidor
 ```
-
-`auth_method` reusa o keyring se `token_env` não estiver setado.
 
 ## 7. CLI surface
 
 ```bash
 # Workflow basico
-plugadvpl ingest-protheus --use-server cliente-x
+plugadvpl ingest-protheus --endpoint http://protheus:8181/rest/coletadb --user U --password P
 
-# Filtrar tabelas
-plugadvpl ingest-protheus --tables SX1,SX3,SX7 --use-server cliente-x
+# Auth via env vars
+PROTHEUS_USER=U PROTHEUS_PASS=P plugadvpl ingest-protheus --endpoint ...
 
-# Dry-run (so reporta o que faria, nao toca DB)
-plugadvpl ingest-protheus --dry-run --use-server cliente-x
+# Modo completo (todas SX, nao so ativas)
+plugadvpl ingest-protheus --endpoint ... --modo completo --user U --password P
 
-# Health check standalone
-plugadvpl ingest-protheus --check --use-server cliente-x
+# Threshold customizado
+plugadvpl ingest-protheus --endpoint ... --threshold 100 --user U --password P
 
-# Modo verbose
-plugadvpl ingest-protheus -v --use-server cliente-x
+# Dry-run (so health-check via /run + descarta manifest)
+plugadvpl ingest-protheus --endpoint ... --dry-run --user U --password P
+
+# Verbose (mostra progress de cada chunk)
+plugadvpl ingest-protheus --endpoint ... -v --user U --password P
 
 # JSON output (CI/CD)
-plugadvpl ingest-protheus --format json --use-server cliente-x
+plugadvpl ingest-protheus --endpoint ... --format json --user U --password P
 ```
+
+**Removido do MVP** (vs Seção 5 obsoleta):
+- ~~`--tables SX1,SX3`~~ — servidor extrai bundle completo (filtragem pos-download não vale a pena)
+- ~~`--token`~~ — auth é Basic (AppServer Security=1)
+- ~~`--check`~~ standalone — agora `--dry-run` faz o papel
 
 ## 8. Output esperado
 

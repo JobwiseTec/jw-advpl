@@ -7,29 +7,44 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:ingest-protheus`
 
-Indexa o Dicionário SX (SX1..SXG + SIX) chamando o endpoint REST do `COLETADB.tlpp` instalado no AppServer Protheus do cliente. Substitui o workflow manual do `ingest-sx` (CSV exportado do Configurador) por **dump ao vivo via HTTP**.
+Indexa o Dicionário SX (SX1..SXG + SIX) via REST API do `COLETADB.tlpp` instalado no AppServer Protheus do cliente. Substitui o workflow manual do `ingest-sx` (CSV exportado do Configurador) por **dump ao vivo via HTTP**.
 
 Convive com `/plugadvpl:ingest-sx` — quem não tem `COLETADB` instalado continua usando CSV.
 
 Pré-requisito: rodar `/plugadvpl:init` antes (cria `.plugadvpl/index.db`).
 
+## Como funciona (bundle pattern)
+
+```
+1. POST /coletadb/run     -> servidor gera CSVs locais em \temp\<ts>_<uuid>\
+                          -> retorna manifest com paths, sizes, sha256
+2. POST /coletadb/file    -> cliente baixa cada CSV em chunks de 4MB
+                          -> reassembly + verifica sha256
+3. ingest_sx(tmp_dir)     -> reusa machinery existente do CSV path
+```
+
+Auth via **HTTP Basic** (AppServer `Security=1`) — mesmas credenciais do `/plugadvpl:compile`.
+
 ## Uso
 
 ```
-/plugadvpl:ingest-protheus --endpoint <url> [--token <T>] [--tables SX2,SX3,...]
-/plugadvpl:ingest-protheus --endpoint <url> --check
+/plugadvpl:ingest-protheus --endpoint <url> [--user U] [--password P]
+/plugadvpl:ingest-protheus --endpoint <url> --modo completo
 /plugadvpl:ingest-protheus --endpoint <url> --dry-run
 ```
 
 ## Argumentos
 
-- `--endpoint URL` — base URL do COLETADB (ex: `http://protheus:8181/rest/coletadb`). **Obrigatório**.
-- `--token TOKEN` — bearer token. Fallback pra env var `COLETADB_TOKEN`.
-- `--user USER` + `--password PASS` — alternativa pra HTTP Basic auth.
-- `--tables CSV` — filtra tabelas a baixar (ex: `SX2,SX3,SX7`). Default: todas.
-- `--check` — só health-check, não toca DB.
-- `--dry-run` — health + lista tabelas, não baixa dump.
-- `--timeout N` — timeout por request HTTP (default 30s).
+- `--endpoint URL` — base REST do Protheus (ex: `http://protheus:8181/rest`). **Obrigatório**.
+- `--user USER` — Basic auth user. Fallback: env var `PROTHEUS_USER`.
+- `--password PASS` — Basic auth password. Fallback: env var `PROTHEUS_PASS`.
+- `--modo {enxuto|completo}` — `enxuto` (só tabelas com ≥ threshold rows, default) ou `completo` (todas as SX).
+- `--threshold N` — min de linhas pra tabela contar como ativa (default 10, só em modo enxuto).
+- `--base-dir PATH` — pasta NO SERVIDOR onde bundle é criado (default `\temp\`).
+- `--ini-dir PATH` — pasta NO SERVIDOR dos `appserver*.ini` (default `DescobreRootPath()`).
+- `--dry-run` — só roda `/coletadb/run` e mostra manifest, não baixa nem ingere.
+- `--timeout-run N` — timeout do `/coletadb/run` (default 300s — gera CSVs).
+- `--timeout-file N` — timeout do `/coletadb/file` por chunk (default 60s).
 
 ## Execucao
 
@@ -39,45 +54,69 @@ uvx plugadvpl@0.9.5 ingest-protheus $ARGUMENTS
 
 ## Exemplos
 
-- `/plugadvpl:ingest-protheus --endpoint http://protheus:8181/rest/coletadb --token $TOKEN` — ingest completo
-- `/plugadvpl:ingest-protheus --endpoint <url> --tables SX3,SX7 --token $TOKEN` — só campos e gatilhos
-- `/plugadvpl:ingest-protheus --endpoint <url> --check --token $TOKEN` — só valida conectividade
-- `/plugadvpl:ingest-protheus --endpoint <url> --dry-run --token $TOKEN` — preview sem baixar dump
+- `/plugadvpl:ingest-protheus --endpoint http://protheus:8181/rest --user admin --password $PASS`
+- `PROTHEUS_USER=admin PROTHEUS_PASS=$PASS /plugadvpl:ingest-protheus --endpoint http://protheus:8181/rest`
+- `/plugadvpl:ingest-protheus --endpoint http://protheus:8181/rest --modo completo` (todas SX, inclusive vazias)
+- `/plugadvpl:ingest-protheus --endpoint http://protheus:8181/rest --dry-run` (preview do manifest sem download)
 
 ## Pré-requisitos no AppServer
 
-O `COLETADB.tlpp` precisa estar **instalado e ativo** no AppServer do cliente. Caso `/check` retorne **404**, peça ao TI do cliente pra compilar a reference impl em `docs/reference-impl/coletadb.tlpp` (em release futura, flag `--install-server-component` fará isso automático via `plugadvpl compile`).
+O `COLETADB.tlpp` (~1745 linhas, reference impl em [`gaps/COLETADB.tlpp`](../../gaps/COLETADB.tlpp)) precisa estar **compilado e ativo** no AppServer. Caso `/run` retorne **404**, peça ao TI do cliente pra:
+
+1. Copiar `COLETADB.tlpp` pro RPO custom
+2. Compilar via TDS-VSCode ou `plugadvpl compile`
+3. Confirmar `[HTTPV11]` + `[HTTPURI]` habilitados no `appserver.ini`:
+   ```ini
+   [HTTPV11]
+   ENABLE=1
+   PORT=8080
+   
+   [HTTPURI]
+   URL=/rest
+   PrepareIn=<emp>,<fil>
+   Security=1
+   CORSEnable=1
+   ```
+
+Em release futura (Fase 4c) — flag `--install-server-component` fará isso automático via `plugadvpl compile`.
 
 ## Saida
 
-Counts por tabela após o ingest (linhas inseridas via REST), tempo total, versão do COLETADB e build do Protheus. Re-rodar é idempotente (`INSERT OR REPLACE`).
+Saída em duas partes:
+
+1. Counters do bundle: `files_downloaded`, `bytes_downloaded`, `bundle_id`, `duration_ms`
+2. Counters do ingest interno: rows por tabela SX (mesma estrutura do `ingest-sx`)
+
+Re-rodar é idempotente — cada `/run` gera novo `bundle_id`; `ingest_sx` faz `INSERT OR REPLACE`.
 
 ## Paridade com ingest-sx
 
-O DB resultante deste comando é **bit-identico** ao produzido por `/plugadvpl:ingest-sx` rodado contra o CSV equivalente. Comandos downstream (`/plugadvpl:impacto`, `/plugadvpl:gatilho`, `/plugadvpl:sx-status`) funcionam idêntico independente da fonte.
+O DB resultante deste comando é **funcionalmente idêntico** ao produzido por `/plugadvpl:ingest-sx` rodado contra o CSV equivalente. Comandos downstream (`/plugadvpl:impacto`, `/plugadvpl:gatilho`, `/plugadvpl:sx-status`) funcionam idêntico independente da fonte.
 
 ## Diferenças de ingest-sx
 
 | | `ingest-sx` (CSV) | `ingest-protheus` (REST) |
 |---|---|---|
-| Pré-requisito | CSV exportado manualmente do Configurador | `COLETADB.tlpp` instalado no AppServer |
+| Pré-requisito | CSV exportado do Configurador | `COLETADB.tlpp` no AppServer |
 | Freshness | Foto do momento da exportação | Estado atual do banco |
 | Trabalho do dev | Pedir export → receber zip → descompactar → ingest | 1 comando |
-| Tabelas custom (Z*/X*) | Não — só padrão SX | Sim (Fase 4b, futuro) |
+| Auth | Não precisa | Basic (mesmas creds do compile) |
+| Tabelas | 11 SX padrão | 11 SX padrão (MVP). XXA/XAM/XAL/MPMENU/JOBS no Fase 4 |
 | Drift detection | Não | Sim (Fase 4a, futuro) |
-| Conectividade necessária | Não (offline) | Sim (HTTP ao AppServer) |
+| Conectividade | Não (offline) | Sim (HTTP ao AppServer) |
 
 ## Erros comuns
 
 - **`--endpoint obrigatorio`** — passe `--endpoint <url>`
-- **`Auth obrigatoria`** — passe `--token`, defina `COLETADB_TOKEN`, ou use `--user`/`--password`
-- **`404 Not Found em <url>`** — COLETADB não instalado no AppServer (vide pré-requisitos)
-- **`401 Unauthorized`** — token inválido ou expirado
-- **`Conectividade falhou`** — AppServer fora do ar, VPN, ou firewall
+- **`Auth obrigatoria`** — passe `--user`/`--password` ou defina `PROTHEUS_USER`/`PROTHEUS_PASS`
+- **`404 Not Found em /coletadb/run`** — COLETADB não compilado no AppServer (vide pré-requisitos)
+- **`401 Unauthorized`** — user/senha inválidos
+- **`sha256 mismatch em X.csv`** — arquivo corrompido durante transfer (rede flaky) — rode novamente
+- **`Conectividade falhou`** — AppServer fora do ar, VPN, firewall, ou `[HTTPV11]` desabilitado
 
-## Roadmap (vide [issue #3](https://github.com/JoniPraia/plugadvpl/issues/3))
+## Roadmap (vide [issue #3](https://github.com/JoniPraia/causa/issues/3))
 
-- ✅ **Fase 3** (v0.10.0) — comando básico, contract canonical
+- ✅ **Fase 3** (atual, em PR) — comando básico via bundle pattern
 - 🔜 **Fase 4a** — `plugadvpl sx-drift` (compara DB local vs estado atual via REST)
-- 🔜 **Fase 4b** — suporte a custom tables `Z*`/`X*`
+- 🔜 **Fase 4b** — suporte a XXA/XAM/XAL + MPMENU/SCHEDULES/JOBS/RECORD_COUNTS
 - 🔜 **Fase 4c** — auto-install do COLETADB via `plugadvpl compile`

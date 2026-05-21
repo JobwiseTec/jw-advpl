@@ -1191,61 +1191,77 @@ def ingest_protheus_cmd(
         str,
         typer.Option(
             "--endpoint",
-            help="URL base do COLETADB (ex: http://protheus:8181/rest/coletadb)",
-        ),
-    ] = "",
-    token: Annotated[
-        str,
-        typer.Option(
-            "--token",
-            help="Bearer token. Fallback pra env var COLETADB_TOKEN.",
+            help="URL base REST do Protheus (ex: http://protheus:8181/rest)",
         ),
     ] = "",
     user: Annotated[
         str,
         typer.Option(
             "--user",
-            help="User pra HTTP Basic auth (alternativa ao --token).",
+            help="User pra HTTP Basic auth. Fallback: env var PROTHEUS_USER.",
         ),
     ] = "",
     password: Annotated[
         str,
         typer.Option(
             "--password",
-            help="Password pra HTTP Basic auth.",
+            help="Password pra HTTP Basic auth. Fallback: env var PROTHEUS_PASS.",
         ),
     ] = "",
-    tables: Annotated[
+    modo: Annotated[
         str,
         typer.Option(
-            "--tables",
-            help="Filtra tabelas a baixar (CSV, ex: SX2,SX3,SX7). Default: todas.",
+            "--modo",
+            help="'enxuto' (so tabelas com >= threshold rows) ou 'completo'.",
+        ),
+    ] = "enxuto",
+    threshold: Annotated[
+        int,
+        typer.Option(
+            "--threshold",
+            help="Min de rows pra tabela contar como ativa (modo enxuto).",
+        ),
+    ] = 10,
+    base_dir: Annotated[
+        str,
+        typer.Option(
+            "--base-dir",
+            help="Pasta NO SERVIDOR onde bundle e criado (vazio = default do servidor).",
         ),
     ] = "",
-    check_only: Annotated[
-        bool,
+    ini_dir: Annotated[
+        str,
         typer.Option(
-            "--check",
-            help="So roda health-check, nao toca DB.",
+            "--ini-dir",
+            help="Pasta NO SERVIDOR dos appserver*.ini (vazio = DescobreRootPath).",
         ),
-    ] = False,
+    ] = "",
     dry_run: Annotated[
         bool,
         typer.Option(
             "--dry-run",
-            help="Health check + lista tabelas, nao baixa dump.",
+            help="So roda /coletadb/run e mostra manifest, nao baixa nem ingere.",
         ),
     ] = False,
-    timeout_s: Annotated[
+    timeout_run_s: Annotated[
         float,
-        typer.Option("--timeout", help="Timeout por request HTTP em segundos."),
-    ] = 30.0,
+        typer.Option("--timeout-run", help="Timeout do /coletadb/run em segundos."),
+    ] = 300.0,
+    timeout_file_s: Annotated[
+        float,
+        typer.Option("--timeout-file", help="Timeout do /coletadb/file (por chunk)."),
+    ] = 60.0,
 ) -> None:
     """Indexa dicionario SX via REST API do COLETADB (Universo 5).
 
-    Substitui o workflow CSV manual do ``ingest-sx`` por chamada direta
-    ao AppServer. Convive com `ingest-sx` — quem nao tem COLETADB
-    instalado continua usando CSV.
+    Workflow: POST /coletadb/run -> manifest; POST /coletadb/file em loop
+    pra baixar cada CSV em chunks de 4MB; chama ingest_sx no tmp local.
+
+    Auth via HTTP Basic (AppServer Security=1). Reusa o MESMO user/senha
+    do compile (env vars PROTHEUS_USER/PROTHEUS_PASS ou flags --user/--password).
+
+    Convive com `ingest-sx` — quem nao tem COLETADB instalado continua
+    usando CSV exportado do Configurador.
     """
     import os
 
@@ -1253,62 +1269,44 @@ def ingest_protheus_cmd(
 
     if not endpoint:
         typer.secho(
-            "--endpoint obrigatorio. Ex: --endpoint http://protheus:8181/rest/coletadb",
+            "--endpoint obrigatorio. Ex: --endpoint http://protheus:8181/rest",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
 
-    # Resolucao de auth: --token > env COLETADB_TOKEN > --user/--password.
-    effective_token = token or os.environ.get("COLETADB_TOKEN", "")
-    auth_method = "bearer"
-    if not effective_token and user:
-        auth_method = "basic"
-    if not effective_token and not user:
+    effective_user = user or os.environ.get("PROTHEUS_USER", "")
+    effective_pass = password or os.environ.get("PROTHEUS_PASS", "")
+    if not effective_user:
         typer.secho(
-            "Auth obrigatoria: passe --token, defina COLETADB_TOKEN env var, "
-            "ou use --user/--password (basic auth).",
+            "Auth obrigatoria: passe --user/--password ou defina "
+            "PROTHEUS_USER/PROTHEUS_PASS (mesmas creds do compile).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if modo not in ("enxuto", "completo"):
+        typer.secho(
+            f"--modo deve ser 'enxuto' ou 'completo' (recebido: {modo!r})",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
 
     client = ColetaDBClient(
         endpoint=endpoint,
-        token=effective_token,
-        user=user,
-        password=password,
-        auth_method=auth_method,  # type: ignore[arg-type]
-        timeout_s=timeout_s,
+        user=effective_user,
+        password=effective_pass,
+        timeout_run_s=timeout_run_s,
+        timeout_file_s=timeout_file_s,
     )
 
     db_path: Path = ctx.obj["db"]
 
-    # --check: so health, sai
-    if check_only:
-        try:
-            health = client.health()
-        except ColetaDBError as exc:
-            typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
-            if exc.hint:
-                typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
-            raise typer.Exit(code=1) from exc
-        _render_from_ctx(
-            ctx,
-            [
-                {"field": "version", "value": health.version},
-                {"field": "protheus_build", "value": health.protheus_build},
-                {"field": "protheus_environment", "value": health.protheus_environment},
-                {"field": "exposed_tables", "value": ", ".join(health.exposed_tables)},
-                {"field": "extras", "value": ", ".join(health.extras) or "(nenhuma)"},
-            ],
-            title=f"COLETADB Health — {endpoint}",
-        )
-        return
-
-    # --dry-run: health + list_tables, sem dump
     if dry_run:
         try:
-            health = client.health()
-            tables_meta = client.list_tables()
+            manifest = client.run(
+                modo=modo, threshold=threshold,
+                base_dir=base_dir, ini_dir=ini_dir,
+            )
         except ColetaDBError as exc:
             typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
             if exc.hint:
@@ -1316,34 +1314,39 @@ def ingest_protheus_cmd(
             raise typer.Exit(code=1) from exc
         rows = [
             {
-                "table": t.get("name", "?"),
-                "rows": t.get("row_count", 0),
-                "last_modified": t.get("last_modified", ""),
+                "file": f.name,
+                "size_bytes": f.size_bytes,
+                "chunks": f.chunks,
+                "sha256_short": f.sha256[:16] + "..." if f.sha256 else "",
             }
-            for t in tables_meta
+            for f in manifest.files
         ]
         _render_from_ctx(
-            ctx,
-            rows,
-            title=f"COLETADB dry-run — {endpoint} (v{health.version})",
+            ctx, rows,
+            title=(
+                f"COLETADB manifest — bundle_id={manifest.bundle_id} "
+                f"modo={manifest.modo} files={len(manifest.files)}"
+            ),
         )
         return
 
-    # Real ingest
-    table_filter = [t.strip().upper() for t in tables.split(",") if t.strip()] or None
-
     try:
-        counters = do_ingest_via_rest(client, db_path, tables=table_filter)
+        counters = do_ingest_via_rest(
+            client, db_path,
+            modo=modo, threshold=threshold,
+            base_dir=base_dir, ini_dir=ini_dir,
+        )
     except ColetaDBError as exc:
         typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
         if exc.hint:
             typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=1) from exc
 
+    ingest_inner = counters.get("ingest_counters", {})
     summary_rows: list[dict[str, object]] = [
         {
             "tabela": tabela,
-            "rows": counters["per_table"].get(tabela, 0),
+            "rows": ingest_inner.get("per_table", {}).get(tabela, 0),
         }
         for tabela in (
             "tabelas", "campos", "indices", "gatilhos", "parametros",
@@ -1351,20 +1354,21 @@ def ingest_protheus_cmd(
             "consultas", "grupos_campo",
         )
     ]
-    summary_rows.append({"tabela": "_TOTAL", "rows": counters["total_rows"]})
+    summary_rows.append(
+        {"tabela": "_TOTAL", "rows": ingest_inner.get("total_rows", 0)},
+    )
 
     if not ctx.obj["quiet"]:
+        mb = counters.get("bytes_downloaded", 0) / (1024 * 1024)
         typer.secho(
-            f"OK {counters['tables_ok']}/{counters['tables_total']} tabelas ingeridas "
-            f"({counters.get('tables_skipped', 0)} puladas, "
-            f"{counters.get('tables_failed', 0)} falhas) em {counters['duration_ms']}ms "
-            f"via COLETADB v{counters.get('coletadb_version', '?')}",
+            f"OK {counters['files_downloaded']} arquivos baixados "
+            f"({mb:.1f}MB, {counters.get('files_skipped', 0)} non-MVP pulados) "
+            f"em {counters['duration_ms']}ms — bundle {counters['bundle_id'][:16]}",
             err=True,
         )
     _render_from_ctx(
-        ctx,
-        summary_rows,
-        title=f"Ingest REST — rows por tabela ({endpoint})",
+        ctx, summary_rows,
+        title=f"Ingest REST — rows por tabela (bundle {counters['bundle_id'][:8]})",
         next_steps=[
             "plugadvpl impacto A1_COD",
             "plugadvpl gatilho A1_COD",
