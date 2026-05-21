@@ -1,6 +1,6 @@
 # COLETADB REST Contract — `plugadvpl ingest-protheus`
 
-> Esta é a especificação **canônica e agnóstica** do contrato REST que o `plugadvpl ingest-protheus` consome. Qualquer servidor que responda esse contrato funciona — não há amarração com a implementação específica do `COLETADB.tlpp`. Reference impl em [`gaps/COLETADB.tlpp`](../gaps/COLETADB.tlpp) (autor: tbarbito, license a confirmar).
+> Esta é a especificação **canônica e agnóstica** do contrato REST que o `plugadvpl ingest-protheus` consome. Qualquer servidor que responda esse contrato funciona — não há amarração com a implementação específica do `COLETADB.tlpp`. Reference impl em [`docs/reference-impl/coletadb.tlpp`](reference-impl/coletadb.tlpp), license **MIT**.
 
 | Item | Valor |
 |---|---|
@@ -221,7 +221,7 @@ Idempotência: cada `/run` gera novo `bundle_id` (UUID). Bundles antigos ficam n
 
 | Impl | Linguagem | License | Source |
 |---|---|---|---|
-| `COLETADB.tlpp` | TLPP (Protheus 12.1.2410+) | TBD (aguarda autor) | [`gaps/COLETADB.tlpp`](../gaps/COLETADB.tlpp) |
+| `coletadb.tlpp` | TLPP (Protheus 12.1.2410+) | **MIT** | [`docs/reference-impl/coletadb.tlpp`](reference-impl/coletadb.tlpp) |
 
 Outras implementações são bem-vindas — desde que conformes a este doc. Servidor pode estar em Python (FastAPI), Go (Gin), Node (Express) — só precisa respeitar os 2 endpoints + auth + chunk pattern.
 

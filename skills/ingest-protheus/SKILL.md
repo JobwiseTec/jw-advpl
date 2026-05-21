@@ -61,10 +61,10 @@ uvx plugadvpl@0.9.5 ingest-protheus $ARGUMENTS
 
 ## Pré-requisitos no AppServer
 
-O `COLETADB.tlpp` (~1745 linhas, reference impl em [`gaps/COLETADB.tlpp`](../../gaps/COLETADB.tlpp)) precisa estar **compilado e ativo** no AppServer. Caso `/run` retorne **404**, peça ao TI do cliente pra:
+O `COLETADB.tlpp` (~1800 linhas, license **MIT**, reference impl em [`docs/reference-impl/coletadb.tlpp`](../../docs/reference-impl/coletadb.tlpp)) precisa estar **compilado e ativo** no AppServer. Caso `/run` retorne **404**, peça ao TI do cliente pra:
 
-1. Copiar `COLETADB.tlpp` pro RPO custom
-2. Compilar via TDS-VSCode ou `plugadvpl compile`
+1. Copiar `docs/reference-impl/coletadb.tlpp` pro RPO custom
+2. Compilar via TDS-VSCode ou `plugadvpl compile coletadb.tlpp`
 3. Confirmar `[HTTPV11]` + `[HTTPURI]` habilitados no `appserver.ini`:
    ```ini
    [HTTPV11]

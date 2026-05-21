@@ -8,7 +8,7 @@
 | **Universo** | U5 — Live Protheus Inspector |
 | **Target release** | v0.10.0 (core) |
 | **Volume** | ~5-7 dias implementação distribuídos em 2-3 semanas |
-| **Bloqueador anterior** | ✅ Resolvido — `COLETADB.tlpp` recebido em [`gaps/COLETADB.tlpp`](../../../gaps/COLETADB.tlpp) (2026-05-21) |
+| **Bloqueador anterior** | ✅ Resolvido — `COLETADB.tlpp` recebido + license MIT confirmada (2026-05-21). Reference impl versionada em [`docs/reference-impl/coletadb.tlpp`](../../reference-impl/coletadb.tlpp) |
 | **Pivot** | Contract real é **bundle pattern (CSV chunks via REST)**, não JSON inline. Veja Seção 5-bis. Seção 5 fica como histórico/aprendizado |
 
 ## 1. Propósito
