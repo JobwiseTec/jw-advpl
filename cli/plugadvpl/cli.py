@@ -43,6 +43,7 @@ from plugadvpl.db import (
 from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
+from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.parser import parse_source
@@ -1176,6 +1177,194 @@ def ingest_sx_cmd(
         ctx,
         summary_rows,
         title="Ingest SX — rows por tabela",
+        next_steps=[
+            "plugadvpl impacto A1_COD",
+            "plugadvpl gatilho A1_COD",
+        ],
+    )
+
+
+@app.command(name="ingest-protheus")
+def ingest_protheus_cmd(
+    ctx: typer.Context,
+    endpoint: Annotated[
+        str,
+        typer.Option(
+            "--endpoint",
+            help="URL base do COLETADB (ex: http://protheus:8181/rest/coletadb)",
+        ),
+    ] = "",
+    token: Annotated[
+        str,
+        typer.Option(
+            "--token",
+            help="Bearer token. Fallback pra env var COLETADB_TOKEN.",
+        ),
+    ] = "",
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User pra HTTP Basic auth (alternativa ao --token).",
+        ),
+    ] = "",
+    password: Annotated[
+        str,
+        typer.Option(
+            "--password",
+            help="Password pra HTTP Basic auth.",
+        ),
+    ] = "",
+    tables: Annotated[
+        str,
+        typer.Option(
+            "--tables",
+            help="Filtra tabelas a baixar (CSV, ex: SX2,SX3,SX7). Default: todas.",
+        ),
+    ] = "",
+    check_only: Annotated[
+        bool,
+        typer.Option(
+            "--check",
+            help="So roda health-check, nao toca DB.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Health check + lista tabelas, nao baixa dump.",
+        ),
+    ] = False,
+    timeout_s: Annotated[
+        float,
+        typer.Option("--timeout", help="Timeout por request HTTP em segundos."),
+    ] = 30.0,
+) -> None:
+    """Indexa dicionario SX via REST API do COLETADB (Universo 5).
+
+    Substitui o workflow CSV manual do ``ingest-sx`` por chamada direta
+    ao AppServer. Convive com `ingest-sx` — quem nao tem COLETADB
+    instalado continua usando CSV.
+    """
+    import os
+
+    from plugadvpl.coletadb_client import ColetaDBClient, ColetaDBError
+
+    if not endpoint:
+        typer.secho(
+            "--endpoint obrigatorio. Ex: --endpoint http://protheus:8181/rest/coletadb",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    # Resolucao de auth: --token > env COLETADB_TOKEN > --user/--password.
+    effective_token = token or os.environ.get("COLETADB_TOKEN", "")
+    auth_method = "bearer"
+    if not effective_token and user:
+        auth_method = "basic"
+    if not effective_token and not user:
+        typer.secho(
+            "Auth obrigatoria: passe --token, defina COLETADB_TOKEN env var, "
+            "ou use --user/--password (basic auth).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    client = ColetaDBClient(
+        endpoint=endpoint,
+        token=effective_token,
+        user=user,
+        password=password,
+        auth_method=auth_method,  # type: ignore[arg-type]
+        timeout_s=timeout_s,
+    )
+
+    db_path: Path = ctx.obj["db"]
+
+    # --check: so health, sai
+    if check_only:
+        try:
+            health = client.health()
+        except ColetaDBError as exc:
+            typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
+            if exc.hint:
+                typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(code=1) from exc
+        _render_from_ctx(
+            ctx,
+            [
+                {"field": "version", "value": health.version},
+                {"field": "protheus_build", "value": health.protheus_build},
+                {"field": "protheus_environment", "value": health.protheus_environment},
+                {"field": "exposed_tables", "value": ", ".join(health.exposed_tables)},
+                {"field": "extras", "value": ", ".join(health.extras) or "(nenhuma)"},
+            ],
+            title=f"COLETADB Health — {endpoint}",
+        )
+        return
+
+    # --dry-run: health + list_tables, sem dump
+    if dry_run:
+        try:
+            health = client.health()
+            tables_meta = client.list_tables()
+        except ColetaDBError as exc:
+            typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
+            if exc.hint:
+                typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(code=1) from exc
+        rows = [
+            {
+                "table": t.get("name", "?"),
+                "rows": t.get("row_count", 0),
+                "last_modified": t.get("last_modified", ""),
+            }
+            for t in tables_meta
+        ]
+        _render_from_ctx(
+            ctx,
+            rows,
+            title=f"COLETADB dry-run — {endpoint} (v{health.version})",
+        )
+        return
+
+    # Real ingest
+    table_filter = [t.strip().upper() for t in tables.split(",") if t.strip()] or None
+
+    try:
+        counters = do_ingest_via_rest(client, db_path, tables=table_filter)
+    except ColetaDBError as exc:
+        typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
+        if exc.hint:
+            typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=1) from exc
+
+    summary_rows: list[dict[str, object]] = [
+        {
+            "tabela": tabela,
+            "rows": counters["per_table"].get(tabela, 0),
+        }
+        for tabela in (
+            "tabelas", "campos", "indices", "gatilhos", "parametros",
+            "perguntas", "tabelas_genericas", "relacionamentos", "pastas",
+            "consultas", "grupos_campo",
+        )
+    ]
+    summary_rows.append({"tabela": "_TOTAL", "rows": counters["total_rows"]})
+
+    if not ctx.obj["quiet"]:
+        typer.secho(
+            f"OK {counters['tables_ok']}/{counters['tables_total']} tabelas ingeridas "
+            f"({counters.get('tables_skipped', 0)} puladas, "
+            f"{counters.get('tables_failed', 0)} falhas) em {counters['duration_ms']}ms "
+            f"via COLETADB v{counters.get('coletadb_version', '?')}",
+            err=True,
+        )
+    _render_from_ctx(
+        ctx,
+        summary_rows,
+        title=f"Ingest REST — rows por tabela ({endpoint})",
         next_steps=[
             "plugadvpl impacto A1_COD",
             "plugadvpl gatilho A1_COD",
