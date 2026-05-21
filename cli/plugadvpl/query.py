@@ -526,6 +526,37 @@ def doctor_diagnostics(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         }
     )
 
+    # v0.9.5 (QA PERF 2026-05-18 #2): colisao de basename em diretorios
+    # distintos (ex: mod1/MATA010.prw vs mod2/MATA010.prw). Schema usa
+    # basename como PK; sem aviso, o segundo era silenciosamente descartado.
+    coll_row = conn.execute(
+        "SELECT valor FROM meta WHERE chave='basename_collisions'"
+    ).fetchone()
+    coll_raw = (coll_row[0] if coll_row else "") or ""
+    n_coll = 0
+    coll_detail = "nenhuma colisao detectada"
+    if coll_raw:
+        try:
+            coll_map = json.loads(coll_raw)
+            n_coll = len(coll_map)
+            if n_coll:
+                preview = list(coll_map.keys())[:3]
+                extra = sum(len(v) - 1 for v in coll_map.values())
+                coll_detail = (
+                    f"{n_coll} basenames duplicados ({extra} fontes ignorados); "
+                    f"exemplos: {', '.join(preview)}"
+                )
+        except (ValueError, TypeError):
+            coll_detail = "meta basename_collisions corrompido (JSON invalido)"
+    diags.append(
+        {
+            "check": "basename_collisions",
+            "status": "ok" if n_coll == 0 else "warn",
+            "count": n_coll,
+            "detail": coll_detail,
+        }
+    )
+
     return diags
 
 
@@ -670,29 +701,51 @@ def _word_boundary_re(termo: str) -> re.Pattern[str]:
 def _impacto_fontes(
     conn: sqlite3.Connection, campo_up: str, max_rows: int
 ) -> list[dict[str, Any]]:
-    """Hits no índice de fontes (fonte_chunks.content)."""
+    """Hits no índice de fontes (fonte_chunks.content).
+
+    v0.9.5 (QA V3 #3 / QA PERF 2026-05-18 #8): aplica boundary check pos-LIKE
+    em Python pra eliminar substring FPs. Antes ``impacto A1_COD`` retornava
+    >100KB de output com hits espurios em ``BA1_CODEMP``, ``A1_CODFAT``,
+    ``DA1_CODPRO``. Agora SQL LIKE prefiltra (cheap), Python boundary
+    elimina FP, e o snippet e construido ao redor do match REAL — nao da
+    primeira ocorrencia substring (que podia ser o proprio FP).
+    """
     out: list[dict[str, Any]] = []
+    boundary_re = _word_boundary_re(campo_up)
+    # 4x buffer pra absorver descartes do boundary check sem ficar abaixo
+    # do max_rows desejado em projetos com muitos FPs (campos de prefixo
+    # comum tipo A1_*, B1_*).
     rows = conn.execute(
         """
-        SELECT arquivo, funcao, linha_inicio,
-               substr(content, max(1, instr(upper(content), ?) - 30), 160) AS snippet
+        SELECT arquivo, funcao, linha_inicio, content
         FROM fonte_chunks
         WHERE upper(content) LIKE '%' || ? || '%'
         LIMIT ?
         """,
-        (campo_up, campo_up, max_rows),
+        (campo_up, max_rows * 4),
     ).fetchall()
-    for arquivo, funcao, linha, snippet in rows:
-        snip_up = (snippet or "").upper()
+    for arquivo, funcao, linha, content in rows:
+        if not content:
+            continue
+        # Re-find primeiro boundary REAL (nao a primeira substring SQL).
+        m = boundary_re.search(content)
+        if m is None:
+            continue  # substring FP — BA1_CODEMP, A1_CODFAT, etc.
+        pos = m.start()
+        snippet = content[max(0, pos - 30): pos + 130]
+        snip_up = snippet.upper()
         is_write = any(k in snip_up for k in _WRITE_KEYWORDS)
         out.append(
             {
                 "tipo": "fonte",
+                "match_kind": "boundary",
                 "local": f"{arquivo}:{linha or 1}::{funcao or ''}",
                 "contexto": _truncate(snippet, 100),
                 "severidade": "critical" if is_write else "warning",
             }
         )
+        if len(out) >= max_rows:
+            break
     return out
 
 

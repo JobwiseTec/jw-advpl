@@ -7,7 +7,7 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:ingest`
 
-Indexa fontes ADVPL/TLPP (.prw, .prx, .tlpp, .ch, .aph) em `.plugadvpl/index.db`.
+Indexa fontes ADVPL/TLPP (.prw, .prx, .tlpp, .apw) em `.plugadvpl/index.db`.
 
 ## Uso
 
@@ -27,7 +27,7 @@ Quando `paths` for omitido, indexa o diretorio do projeto atual.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.6.1 ingest $ARGUMENTS
+uvx plugadvpl@0.9.5 ingest $ARGUMENTS
 ```
 
 ## Exemplos

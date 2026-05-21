@@ -113,7 +113,7 @@ Resumo textual:
 
 ### `fontes`
 
-Linha por arquivo `.prw`/`.tlpp`/`.prx`/`.apw`/`.ptm`/`.aph` indexado.
+Linha por arquivo `.prw`/`.tlpp`/`.prx`/`.apw` indexado.
 
 | Coluna | Tipo | Origem | Notas |
 |---|---|---|---|

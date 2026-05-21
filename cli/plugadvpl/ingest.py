@@ -50,7 +50,7 @@ from plugadvpl.parsing.triggers import (
     extract_execution_triggers,
     serialize_metadata as serialize_trigger_metadata,
 )
-from plugadvpl.scan import scan_sources
+from plugadvpl.scan import scan_sources_full
 
 if TYPE_CHECKING:
     import sqlite3
@@ -842,28 +842,33 @@ def _ingest_parallel(
 
     args_list = [(fp, redact_secrets) for fp in files]
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as pool:
-        results = list(pool.map(_parse_worker, args_list, chunksize=_POOL_CHUNKSIZE))
-
-    for i, (fp, parsed, content, findings, error) in enumerate(results, 1):
-        if error or parsed is None or content is None or findings is None:
-            counters["arquivos_failed"] += 1
-            if error_prints < _MAX_ERROR_PRINTS:
-                print(f"WARN: falha em {fp.name}: {error}", file=sys.stderr)
-                error_prints += 1
-            continue
-        try:
-            _write_parsed(
-                conn, root, fp, parsed, content, findings,
-                counters, no_content, redact_secrets,
-            )
-        except Exception as exc:  # writer-side falha = registro contável
-            counters["arquivos_failed"] += 1
-            counters["arquivos_ok"] = max(0, counters["arquivos_ok"])  # safe
-            if error_prints < _MAX_ERROR_PRINTS:
-                print(f"WARN: write falhou em {fp.name}: {exc}", file=sys.stderr)
-                error_prints += 1
-        if i % 50 == 0:
-            conn.commit()
+        # v0.9.5 (QA PERF 2026-05-18 #4): iterar direto sobre pool.map em vez
+        # de materializar list(...) antes do primeiro write. Reduz pico de RAM
+        # em monorepos grandes (5-10k fontes) sem alterar a ordem dos commits
+        # — pool.map preserva ordem do args_list (ao contrário de as_completed).
+        # Cada chunk fica disponível incremental e é escrito pelo writer
+        # single-thread enquanto outros workers continuam parseando.
+        iterator = pool.map(_parse_worker, args_list, chunksize=_POOL_CHUNKSIZE)
+        for i, (fp, parsed, content, findings, error) in enumerate(iterator, 1):
+            if error or parsed is None or content is None or findings is None:
+                counters["arquivos_failed"] += 1
+                if error_prints < _MAX_ERROR_PRINTS:
+                    print(f"WARN: falha em {fp.name}: {error}", file=sys.stderr)
+                    error_prints += 1
+                continue
+            try:
+                _write_parsed(
+                    conn, root, fp, parsed, content, findings,
+                    counters, no_content, redact_secrets,
+                )
+            except Exception as exc:  # writer-side falha = registro contável
+                counters["arquivos_failed"] += 1
+                counters["arquivos_ok"] = max(0, counters["arquivos_ok"])  # safe
+                if error_prints < _MAX_ERROR_PRINTS:
+                    print(f"WARN: write falhou em {fp.name}: {exc}", file=sys.stderr)
+                    error_prints += 1
+            if i % 50 == 0:
+                conn.commit()
     conn.commit()
 
 
@@ -915,7 +920,35 @@ def ingest(
         set_meta(conn, "parser_version", PARSER_VERSION)
         set_meta(conn, "cli_version", _cli_version)
 
-        all_files = scan_sources(root)
+        scan_result = scan_sources_full(root)
+        all_files = scan_result.files
+
+        # v0.9.5 (QA PERF 2026-05-18 #2): avisa quando ha basenames duplicados
+        # em diretorios distintos (ex: mod1/MATA010.prw vs mod2/MATA010.prw).
+        # Schema usa basename como PK — sem o aviso, o segundo era silenciosamente
+        # descartado. Persiste contagem em meta pra doctor surfacing.
+        if scan_result.collisions:
+            n_coll = len(scan_result.collisions)
+            extra = sum(len(v) - 1 for v in scan_result.collisions.values())
+            print(
+                f"WARN: {n_coll} basenames com colisao em pastas distintas "
+                f"({extra} fontes ignorados). Use 'plugadvpl doctor' pra listar.",
+                file=sys.stderr,
+            )
+            set_meta(
+                conn,
+                "basename_collisions",
+                json.dumps(
+                    {
+                        k: [str(p) for p in v]
+                        for k, v in scan_result.collisions.items()
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        else:
+            # Limpa meta antigo quando a colisao foi resolvida (rename/delete).
+            set_meta(conn, "basename_collisions", "")
 
         # Stale filter (incremental).
         if incremental:

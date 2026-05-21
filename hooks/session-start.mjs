@@ -7,7 +7,7 @@ import { readdirSync, existsSync } from 'node:fs';
 import { join, extname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const VALID_EXTS = new Set(['.prw', '.tlpp', '.prx']);
+const VALID_EXTS = new Set(['.prw', '.tlpp', '.prx', '.apw']);
 const MAX_DEPTH = 2;
 const SKIP_DIRS = new Set(['.plugadvpl', '.git', 'node_modules', '.venv', '.ruff_cache', '__pycache__', '.benchmarks']);
 const ADDITIONAL_CONTEXT_LIMIT = 9500; // Claude Code limit ~10k chars; leave headroom

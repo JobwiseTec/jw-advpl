@@ -4,12 +4,62 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
-### Fixed
+## [0.9.5] - 2026-05-21
 
-Correções factuais nas skills do dicionário SX, validadas contra schema real
-do `sx*xxx` em release atual (varchar/CHAR sizes confirmadas via
-[Terminal de Informação](https://terminaldeinformacao.com/wp-content/tabelas/sx3.php)
-e TDN TOTVS).
+### Fixed - 5 itens pendentes do QA PERF 2026-05-18 (3 P1 + 2 P2)
+
+Fechamento dos pendentes técnicos da auditoria de performance/robustez. Suite
+continua em 853 passed; nenhum break de comportamento existente. Pega ao final
+3 fixes factuais nas skills do dicionário SX que estavam em `[Unreleased]`.
+
+- **#5 — Extensões inconsistentes entre scan/hook/docs**
+  ([scan.py:11](cli/plugadvpl/scan.py#L11), [session-start.mjs:10](hooks/session-start.mjs#L10)):
+  hook ignorava `.apw` (web ADVPL) e docs listavam `.ptm`/`.aph`/`.ch` que
+  nunca foram indexados (patch binário e includes). Alinhado tudo ao set
+  canônico `.prw, .prx, .tlpp, .apw` (cli-reference, architecture, schema,
+  README, skill ingest, hook).
+- **#1 — `pool.map` materializava `list(...)` antes do primeiro write**
+  ([ingest.py:843](cli/plugadvpl/ingest.py#L843)): em monorepos com 5-10k
+  fontes, todo o resultado do parsing paralelo segurava em RAM antes do
+  writer single-thread começar. Agora itera direto sobre o `pool.map`
+  (preserva ordem, ao contrário de `as_completed`) — cada chunk é escrito
+  enquanto outros workers continuam parseando. Teste de regressão smoking-gun
+  detecta se alguém reintroduzir `list()` no futuro
+  ([test_ingest.py](cli/tests/integration/test_ingest.py)).
+- **#2 — `scan_sources` perdia silenciosamente fontes com basename duplicado**
+  ([scan.py:65-71](cli/plugadvpl/scan.py#L65)): schema usa basename como PK; sem
+  aviso, `mod1/MATA010.prw` × `mod2/MATA010.prw` resultava em um dos dois
+  silenciosamente descartado. Adicionado `scan_sources_full()` retornando
+  `(files, collisions)`; ingest emite stderr WARN com contagem, persiste em
+  `meta.basename_collisions`, e `doctor` ganha check `basename_collisions`
+  que reporta `warn` com exemplos. Filtra falso positivo de Windows FS
+  case-insensitive (mesma pasta, casing diferente = mesmo arquivo).
+- **#3 — `validate_plugin.py` não cobria comandos novos**
+  ([scripts/validate_plugin.py](scripts/validate_plugin.py)): validador
+  hardcoded 13 comandos antigos (init/ingest/find/...) e deixava CI passar
+  com wrapper faltando pros 12 comandos novos (workflow/execauto/trace/
+  metrics/hotspots/cobertura-doc/gatilho/impacto/sx-status/ingest-sx/compile/
+  edit-prw). Refatorado pra introspecção do Typer (`app.registered_commands`
+  + `app.registered_groups`) — qualquer comando novo entra no escopo
+  automaticamente. Adicionado check de drift de versão: pin `uvx
+  plugadvpl@X.Y.Z` nos skills bate com `plugin.json:version`; `marketplace.json:
+  plugins[0].version` bate com `plugin.json:version`; hook não tem pin
+  hardcoded em chamada real (regressão do fix v0.9.2). Validador
+  imediatamente detectou e corrigiu drift de 22 skills pinadas em
+  `0.6.1` enquanto plugin está em `0.9.5`.
+- **#4 — `impacto` em fontes sem boundary check**
+  ([query.py:701-749](cli/plugadvpl/query.py#L701)): SQL `LIKE '%A1_COD%'`
+  retornava substring FP como `BA1_CODEMP`, `A1_CODFAT`, `DA1_CODPRO`.
+  Output ficava >100KB em campos de nome curto/comum (#3 do QA V3 já tinha
+  corrigido em SX3/SX7 mas fontes ficou de fora). Fix: SQL LIKE prefiltra
+  (cheap), Python `_word_boundary_re` descarta FP, snippet é construído ao
+  redor do match REAL (não da primeira ocorrência substring), output marca
+  `match_kind: "boundary"`.
+
+### Skills (dicionário SX — factuais vs schema real)
+
+Validações cruzadas com [Terminal de Informação](https://terminaldeinformacao.com/wp-content/tabelas/sx3.php)
+e TDN TOTVS.
 
 - **`advpl-dicionario-sx/reference.md`** — 14 bugs corrigidos:
   - **SX1**: `X1_PRESEL` é numérico (não CHAR); `X1_GSC` aceita `R` (Range/Radio); `X1_TIPO` aceita `M` (Memo). +5 colunas (`X1_HELP`/`PICTURE`/`GRPSXG`/`IDFIL`/`PYME`).
@@ -35,6 +85,15 @@ e TDN TOTVS).
   causa → fix), template de QA visual via `UNION ALL` comparando NOVO vs TPLT.
   Generalizado (sem detalhes de ambiente específico); banner inicial reforça
   que `FwPutSX3()`/Configurador continuam sendo o caminho oficial TOTVS.
+
+### Technical
+
+- 22 skills bumpados de `uvx plugadvpl@0.6.1` → `@0.9.5` (drift caçado pelo
+  validador novo).
+- +5 testes de regressão: `test_ingest_parallel_streams_results_v0_9_5`
+  (smoking-gun streaming), `test_doctor_basename_collision_warn_v0_9_5`,
+  `TestScanSourcesFullCollisions` (4 testes), `test_impacto_fontes_boundary_
+  no_substring_v0_9_5`. Suite total: 853 passed.
 
 ## [0.9.4] - 2026-05-20
 
