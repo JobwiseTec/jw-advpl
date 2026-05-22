@@ -42,7 +42,7 @@ Cobre prefixos comuns: `dev_console.log`, `prd-error.log`, `compila.log`, etc.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.10.0 --format md log-diagnose $ARGUMENTS
+uvx plugadvpl@0.11.0 --format md log-diagnose $ARGUMENTS
 ```
 
 > **Para agente IA:** prefira `--format md` ou `--format json` — o default `table` trunca colunas em terminais estreitos. Flags `--format`/`--quiet`/`--limit` são GLOBAIS e vêm ANTES do subcomando.

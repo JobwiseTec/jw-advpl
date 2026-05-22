@@ -4,6 +4,74 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-22
+
+### Added — U5 Live Protheus Inspector — `ingest-protheus` via REST
+
+Novo comando `plugadvpl ingest-protheus` que substitui o workflow CSV manual do
+`ingest-sx` por **dump ao vivo via REST API** do `COLETADB.tlpp` instalado no
+AppServer. Convive com `ingest-sx` — quem não tem COLETADB continua usando CSV.
+
+Workflow do extrator (bundle pattern):
+
+1. `POST /coletadb/run` — servidor gera CSVs locais em `\temp\<ts>_<uuid>\` e
+   retorna manifest com paths, sizes, sha256 de cada arquivo
+2. `POST /coletadb/file` — cliente baixa cada CSV em chunks de 4MB
+   (binário via `octet-stream`, com `X-Total-Size`/`X-Chunk-Range` headers)
+3. Cliente reassembly + verifica sha256 + chama `ingest_sx` no tmp local
+   (reusa machinery existente — paridade funcional total com CSV path)
+
+Auth via HTTP Basic (`[HTTPURI] Security=1` do AppServer) — mesmas credenciais
+do `compile`, sem token separado. Resolução: `--user`/`--password` > env vars
+`PROTHEUS_USER`/`PROTHEUS_PASS`.
+
+Módulos novos:
+
+- **`cli/plugadvpl/coletadb_client.py`** — cliente HTTP stdlib (urllib),
+  retry exponencial em 5xx, paginação automática, sha256 verification,
+  erros tipados (`ColetaDBError` com hint pro usuário)
+- **`cli/plugadvpl/ingest_rest.py`** — adapter trivial reusando `ingest_sx`
+  direto (~150 linhas, em vez das 340 da versão especulativa anterior).
+  Filtra `_MVP_TABLES` (11 SX padrão); XXA/XAM/XAL + MPMENU/SCHEDULES/JOBS/
+  RECORD_COUNTS ficam pra Fase 4
+- **`cli/plugadvpl/parsing/sx_csv.py`** — refactor: extraídas 11 funções
+  `normalize_sxN_rows` como API pública reutilizável (CSV path e REST path
+  chamam o mesmo normalizer). Output bit-identico ao anterior — zero regressão
+
+Reference impl em [`docs/reference-impl/coletadb.tlpp`](docs/reference-impl/coletadb.tlpp)
+(1772 linhas, MIT, contribuição do @tbarbito via discussion #2 / issue #3).
+
+Comando + flags:
+
+```bash
+plugadvpl ingest-protheus --endpoint http://protheus:8181/rest \
+  --user admin --password "$PASS" \
+  [--modo enxuto|completo] [--threshold 10] \
+  [--base-dir \\temp\\] [--ini-dir <path>] \
+  [--dry-run] [--timeout-run 300] [--timeout-file 60]
+```
+
+Skill `/plugadvpl:ingest-protheus` (wrapper Claude Code). Suite: +20 testes
+(11 unit do client + 9 integration incluindo paridade funcional com `ingest_sx`).
+
+### Documentation
+
+- **`docs/coletadb-contract.md`** — contract canônico público, agnóstico de
+  impl (qualquer servidor conforme funciona, não só o `.tlpp` específico)
+- **`docs/reference-impl/README.md`** — guia de instalação do `coletadb.tlpp`
+  no AppServer + config `[HTTPV11]`/`[HTTPURI]` + inventário do que extrai
+- **`docs/superpowers/specs/2026-05-21-u5-ingest-protheus.md`** — spec
+  aprovada antes da implementação (workflow research → spec → approval → code).
+  Inclui Seção 5-bis com contract real validado contra `COLETADB.tlpp` real.
+
+### Pendente para v0.12.0+ (Fase 4)
+
+- `sx-drift` — compara DB local vs estado atual via REST, reporta mudanças
+  em prod sem commit
+- Suporte a XXA/XAM/XAL (migration 003) + MPMENU/SCHEDULES/JOBS/RECORD_COUNTS
+- Auto-install do COLETADB via `plugadvpl compile --install-server-component`
+- Smoke test contra AppServer real com COLETADB compilado
+
 ## [0.10.0] - 2026-05-22
 
 ### Added — Auditoria de ambiente Protheus (PR #6 do @tbarbito)
