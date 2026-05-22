@@ -4,6 +4,72 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-22
+
+### Added — Auditoria de ambiente Protheus (PR #6 do @tbarbito)
+
+- **`log-diagnose` — Monitor de log Protheus**: novo comando que ingere
+  e diagnostica arquivos de log Protheus (console.log, error.log, profile.log,
+  compila.log) contra **19 alert rules** + **93 correction tips** vindas da
+  KB TDN oficial. Pipeline em 2 estágios: Stage 1 tokeniza eventos por 1 dos
+  4 formatos de header reconhecidos (ISO+thread / THREAD ERROR PT-BR /
+  `[DD/MM HH:MM:SS]` / `[SEVERITY]`); Stage 2 aplica rules em ordem reversa
+  (eventos MAIS RECENTES primeiro) com short-circuit (1 finding por evento)
+  e enriquece com correction tip cruzada de `log_tips`. Janela `--since` é
+  relativa ao último timestamp do log (não wall clock). Categorias: database,
+  thread_error, rpo, network, connection, service, rest_api, compilation,
+  authentication, shutdown, lifecycle, application. Migration `012_log_diagnose.sql`
+  adiciona 6 tabelas (`log_files`, `log_events`, `log_findings`, `log_rules`,
+  `log_tips`, `log_categories`). Catálogos declarativos em
+  `lookups/log_rules.json` (19 entries), `lookups/log_tips.json` (93 tips com
+  URL TDN), `lookups/log_categories.json` (12 fallback tips). Enrichment:
+  captura `ora_code`, `username`, `host` quando aparecem em Thread finished /
+  Error ending thread. Skill `/plugadvpl:log-diagnose` + agent
+  `advpl-log-investigator` + 66 testes unit (parser + ingest + diagnose).
+- **`ini-audit` — Auditor de INI Protheus**: novo comando que ingere
+  e audita arquivos `.ini` do ambiente Protheus (appserver, dbaccess,
+  smartclient, tss, broker) contra **487 regras TDN-oficiais** filtradas por
+  `tipo` + `role`. Pipeline `parse → ingest → audit` num único comando, cache
+  via hash+mtime. Catálogo declarativo em `lookups/ini_rules.json` + 14 roles
+  em `lookups/ini_roles.json`. Migration `011_ini_audit.sql` adiciona 6 tabelas
+  (`ini_files`, `ini_sections`, `ini_keys`, `ini_audit_findings`, `ini_rules`,
+  `ini_roles`). Detection kinds suportados: `value_eq` (com equivalência booleana),
+  `value_in`, `value_neq`, `range_check`, `key_present`, `key_missing`, `regex`.
+  Status `ok_with_note` quando o cliente documenta justificativa em comentários
+  (`; intencional: ...`, `; cliente exige ...`). Skill `/plugadvpl:ini-audit` +
+  agent `advpl-ini-auditor` + 69 testes unit (parser + audit engine).
+
+Schema bump: 10 → 12 (migrations 011 + 012).
+
+### Fixed — code review do PR #6 (commit b17b648)
+
+6 fixes prioritários endereçados antes do merge:
+
+- **Filtro `--severity` no log-diagnose** descartava o evento inteiro em vez
+  de pular a rule de severidade não-pedida — rules de severidade alta com
+  prioridade maior ficavam invisíveis. Fix: pré-filtra rules em
+  `_load_rules` via SQL `AND severidade IN (?)` quando `severity_filter`
+  está setado; `break` problemático removido. Teste de regressão
+  `test_severity_filter_does_not_swallow_higher_priority_match`.
+- **`print()` poluía stdout JSON** em warning de regex inválida no catálogo
+  log_rules — `--format json` ficava com texto antes do JSON, quebrando
+  parsers. Fix: `print(..., file=sys.stderr)`.
+- **Body cap de eventos de log subido de 8KB → 32KB**: `THREAD ERROR` +
+  call stack em produção passa de 8KB com 50-100 frames; truncar perdia
+  a stack final. Constantes `_HEADER_MAX_CHARS=2000` e
+  `_BODY_MAX_CHARS=32_000` no topo de `ingest_log.py`.
+- **`max_lines=1M` cutoff silencioso** virou warning visível:
+  `tokenize_events_with_meta()` retorna `(events, truncated_at_line)`,
+  propagado via `ParsedLog.truncated_at_line` → `LogIngestResult.warnings`
+  (separado de errors; ingest teve sucesso parcial). CLI mostra em amarelo
+  no stderr.
+- **`analyze_encoding` skip pra entrada str**: evita round-trip
+  `encode('utf-8')` que sempre detecta utf-8/ascii em texto já decodificado.
+  Retorna `IniEncodingInfo(detected="str")` direto.
+- **`_format_message` reescrito com `re.sub` callback** em passada única:
+  substituição sequencial de `{N}` corrompia se o capture group contivesse
+  literalmente `{K}`. Teste cobre caso patológico.
+
 ## [0.9.5] - 2026-05-21
 
 ### Fixed - 5 itens pendentes do QA PERF 2026-05-18 (3 P1 + 2 P2)

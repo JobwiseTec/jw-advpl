@@ -256,6 +256,106 @@ def arch(conn: sqlite3.Connection, arquivo: str) -> list[dict[str, Any]]:
     ]
 
 
+def log_diagnose_query(
+    conn: sqlite3.Connection,
+    arquivo: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    rule_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Lista findings do diagnostico de log (cli ``log-diagnose``).
+
+    Filtros opcionais:
+        - ``arquivo``  — basename do log (case-insensitive)
+        - ``severity`` — ``critical`` | ``warning`` | ``info``
+        - ``category`` — ``database`` | ``thread_error`` | ``rpo`` | ...
+        - ``rule_id``  — ex.: ``LOG-DB-ORA``
+    """
+    where: list[str] = ["f.status = 'active'"]
+    params: list[Any] = []
+    if arquivo:
+        where.append("lf.arquivo = ? COLLATE NOCASE")
+        params.append(arquivo)
+    if severity:
+        where.append("f.severity = ?")
+        params.append(severity)
+    if category:
+        where.append("f.category = ?")
+        params.append(category)
+    if rule_id:
+        where.append("f.rule_id = ?")
+        params.append(rule_id)
+
+    sql = f"""
+        SELECT lf.arquivo, lf.tipo AS log_tipo, f.line_number, f.timestamp,
+               f.thread_id, f.severity, f.category, f.rule_id, f.message,
+               f.correction_tip, f.tdn_url, f.username, f.computer_name, f.ora_code
+        FROM log_findings f
+        JOIN log_files lf ON lf.id = f.file_id
+        WHERE {' AND '.join(where)}
+        ORDER BY
+            CASE f.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            lf.arquivo, f.line_number DESC
+    """
+    rows = conn.execute(sql, params).fetchall()
+    cols = [
+        "arquivo", "log_tipo", "linha", "timestamp", "thread_id",
+        "severidade", "categoria", "rule_id", "message",
+        "sugestao_fix", "tdn_url", "usuario", "host", "ora_code",
+    ]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def ini_audit_query(
+    conn: sqlite3.Connection,
+    arquivo: str | None = None,
+    severity: str | None = None,
+    regra_id: str | None = None,
+    show_ok_with_note: bool = False,
+) -> list[dict[str, Any]]:
+    """Lista findings de auditoria de INI (cli ``ini-audit``).
+
+    Filtros opcionais:
+        - ``arquivo``           — basename do INI (case-insensitive)
+        - ``severity``          — ``critical`` | ``warning`` | ``info``
+        - ``regra_id``          — ex.: ``APP-GENERAL-MAXSTRINGSIZE``
+        - ``show_ok_with_note`` — se ``True``, inclui findings com justificativa
+          documentada em comentários do INI. Default exibe só ``active``.
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    status_filter = ("'active'", "'ok_with_note'") if show_ok_with_note else ("'active'",)
+    where.append(f"f.status IN ({', '.join(status_filter)})")
+
+    if arquivo:
+        where.append("ini.arquivo = ? COLLATE NOCASE")
+        params.append(arquivo)
+    if severity:
+        where.append("f.severidade = ?")
+        params.append(severity)
+    if regra_id:
+        where.append("f.regra_id = ?")
+        params.append(regra_id)
+
+    where_clause = "WHERE " + " AND ".join(where)
+    sql = f"""
+        SELECT ini.arquivo, ini.tipo, ini.role, f.section_raw, f.key_name,
+               f.linha, f.regra_id, f.severidade, f.snippet, f.sugestao_fix, f.status
+        FROM ini_audit_findings f
+        JOIN ini_files ini ON ini.id = f.file_id
+        {where_clause}
+        ORDER BY
+            CASE f.severidade WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            ini.arquivo, f.section_raw, f.linha
+    """
+    rows = conn.execute(sql, params).fetchall()
+    cols = [
+        "arquivo", "tipo", "role", "section", "key",
+        "linha", "regra_id", "severidade", "snippet", "sugestao_fix", "status",
+    ]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
 def lint_query(
     conn: sqlite3.Connection,
     arquivo: str | None = None,

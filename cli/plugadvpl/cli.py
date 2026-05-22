@@ -42,10 +42,22 @@ from plugadvpl.db import (
 )
 from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
+from plugadvpl.ingest_ini import (
+    DEFAULT_GLOBS as INI_DEFAULT_GLOBS,
+    discover_ini_paths,
+    ingest_ini_paths,
+)
+from plugadvpl.ingest_log import (
+    DEFAULT_LOG_GLOBS,
+    discover_log_paths,
+    ingest_log_paths,
+)
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
+from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
+from plugadvpl.parsing.log_diagnose import diagnose_files as log_diagnose_files
 from plugadvpl.parsing.parser import parse_source
 from plugadvpl.query import (
     arch as q_arch,
@@ -77,7 +89,9 @@ from plugadvpl.query import (
     gatilho_query,
     grep_fts,
     impacto_query,
+    ini_audit_query,
     lint_query,
+    log_diagnose_query,
     param_query,
     stale_files,
     sx_status,
@@ -1021,6 +1035,349 @@ def lint(
         rows,
         title="Lint findings",
         next_steps=[f"plugadvpl arch {rows[0]['arquivo']}"] if rows else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ini-audit
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="ini-audit")
+def ini_audit(
+    ctx: typer.Context,
+    paths: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "Caminhos de INI (arquivos ou diretórios). Sem args, auto-discover "
+                f"em ``--root`` via globs: {', '.join(INI_DEFAULT_GLOBS)}."
+            ),
+        ),
+    ] = None,
+    severity: Annotated[
+        str | None,
+        typer.Option("--severity", "-s", help="Filtra severidade (critical|warning|info)."),
+    ] = None,
+    regra: Annotated[
+        str | None,
+        typer.Option("--regra", help="Filtra por regra_id (ex: APP-GENERAL-MAXSTRINGSIZE)."),
+    ] = None,
+    arquivo: Annotated[
+        str | None,
+        typer.Option("--arquivo", help="Filtra por basename do INI."),
+    ] = None,
+    show_ok_with_note: Annotated[
+        bool,
+        typer.Option(
+            "--show-ok-with-note",
+            help="Inclui findings em que o cliente documentou justificativa nos comentários.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-ingere mesmo se hash+mtime baterem (ignora cache)."),
+    ] = False,
+    no_audit: Annotated[
+        bool,
+        typer.Option(
+            "--no-audit",
+            help="Só faz ingest dos INIs (popula ini_files/sections/keys) sem rodar regras.",
+        ),
+    ] = False,
+) -> None:
+    """Auditar arquivos INI Protheus contra 487 regras de boas práticas TDN-oficiais.
+
+    Pipeline ``ingest -> audit`` num único comando: parseia o INI, grava em DB
+    (cache via hash+mtime), aplica regras filtradas por tipo+role, e lista os
+    findings em formato configurável (``--format table|json|md``).
+
+    Exemplos:
+        plugadvpl ini-audit                                       # auto-discover em --root
+        plugadvpl ini-audit /srv/protheus/appserver*.ini          # paths específicos
+        plugadvpl ini-audit -s critical                           # só críticos
+        plugadvpl ini-audit --regra APP-GENERAL-MAXSTRINGSIZE     # 1 regra específica
+        plugadvpl ini-audit --show-ok-with-note                   # inclui justificados
+    """
+    obj = ctx.obj
+    db_path: Path = obj["db"]
+    root: Path = obj["root"]
+
+    # 1. Resolve paths
+    if paths:
+        ini_paths: list[Path] = []
+        for s in paths:
+            p = Path(s).expanduser().resolve()
+            if p.is_dir():
+                ini_paths.extend(discover_ini_paths(p))
+            elif p.is_file():
+                ini_paths.append(p)
+            else:
+                # Pode ser glob não-expandido (shell escapou)
+                expanded = list(Path().glob(s)) or list(root.glob(s))
+                ini_paths.extend(q.resolve() for q in expanded if q.is_file())
+    else:
+        ini_paths = discover_ini_paths(root)
+
+    if not ini_paths:
+        typer.secho(
+            f"Nenhum INI Protheus encontrado em {root} (globs: {', '.join(INI_DEFAULT_GLOBS)}).",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=0)
+
+    # 2. Ingest (write — abre conn full)
+    if not db_path.exists():
+        typer.secho(
+            f"Erro: índice não encontrado em {db_path}. Rode `plugadvpl init` primeiro.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        seed_lookups(conn)  # idempotente; garante 487 regras + 14 roles
+        ing_res = ingest_ini_paths(conn, ini_paths, force=force)
+
+        if not obj["quiet"]:
+            typer.secho(
+                f"Ingest: {ing_res.ingested} novos, {ing_res.skipped} em cache, "
+                f"{len(ing_res.errors)} erros.",
+                err=True,
+            )
+            for path, reason in ing_res.errors:
+                typer.secho(f"  ERROR {path}: {reason}", fg=typer.colors.RED, err=True)
+
+        if no_audit:
+            raise typer.Exit(code=0)
+
+        # 3. Audit
+        if ing_res.file_ids:
+            audit_res = ini_audit_files(conn, ing_res.file_ids)
+            if not obj["quiet"]:
+                sev = audit_res.by_severity
+                typer.secho(
+                    f"Audit: {audit_res.findings_total} findings "
+                    f"(critical={sev.get('critical', 0)}, "
+                    f"warning={sev.get('warning', 0)}, "
+                    f"info={sev.get('info', 0)}).",
+                    err=True,
+                )
+    finally:
+        close_db(conn)
+
+    # 4. Render (RO)
+    rows = _with_ro_db(
+        ctx,
+        lambda c: ini_audit_query(
+            c,
+            arquivo=arquivo,
+            severity=severity,
+            regra_id=regra,
+            show_ok_with_note=show_ok_with_note,
+        ),
+    )
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=[
+            "arquivo", "tipo", "role", "section", "key",
+            "linha", "regra_id", "severidade", "snippet",
+        ],
+        title="Audit INI findings",
+        next_steps=(
+            [f"plugadvpl ini-audit --arquivo {rows[0]['arquivo']} --regra {rows[0]['regra_id']}"]
+            if rows
+            else None
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# log-diagnose
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="log-diagnose")
+def log_diagnose(
+    ctx: typer.Context,
+    paths: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help=(
+                "Caminhos de logs Protheus (arquivos ou diretórios). Sem args, auto-discover "
+                f"em ``--root`` via globs: {', '.join(DEFAULT_LOG_GLOBS)}."
+            ),
+        ),
+    ] = None,
+    severity: Annotated[
+        str | None,
+        typer.Option("--severity", "-s", help="Filtra severidade (critical|warning|info)."),
+    ] = None,
+    category: Annotated[
+        str | None,
+        typer.Option(
+            "--category", "-c",
+            help="Filtra categoria (database|thread_error|rpo|network|connection|service|rest_api|"
+                 "compilation|authentication|shutdown|lifecycle|application).",
+        ),
+    ] = None,
+    rule: Annotated[
+        str | None,
+        typer.Option("--rule", help="Filtra por rule_id (ex: LOG-DB-ORA)."),
+    ] = None,
+    arquivo: Annotated[
+        str | None,
+        typer.Option("--arquivo", help="Filtra por basename do log."),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="Janela temporal relativa ao último timestamp do log "
+                 "(30m, 24h, 7d). Cuidado: é relativo ao log, não ao wall clock.",
+        ),
+    ] = None,
+    max_findings: Annotated[
+        int,
+        typer.Option("--max-findings", help="Limite de findings por arquivo (default 1000)."),
+    ] = 1000,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-ingere mesmo se hash+mtime baterem (ignora cache)."),
+    ] = False,
+    no_diagnose: Annotated[
+        bool,
+        typer.Option(
+            "--no-diagnose",
+            help="Só faz ingest (popula log_files/events) sem rodar match.",
+        ),
+    ] = False,
+) -> None:
+    """Diagnosticar logs Protheus (console.log/error.log/profile.log/compila.log).
+
+    Pipeline em 2 estágios num único comando:
+      Stage 1 — tokenize_events: quebra log em eventos delimitados por 1 dos
+                  4 formatos de header (ISO+thread, THREAD ERROR PT-BR, [DD/MM
+                  HH:MM:SS], [SEVERITY]).
+      Stage 2 — diagnose: aplica catálogo de regras em ordem reversa (mais
+                  recente primeiro), enriquece com correction tip da base de
+                  92+ tips com URL TDN oficial.
+
+    Exemplos:
+        plugadvpl log-diagnose                                    # auto-discover
+        plugadvpl log-diagnose /var/log/protheus/                 # diretório
+        plugadvpl log-diagnose --severity critical --since 24h    # últimas 24h críticos
+        plugadvpl log-diagnose --category database                # só database
+        plugadvpl log-diagnose --rule LOG-DB-ORA                  # uma regra específica
+    """
+    obj = ctx.obj
+    db_path: Path = obj["db"]
+    root: Path = obj["root"]
+
+    # 1. Resolve paths
+    if paths:
+        log_paths: list[Path] = []
+        for s in paths:
+            p = Path(s).expanduser().resolve()
+            if p.is_dir():
+                log_paths.extend(discover_log_paths(p))
+            elif p.is_file():
+                log_paths.append(p)
+            else:
+                expanded = list(Path().glob(s)) or list(root.glob(s))
+                log_paths.extend(q.resolve() for q in expanded if q.is_file())
+    else:
+        log_paths = discover_log_paths(root)
+
+    if not log_paths:
+        typer.secho(
+            f"Nenhum log Protheus encontrado em {root} (globs: {', '.join(DEFAULT_LOG_GLOBS)}).",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=0)
+
+    # 2. Ingest (write — conn full)
+    if not db_path.exists():
+        typer.secho(
+            f"Erro: índice não encontrado em {db_path}. Rode `plugadvpl init` primeiro.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        seed_lookups(conn)  # idempotente; garante regras + tips + categorias seedadas
+        ing_res = ingest_log_paths(conn, log_paths, force=force)
+
+        if not obj["quiet"]:
+            warn_count = len(ing_res.warnings)
+            typer.secho(
+                f"Ingest: {ing_res.ingested} novos, {ing_res.skipped} em cache, "
+                f"{len(ing_res.errors)} erros"
+                + (f", {warn_count} warnings" if warn_count else "")
+                + ".",
+                err=True,
+            )
+            for path, reason in ing_res.errors:
+                typer.secho(f"  ERROR {path}: {reason}", fg=typer.colors.RED, err=True)
+            for path, reason in ing_res.warnings:
+                typer.secho(f"  WARN  {path}: {reason}", fg=typer.colors.YELLOW, err=True)
+
+        if no_diagnose:
+            raise typer.Exit(code=0)
+
+        # 3. Diagnose
+        if ing_res.file_ids:
+            sev_filter = [severity] if severity else None
+            diag_res = log_diagnose_files(
+                conn, ing_res.file_ids,
+                since=since,
+                severity_filter=sev_filter,
+                max_findings=max_findings,
+            )
+            if not obj["quiet"]:
+                sev = diag_res.by_severity
+                typer.secho(
+                    f"Diagnose: {diag_res.findings_total} findings "
+                    f"(critical={sev.get('critical', 0)}, "
+                    f"warning={sev.get('warning', 0)}, "
+                    f"info={sev.get('info', 0)}).",
+                    err=True,
+                )
+    finally:
+        close_db(conn)
+
+    # 4. Render (RO)
+    rows = _with_ro_db(
+        ctx,
+        lambda c: log_diagnose_query(
+            c,
+            arquivo=arquivo,
+            severity=severity,
+            category=category,
+            rule_id=rule,
+        ),
+    )
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=[
+            "arquivo", "log_tipo", "linha", "timestamp", "severidade",
+            "categoria", "rule_id", "message",
+        ],
+        title="Log diagnose findings",
+        next_steps=(
+            [f"plugadvpl log-diagnose --rule {rows[0]['rule_id']} --format json"]
+            if rows
+            else None
+        ),
     )
 
 

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "10"
+SCHEMA_VERSION = "12"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -48,6 +48,41 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "pontos_entrada_padrao.json": (
         "pontos_entrada_padrao",
         ["nome", "descricao", "modulo", "paramixb_count", "retorno_tipo", "link_tdn"],
+    ),
+    # v0.11.0 (migration 011): auditor de INI Protheus.
+    "ini_rules.json": (
+        "ini_rules",
+        [
+            "regra_id", "section_glob", "key_name", "expected",
+            "severidade", "detection_kind", "descricao", "fix_guidance",
+            "applies_to_tipo", "applies_to_role", "status",
+        ],
+    ),
+    "ini_roles.json": (
+        "ini_roles",
+        [
+            "role_id", "tipo_ini", "descricao", "detection_kind",
+            "detection_pattern", "prioridade",
+        ],
+    ),
+    # v0.12.0 (migration 012): monitor de log Protheus.
+    "log_rules.json": (
+        "log_rules",
+        [
+            "rule_id", "category", "severidade", "pattern", "message_template",
+            "case_insensitive", "multiline", "descricao", "priority", "status",
+        ],
+    ),
+    "log_tips.json": (
+        "log_tips",
+        [
+            "tip_id", "category", "pattern", "tip_text", "tdn_url",
+            "case_insensitive", "priority",
+        ],
+    ),
+    "log_categories.json": (
+        "log_categories",
+        ["category_id", "descricao", "severity_default", "fallback_tip", "tdn_url"],
     ),
 }
 
