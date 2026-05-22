@@ -28,6 +28,38 @@ e TDN TOTVS).
 
 ### Added
 
+- **`log-diagnose` — Monitor de log Protheus (U9)**: novo comando que ingere
+  e diagnostica arquivos de log Protheus (console.log, error.log, profile.log,
+  compila.log) contra **19 alert rules** + **93 correction tips** vindas da
+  KB TDN oficial. Pipeline em 2 estágios: Stage 1 tokeniza eventos por 1 dos
+  4 formatos de header reconhecidos (ISO+thread / THREAD ERROR PT-BR /
+  `[DD/MM HH:MM:SS]` / `[SEVERITY]`); Stage 2 aplica rules em ordem reversa
+  (eventos MAIS RECENTES primeiro) com short-circuit (1 finding por evento)
+  e enriquece com correction tip cruzada de `log_tips`. Janela `--since` é
+  relativa ao último timestamp do log (não wall clock). Categorias: database,
+  thread_error, rpo, network, connection, service, rest_api, compilation,
+  authentication, shutdown, lifecycle, application. Migration `012_log_diagnose.sql`
+  adiciona 6 tabelas (`log_files`, `log_events`, `log_findings`, `log_rules`,
+  `log_tips`, `log_categories`). Catálogos declarativos em
+  `lookups/log_rules.json` (19 entries), `lookups/log_tips.json` (93 tips com
+  URL TDN), `lookups/log_categories.json` (12 fallback tips). Enrichment:
+  captura `ora_code`, `username`, `host` quando aparecem em Thread finished /
+  Error ending thread. Skill `/plugadvpl:log-diagnose` + agent
+  `advpl-log-investigator` + 66 testes unit (parser + ingest + diagnose).
+  Schema bump: 11 → 12.
+- **`ini-audit` — Auditor de INI Protheus (U8)**: novo comando que ingere
+  e audita arquivos `.ini` do ambiente Protheus (appserver, dbaccess,
+  smartclient, tss, broker) contra **487 regras TDN-oficiais** filtradas por
+  `tipo` + `role`. Pipeline `parse → ingest → audit` num único comando, cache
+  via hash+mtime. Catálogo declarativo em `lookups/ini_rules.json` + 14 roles
+  em `lookups/ini_roles.json`. Migration `011_ini_audit.sql` adiciona 6 tabelas
+  (`ini_files`, `ini_sections`, `ini_keys`, `ini_audit_findings`, `ini_rules`,
+  `ini_roles`). Detection kinds suportados: `value_eq` (com equivalência booleana),
+  `value_in`, `value_neq`, `range_check`, `key_present`, `key_missing`, `regex`.
+  Status `ok_with_note` quando o cliente documenta justificativa em comentários
+  (`; intencional: ...`, `; cliente exige ...`). Skill `/plugadvpl:ini-audit` +
+  agent `advpl-ini-auditor` + 69 testes unit (parser + audit engine).
+  Schema bump: 10 → 11.
 - **`advpl-dicionario-sx/reference.md` §15 — Cookbook SQL pra criar campo customizado**:
   regra de ouro (clonar `X3_USADO`/`X3_RESERV` via `INSERT...SELECT`, nunca
   inventar bitmap), workflow 3 fases (`ALTER TABLE` + `INSERT` + invalidar

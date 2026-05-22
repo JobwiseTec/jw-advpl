@@ -1,0 +1,86 @@
+[
+  {
+    "category_id": "database",
+    "descricao": "Erros TopConnect, Oracle, SQL Server, CTree, ADS, DB2.",
+    "severity_default": "critical",
+    "fallback_tip": "Verificar conexao com banco, logs do TopConnect e status do servico SQL.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TopConnect"
+  },
+  {
+    "category_id": "thread_error",
+    "descricao": "Falhas em threads ADVPL (THREAD ERROR + sub-padroes: type mismatch, array bounds, variable does not exist, stack overflow, lock required).",
+    "severity_default": "critical",
+    "fallback_tip": "Analisar o error.log completo (info, AppServer, call stack, variaveis, arquivos).",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Thread+Error"
+  },
+  {
+    "category_id": "rpo",
+    "descricao": "Repositorio de Objetos Protheus: CheckAuth, EMPTY RPO, function not found, invalid repository, rebuild necessario.",
+    "severity_default": "critical",
+    "fallback_tip": "Verificar integridade do RPO, compatibilidade de versao e executar Rebuild se necessario.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/RPO"
+  },
+  {
+    "category_id": "network",
+    "descricao": "Conectividade basica + SSL/TLS: SSL timeout, TLS init, bind 10048, HTTP fail to start, DNS resolution.",
+    "severity_default": "warning",
+    "fallback_tip": "Verificar conectividade, certificados SSL e firewall.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Network"
+  },
+  {
+    "category_id": "connection",
+    "descricao": "Sessoes, AD, timeouts, threads: ADUSERVALID, inactivity timeout, error ending thread, too many users, pthread_create, RPCERROR.",
+    "severity_default": "warning",
+    "fallback_tip": "Verificar timeout de sessao e status das conexoes no Monitor.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Monitor"
+  },
+  {
+    "category_id": "service",
+    "descricao": "Estado do servico HTTP/AppServer: HTTP fail to start, server shutdown, server already running.",
+    "severity_default": "critical",
+    "fallback_tip": "Verificar configuracao de portas e servicos no appserver.ini.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/AppServer"
+  },
+  {
+    "category_id": "rest_api",
+    "descricao": "Endpoints REST do Protheus: Error 500, fail to write response, REST 401/403.",
+    "severity_default": "critical",
+    "fallback_tip": "Verificar configuracao REST e logs detalhados do erro.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/REST"
+  },
+  {
+    "category_id": "compilation",
+    "descricao": "Erros de compilacao ADVPL: PRW(N) Cxxx Syntax Error, compile error, include not found.",
+    "severity_default": "critical",
+    "fallback_tip": "Verificar fonte .PRW na linha indicada e recompilar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Compilacao+ADVPL"
+  },
+  {
+    "category_id": "authentication",
+    "descricao": "Logon AD/LDAP: LogonUser code 1326/1327/1331/1909.",
+    "severity_default": "warning",
+    "fallback_tip": "Verificar credenciais e conectividade com servidor de autenticacao.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Active+Directory"
+  },
+  {
+    "category_id": "shutdown",
+    "descricao": "Encerramento do servico: Closing connections... Retry N (processos travados).",
+    "severity_default": "warning",
+    "fallback_tip": "Verificar processos travados que impedem encerramento limpo.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Shutdown"
+  },
+  {
+    "category_id": "lifecycle",
+    "descricao": "Eventos de ciclo de vida: APPSERVER NOT SHUTDOWN PROPERLY (critical), Server in shutdown, Server is running.",
+    "severity_default": "info",
+    "fallback_tip": "Evento de ciclo de vida. Verificar logs adjacentes para contexto.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Lifecycle"
+  },
+  {
+    "category_id": "application",
+    "descricao": "Warnings ADVPL sem THREAD ERROR: [WARNING] generico, alias in use, variable does not exist, work area full, locks exceeded, invalid handle/property.",
+    "severity_default": "warning",
+    "fallback_tip": "Verificar error.log para detalhes e analise do call stack.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Warning"
+  }
+]

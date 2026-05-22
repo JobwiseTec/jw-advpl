@@ -1,0 +1,839 @@
+[
+  {
+    "tip_id": "LOGTIP-DATABASE-001",
+    "category": "database",
+    "pattern": "TOPCONN.*TC_Blob_Length",
+    "tip_text": "Verificar campo Memo/BLOB no banco. Pode estar corrompido ou excedendo limite. Confirmar compatibilidade TopConnect x banco de dados.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/ERROR+-+TOPCONN+-+TC_Blob_Length+error",
+    "case_insensitive": 1,
+    "priority": 10
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-002",
+    "category": "database",
+    "pattern": "TOO_MANY_USERS|No licenses available",
+    "tip_text": "Licencas do License Server esgotadas. Cada conexao do AppServer/REST/CMP consome um slot. Acoes: (1) aumentar LicenseLimit no appserver_license.ini do License Server; (2) liberar sessoes fantasma via Monitor do AppServer; (3) ajustar timeout de sessao (INACTIVETIMEOUT) para reciclar slots ociosos.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Too+Many+users",
+    "case_insensitive": 1,
+    "priority": 11
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-003",
+    "category": "database",
+    "pattern": "TOPCONN.*NO CONNECTION|TC_FilterEx.*NO CONNECTION",
+    "tip_text": "Conexao com banco perdida. Verificar: rede, servico do banco ativo, timeout de conexao no appserver.ini. Usar TCIsConnected() antes de operar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TC_FilterEx+-+NO+CONNECTION",
+    "case_insensitive": 1,
+    "priority": 12
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-004",
+    "category": "database",
+    "pattern": "TOPCONN.*FILE_IN_USE|Create error.*-15",
+    "tip_text": "Tabela em uso por outro processo. Verificar transacoes pendentes e sessoes ativas no banco (sp_who2 no SQL Server).",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TOPCONN+-+Create+error+-15++FILE_IN_USE",
+    "case_insensitive": 1,
+    "priority": 13
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-005",
+    "category": "database",
+    "pattern": "TOPCONN.*COMMAND_FAILED|Create error.*-19",
+    "tip_text": "Comando SQL falhou. Verificar: sintaxe SQL, permissoes do usuario de conexao, se o objeto ja existe no banco.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TOPCONN+-+Create+error+-19++COMMAND_FAILED",
+    "case_insensitive": 1,
+    "priority": 14
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-006",
+    "category": "database",
+    "pattern": "TOPCONN.*Insert.*-27|Cannot Insert Duplicate",
+    "tip_text": "Violacao de constraint (chave duplicada ou NOT NULL). Verificar unicidade da chave e campos obrigatorios antes da gravacao.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TopConnect+error+Insert+-27",
+    "case_insensitive": 1,
+    "priority": 15
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-007",
+    "category": "database",
+    "pattern": "TOPCONN.*field value size.*not 8.*SetField",
+    "tip_text": "Campo Date recebendo valor com tamanho incorreto. Usar DToS(dData) para converter para formato 'YYYYMMDD' antes do SetField.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063175",
+    "case_insensitive": 1,
+    "priority": 16
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-008",
+    "category": "database",
+    "pattern": "Query greater than 15980",
+    "tip_text": "Query SQL excede 15980 bytes. Quebrar em multiplas queries ou usar tabela temporaria para a lista de valores.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Query+greater+than+15980+bytes",
+    "case_insensitive": 1,
+    "priority": 17
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-009",
+    "category": "database",
+    "pattern": "Too many fields.*255",
+    "tip_text": "Query com mais de 255 campos. Selecionar apenas campos necessarios ao inves de SELECT *.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Too+many+fields+in+query+limit+is+255",
+    "case_insensitive": 1,
+    "priority": 18
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-010",
+    "category": "database",
+    "pattern": "ORA-",
+    "tip_text": "Erro Oracle detectado. Verificar o codigo ORA-XXXXX na documentacao Oracle. Causas comuns: lock de registro, tablespace cheio, sessoes excedidas.",
+    "tdn_url": "https://docs.oracle.com/error-help/db/",
+    "case_insensitive": 1,
+    "priority": 19
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-011",
+    "category": "database",
+    "pattern": "TC_ALTER FAILED.*INVALID.*CORRUPTED",
+    "tip_text": "Tabela com estrutura corrompida. Fazer backup, verificar integridade com ferramentas do banco e recriar a tabela via SX3 se necessario.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TC_ALTER+FAILED+on+file...+Table+DATA+or+STRUCTURE+should+be+INVALID+or+CORRUPTED",
+    "case_insensitive": 1,
+    "priority": 20
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-001",
+    "category": "thread_error",
+    "pattern": "type mismatch",
+    "tip_text": "Thread Error por type mismatch (tipos incompativeis). Verificar ValType() das variaveis na linha do .PRW. Causas: aritmetica com string, comparacao entre tipos diferentes, retorno NIL onde se esperava outro tipo. Usar Val(), Str(), CToD().",
+    "tdn_url": "https://tdn.totvs.com/display/tec/type+mismatch+on+XXXX",
+    "case_insensitive": 1,
+    "priority": 21
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-002",
+    "category": "thread_error",
+    "pattern": "Array.*out of bounds|array.*index",
+    "tip_text": "Thread Error por array out of bounds. Validar com Len(aArray) antes de acessar. Verificar se o array foi inicializado e se o indice nao excede o tamanho.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Array+index+out+of+bounds",
+    "case_insensitive": 1,
+    "priority": 22
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-003",
+    "category": "thread_error",
+    "pattern": "Variable does not exist",
+    "tip_text": "Thread Error por variavel inexistente. Declarar com Local/Private/Public. Verificar escopo e ortografia.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Variable+does+not+exist",
+    "case_insensitive": 1,
+    "priority": 23
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-004",
+    "category": "thread_error",
+    "pattern": "Alias already in use",
+    "tip_text": "Thread Error por alias ja em uso. Fechar work area antes de reabrir: If Select('ALIAS') > 0; ALIAS->(DBCloseArea()); EndIf antes do DBUseArea().",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Alias+already+in+use",
+    "case_insensitive": 1,
+    "priority": 24
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-005",
+    "category": "thread_error",
+    "pattern": "Alias does not exist",
+    "tip_text": "Thread Error por alias inexistente. A tabela pode ter sido fechada ou nao foi aberta. Verificar com Select('ALIAS') > 0 antes de acessar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Alias+does+not+exist",
+    "case_insensitive": 1,
+    "priority": 25
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-006",
+    "category": "thread_error",
+    "pattern": "invalid field name",
+    "tip_text": "Thread Error por campo inexistente na tabela. Verificar a estrutura SX3. Pode ser campo removido em atualizacao ou alias trocado.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/invalid+field+name+XXX-%3EYYYY",
+    "case_insensitive": 1,
+    "priority": 26
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-007",
+    "category": "thread_error",
+    "pattern": "Update error.*lock required",
+    "tip_text": "Thread Error por gravacao sem lock. Sempre usar RLock() antes de REPLACE/FieldPut() e DBUnlock() apos.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063162",
+    "case_insensitive": 1,
+    "priority": 27
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-008",
+    "category": "thread_error",
+    "pattern": "Data width error",
+    "tip_text": "Thread Error por valor maior que o tamanho do campo. Usar SubStr() ou PadR() para limitar antes de gravar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Data+width+error+-+Field+XXX++Value+YYY",
+    "case_insensitive": 1,
+    "priority": 28
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-009",
+    "category": "thread_error",
+    "pattern": "Memory.*Allocation|memory full",
+    "tip_text": "Thread Error por falta de memoria. Liberar objetos com FreeObj(), reduzir arrays grandes, aumentar RAM/swap.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063142",
+    "case_insensitive": 1,
+    "priority": 29
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-010",
+    "category": "thread_error",
+    "pattern": "String size overflow",
+    "tip_text": "Thread Error por string excedendo 64KB. Usar arquivo temporario (FCreate + FWrite) ao inves de concatenar em string.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/String+size+overflow",
+    "case_insensitive": 1,
+    "priority": 30
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-011",
+    "category": "thread_error",
+    "pattern": "Division by zero|divisao por zero",
+    "tip_text": "Thread Error por divisao por zero. Validar o divisor antes: If nDivisor != 0.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Mensagens+de+erro+AdvPL",
+    "case_insensitive": 1,
+    "priority": 31
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-012",
+    "category": "thread_error",
+    "pattern": "invalid typecast",
+    "tip_text": "Thread Error por conversao invalida. Verificar tipos antes: Val() em string nao numerica, CToD() com formato invalido.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/invalid+typecast",
+    "case_insensitive": 1,
+    "priority": 32
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-013",
+    "category": "thread_error",
+    "pattern": "TOPCONN|NO CONNECTION",
+    "tip_text": "Thread Error relacionado a perda de conexao com o banco. Verificar rede, servico do banco ativo e timeout no appserver.ini.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TC_FilterEx+-+NO+CONNECTION",
+    "case_insensitive": 1,
+    "priority": 33
+  },
+  {
+    "tip_id": "LOGTIP-THREAD_ERROR-014",
+    "category": "thread_error",
+    "pattern": "Thread Error",
+    "tip_text": "Erro em thread. Analisar error.log completo (info, AppServer, call stack, variaveis, arquivos abertos). Identificar a linha e funcao no .PRW.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Mensagens+de+erro+AdvPL",
+    "case_insensitive": 1,
+    "priority": 34
+  },
+  {
+    "tip_id": "LOGTIP-RPO-001",
+    "category": "rpo",
+    "pattern": "CheckAuth ERROR|Falha autenticacao RPO",
+    "tip_text": "Falha autenticacao RPO. Verificar se nao esta corrompido, se a versao eh compativel com o AppServer e se o ambiente esta configurado corretamente.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Repositorio+com+problemas+de+compilacao",
+    "case_insensitive": 1,
+    "priority": 35
+  },
+  {
+    "tip_id": "LOGTIP-RPO-002",
+    "category": "rpo",
+    "pattern": "EMPTY RPO|RPO vazio",
+    "tip_text": "RPO vazio. Verificar caminho do arquivo, se nao esta corrompido e se o appserver.ini aponta para o RPO correto.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Function+has+compilation+problems.+Rebuild+RPO",
+    "case_insensitive": 1,
+    "priority": 36
+  },
+  {
+    "tip_id": "LOGTIP-RPO-003",
+    "category": "rpo",
+    "pattern": "compilation problems.*Rebuild",
+    "tip_text": "RPO com problemas de compilacao. Executar Rebuild RPO pelo TDS. Verificar fragmentacao excessiva.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Function+has+compilation+problems.+Rebuild+RPO",
+    "case_insensitive": 1,
+    "priority": 37
+  },
+  {
+    "tip_id": "LOGTIP-RPO-004",
+    "category": "rpo",
+    "pattern": "cannot find function.*AppMap",
+    "tip_text": "Funcao nao encontrada no AppMap. Verificar se esta compilada no RPO correto.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/InterFunctionCall%3A+cannot+find+function+in+AppMap",
+    "case_insensitive": 1,
+    "priority": 38
+  },
+  {
+    "tip_id": "LOGTIP-RPO-005",
+    "category": "rpo",
+    "pattern": "Invalid function type.*RPO",
+    "tip_text": "Tipo de funcao invalido no RPO. Verificar compatibilidade de versao RPO x AppServer. Recompilar com a versao correta do compilador.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Invalid+function+type.+Please+check+RPO+file",
+    "case_insensitive": 1,
+    "priority": 39
+  },
+  {
+    "tip_id": "LOGTIP-RPO-006",
+    "category": "rpo",
+    "pattern": "Invalid repository.*incomplete compil",
+    "tip_text": "RPO invalido por compilacao incompleta. Restaurar backup ou Rebuild RPO do zero.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Invalid+repository+due+to+an+incomplete+compilaton",
+    "case_insensitive": 1,
+    "priority": 40
+  },
+  {
+    "tip_id": "LOGTIP-NETWORK-001",
+    "category": "network",
+    "pattern": "SSL.*timeout|SSL.*fail",
+    "tip_text": "Falha de conexao SSL. Verificar: certificado valido/expirado, protocolo TLS, firewall/proxy e conectividade com o host remoto.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=223932805",
+    "case_insensitive": 1,
+    "priority": 41
+  },
+  {
+    "tip_id": "LOGTIP-NETWORK-002",
+    "category": "network",
+    "pattern": "SSL.*Unable to receive.*zero return",
+    "tip_text": "Conexao SSL encerrada pelo lado remoto. Verificar certificado, versao TLS e interferencia de firewall.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/%5BERROR%5D%5BSSL%5D+Unable+to+receive+data.+Error+zero+return",
+    "case_insensitive": 1,
+    "priority": 42
+  },
+  {
+    "tip_id": "LOGTIP-NETWORK-003",
+    "category": "network",
+    "pattern": "TLS Initialization Error",
+    "tip_text": "Falha ao inicializar TLS. Verificar .pem/.crt/.key e secao [HTTPS] no appserver.ini.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/TLS+Initialization+Error",
+    "case_insensitive": 1,
+    "priority": 43
+  },
+  {
+    "tip_id": "LOGTIP-NETWORK-004",
+    "category": "network",
+    "pattern": "bind error 10048",
+    "tip_text": "Porta TCP ja em uso. Verificar com netstat/ss. Encerrar processos duplicados ou alterar porta no appserver.ini.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/bind+error+10048",
+    "case_insensitive": 1,
+    "priority": 44
+  },
+  {
+    "tip_id": "LOGTIP-CONNECTION-001",
+    "category": "connection",
+    "pattern": "inatividade|inactivity",
+    "tip_text": "Desconexao por inatividade. Se frequente, ajustar INACTIVETIMEOUT no appserver.ini. Pode indicar sessoes ociosas.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/INACTIVETIMEOUT",
+    "case_insensitive": 1,
+    "priority": 45
+  },
+  {
+    "tip_id": "LOGTIP-CONNECTION-002",
+    "category": "connection",
+    "pattern": "Error ending thread",
+    "tip_text": "Erro ao encerrar thread. Pode indicar recursos nao liberados (tabelas abertas, objetos nao destruidos). Verificar o fluxo de finalizacao.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Application+Server+-+Arquivo+de+configuracao",
+    "case_insensitive": 1,
+    "priority": 46
+  },
+  {
+    "tip_id": "LOGTIP-CONNECTION-003",
+    "category": "connection",
+    "pattern": "Too Many users",
+    "tip_text": "Limite de licencas atingido. Encerrar sessoes fantasma pelo Monitor. Verificar jobs que nao liberam conexao.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Too+Many+users",
+    "case_insensitive": 1,
+    "priority": 47
+  },
+  {
+    "tip_id": "LOGTIP-CONNECTION-004",
+    "category": "connection",
+    "pattern": "pthread_create.*12",
+    "tip_text": "Limite de threads do Linux atingido. Aumentar ulimit -u e ulimit -s. Monitorar numero de conexoes simultaneas.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/erro+pthread_create++12",
+    "case_insensitive": 1,
+    "priority": 48
+  },
+  {
+    "tip_id": "LOGTIP-CONNECTION-005",
+    "category": "connection",
+    "pattern": "RPCERROR.*Process termined by administrator|Process termined",
+    "tip_text": "Processo encerrado por administrador via Monitor ou KillUser automatico. Verificar Monitor para identificar a origem.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/RPCERROR++Process+termined+by+administrator",
+    "case_insensitive": 1,
+    "priority": 49
+  },
+  {
+    "tip_id": "LOGTIP-SERVICE-001",
+    "category": "service",
+    "pattern": "HTTP Server.*fail",
+    "tip_text": "HTTP Server falhou ao iniciar. Verificar porta ja em uso, secao [HTTP] no INI e permissoes.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/HTTP",
+    "case_insensitive": 1,
+    "priority": 50
+  },
+  {
+    "tip_id": "LOGTIP-REST_API-001",
+    "category": "rest_api",
+    "pattern": "Error 500|Fail to write response",
+    "tip_text": "Erro 500 na REST API. Verificar logs detalhados do erro, parametros da requisicao e se o servico REST esta configurado corretamente.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/REST+no+Protheus",
+    "case_insensitive": 1,
+    "priority": 51
+  },
+  {
+    "tip_id": "LOGTIP-COMPILATION-001",
+    "category": "compilation",
+    "pattern": "Syntax Error",
+    "tip_text": "Erro de sintaxe na compilacao. Verificar .PRW na linha indicada. Causas comuns: parenteses/aspas nao fechados, palavra-chave mal escrita.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Mensagens+de+erro+AdvPL",
+    "case_insensitive": 1,
+    "priority": 52
+  },
+  {
+    "tip_id": "LOGTIP-AUTHENTICATION-001",
+    "category": "authentication",
+    "pattern": "AD.*Auth|ADUSERVALID|LogonUser",
+    "tip_text": "Erro de autenticacao AD/LDAP. Verificar credenciais do dominio, conectividade com o servidor AD e configuracao LDAP no appserver.ini.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/ADUSERVALID",
+    "case_insensitive": 1,
+    "priority": 53
+  },
+  {
+    "tip_id": "LOGTIP-SHUTDOWN-001",
+    "category": "shutdown",
+    "pattern": "Closing connections.*Retry",
+    "tip_text": "Shutdown lento com retries. Conexoes nao liberadas. Verificar processos/jobs travados.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Application+Server+-+Arquivo+de+configuracao",
+    "case_insensitive": 1,
+    "priority": 54
+  },
+  {
+    "tip_id": "LOGTIP-LIFECYCLE-001",
+    "category": "lifecycle",
+    "pattern": "NOT SHUTDOWN PROPERLY|crash|kill",
+    "tip_text": "AppServer nao encerrado corretamente (crash ou kill forcado). Verificar logs anteriores. Pode causar corrupcao em tabelas CTree/DBF.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Application+Server",
+    "case_insensitive": 1,
+    "priority": 55
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-001",
+    "category": "application",
+    "pattern": "Alias already in use",
+    "tip_text": "Alias ja em uso. Fechar a work area antes de reabrir: If Select('ALIAS') > 0; ALIAS->(DBCloseArea()); EndIf.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Alias+already+in+use",
+    "case_insensitive": 1,
+    "priority": 56
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-002",
+    "category": "application",
+    "pattern": "Alias does not exist",
+    "tip_text": "Alias nao existe. Sempre verificar com Select('ALIAS') > 0 antes de acessar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Alias+does+not+exist",
+    "case_insensitive": 1,
+    "priority": 57
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-003",
+    "category": "application",
+    "pattern": "Array.*out of bounds|Array.*index",
+    "tip_text": "Acesso a posicao inexistente do array. Validar com Len(aArray) antes.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Array+index+out+of+bounds",
+    "case_insensitive": 1,
+    "priority": 58
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-004",
+    "category": "application",
+    "pattern": "Variable does not exist",
+    "tip_text": "Variavel nao declarada. Declarar com Local/Private/Public.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Variable+does+not+exist",
+    "case_insensitive": 1,
+    "priority": 59
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-005",
+    "category": "application",
+    "pattern": "type mismatch",
+    "tip_text": "Tipos incompativeis. Verificar ValType(). Usar Val(), Str(), CToD(), DToS() para converter.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/type+mismatch+on+XXXX",
+    "case_insensitive": 1,
+    "priority": 60
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-006",
+    "category": "application",
+    "pattern": "Memory.*Allocation.*Failure|memory full",
+    "tip_text": "Memoria esgotada. Liberar com FreeObj(). Substituir arrays grandes por queries. Aumentar RAM/swap.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063142",
+    "case_insensitive": 1,
+    "priority": 61
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-007",
+    "category": "application",
+    "pattern": "String size overflow",
+    "tip_text": "String excedeu 64KB. Usar arquivo temporario (FCreate + FWrite).",
+    "tdn_url": "https://tdn.totvs.com/display/tec/String+size+overflow",
+    "case_insensitive": 1,
+    "priority": 62
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-008",
+    "category": "application",
+    "pattern": "Update error.*lock required",
+    "tip_text": "Tentativa de gravar sem lock. Usar RLock() antes de REPLACE/FieldPut() e DBUnlock() apos.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063162",
+    "case_insensitive": 1,
+    "priority": 63
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-009",
+    "category": "application",
+    "pattern": "Data width error",
+    "tip_text": "Valor maior que o tamanho do campo. Usar SubStr() ou PadR() para limitar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Data+width+error+-+Field+XXX++Value+YYY",
+    "case_insensitive": 1,
+    "priority": 64
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-010",
+    "category": "application",
+    "pattern": "Filter greater than 2000",
+    "tip_text": "Filtro excede 2000 bytes. Dividir em multiplas passagens ou tabela temporaria. Converter para SQL quando possivel.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Filter+greater+than+2000+bytes",
+    "case_insensitive": 1,
+    "priority": 65
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-011",
+    "category": "application",
+    "pattern": "Number of locks exceeded",
+    "tip_text": "Limite de 10000 locks atingido. Garantir DBUnlock() apos cada RLock() em loops.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063143",
+    "case_insensitive": 1,
+    "priority": 66
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-012",
+    "category": "database",
+    "pattern": "Ctree error 518.*regid",
+    "tip_text": "Tabela CTree ja registrada em outra sessao. Fechar conexoes apontando para o mesmo arquivo CTree antes de reabrir.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+error+518+-+%27regid%27+is+already+registered",
+    "case_insensitive": 1,
+    "priority": 67
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-013",
+    "category": "database",
+    "pattern": "Ctree Error 127|Could not send",
+    "tip_text": "CTree falhou comunicacao com servidor de arquivos. Verificar rede entre AppServer e RootPath (compartilhamento, latencia, firewall) e permissao de IO.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063120",
+    "case_insensitive": 1,
+    "priority": 68
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-014",
+    "category": "database",
+    "pattern": "Ctree Error 160|Multi-user interference",
+    "tip_text": "Interferencia multi-usuario CTree. Outro processo modificou o arquivo sem flush. Considerar BuildKillUsers=1 no [General].",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+Error+160+-+Multi-user+interference",
+    "case_insensitive": 1,
+    "priority": 69
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-015",
+    "category": "database",
+    "pattern": "Ctree Error 468|Incremental Index",
+    "tip_text": "Falha na criacao de indice incremental CTree. Executar Rebuild de indice via SX2/AppServer.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+Error+468+-+Index+Create+-+Incremental+Index",
+    "case_insensitive": 1,
+    "priority": 70
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-016",
+    "category": "database",
+    "pattern": "Ctree Error 485|Error creating",
+    "tip_text": "CTree nao conseguiu criar arquivo. Verificar permissoes de escrita no RootPath, espaco em disco e caminho de rede.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063125",
+    "case_insensitive": 1,
+    "priority": 71
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-017",
+    "category": "database",
+    "pattern": "Ctree Error 598|Could not evaluate",
+    "tip_text": "CTree nao avaliou expressao de indice. Indice corrompido. Rebuild de indices.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+Error+598+-+IO+Error+0+-+Could+not+evaluate",
+    "case_insensitive": 1,
+    "priority": 72
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-018",
+    "category": "database",
+    "pattern": "CTree error 13.*IsamFIL.*Unknown file type|Open - Ctree Error 13",
+    "tip_text": "Arquivo CTree com tipo desconhecido. Verificar se .dtc/.cdx nao esta corrompido ou se mudou a versao do RPO sem regenerar dicionario.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/CTree+error+13+IsamFIL+6+-+Unknown+file+type",
+    "case_insensitive": 1,
+    "priority": 73
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-019",
+    "category": "database",
+    "pattern": "CTree error 17|Could not create file",
+    "tip_text": "CTree nao conseguiu criar o arquivo. Permissoes de escrita ou disco cheio.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/CTree+error+17+IsamFIL+0+-+Could+not+create+file",
+    "case_insensitive": 1,
+    "priority": 74
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-020",
+    "category": "database",
+    "pattern": "Ctree error.*Could not initialize driver DBFCDX|Could not initialize driver",
+    "tip_text": "Driver CTree/DBFCDX nao inicializou. Verificar LocalFiles=CTREE no environment, RootPath valido e arquivos CTree presentes.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+error+Could+not+initialize+driver+DBFCDX",
+    "case_insensitive": 1,
+    "priority": 75
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-021",
+    "category": "database",
+    "pattern": "Ctree Error.*DLL must be version",
+    "tip_text": "Versao da DLL do CTree incompativel com AppServer. Atualizar a DLL.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063129",
+    "case_insensitive": 1,
+    "priority": 76
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-022",
+    "category": "database",
+    "pattern": "Internal index name could not be updated",
+    "tip_text": "Nome interno do indice CTree dessincronizado. Rebuild de indices.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+Error+-+Open+-+Internal+index+name+could+not+be+updated",
+    "case_insensitive": 1,
+    "priority": 77
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-023",
+    "category": "database",
+    "pattern": "Check Internal Struct of File",
+    "tip_text": "Estrutura interna do CTree inconsistente. Restaurar backup ou recriar via SX3/SIX + ReindexAll.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+error+-+Open+-+It+was+not+possible+to+Check+Internal+Struct+of+File",
+    "case_insensitive": 1,
+    "priority": 78
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-024",
+    "category": "database",
+    "pattern": "Ctree.*Index Error.*field.*offset",
+    "tip_text": "Indice CTree com offset de campo errado. SX3 divergente do dicionario. Sincronizar dicionario e Rebuild.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Ctree+-+Index+Error+-+problem+with+field%27s+offsets",
+    "case_insensitive": 1,
+    "priority": 79
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-025",
+    "category": "database",
+    "pattern": "ADS Error 7013",
+    "tip_text": "ADS falhou na operacao Open. Arquivo corrompido ou em uso exclusivo. Verificar lock em outra sessao e integridade do .adt/.adi.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063107",
+    "case_insensitive": 1,
+    "priority": 80
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-026",
+    "category": "database",
+    "pattern": "ADS Error 7016|Corrupt table",
+    "tip_text": "Tabela ADS corrompida. Restaurar backup ou usar ARC (Advantage Repair Console).",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063108",
+    "case_insensitive": 1,
+    "priority": 81
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-027",
+    "category": "database",
+    "pattern": "ADS Error 7041|File not found",
+    "tip_text": "Arquivo ADS nao encontrado. Verificar caminho no RootPath e se ADS Server tem acesso.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063110",
+    "case_insensitive": 1,
+    "priority": 82
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-028",
+    "category": "database",
+    "pattern": "ADS Error.*7022|Maximum index levels",
+    "tip_text": "Indice ADS excedeu profundidade maxima. Reorganizar/recriar indice.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/ADS+Error+%287022%29+-+Maximum+index+levels+exceeded",
+    "case_insensitive": 1,
+    "priority": 83
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-029",
+    "category": "database",
+    "pattern": "ADS.*Replace Error.*5080|month specified",
+    "tip_text": "ADS recebeu valor de data invalido em REPLACE. Validar mes (1-12). Usar DToS()/CToD().",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063111",
+    "case_insensitive": 1,
+    "priority": 84
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-030",
+    "category": "database",
+    "pattern": "Warning ADS.*Index create error",
+    "tip_text": "ADS falhou ao criar indice. Verificar permissao, espaco e nome do indice.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Warning+ADS+-++Index+create+error",
+    "case_insensitive": 1,
+    "priority": 85
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-031",
+    "category": "database",
+    "pattern": "DBCreateIndex.*Create index file error",
+    "tip_text": "DBCreateIndex falhou. Verificar permissao na pasta, sintaxe da expressao do indice e se a tabela esta aberta.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063132",
+    "case_insensitive": 1,
+    "priority": 86
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-032",
+    "category": "database",
+    "pattern": "DBCreate.*Invalid numeric field format",
+    "tip_text": "DBCreate com tipo numerico invalido. Verificar definicao do campo no SX3.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/DBCreate+-+Invalid+numeric+field+format",
+    "case_insensitive": 1,
+    "priority": 87
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-033",
+    "category": "database",
+    "pattern": "DBRUnlock cannot be called in a transaction",
+    "tip_text": "DBRUnlock chamado dentro de transacao. Mover unlock para FORA do Begin/EndTransaction ou usar TCCommit/TCRollback antes.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/DBRUnlock+cannot+be+called+in+a+transaction",
+    "case_insensitive": 1,
+    "priority": 88
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-034",
+    "category": "database",
+    "pattern": "DBSetOrder.*Index not found",
+    "tip_text": "Ordem de indice solicitada nao existe. Verificar SIX para o numero da ordem.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/DBSetOrder+-+Index+not+found+TTT+Order+Number+N",
+    "case_insensitive": 1,
+    "priority": 89
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-035",
+    "category": "database",
+    "pattern": "DBUseArea.*DB driver not initialized",
+    "tip_text": "Driver de banco nao inicializado antes do DBUseArea. Garantir DBSetDriver() ou RDDSetDefault() configurado e LocalFiles correto.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/DBUseArea+-+DB+driver+not+initialized",
+    "case_insensitive": 1,
+    "priority": 90
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-036",
+    "category": "database",
+    "pattern": "Open index error",
+    "tip_text": "Falha ao abrir indice. Arquivo .cdx/.ntx pode estar corrompido. Rebuild.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Open+index+error",
+    "case_insensitive": 1,
+    "priority": 91
+  },
+  {
+    "tip_id": "LOGTIP-RPO-007",
+    "category": "rpo",
+    "pattern": "Environment Config Error.*CTREEROOTPATH",
+    "tip_text": "CTREEROOTPATH ausente ou invalido no environment. Configurar no appserver.ini apontando para o diretorio de arquivos CTree.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Environment+Config+Error+-+CTREEROOTPATH+requires",
+    "case_insensitive": 1,
+    "priority": 92
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-012",
+    "category": "application",
+    "pattern": "Protheus Work area table full|Max=\\s*512",
+    "tip_text": "Limite de 512 work areas abertas excedido. Fechar com DBCloseArea() apos uso. Revisar loops que abrem sem fechar.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Protheus+Work+area+table+full+Max%3D+512",
+    "case_insensitive": 1,
+    "priority": 93
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-013",
+    "category": "application",
+    "pattern": "Work area not in use",
+    "tip_text": "Operacao em work area nao aberta. Validar com Select('ALIAS') > 0 antes ou DBUseArea().",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Work+area+not+in+use",
+    "case_insensitive": 1,
+    "priority": 94
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-014",
+    "category": "application",
+    "pattern": "There is no current index",
+    "tip_text": "Tabela sem indice ativo. Definir com DBSetOrder(n) antes de SEEK/SOFTSEEK.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/There+is+no+current+index",
+    "case_insensitive": 1,
+    "priority": 95
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-015",
+    "category": "application",
+    "pattern": "invalid handle used",
+    "tip_text": "Handle invalido (arquivo, conexao, objeto ja fechado). Verificar ciclo de vida: abrir -> usar -> fechar/destruir.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/invalid+handle+used",
+    "case_insensitive": 1,
+    "priority": 96
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-016",
+    "category": "application",
+    "pattern": "invalid property",
+    "tip_text": "Propriedade inexistente em classe/objeto. Validar nome na documentacao TDN.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063170",
+    "case_insensitive": 1,
+    "priority": 97
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-017",
+    "category": "application",
+    "pattern": "invalid random range",
+    "tip_text": "Funcao Random com range invalido. Validar: Random(nMin, nMax) com nMin < nMax.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/invalid+random+range",
+    "case_insensitive": 1,
+    "priority": 98
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-018",
+    "category": "application",
+    "pattern": "String size underflow on fread",
+    "tip_text": "FRead solicitou mais bytes do que disponivel. Validar com FSeek/FSize antes.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/String+size+underflow+on+fread",
+    "case_insensitive": 1,
+    "priority": 99
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-019",
+    "category": "application",
+    "pattern": "argument.*error.*expected",
+    "tip_text": "Funcao recebeu argumento com tipo errado. Verificar assinatura na TDN e ValType() dos parametros.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/argument+N+error%2C+expected+X-%3EY%2C+function+ZZZZZZ",
+    "case_insensitive": 1,
+    "priority": 100
+  },
+  {
+    "tip_id": "LOGTIP-APPLICATION-020",
+    "category": "application",
+    "pattern": "Alias.*parameter not valid",
+    "tip_text": "Alias passado como parametro nao eh string valida. Usar 'NOMETAB' ou cAlias.",
+    "tdn_url": "https://tdn.totvs.com/display/tec/Alias+-+parameter+not+valid",
+    "case_insensitive": 1,
+    "priority": 101
+  },
+  {
+    "tip_id": "LOGTIP-DATABASE-037",
+    "category": "database",
+    "pattern": "SQL2025N.*IO error",
+    "tip_text": "DB2 retornou erro de IO em snapshot/explain. Verificar permissao no diretorio de explain e espaco em disco.",
+    "tdn_url": "https://tdn.totvs.com/pages/viewpage.action?pageId=6063171",
+    "case_insensitive": 1,
+    "priority": 102
+  }
+]

@@ -274,6 +274,10 @@ class TestSeedLookups:
         for fname in (
             "funcoes_nativas.json", "funcoes_restritas.json", "lint_rules.json",
             "sql_macros.json", "modulos_erp.json", "pontos_entrada_padrao.json",
+            # v0.11.0: auditor de INI
+            "ini_rules.json", "ini_roles.json",
+            # v0.12.0: monitor de log
+            "log_rules.json", "log_tips.json", "log_categories.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 

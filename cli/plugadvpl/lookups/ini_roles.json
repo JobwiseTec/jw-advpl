@@ -1,0 +1,114 @@
+[
+  {
+    "role_id": "broker_http",
+    "tipo_ini": "appserver",
+    "descricao": "Broker HTTP que balanceia entre slaves HTTPV11. Identifica-se por seções [balance_*], sem environment, com [balance_http].",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('balance_http') AND has_section_prefix('balance_') AND NOT has_environment_section()",
+    "prioridade": 10
+  },
+  {
+    "role_id": "broker_soap",
+    "tipo_ini": "appserver",
+    "descricao": "Broker SOAP/WebServices. Identifica-se por [balance_web_services] sem 'rest' no nome do arquivo.",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('balance_web_services') AND NOT has_environment_section() AND 'rest' NOT IN filename",
+    "prioridade": 20
+  },
+  {
+    "role_id": "broker_rest",
+    "tipo_ini": "appserver",
+    "descricao": "Broker REST. [balance_web_services] presente e 'rest' no nome do arquivo.",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('balance_web_services') AND NOT has_environment_section() AND 'rest' IN filename",
+    "prioridade": 20
+  },
+  {
+    "role_id": "slave",
+    "tipo_ini": "appserver",
+    "descricao": "AppServer slave clássico atrás de broker HTTP. Tem [licenseclient] + [webapp] + 1-2 environments.",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('licenseclient') AND has_section('webapp') AND env_count <= 2 AND NOT (has_section('httprest') AND has_section('httpjob'))",
+    "prioridade": 50
+  },
+  {
+    "role_id": "slave_ws",
+    "tipo_ini": "appserver",
+    "descricao": "Slave de WebServices SOAP/REST clássico. Tem seções [job_ws*] + seções [host:port].",
+    "detection_kind": "composite",
+    "detection_pattern": "any_section_starts_with('job_ws') AND any_section_contains(':')",
+    "prioridade": 40
+  },
+  {
+    "role_id": "slave_rest",
+    "tipo_ini": "appserver",
+    "descricao": "Slave REST com licenseclient. [httprest] + [httpjob] + [licenseclient], sem [job_ws].",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('httprest') AND has_section('httpjob') AND has_section('licenseclient') AND NOT has_section('job_ws')",
+    "prioridade": 30
+  },
+  {
+    "role_id": "rest_server",
+    "tipo_ini": "appserver",
+    "descricao": "Server REST sem licenseclient próprio (delega licença). [httprest] + [httpjob], sem [licenseclient] nem [job_ws].",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('httprest') AND has_section('httpjob') AND NOT has_section('licenseclient') AND NOT has_section('job_ws')",
+    "prioridade": 35
+  },
+  {
+    "role_id": "job_server",
+    "tipo_ini": "appserver",
+    "descricao": "Servidor dedicado a jobs em background. [onstart] presente com JOBS=<lista> sem WS indicators e sem [httprest].",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section('onstart') AND NOT has_section('httprest') AND onstart.jobs NOT INTERSECT {job_ws, job_http, httpjob}",
+    "prioridade": 60
+  },
+  {
+    "role_id": "standalone",
+    "tipo_ini": "appserver",
+    "descricao": "AppServer standalone tradicional, 1 environment. Cenário típico de dev local ou cliente pequeno.",
+    "detection_kind": "composite",
+    "detection_pattern": "env_count <= 2 AND NOT matches(broker|slave|slave_*|*_server|tss|dbaccess_*)",
+    "prioridade": 90
+  },
+  {
+    "role_id": "standalone_multi_env",
+    "tipo_ini": "appserver",
+    "descricao": "AppServer com 3+ environments (típico em ambientes com produção + homologação + teste no mesmo binário).",
+    "detection_kind": "composite",
+    "detection_pattern": "env_count >= 3 AND NOT matches(broker|slave|slave_*|*_server)",
+    "prioridade": 85
+  },
+  {
+    "role_id": "tss",
+    "tipo_ini": "tss",
+    "descricao": "TOTVS Service SPED. Marcadores: [tsstaskproc], [ipc_distmail], [tssoffline] ou [job_ws]+chaves sped_*.",
+    "detection_kind": "composite",
+    "detection_pattern": "has_section IN {tsstaskproc, ipc_distmail, tssoffline, ipc_smtp} OR (has_section('job_ws') AND has_keys {sped_savewsdl, tsssecurity})",
+    "prioridade": 5
+  },
+  {
+    "role_id": "dbaccess_master",
+    "tipo_ini": "dbaccess",
+    "descricao": "DBAccess master (head-end de cluster). Identificado por [General] Mode=master.",
+    "detection_kind": "key_value",
+    "detection_pattern": "section='general' AND key='mode' AND value='master'",
+    "prioridade": 70
+  },
+  {
+    "role_id": "dbaccess_slave",
+    "tipo_ini": "dbaccess",
+    "descricao": "DBAccess slave em cluster. [General] Mode=slave.",
+    "detection_kind": "key_value",
+    "detection_pattern": "section='general' AND key='mode' AND value='slave'",
+    "prioridade": 70
+  },
+  {
+    "role_id": "dbaccess_standalone",
+    "tipo_ini": "dbaccess",
+    "descricao": "DBAccess standalone (1 nó). Default quando tipo='dbaccess' mas Mode não é master/slave.",
+    "detection_kind": "composite",
+    "detection_pattern": "tipo='dbaccess' AND key('general.mode') NOT IN {master, slave}",
+    "prioridade": 80
+  }
+]
