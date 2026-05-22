@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Validador de plugadvpl plugin structure."""
+"""Validador de plugadvpl plugin structure.
+
+Atualizado em v0.9.5 (QA PERF 2026-05-18 #7): em vez de comparar
+``skills/`` contra uma lista hardcoded, descobre os subcomandos via
+introspeccao do Typer ``cli.app`` — assim qualquer comando novo entra
+no escopo do CI automaticamente.
+
+Tambem valida:
+
+- Frontmatter YAML em todas as skills/agents.
+- Pin de versao ``uvx plugadvpl@X.Y.Z`` bate com ``plugin.json:version``
+  (skills modernas usam ``plugadvpl`` direto do PATH e nao precisam pin).
+- ``marketplace.json:plugins[0].version`` bate com ``plugin.json:version``.
+"""
 from __future__ import annotations
 
 import json
@@ -8,45 +21,65 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-EXPECTED_COMMAND_SKILLS = {
-    "init",
-    "ingest",
-    "reindex",
-    "status",
-    "find",
-    "callers",
-    "callees",
-    "tables",
-    "param",
-    "arch",
-    "lint",
-    "doctor",
-    "grep",
-}
-EXPECTED_KNOWLEDGE_SKILLS = {
+sys.path.insert(0, str(ROOT / "cli"))
+
+# Skills que NAO sao wrappers de subcomando Typer.
+NON_COMMAND_SKILLS = {
+    # Wrappers especiais (UX/onboarding).
+    "help",
+    "setup",
+    # Skill de instrucao (como usar o indice).
     "plugadvpl-index-usage",
-    "advpl-encoding",
-    "advpl-fundamentals",
-    "advpl-mvc",
-    "advpl-embedded-sql",
-    "advpl-matxfis",
-    "advpl-pontos-entrada",
-    "advpl-webservice",
-    "advpl-jobs-rpc",
-    "advpl-code-review",
-    "advpl-advanced",
-    "advpl-tlpp",
-    "advpl-web",
-    "advpl-dicionario-sx",
-    "advpl-mvc-avancado",
-    "advpl-dicionario-sx-validacoes",
 }
+
+# Knowledge skills (conteudo ADVPL/TLPP, sem subcomando Typer correspondente).
+# Validado pelo padrao do nome (prefixo ``advpl-``).
+KNOWLEDGE_SKILL_PREFIX = "advpl-"
+
 EXPECTED_AGENTS = {
     "advpl-analyzer",
     "advpl-impact-analyzer",
     "advpl-code-generator",
     "advpl-reviewer-bot",
 }
+
+
+def _read_plugin_version() -> str | None:
+    p = ROOT / ".claude-plugin" / "plugin.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("version")
+    except json.JSONDecodeError:
+        return None
+
+
+def _typer_command_names() -> tuple[set[str], list[str]]:
+    """Retorna ``(command_names, errors)``. Lista comandos e grupos do Typer app.
+
+    Em caso de falha de import (CLI incompleta), retorna set vazio + erro
+    para que o CI nao fique cego silenciosamente.
+    """
+    try:
+        from plugadvpl.cli import app  # type: ignore[import-not-found]
+    except Exception as exc:  # pragma: no cover - defensivo
+        return set(), [f"falha ao importar plugadvpl.cli.app: {exc}"]
+
+    names: set[str] = set()
+    for ci in app.registered_commands:
+        if ci.name:
+            names.add(ci.name)
+        elif ci.callback is not None:
+            # Typer deriva o nome do command da funcao quando ``name`` e None.
+            names.add(ci.callback.__name__.replace("_", "-"))
+    for gi in app.registered_groups:
+        if gi.name:
+            names.add(gi.name)
+        elif gi.typer_instance is not None:
+            nm = getattr(gi.typer_instance.info, "name", None)
+            if nm:
+                names.add(nm)
+    return names, []
 
 
 def check_plugin_json() -> list[str]:
@@ -81,10 +114,22 @@ def check_marketplace_json() -> list[str]:
         errors.append(
             "marketplace.json missing required fields (name, owner, plugins)"
         )
+
+    # v0.9.5 (QA PERF 2026-05-18 #7): marketplace version bate com plugin.json.
+    plugin_version = _read_plugin_version()
+    plugins = data.get("plugins") or []
+    if plugin_version and plugins:
+        mp_version = plugins[0].get("version")
+        if mp_version and mp_version != plugin_version:
+            errors.append(
+                f"marketplace.json plugins[0].version={mp_version!r} != "
+                f"plugin.json version={plugin_version!r}"
+            )
     return errors
 
 
 def check_skills() -> list[str]:
+    """Valida cobertura skills × subcomandos Typer + pin de versao."""
     errors = []
     skills_dir = ROOT / "skills"
     found = {
@@ -92,13 +137,33 @@ def check_skills() -> list[str]:
         for p in skills_dir.iterdir()
         if p.is_dir() and (p / "SKILL.md").exists()
     }
-    missing_cmd = EXPECTED_COMMAND_SKILLS - found
-    missing_kn = EXPECTED_KNOWLEDGE_SKILLS - found
-    if missing_cmd:
-        errors.append(f"missing command skills: {sorted(missing_cmd)}")
-    if missing_kn:
-        errors.append(f"missing knowledge skills: {sorted(missing_kn)}")
-    # Frontmatter check
+
+    typer_cmds, typer_errs = _typer_command_names()
+    errors.extend(typer_errs)
+
+    if typer_cmds:
+        # Heuristica: alguns subcomandos do Typer nao precisam de skill wrapper
+        # (ex: ``version`` e meta, nao expoe valor agentic).
+        cmds_skipped_intentionally = {"version"}
+        expected_cmd_skills = typer_cmds - cmds_skipped_intentionally
+        missing_cmd = expected_cmd_skills - found
+        if missing_cmd:
+            errors.append(
+                f"missing command skills (sem wrapper em skills/): {sorted(missing_cmd)}"
+            )
+
+    # Knowledge skills: tudo que comeca com ``advpl-`` + plugadvpl-index-usage.
+    knowledge_found = {
+        n for n in found
+        if n.startswith(KNOWLEDGE_SKILL_PREFIX) or n in NON_COMMAND_SKILLS
+    }
+    if not any(n.startswith(KNOWLEDGE_SKILL_PREFIX) for n in knowledge_found):
+        errors.append("skills/: nenhum skill ADVPL knowledge (advpl-*) encontrado")
+
+    # Frontmatter check + version pin check
+    plugin_version = _read_plugin_version()
+    pin_re = re.compile(r"uvx\s+plugadvpl@(\S+)")
+
     for skill_dir in skills_dir.iterdir():
         if not skill_dir.is_dir():
             continue
@@ -109,10 +174,20 @@ def check_skills() -> list[str]:
         if not content.startswith("---"):
             errors.append(f"{sf}: missing YAML frontmatter")
             continue
-        # Check `description:` present
-        m = re.search(r"^description:\s*(.+)$", content[:1000], re.MULTILINE)
-        if not m:
+        if not re.search(r"^description:\s*(.+)$", content[:1000], re.MULTILINE):
             errors.append(f"{sf}: missing 'description' in frontmatter")
+
+        # Version pin check — qualquer ``uvx plugadvpl@X.Y.Z`` deve bater com
+        # plugin.json. Skills que usam ``plugadvpl`` direto (sem uvx) passam.
+        if plugin_version:
+            for m in pin_re.finditer(content):
+                pinned = m.group(1)
+                if pinned != plugin_version:
+                    errors.append(
+                        f"{sf}: uvx pin 'plugadvpl@{pinned}' != "
+                        f"plugin.json version '{plugin_version}'"
+                    )
+                    break  # 1 erro por arquivo basta
     return errors
 
 
@@ -155,6 +230,23 @@ def check_hook() -> list[str]:
     mjs = ROOT / "hooks" / "session-start.mjs"
     if not mjs.exists():
         errors.append(f"missing: {mjs}")
+    else:
+        # v0.9.5 (QA PERF 2026-05-18 #7): hook nao deve ter pin de versao
+        # antigo em CHAMADAS REAIS (string literal). v0.9.2 corrigiu pra
+        # preferir PATH; rejeitar regressao do tipo argv ['plugadvpl@0.3.1'].
+        # Filtra comentarios JS (linhas iniciando com //) pra evitar FP em
+        # historico documentando o fix antigo.
+        hook_content = mjs.read_text(encoding="utf-8", errors="replace")
+        non_comment_lines = [
+            ln for ln in hook_content.splitlines()
+            if not ln.lstrip().startswith("//")
+        ]
+        non_comment = "\n".join(non_comment_lines)
+        if re.search(r"['\"]plugadvpl@\d", non_comment):
+            errors.append(
+                f"{mjs}: hook tem pin de versao hardcoded em chamada real "
+                "(regressao do fix v0.9.2 — deve preferir PATH binary)"
+            )
     return errors
 
 

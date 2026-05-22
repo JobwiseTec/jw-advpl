@@ -221,3 +221,68 @@ class TestIngest:
             assert iat is not None and iat[0]
         finally:
             conn.close()
+
+    def test_ingest_parallel_streams_results_v0_9_5(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """QA PERF 2026-05-18 #4: _ingest_parallel deve iterar pool.map
+        lazy (writes acontecem DURANTE a iteração), não materializar
+        ``list(pool.map(...))`` antes do primeiro write. Reduz pico de RAM
+        em monorepos grandes.
+
+        Teste smoking-gun: instrumenta pool.map pra marcar
+        ``iter_finished`` quando o iterador fecha, e ``_write_parsed`` pra
+        contar writes ANTES desse marcador. Código antigo (``list(...)``)
+        exauria o iterador primeiro → 0 writes durante iteração. Código
+        novo (iter direto) → N writes durante iteração.
+        """
+        from concurrent.futures import ProcessPoolExecutor
+
+        from plugadvpl import ingest as ing
+
+        src = tmp_path / "src"
+        src.mkdir()
+        for i in range(4):
+            (src / f"f{i}.prw").write_bytes(
+                f"User Function F{i}()\nReturn\n".encode("cp1252")
+            )
+
+        monkeypatch.setattr(ing, "_PARALLEL_THRESHOLD", 2)
+        monkeypatch.setattr(ing, "_PARALLEL_MIN_FILES", 2)
+
+        iter_finished = [False]
+        writes_during_iteration = [0]
+
+        original_write = ing._write_parsed
+
+        def tracking_write(*args: object, **kwargs: object) -> None:
+            if not iter_finished[0]:
+                writes_during_iteration[0] += 1
+            return original_write(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(ing, "_write_parsed", tracking_write)
+
+        original_map = ProcessPoolExecutor.map
+
+        def tracking_map(self: ProcessPoolExecutor, *args: object, **kwargs: object) -> object:
+            inner = original_map(self, *args, **kwargs)  # type: ignore[arg-type]
+
+            def wrapped() -> object:
+                try:
+                    for item in inner:  # type: ignore[union-attr]
+                        yield item
+                finally:
+                    iter_finished[0] = True
+
+            return wrapped()
+
+        monkeypatch.setattr(ProcessPoolExecutor, "map", tracking_map)
+
+        counters = ing.ingest(src, workers=2)
+        assert counters["arquivos_ok"] == 4
+        assert writes_during_iteration[0] >= 1, (
+            f"Streaming quebrado: writes_during_iteration="
+            f"{writes_during_iteration[0]}, iter_finished="
+            f"{iter_finished[0]}. Código antigo chamava list(pool.map(...)) "
+            f"e exauria o iterador antes de qualquer write."
+        )

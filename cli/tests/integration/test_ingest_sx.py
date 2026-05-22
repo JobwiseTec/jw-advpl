@@ -421,6 +421,74 @@ class TestImpactoCommand:
             f"FALSE POSITIVE: A1_CODFAT nao eh A1_COD (prefixo). SX7 locals: {sx7_locals}"
         )
 
+    def test_impacto_fontes_boundary_no_substring_v0_9_5(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """v0.9.5 (QA V3 #3 / QA PERF 2026-05-18 #8): hits no indice de
+        fontes (`_impacto_fontes`) tambem aplica boundary check.
+
+        Antes: `impacto A1_COD` retornava todos os hits que continham
+        ``A1_COD`` como SUBSTRING — incluindo ``BA1_CODEMP``,
+        ``A1_CODFAT``, ``DA1_CODPRO``. Output ficava >100KB em campos de
+        nome curto/comum.
+
+        Agora: SQL LIKE prefiltra, Python boundary descarta FP, e o
+        snippet e construido ao redor do match REAL — `match_kind` no
+        output e ``boundary`` indicando precisao.
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        # Real: A1_COD usado standalone
+        (src / "REAL.prw").write_bytes(
+            b"User Function REAL()\n"
+            b"  Replace A1_COD With '000001'\n"
+            b"Return\n"
+        )
+        # Fake FP: BA1_CODEMP contem A1_COD como substring
+        (src / "FP1.prw").write_bytes(
+            b"User Function FP1()\n"
+            b"  Local cBkp := BA1_CODEMP\n"
+            b"Return\n"
+        )
+        # Fake FP: A1_CODFAT comeca com A1_COD
+        (src / "FP2.prw").write_bytes(
+            b"User Function FP2()\n"
+            b"  Local cFat := A1_CODFAT\n"
+            b"Return\n"
+        )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(src),
+                "--format", "json",
+                "impacto", "A1_COD",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        fonte_rows = [r for r in payload["rows"] if r["tipo"] == "fonte"]
+        # Apenas REAL.prw deve aparecer.
+        locals_ = [r["local"] for r in fonte_rows]
+        assert any("REAL.prw" in loc for loc in locals_), (
+            f"Match real (REAL.prw) deveria aparecer. fonte rows: {locals_}"
+        )
+        # FP1 (BA1_CODEMP) e FP2 (A1_CODFAT) nao devem aparecer.
+        assert not any("FP1.prw" in loc for loc in locals_), (
+            f"FALSE POSITIVE: BA1_CODEMP contem A1_COD como substring. "
+            f"fonte rows: {locals_}"
+        )
+        assert not any("FP2.prw" in loc for loc in locals_), (
+            f"FALSE POSITIVE: A1_CODFAT comeca com A1_COD (prefixo). "
+            f"fonte rows: {locals_}"
+        )
+        # match_kind deve estar marcado como "boundary" nos hits validos.
+        assert all(r.get("match_kind") == "boundary" for r in fonte_rows), (
+            f"fonte rows devem ter match_kind=boundary: {fonte_rows}"
+        )
+
     def test_impacto_depth_2_follows_chain(
         self, indexed_with_sx: Path, runner: CliRunner
     ) -> None:

@@ -21,7 +21,7 @@ Mostra status do indice plugadvpl no projeto atual.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.6.1 --format md status $ARGUMENTS
+uvx plugadvpl@0.9.5 --format md status $ARGUMENTS
 ```
 
 ## Saida

@@ -322,10 +322,50 @@ class TestDoctor:
         _, conn = db_with_three_sources
         rows = doctor_diagnostics(conn)
         checks = {r["check"] for r in rows}
-        assert {"encoding_missing", "orphan_chunks", "fts_sync", "lookups_loaded"}.issubset(checks)
+        assert {
+            "encoding_missing",
+            "orphan_chunks",
+            "fts_sync",
+            "lookups_loaded",
+            "basename_collisions",
+        }.issubset(checks)
         # Após ingest limpo, fts_sync deve estar ok.
         fts = next(r for r in rows if r["check"] == "fts_sync")
         assert fts["status"] == "ok"
+        # Após ingest sem colisao, basename_collisions deve estar ok.
+        coll = next(r for r in rows if r["check"] == "basename_collisions")
+        assert coll["status"] == "ok"
+        assert coll["count"] == 0
+
+    def test_doctor_basename_collision_warn_v0_9_5(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """v0.9.5 (QA PERF 2026-05-18 #2): com meta basename_collisions
+        populado, doctor reporta status=warn com contagem e exemplos."""
+        import json as _json
+        _, conn = db_with_three_sources
+        conn.execute(
+            "UPDATE meta SET valor=? WHERE chave='basename_collisions'",
+            (
+                _json.dumps(
+                    {
+                        "mata010.prw": ["/mod1/MATA010.prw", "/mod2/MATA010.prw"],
+                        "fata050.prw": [
+                            "/cli/FATA050.prw",
+                            "/std/FATA050.prw",
+                            "/bkp/FATA050.prw",
+                        ],
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+        rows = doctor_diagnostics(conn)
+        coll = next(r for r in rows if r["check"] == "basename_collisions")
+        assert coll["status"] == "warn"
+        assert coll["count"] == 2
+        # detail menciona as duas chaves
+        assert "mata010.prw" in coll["detail"]
 
 
 class TestGrep:

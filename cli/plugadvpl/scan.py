@@ -6,6 +6,7 @@ aplicando filtros de extensão, dedup case-insensitive e limites de tamanho.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 VALID_EXTENSIONS = frozenset({".prw", ".tlpp", ".prx", ".apw"})
@@ -22,23 +23,39 @@ MAX_FILE_BYTES = 5_000_000
 _SKIP_DIRS = frozenset({".plugadvpl", ".git", "node_modules", ".venv"})
 
 
-def scan_sources(root: Path) -> list[Path]:
-    """Scan ``root`` recursivamente listando fontes ADVPL/TLPP.
+@dataclass(frozen=True)
+class ScanResult:
+    """Resultado de ``scan_sources_full``.
 
-    Aplica:
+    ``files``: lista de fontes selecionadas (dedup aplicado, primeiro a vencer).
+    ``collisions``: mapa ``basename_lower → [paths]`` quando 2+ arquivos
+    em **diretórios diferentes** compartilham o mesmo basename. Não inclui
+    falsas colisões de FS case-insensitive (mesmo arquivo, casing diferente).
+    """
 
-    - Filtro de extensão case-insensitive contra :data:`VALID_EXTENSIONS`.
-    - Skip de sufixos de backup (.bak, .corrupted.bak, .old, .bak2, .tmp, ~).
-    - Skip de arquivos vazios (0 bytes) e oversized (>5MB).
-    - Dedup case-insensitive sobre basename — Windows pode reportar ``.PRW`` e
-      ``.prw`` da mesma entrada; mantém o primeiro encontrado.
-    - Skip de subdiretórios ``.plugadvpl/``, ``.git/``, ``node_modules/``, ``.venv/``.
+    files: list[Path]
+    collisions: dict[str, list[Path]] = field(default_factory=dict)
 
-    Retorna lista ordenada por basename lowercase (determinístico, independente
-    de ordem do filesystem).
+
+def scan_sources_full(root: Path) -> ScanResult:
+    """Scan ``root`` recursivamente listando fontes ADVPL/TLPP, com diagnóstico
+    de colisões de basename.
+
+    Aplica os mesmos filtros de :func:`scan_sources` mas **também coleta**
+    colisões reais por basename — quando dois ``.prw`` com mesmo nome moram
+    em diretórios distintos (ex: ``mod1/MATA010.prw`` vs ``mod2/MATA010.prw``).
+
+    Em Protheus isso aparece em projetos com cópias por cliente/módulo/backup
+    limpo. Sem o aviso, o segundo ocorrência era silenciosamente descartada
+    (esquema usa basename como PK), o que mascarava perda de fonte.
+
+    Não conta como colisão um mesmo arquivo listado com casings diferentes
+    pelo FS (filtra por ``parent``: se a pasta-pai for a mesma, é dedup
+    legítimo do FS, não colisão real).
     """
     files: list[Path] = []
-    seen_keys: set[str] = set()
+    seen: dict[str, Path] = {}
+    collisions: dict[str, list[Path]] = {}
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Mutate dirnames in-place para que os.walk pule esses subdirs (não desce neles).
@@ -65,9 +82,29 @@ def scan_sources(root: Path) -> list[Path]:
 
             # Dedup case-insensitive sobre basename
             key = fname.lower()
-            if key in seen_keys:
+            if key in seen:
+                first = seen[key]
+                # Colisão REAL = mesmo basename em diretórios distintos.
+                # Casing variante na mesma pasta (Windows FS quirk) não conta.
+                if first.parent != full.parent:
+                    if key not in collisions:
+                        collisions[key] = [first]
+                    collisions[key].append(full)
                 continue
-            seen_keys.add(key)
+            seen[key] = full
             files.append(full)
 
-    return sorted(files, key=lambda p: p.name.lower())
+    return ScanResult(
+        files=sorted(files, key=lambda p: p.name.lower()),
+        collisions=collisions,
+    )
+
+
+def scan_sources(root: Path) -> list[Path]:
+    """Scan ``root`` recursivamente listando fontes ADVPL/TLPP.
+
+    Wrapper compatível de :func:`scan_sources_full` que retorna apenas a
+    lista de arquivos. Use ``scan_sources_full`` se precisar do diagnóstico
+    de colisões.
+    """
+    return scan_sources_full(root).files

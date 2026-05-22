@@ -66,7 +66,7 @@ plugadvpl init
 
 ### <a id="ingest"></a>`ingest`
 
-Indexa todos os fontes `.prw`/`.prx`/`.tlpp`/`.apw`/`.ptm`/`.aph` em `--root`.
+Indexa todos os fontes `.prw`/`.prx`/`.tlpp`/`.apw` em `--root`.
 
 ```
 plugadvpl ingest [--workers N] [--incremental/--no-incremental]

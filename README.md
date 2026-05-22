@@ -415,7 +415,7 @@ O plugin é dividido em **camadas independentes** — cada uma adiciona um tipo 
 
 ### Universo 1 — Ingestão de fontes (v0.1)
 
-**O que faz**: `plugadvpl ingest` escaneia recursivamente o `--root`, encontra arquivos `.prw`/`.prx`/`.tlpp`/`.apw`/`.ptm`/`.aph`, e parseia cada um em paralelo (`ProcessPoolExecutor` com `min(8, cpu_count())` para projetos ≥200 arquivos; single-thread para projetos pequenos). De cada fonte extrai:
+**O que faz**: `plugadvpl ingest` escaneia recursivamente o `--root`, encontra arquivos `.prw`/`.prx`/`.tlpp`/`.apw`, e parseia cada um em paralelo (`ProcessPoolExecutor` com `min(8, cpu_count())` para projetos ≥200 arquivos; single-thread para projetos pequenos). De cada fonte extrai:
 
 - **Funções** (User/Static/Main Function, Method) com `linha_inicio`/`linha_fim` e assinatura
 - **Chamadas de função** (`U_NOME()`, `StaticFunc()`, `obj:Method()`) → grafo direcionado

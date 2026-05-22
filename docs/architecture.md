@@ -103,7 +103,7 @@ read_file_bytes ──► chardet decode ──► strip_advpl ──► parse_s
 
 ### `cli/plugadvpl/scan.py` (~70 linhas)
 
-Walks the project tree, filters por extensão (`.prw`, `.prx`, `.tlpp`, `.apw`, `.ptm`, `.aph`), retorna lista ordenada estável de tuplas `(path, mtime_ns, size_bytes)`. Sem parsing — apenas FS metadata. Usado em modo incremental para skip rápido.
+Walks the project tree, filters por extensão (`.prw`, `.prx`, `.tlpp`, `.apw`), retorna lista ordenada estável de tuplas `(path, mtime_ns, size_bytes)`. Sem parsing — apenas FS metadata. Usado em modo incremental para skip rápido.
 
 ### `cli/plugadvpl/parsing/stripper.py` (~140 linhas)
 
