@@ -289,7 +289,7 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ## Comandos disponíveis
 
-O CLI Python expõe **~30 subcomandos** (Universo 1-4 + Fase 0 + Fase 1), espelhados em slash commands do plugin Claude Code.
+O CLI Python expõe **~32 subcomandos** (Universo 1-4 + Fase 0/1 + Universo 5), espelhados em slash commands do plugin Claude Code.
 
 ### Universo 1 — Fontes (v0.1)
 
@@ -365,6 +365,13 @@ plugadvpl compile --mode appre --use-server <nome> FONTE.PRW
 ```
 
 Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info conversacional do que coletar) e [docs/setup-compile.md](docs/setup-compile.md) (guia técnico passo-a-passo).
+
+### Universo 5 — Auditoria de ambiente Protheus (v0.10)
+
+| Comando | Função |
+|---|---|
+| `/plugadvpl:ini-audit [paths]` | **(v0.10.0)** Audita `appserver.ini`/`dbaccess.ini`/`smartclient.ini`/`tss.ini`/`broker.ini` contra **487 regras TDN-oficiais** filtradas por tipo+role (14 roles: `broker_http`/`slave_rest`/`dbaccess_master`/...). Auto-discover via glob, cache hash+mtime, `--severity critical/warning/info`, `--show-ok-with-note` pra justificativas documentadas |
+| `/plugadvpl:log-diagnose [paths]` | **(v0.10.0)** Diagnostica `console.log`/`error.log`/`profile.log`/`compila.log` contra **19 alert rules** + **93 correction tips** com URL TDN. Pipeline 2 estágios (tokenize → match reverso); janela `--since 24h` relativa ao último timestamp do log; `--category database/thread_error/rpo/...`, captura `ORA-xxx`/username/host quando aparece |
 
 Reference completa de todos os subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
 

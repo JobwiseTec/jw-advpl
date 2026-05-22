@@ -24,7 +24,7 @@ Pesquisa por padrao no conteudo dos fontes indexados. Mais barato que `Grep` do 
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.9.5 grep $ARGUMENTS
+uvx plugadvpl@0.10.0 grep $ARGUMENTS
 ```
 
 ## Exemplos

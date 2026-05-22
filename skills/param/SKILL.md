@@ -18,7 +18,7 @@ Lista usos de um parametro MV_ (Protheus) no projeto indexado.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.9.5 param $mv
+uvx plugadvpl@0.10.0 param $mv
 ```
 
 ## Exemplos
