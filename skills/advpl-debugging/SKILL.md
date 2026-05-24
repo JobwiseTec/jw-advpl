@@ -36,6 +36,7 @@ manuais quando não dá pra anexar debugger.
 | REST endpoint retorna 500 | Self:GetContent vazio sem validação; ou WSRESTFUL Method não bate verbo HTTP | `plugadvpl grep "WSRESTFUL"` |
 | MD-FE / NF-e rejeitada | Tag XML errada; lib desatualizada (cMV `MV_NFCSERV`) | `plugadvpl param MV_NFCSERV` |
 | ConOut mostrando lixo / chars estranhos | Encoding errado (cp1252 vs utf-8); BOM em arquivo | `plugadvpl doctor` |
+| `Begin Sequence / Recover` não captura exception (thread cai) | Falta `ErrorBlock({\|e\| Break(e)})` antes do BS — exceptions nativas/REST não disparam Recover sozinhas | inspect manual + `[[advpl-tlpp]]` (try/catch) |
 | Performance subitamente péssima | DbSeek em loop novo; falta TCSetField; índice estourado | `plugadvpl lint --regra PERF-002` |
 
 ---
@@ -383,7 +384,64 @@ plugadvpl arch <arquivo>                 # mostra encoding detectado
 
 ---
 
-## 13. Performance subitamente péssima
+## 13. `Begin Sequence / Recover` não captura exception (TOPCONN, REST, native)
+
+**Sintoma:** rotina envolvida em `Begin Sequence ... Recover Using oErr ... End Sequence`
+mesmo assim derruba a thread inteira e o `Recover` nunca executa. Logs mostram exception
+crua sem o tratamento que você escreveu.
+
+**Causa raiz:** algumas exceptions nativas/críticas (`TOPCONN:` falhas, falhas dentro de
+funções `@Post`/REST, divide-by-zero em build antiga, `MemoRead` em path Linux inválido)
+**não disparam o Recover do Begin Sequence simples**. Elas borbulham acima dele.
+
+**Por quê:** `Begin Sequence / Recover Using` captura **`Break(oErr)` explícito** ou
+**erros runtime do interpretador ADVPL**. Exceptions vindas de camadas C++ nativas ou
+do tlpp-rest precisam ser **convertidas em `Break` via ErrorBlock**.
+
+**Fix — pattern correto com ErrorBlock:**
+
+```advpl
+Local oOldError := ErrorBlock({|e| Break(e)})    // converte erro nativo em Break
+Local oErr
+
+Begin Sequence
+    // ... código que pode lançar exception nativa
+    cConn := TCLink("MSSQL", cIp, nPort)
+    If cConn < 0
+        Break(ErrorClass():New("CONN_FAIL", "Sem conexao TOPCONN"))
+    EndIf
+    // ... lógica
+Recover Using oErr
+    ConOut("Falhou: " + oErr:Description)
+    // limpeza
+End Sequence
+
+ErrorBlock(oOldError)    // restaura o ErrorBlock anterior — SEMPRE
+```
+
+**Pontos críticos:**
+
+1. `ErrorBlock({|e| Break(e)})` **antes** do `Begin Sequence`. Sem isso, exception
+   nativa pula direto pra cima.
+2. Guardar o ErrorBlock anterior (`oOldError`) e restaurar depois — senão fica grudado
+   no thread e bagunça outros tratadores no mesmo job/REST.
+3. Restaurar **mesmo em caminho de erro**: idealmente num `Begin Sequence` externo
+   com `End Sequence` que sempre executa, ou no `Recover`.
+
+**Quando essa armadilha bate:** comum em endpoints REST que chamam `TCSqlExec`,
+`TCLink`, integrações Postgres, leitura de arquivo grande. Sintoma típico: HTTP 500
+sem corpo, `console.log` mostra o stack do exception nativo mas `Recover` nunca
+escreveu sua mensagem.
+
+**Variação `RECOVERY USING` é erro de sintaxe** — operador correto é `RECOVER USING`
+(sem o `Y`). Compiler rejeita em build.
+
+Ver `[[advpl-tlpp]]` para `try/catch/finally` que é o equivalente moderno e captura
+exceptions nativas automaticamente em TLPP.
+
+---
+
+## 14. Performance subitamente péssima
 
 **Sintoma:** rotina que rodava em 30s passou a demorar 5 minutos.
 

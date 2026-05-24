@@ -271,7 +271,7 @@ WSMETHOD POST Create WSSERVICE ClienteApi
     jReq:FromJson(cBody)
     // ... validação + RecLock + insert
     ::SetStatus(201)
-    ::SetHeaderResponse('Location', '/v1/cliente/' + jReq['codigo'] + '/' + jReq['loja'])
+    ::SetKeyHeaderResponse('Location', '/v1/cliente/' + jReq['codigo'] + '/' + jReq['loja'])
     ::SetResponse('{"ok":true}')
 Return .T.
 
@@ -300,7 +300,7 @@ Comparando: ~50% mais boilerplate, sem PATCH, path params posicionais, e `SetRes
 | `oRest:setStatusCode(n)` | — | 200/201/204/400/401/403/404/409/422/500 |
 | `oRest:setFault(c)` | — | Mensagem de erro (junto com `setStatusCode`) |
 | `oRest:setContentType(c)` | — | `'application/json; charset=utf-8'` padrão |
-| `oRest:setHeaderResponse(cK, cV)` | — | Header custom (CORS, Location, X-*) |
+| `oRest:setKeyHeaderResponse(cK, cV)` | — | Header custom (CORS, Location, X-*). **Não confundir com `setHeaderResponse` (sem `Key`) que quebra em build 7.00.240223P+** |
 | `oRest:setKeepAlive(.T.)` | — | Stream/Server-Sent Events |
 
 ## 4. Catálogo `::Self` (clássico)
@@ -315,7 +315,7 @@ Comparando: ~50% mais boilerplate, sem PATCH, path params posicionais, e `SetRes
 | `::SetResponse(c)` | — | **Cumulativo** (igual ao notation) |
 | `::SetStatus(n)` | — | Status HTTP |
 | `::SetContentType(c)` | — | Content-Type |
-| `::SetHeaderResponse(cK, cV)` | — | Header custom |
+| `::SetKeyHeaderResponse(cK, cV)` | — | Header custom. **Não confundir com `SetHeaderResponse` (sem `Key`) que quebra em build 7.00.240223P+** |
 | `SetRestFault(n, c)` | função global! | Erro HTTP. Note: NÃO é método do Self |
 
 ## 5. Multi-tenancy: PrepareIn + tenantId

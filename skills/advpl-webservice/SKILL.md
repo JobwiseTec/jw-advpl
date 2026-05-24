@@ -285,6 +285,38 @@ Referência oficial: [TDN - Migração WsRESTful para REST tlppCore](https://tdn
 
 Em build sem tlppCore, `@Get` compila como **comentário silencioso** — fonte sobe sem erro, endpoint nunca registra, debugar quebra a cabeça. Sempre checar via `/api/swagger` (se REST-DOC ativo) ou `/rest` (lista nativa) se o endpoint aparece.
 
+> ⚠️ **Gotcha de build 7.00.240223P+ — annotation só com `User Function`**
+>
+> `@Get`/`@Post` decorando **`Static Function`** ou **`Method` de classe** registra
+> o endpoint mas o injetor de `oRest` falha — `oRest` chega `Nil` no corpo, primeira
+> chamada a `oRest:GetBodyRequest()` (ou qualquer método) retorna **HTTP 500 sem
+> stack trace** na resposta e sem nada útil no `console.log`. Só funciona com
+> **`User Function`**.
+>
+> ```tlpp
+> // QUEBRA — 500 silencioso
+> @Post(endpoint="/x")
+> Static Function StaticEndpoint()
+>     Local cBody := oRest:GetBodyRequest()   // oRest é Nil aqui
+> Return .T.
+>
+> // QUEBRA — 404 (annotation não registra em Method de classe)
+> Class Foo
+>     @Post(endpoint="/y")
+>     Method Bar() Class Foo
+> EndClass
+>
+> // FUNCIONA — pattern oficial pra build 7.00.240223P+
+> @Post(endpoint="/z")
+> User Function PostEndpoint()
+>     Local cBody := oRest:GetBodyRequest()
+> Return .T.
+> ```
+>
+> Workaround quando precisar de `Static Function` (encapsulamento, namespace): expor
+> uma `User Function` thin wrapper decorada com a annotation e delegar pra Static.
+> Ou refatorar pra WSRESTFUL clássico que aceita `WSMETHOD` sem essa restrição.
+
 ## Autenticação JWT (Bearer Token)
 
 REST 2.0 do Protheus tem endpoint built-in pra issuance de token:
@@ -422,10 +454,12 @@ Return .T.
 
 ```advpl
 oRest:SetContentType("application/json; charset=utf-8")
-oRest:SetHeader("Access-Control-Allow-Origin",  "*")          // ajuste conforme politica
-oRest:SetHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-oRest:SetHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,TenantId")
+oRest:SetKeyHeaderResponse("Access-Control-Allow-Origin",  "*")          // ajuste conforme politica
+oRest:SetKeyHeaderResponse("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+oRest:SetKeyHeaderResponse("Access-Control-Allow-Headers", "Content-Type,Authorization,TenantId")
 ```
+
+> ⚠️ **Gotcha de build**: em AppServer 7.00.240223P (e similares pós-2024), `oRest:SetHeaderResponse(k,v)` retorna erro críptico "expected J->C" sem stack trace e devolve HTTP 500 sem corpo. Use **`SetKeyHeaderResponse`** (com `Key` no meio) que funciona em builds novas e antigas. Vale para o método global `::SetHeaderResponse` também (WSRESTFUL clássico → `::SetKeyHeaderResponse`).
 
 Endpoints com upload binário usam `application/octet-stream`. JSON é o default.
 
@@ -514,7 +548,7 @@ Sem isso, acentos viram `Ã§`/`Ã£` no consumidor. Veja `[[advpl-encoding]]`.
 | Query string             | `oRest:getQueryRequest()['campo']`                   | `::aQueryString` + `WSRECEIVE id` + `::id`   |
 | Body                     | `oRest:getBodyRequest()`                             | `::GetContent()`                             |
 | Header read              | `oRest:getHeaderRequest("Auth")`                     | iterar `::aHeadStr`                          |
-| Header write             | `oRest:setHeaderResponse("X-Foo","bar")`             | `::SetHeaderResponse("X-Foo","bar")`         |
+| Header write             | `oRest:setKeyHeaderResponse("X-Foo","bar")` ⚠️       | `::SetKeyHeaderResponse("X-Foo","bar")` ⚠️   |
 | Status                   | `oRest:setStatusCode(404)`                           | `::SetStatus(404)`                           |
 | Response body            | `oRest:setResponse(c)` *(cuidado: cumulativo!)*      | `::SetResponse(c)` *(cuidado: cumulativo!)*  |
 | Erro/fault               | `oRest:setFault(cMsg)` + `setStatusCode`             | `SetRestFault(404, cMsg)` *(função global)*  |

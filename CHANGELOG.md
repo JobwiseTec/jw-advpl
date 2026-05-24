@@ -4,6 +4,32 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed — Gotchas reais do smoke COLETADB.tlpp incorporados nas skills
+
+Quatro lições do smoke ponta-a-ponta contra Protheus 7.00.240223P (Docker
+oficial 2025) que custaram horas de debug e que estavam ausentes (ou erradas)
+nas skills. Code generation futura agora alerta sobre cada uma:
+
+- **`SetHeaderResponse` → `SetKeyHeaderResponse`** (`advpl-webservice`):
+  build 7.00.240223P retorna erro críptico "expected J->C" e HTTP 500 sem
+  stack ao usar `oRest:SetHeaderResponse(k,v)` / `::SetHeaderResponse(k,v)`.
+  Correta é a variante **com `Key` no meio** (`SetKeyHeaderResponse`).
+  SKILL.md tabela + seção CORS + `reference-rest.md` exemplos corrigidos.
+- **`@Post`/`@Get` só funciona com `User Function`** (`advpl-webservice`):
+  decorar `Static Function` registra o endpoint mas `oRest` chega `Nil` →
+  HTTP 500 silencioso. `Method` de classe nem registra (404). Workaround
+  documentado: User Function thin wrapper delega pra Static.
+- **`Begin Sequence / Recover` precisa de `ErrorBlock({|e| Break(e)})`**
+  (`advpl-debugging`): exceptions nativas (TOPCONN, REST tlpp, MemoRead
+  Linux) **não disparam Recover sozinhas** — borbulham acima dele e
+  derrubam a thread. Pattern correto com guard/restore documentado na nova
+  seção 13. Alerta também sobre `RECOVERY USING` (erro de sintaxe — o
+  correto é `RECOVER USING` sem o Y).
+- **`function` lowercase rejeitado em build 7.00.x** (`advpl-tlpp`):
+  compilador antigo só aceita `Function`/`User Function`/`Static Function`
+  capitalizados, mesmo com `tlpp-core.th` incluído. Tabela de compat por
+  build adicionada.
+
 ### Added — Skill `advpl-tlpp-named-params`
 
 - Nova skill dedicada documentando **named arguments** em chamadas TLPP via

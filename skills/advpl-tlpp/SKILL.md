@@ -70,6 +70,23 @@ Tipos suportados: `string`, `numeric`, `boolean`, `date`, `array`, `object`, `co
 
 Tipagem é **opcional** — função pode ser declarada sem tipos (`function foo(x, y)`). Mas com tipagem o compilador checa em build, evita erros em runtime. O `:=` nessa posição é **default value** na assinatura (se o caller omitir, vira o default), e não tem nada a ver com named args na chamada (próxima seção).
 
+> ⚠️ **Gotcha de build — `function` lowercase rejeitada por compiladores antigos**
+>
+> A sintaxe lowercase `function nome(...)` exige **AppServer com TL++ moderno
+> ativo** (geralmente 20.3.2.0+). Build **7.00.240223P** (Protheus 12.1.2410
+> Docker oficial 2025) **rejeita `function` lowercase em compilação** mesmo com
+> `tlpp-core.th` incluído — o lexer só aceita as variantes ADVPL/TLPP capitalizadas:
+>
+> | Forma | 7.00.240223P | 20.3+ |
+> |---|---|---|
+> | `function nome(...)` | ❌ compile error | ✅ |
+> | `Function Nome(...)` | ✅ | ✅ |
+> | `User Function Nome(...)` | ✅ | ✅ |
+> | `Static Function Nome(...)` | ✅ | ✅ |
+>
+> Em fontes que precisam rodar em build mista (legado + moderno), padronize em
+> `User Function` ou `Static Function` capitalizado — funciona em qualquer build.
+
 ## Parâmetros nomeados na chamada (named arguments)
 
 Recurso liberado em **AppServer 20.3.2.0+** (funções/métodos) e **24.3.1.0+** (classes via `New()`). Permite passar argumentos pelo nome formal usando o operador **`=`** (igualdade), em vez de pela posição:
