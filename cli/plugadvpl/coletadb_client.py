@@ -38,7 +38,11 @@ class BundleFile:
     path: str          # full path NO SERVIDOR (usado em /file)
     size_bytes: int
     chunks: int
-    sha256: str
+    sha256: str        # legado v1.0.x — preenchido só quando hash_algo=sha256
+    # v1.0.3+ — hash com algoritmo dinâmico
+    hash: str = ""     # hex lower; vazio se nenhuma função existe na build
+    hash_algo: str = ""    # "sha256" | "sha1" | "md5" | ""
+    hash_partial: bool = False  # True quando arquivo > 64KB e build trunca MemoRead
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,9 @@ class ColetaDBClient:
                 size_bytes=int(f.get("size_bytes", 0)),
                 chunks=int(f.get("chunks", 0)),
                 sha256=f.get("sha256", ""),
+                hash=f.get("hash", ""),
+                hash_algo=f.get("hash_algo", ""),
+                hash_partial=bool(f.get("hash_partial", False)),
             )
             for f in data.get("files", [])
         ]
@@ -152,17 +159,22 @@ class ColetaDBClient:
         *,
         progress_callback: Any = None,  # Callable[[int, int], None] | None
     ) -> int:
-        """Baixa ``bundle_file`` em chunks pra ``dest_path``, com verificacao
-        sha256 ao final. Retorna bytes baixados.
+        """Baixa ``bundle_file`` em chunks pra ``dest_path`` + verifica hash.
 
-        Loop interno faz ``POST /coletadb/file`` em sequencia, incrementando
-        ``offset`` ate consumir o arquivo todo. Verifica sha256 no fim — se
-        nao bater, raise :class:`ColetaDBError`.
+        Retorna bytes baixados. Loop interno faz ``POST /coletadb/file`` em
+        sequencia, incrementando ``offset`` ate consumir o arquivo todo.
+
+        Verificacao de hash (v1.0.3+):
+          - ``hash`` + ``hash_algo`` populados -> usa algoritmo correto
+            (sha256/sha1/md5)
+          - ``sha256`` legado populado (v1.0.x) -> usa sha256
+          - Nenhum dos dois preenchido -> pula validacao com warning silencioso
+          - ``hash_partial=True`` -> hasheia so primeiros 65535 bytes (match
+            do MemoRead truncado do server). Resto do arquivo nao e validado.
         """
         from pathlib import Path
         dest = Path(dest_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        hasher = hashlib.sha256()
         total_written = 0
 
         with dest.open("wb") as f:
@@ -179,7 +191,6 @@ class ColetaDBClient:
                 if not chunk_bytes:
                     break
                 f.write(chunk_bytes)
-                hasher.update(chunk_bytes)
                 total_written += len(chunk_bytes)
                 if progress_callback is not None:
                     progress_callback(total_written, bundle_file.size_bytes)
@@ -195,17 +206,64 @@ class ColetaDBClient:
                     break
                 offset += len(chunk_bytes)
 
-        # Verifica integridade
-        actual_sha = hasher.hexdigest()
-        if bundle_file.sha256 and actual_sha != bundle_file.sha256:
+        # Verifica integridade — escolhe algoritmo a partir do manifest
+        self._verify_hash(bundle_file, dest)
+        return total_written
+
+    @staticmethod
+    def _verify_hash(bundle_file: BundleFile, dest_path: Any) -> None:
+        """Verifica integridade do download contra hash do manifest.
+
+        Preferencia: hash+hash_algo (v1.0.3+) -> sha256 legado (v1.0.x).
+        Em hash_partial=True, hasheia so os primeiros 65535 bytes pra casar
+        com MemoRead truncado do server (build sem streaming).
+        """
+        # Determina algoritmo e hash esperado
+        algo = (bundle_file.hash_algo or "").lower()
+        expected = bundle_file.hash
+        if not expected:
+            # Fallback pra campo legado sha256 (v1.0.x)
+            expected = bundle_file.sha256
+            if expected:
+                algo = "sha256"
+        if not expected or not algo:
+            # Servidor nao emitiu hash (build sem funcao disponivel) — pula
+            return
+
+        if algo not in {"sha256", "sha1", "md5"}:
+            # Algoritmo desconhecido — registra warning silencioso e pula
+            return
+
+        hasher = hashlib.new(algo)
+        from pathlib import Path
+        dest = Path(dest_path)
+        # Se hash_partial, server so hasheou os primeiros 65535 bytes
+        # (MemoRead truncado). Cliente faz o mesmo pra casar.
+        max_bytes = 65535 if bundle_file.hash_partial else None
+        bytes_read = 0
+        with dest.open("rb") as f:
+            while True:
+                chunk_size = 65536
+                if max_bytes is not None:
+                    chunk_size = min(chunk_size, max_bytes - bytes_read)
+                    if chunk_size <= 0:
+                        break
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                bytes_read += len(chunk)
+
+        actual = hasher.hexdigest()
+        if actual.lower() != expected.lower():
+            partial_note = " (partial — primeiros 65535B)" if bundle_file.hash_partial else ""
             raise ColetaDBError(
-                f"sha256 mismatch em {bundle_file.name}: "
-                f"esperado {bundle_file.sha256[:16]}..., "
-                f"obtido {actual_sha[:16]}...",
-                code="SHA256_MISMATCH",
+                f"{algo} mismatch em {bundle_file.name}{partial_note}: "
+                f"esperado {expected[:16]}..., "
+                f"obtido {actual[:16]}...",
+                code=f"{algo.upper()}_MISMATCH",
                 hint="Arquivo corrompido durante transfer. Tente rodar novamente.",
             )
-        return total_written
 
     # ---------------------------------------------------------------------
     # Internals

@@ -4,6 +4,35 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-05-24
+
+Release de docs + skills + hash_algo no cliente REST. Sem mudanças no
+schema do índice — `uv tool upgrade plugadvpl` é seguro.
+
+### Added — Cliente `coletadb_client.py` suporta `hash_algo` + `hash_partial`
+
+Servidor `coletadb.tlpp` v1.0.3 passou a emitir `hash` + `hash_algo` +
+`hash_partial` no manifest (porque algumas builds Protheus não têm
+`Sha2_256`). Cliente Python agora:
+
+- Lê os 3 campos novos em `BundleFile`.
+- Escolhe `hashlib.new(algo)` (sha256 | sha1 | md5) na verificação do
+  download.
+- Quando `hash_partial=True`, hasheia só os **primeiros 65535 bytes** pra
+  casar com `MemoRead` truncado do server (sem streaming).
+- Mantém fallback pro campo legado `sha256` (servers v1.0.x).
+- Se nenhum hash vier, pula validação silenciosamente.
+
+6 testes unitários novos cobrindo sha1/md5/partial/legacy/empty.
+
+### Fixed — Docs desatualizadas pós-v0.13.0
+
+- `skills/ingest-protheus/SKILL.md`: tabela "11 SX padrão (MVP)" virou
+  "21 tabelas (cobertura 100%)". Roadmap marcou Fase 4b como completed.
+- `docs/reference-impl/README.md`: seção "O que extrai" expandida pros
+  21/21 + nova seção "Hash do bundle (v1.0.3+)" documentando os campos
+  novos do manifest.
+
 ### Fixed — `docs/reference-impl/coletadb.tlpp` v1.0.3 (issue #9, 3 bugs)
 
 Três bugs reportados pela IA da fábrica @tbarbito após smoke ponta-a-ponta

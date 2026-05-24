@@ -393,6 +393,123 @@ class TestDownloadFile:
         assert exc_info.value.code == "SHA256_MISMATCH"
 
 
+class TestHashAlgo:
+    """Verificacao de hash com algoritmo dinamico (v1.0.3+ do servidor)."""
+
+    def _setup_download(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        content: bytes,
+    ) -> None:
+        def urlopen_bytes(req, **kwargs):  # noqa: ARG001
+            return _fake_binary_response(
+                200, content,
+                headers={
+                    "X-Total-Size": str(len(content)),
+                    "Content-Length": str(len(content)),
+                },
+            )
+        monkeypatch.setattr("plugadvpl.coletadb_client.urlopen", urlopen_bytes)
+
+    def test_sha1_hash_verified(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        import hashlib
+        content = b"hello sha1 world"
+        sha1 = hashlib.sha1(content).hexdigest()
+        bf = BundleFile(
+            name="x.csv", path="\\temp\\x.csv",
+            size_bytes=len(content), chunks=1, sha256="",
+            hash=sha1, hash_algo="sha1", hash_partial=False,
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        # Nao deve raise — sha1 bate
+        client.download_file(bf, tmp_path / "x.csv")
+
+    def test_md5_hash_verified(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        import hashlib
+        content = b"hello md5 world"
+        md5 = hashlib.md5(content).hexdigest()
+        bf = BundleFile(
+            name="x.csv", path="\\temp\\x.csv",
+            size_bytes=len(content), chunks=1, sha256="",
+            hash=md5, hash_algo="md5", hash_partial=False,
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        client.download_file(bf, tmp_path / "x.csv")
+
+    def test_sha1_mismatch_raises(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        content = b"correct bytes"
+        bf = BundleFile(
+            name="x.csv", path="\\temp\\x.csv",
+            size_bytes=len(content), chunks=1, sha256="",
+            hash="0" * 40, hash_algo="sha1", hash_partial=False,
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        with pytest.raises(ColetaDBError) as exc_info:
+            client.download_file(bf, tmp_path / "x.csv")
+        assert exc_info.value.code == "SHA1_MISMATCH"
+
+    def test_hash_partial_only_hashes_first_65535_bytes(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Quando hash_partial=True, cliente hasheia so os primeiros 65535
+        bytes pra casar com MemoRead truncado do server."""
+        import hashlib
+        # 100KB de conteudo; server hasheia so primeiros 65535
+        content = b"A" * (100 * 1024)
+        expected_partial_sha1 = hashlib.sha1(content[:65535]).hexdigest()
+        bf = BundleFile(
+            name="big.csv", path="\\temp\\big.csv",
+            size_bytes=len(content), chunks=1, sha256="",
+            hash=expected_partial_sha1, hash_algo="sha1", hash_partial=True,
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        # Nao deve raise — hash dos primeiros 65535 bate
+        client.download_file(bf, tmp_path / "big.csv")
+
+    def test_no_hash_skips_validation(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Server sem funcao de hash disponivel -> hash="", hash_algo="".
+        Cliente deve pular validacao silenciosamente."""
+        content = b"any bytes"
+        bf = BundleFile(
+            name="x.csv", path="\\temp\\x.csv",
+            size_bytes=len(content), chunks=1, sha256="",
+            hash="", hash_algo="", hash_partial=False,
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        # Sem hash, nao raise mesmo com bytes "errados"
+        client.download_file(bf, tmp_path / "x.csv")
+
+    def test_legacy_sha256_field_still_works(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Servidor v1.0.x emite so 'sha256' (sem hash_algo). Cliente
+        deve continuar validando pelo campo legado."""
+        import hashlib
+        content = b"legacy server response"
+        sha256 = hashlib.sha256(content).hexdigest()
+        bf = BundleFile(
+            name="x.csv", path="\\temp\\x.csv",
+            size_bytes=len(content), chunks=1, sha256=sha256,
+            # hash/hash_algo nao setados — server antigo
+        )
+        self._setup_download(monkeypatch, content)
+        client = ColetaDBClient(endpoint="http://x/rest", user="u", password="p")
+        client.download_file(bf, tmp_path / "x.csv")
+
+
 class TestRetry:
     def test_retries_on_5xx_then_succeeds(
         self, monkeypatch: pytest.MonkeyPatch,

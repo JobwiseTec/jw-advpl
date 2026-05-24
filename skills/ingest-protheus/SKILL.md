@@ -101,7 +101,7 @@ O DB resultante deste comando é **funcionalmente idêntico** ao produzido por `
 | Freshness | Foto do momento da exportação | Estado atual do banco |
 | Trabalho do dev | Pedir export → receber zip → descompactar → ingest | 1 comando |
 | Auth | Não precisa | Basic (mesmas creds do compile) |
-| Tabelas | 11 SX padrão | 11 SX padrão (MVP). XXA/XAM/XAL/MPMENU/JOBS no Fase 4 |
+| Tabelas | 11 SX padrão | **21 tabelas** (11 SX + XXA/XAM/XAL + 6 MPMENU + SCHEDULES + JOBS + RECORD_COUNTS — cobertura 100% do bundle) |
 | Drift detection | Não | Sim (Fase 4a, futuro) |
 | Conectividade | Não (offline) | Sim (HTTP ao AppServer) |
 
@@ -114,9 +114,10 @@ O DB resultante deste comando é **funcionalmente idêntico** ao produzido por `
 - **`sha256 mismatch em X.csv`** — arquivo corrompido durante transfer (rede flaky) — rode novamente
 - **`Conectividade falhou`** — AppServer fora do ar, VPN, firewall, ou `[HTTPV11]` desabilitado
 
-## Roadmap (vide [issue #3](https://github.com/JoniPraia/causa/issues/3))
+## Roadmap
 
-- ✅ **Fase 3** (atual, em PR) — comando básico via bundle pattern
+- ✅ **Fase 3** (v0.11.0) — comando básico via bundle pattern (11 SX padrão)
+- ✅ **Fase 4b** (v0.12.0 + v0.13.0) — cobertura 21/21 (XXA/XAM/XAL + MPMENU/SCHEDULES/JOBS + RECORD_COUNTS)
 - 🔜 **Fase 4a** — `plugadvpl sx-drift` (compara DB local vs estado atual via REST)
-- 🔜 **Fase 4b** — suporte a XXA/XAM/XAL + MPMENU/SCHEDULES/JOBS/RECORD_COUNTS
 - 🔜 **Fase 4c** — auto-install do COLETADB via `plugadvpl compile`
+- 🔜 **Hash com algoritmo dinâmico** — server v1.0.3+ emite `hash_algo` (sha256/sha1/md5) + `hash_partial`. Cliente Python honra (v0.13.1+, em PR)
