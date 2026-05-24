@@ -104,7 +104,7 @@ processOrder(cNumero="001", lEmite=.F.)
 
 ## Regra de ouro
 
-**Chave usada na chamada deve casar exatamente com o nome formal da assinatura.** Erro de nome (typo, case errado) → falha de compilação ou atribuição silenciosa dependendo da build.
+**Chave usada na chamada deve casar exatamente com o nome formal da assinatura.** O compilador valida o nome do parâmetro formal — typo ou case errado causa erro de compilação (mesma rigidez da checagem de tipo).
 
 Manter paridade nome local da chamada = nome formal da função sempre que possível:
 
@@ -194,9 +194,9 @@ Em build anterior, named args em `New()` não compila — use posicional.
 ### Antes
 
 ```tlpp
-Function gerarRelatorio(cCliente, dInicio, dFim)
+function gerarRelatorio(cCliente, dInicio, dFim)
     // ...
-EndFunction
+return
 
 // 30 callers espalhados
 gerarRelatorio("ACME", dIni, dFim)
@@ -206,10 +206,9 @@ gerarRelatorio("CONTOSO", dIni, dFim)
 ### Adicionar `cMoeda` opcional
 
 ```tlpp
-Function gerarRelatorio(cCliente, dInicio, dFim, cMoeda)
-    cMoeda := If(Empty(cMoeda), "01", cMoeda)
+function gerarRelatorio(cCliente, dInicio, dFim, cMoeda := "01")
     // ...
-EndFunction
+return
 ```
 
 Chamadas posicionais antigas: ainda funcionam (`cMoeda` fica Nil → default "01"). OK.
@@ -226,7 +225,7 @@ gerarRelatorio(cCliente="ACME", dInicio=dIni, dFim=dFim, cMoeda="02")
 - **Caller em `.prw`**: ADVPL clássico não suporta. Caller TEM que estar em `.tlpp`.
 - **Build antiga**: AppServer < 20.3.2.0 não reconhece. Sintoma: erro "expected expression" ou compile fail silencioso. Para classes, exige < 24.3.1.0.
 - **Mistura inversa**: nomeado seguido de posicional é erro de sintaxe. Sempre posicional → nomeado.
-- **Nome errado do param**: algumas builds erram em compilação, outras silenciam (param fica Nil). Validar via debug se comportamento estranho.
+- **Nome errado do param**: compilador valida nome formal — typo causa erro de compilação igual a um tipo errado.
 - **`User Function` vs `Function`**: ambos suportam named args na chamada quando definidos em `.tlpp`. Endpoints REST (`@Get`/`@Post`) seguem mesma regra.
 - **Tipagem checada**: se a assinatura tem `as Numeric`, o named arg é validado contra o tipo na build (não bypassa tipagem).
 
