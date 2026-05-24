@@ -295,6 +295,7 @@ Nota sobre continuação de linha: usar `;` no final de cada linha quando quebra
 
 ## Sources
 
-- TDN TOTVS: [Suporte a TLPP no Protheus](https://tdn.totvs.com/display/public/framework/Suporte+a+TLPP+no+Protheus)
-- TOTVS Central: [Linguagem TLPP ou TL++](https://centraldeatendimento.totvs.com/hc/pt-br/articles/28424631692055)
-- Daniel Atayde — Terminal de Informação (referência conceitual; operador confirmado como `=` em validação interna deste plugin).
+- **Fonte oficial primária** — [Parâmetros Nomeados em TLPP — Hugo Guilherme Gomes / TOTVS Developers (Medium)](https://medium.com/totvsdevelopers/par%C3%A2metros-nomeados-em-tlpp-ec2211bfe346) — operador `=`, versões 20.3.2.0 / 24.3.1.0, regras de mistura confirmadas aqui.
+- [TLPP - Recursos de Linguagem — TDN TOTVS](https://tdn.totvs.com/display/tec/TLPP+-+Recursos+de+Linguagem)
+- [Suporte a TLPP no Protheus — TDN TOTVS](https://tdn.totvs.com/display/public/framework/Suporte+a+TLPP+no+Protheus)
+- [Linguagem TLPP ou TL++ — TOTVS Central](https://centraldeatendimento.totvs.com/hc/pt-br/articles/28424631692055)
