@@ -1,0 +1,5 @@
+"XXA_DOM","XXA_CDOM","XXA_SEQUEN","XXA_DESCRI","XXA_DSCSPA","XXA_DSCENG","XXA_TYPE","D_E_L_E_T_"
+"COM_MODSUG","COM_MODACA","001","Modalidade Acatada","Modalidad Acatada","Mode Accepted","3",""
+"COM_MODSUG","COM_MODREJ","002","Modalidade Rejeitada","Modalidad Rechazada","Mode Rejected","3",""
+"PED_STATUS","PED_NOVO","001","Novo","Nuevo","New","1",""
+"DELETED","XXX","001","Pra Apagar","","","0","*"

@@ -1,0 +1,5 @@
+"XAL_FILIAL","XAL_ID","XAL_DESC","XAL_TIPO","XAL_PROPRI","D_E_L_E_T_"
+"","501","Nome","1","S",""
+"","502","CPF","1","S",""
+"","503","Email","2","S",""
+"","999","Custom Cliente","1","U",""

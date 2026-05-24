@@ -112,8 +112,11 @@ class TestIngestViaRestBasic:
         assert counters["bundle_id"] == "fake-bundle-uuid"
 
     def test_skips_non_mvp_files(self, tmp_path: Path) -> None:
-        """COLETADB emite XXA/MPMENU/SCHEDULES/JOBS/RECORD_COUNTS — MVP pula."""
-        # Manifest com mix: 2 MVP (SX2, SX3) + 3 nao-MVP (XXA, MPMENU_MENU, JOBS)
+        """COLETADB emite MPMENU/SCHEDULES/JOBS — esses ainda ficam pra
+        Universo 6/8 e o MVP pula. v0.12.0 (migration 013) ja absorve
+        XXA/XAL/XAM + RECORD_COUNTS, entao esses NAO devem ser pulados.
+        """
+        # Manifest com mix: 4 MVP (SX2, SX3, XXA, RECORD_COUNTS) + 2 nao-MVP
         manifest = Manifest(
             bundle_id="x", bundle_dir="\\temp\\x\\", modo="enxuto", threshold=10,
             chunk_size=4194304,
@@ -121,8 +124,9 @@ class TestIngestViaRestBasic:
                 BundleFile(name="SX2.csv", path="p1", size_bytes=10, chunks=1, sha256=""),
                 BundleFile(name="SX3.csv", path="p2", size_bytes=10, chunks=1, sha256=""),
                 BundleFile(name="XXA.csv", path="p3", size_bytes=10, chunks=1, sha256=""),
-                BundleFile(name="MPMENU_MENU.csv", path="p4", size_bytes=10, chunks=1, sha256=""),
-                BundleFile(name="JOBS.csv", path="p5", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="RECORD_COUNTS.csv", path="p4", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="MPMENU_MENU.csv", path="p5", size_bytes=10, chunks=1, sha256=""),
+                BundleFile(name="JOBS.csv", path="p6", size_bytes=10, chunks=1, sha256=""),
             ],
         )
 
@@ -131,7 +135,8 @@ class TestIngestViaRestBasic:
         def mock_download(bf, dest, **kw):  # noqa: ARG001
             downloaded.append(bf.name)
             Path(dest).parent.mkdir(parents=True, exist_ok=True)
-            # Mini CSV valido pra cada
+            # Mini CSV valido pra cada (SX2 header — outras tabelas vao virar
+            # ingest no-op pq parser nao vai casar header, mas ok pro teste)
             Path(dest).write_text("X2_CHAVE,X2_NOME,X2_MODO,D_E_L_E_T_\n", encoding="cp1252")
             return 50
 
@@ -141,8 +146,8 @@ class TestIngestViaRestBasic:
 
         ingest_via_rest(client, tmp_path / "index.db")
 
-        # Apenas SX2 e SX3 devem ter sido baixados; XXA/MPMENU/JOBS pulados
-        assert set(downloaded) == {"SX2.csv", "SX3.csv"}
+        # MVP-extended baixa SX2/SX3/XXA/RECORD_COUNTS, pula MPMENU/JOBS
+        assert set(downloaded) == {"SX2.csv", "SX3.csv", "XXA.csv", "RECORD_COUNTS.csv"}
 
 
 class TestParidadeFuncional:

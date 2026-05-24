@@ -34,12 +34,15 @@ if TYPE_CHECKING:
     from plugadvpl.coletadb_client import ColetaDBClient, Manifest
 
 
-# Tabelas SX padrao que o MVP do plugadvpl consome. COLETADB emite mais
-# (XXA, XAM, XAL, MPMENU, SCHEDULES, JOBS, RECORD_COUNTS) — esses ficam
-# pra Fase 4. Aqui filtramos so os SX que o ingest_sx atual processa.
+# Tabelas que o plugin ingere via REST. v0.12.0 (migration 013) estendeu
+# pra cobrir XXA/XAM/XAL (SX extras LGPD/dominios) + RECORD_COUNTS
+# (inventario fisico DBMS via UPDATE em tabelas.num_rows). MPMENU/SCHEDULES/
+# JOBS ainda ficam pra Universos 6/8 (releases futuras).
 _MVP_TABLES: frozenset[str] = frozenset({
     "SIX", "SX1", "SX2", "SX3", "SX5",
     "SX6", "SX7", "SX9", "SXA", "SXB", "SXG",
+    # v0.12.0 — extras (migration 013)
+    "XXA", "XAL", "XAM", "RECORD_COUNTS",
 })
 
 
@@ -48,10 +51,12 @@ def _iso_now() -> str:
 
 
 def _is_mvp_table(name: str) -> bool:
-    """``True`` se ``name`` (ex: 'SX3.csv') esta nos 11 tipos SX do MVP."""
+    """``True`` se ``name`` (ex: 'SX3.csv', 'RECORD_COUNTS.csv') esta nos
+    tipos cobertos pelo plugin (atualmente 11 SX padrao + 3 SX extras + 1
+    inventario)."""
     if not name.lower().endswith(".csv"):
         return False
-    stem = name[:-4].upper()  # 'SX3'
+    stem = name[:-4].upper()  # 'SX3' ou 'RECORD_COUNTS'
     return stem in _MVP_TABLES
 
 

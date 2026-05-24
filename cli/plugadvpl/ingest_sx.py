@@ -74,6 +74,19 @@ _SX_INGEST_PLAN: list[tuple[str, str, list[str]]] = [
     ("sxa.csv",  "pastas",             ["alias", "ordem", "descricao", "proprietario", "agrupamento"]),
     ("sxb.csv",  "consultas",          ["alias", "tipo", "sequencia", "coluna", "descricao", "conteudo"]),
     ("sxg.csv",  "grupos_campo",       ["grupo", "descricao", "tamanho_max", "tamanho_min", "tamanho", "total_campos"]),
+    # v0.12.0 — migration 013 (SX extras emitidos pelo COLETADB.tlpp)
+    ("xxa.csv",  "dominios",           [
+        "dominio", "cod_dominio", "sequencia", "descricao",
+        "descricao_es", "descricao_en", "tipo",
+    ]),
+    ("xal.csv",  "classificacoes_lgpd", [
+        "filial", "classificacao_id", "descricao", "tipo", "proprietario", "custom",
+    ]),
+    ("xam.csv",  "anonimizacao_campos", [
+        "filial", "classificacao", "anonimizar", "justificativa",
+        "campo", "modulo", "classificacao_id", "alias",
+        "identificador", "proprietario", "justificativa2", "em_uso", "custom",
+    ]),
 ]
 
 # Mapeamento de nome de arquivo → função de parsing (resolvida por nome).
@@ -89,6 +102,10 @@ _PARSER_BY_FILE: dict[str, Callable[[Path], list[dict[str, Any]]]] = {
     "sxb.csv": sx_csv.parse_sxb,
     "sxg.csv": sx_csv.parse_sxg,
     "six.csv": sx_csv.parse_six,
+    # v0.12.0 — extras
+    "xxa.csv": sx_csv.parse_xxa,
+    "xal.csv": sx_csv.parse_xal,
+    "xam.csv": sx_csv.parse_xam,
 }
 
 _BATCH_SIZE = 1000
@@ -108,6 +125,10 @@ _PK_COLS_BY_TABLE: dict[str, tuple[str, ...]] = {
     "pastas":             ("alias", "ordem"),
     "consultas":          ("alias", "tipo", "sequencia", "coluna"),  # v0.3.14: +tipo
     "grupos_campo":       ("grupo",),
+    # v0.12.0 — migration 013
+    "dominios":             ("dominio", "cod_dominio", "sequencia"),
+    "classificacoes_lgpd":  ("filial", "classificacao_id"),
+    "anonimizacao_campos":  ("filial", "alias", "campo"),
 }
 
 # Mapa CSV → meta.* counter (apenas para os que importam para o usuário/skill).
@@ -123,6 +144,10 @@ _META_KEY_BY_TABLE: dict[str, str] = {
     "pastas":             "total_sx_pastas",
     "consultas":          "total_sx_consultas",
     "grupos_campo":       "total_sx_grupos_campo",
+    # v0.12.0 — migration 013
+    "dominios":             "total_sx_dominios",
+    "classificacoes_lgpd":  "total_sx_classificacoes_lgpd",
+    "anonimizacao_campos":  "total_sx_anonimizacao_campos",
 }
 
 
@@ -297,6 +322,40 @@ def ingest_sx(
                 """
             )
             conn.commit()
+
+        # v0.12.0: RECORD_COUNTS.csv — opcional. Atualiza tabelas.num_rows com
+        # inventario fisico do DBMS. Match por prefix de 3 chars do nome
+        # fisico (ex: "SA1010" -> alias "SA1"). Tabelas sem prefix Protheus
+        # reconhecido sao ignoradas (MSSQL system tables, etc.).
+        record_counts_file = _find_file_ci(csv_dir, "record_counts.csv")
+        if record_counts_file is not None:
+            try:
+                rc_rows = sx_csv.parse_record_counts(record_counts_file)
+                # Agrega por prefix de 3 chars (alias Protheus). Soma multi-empresa.
+                by_alias: dict[str, int] = {}
+                for rc in rc_rows:
+                    tn = rc["table_name"]
+                    if len(tn) < 3:
+                        continue
+                    alias = tn[:3].upper()
+                    # Skip non-Protheus (MP_, SYS_, TOP_ system)
+                    if alias.startswith(("MP_", "SYS", "TOP", "TPH")):
+                        continue
+                    by_alias[alias] = by_alias.get(alias, 0) + rc["num_rows"]
+                # UPDATE em tabelas
+                updated = 0
+                for alias, total in by_alias.items():
+                    cur = conn.execute(
+                        "UPDATE tabelas SET num_rows = ? WHERE upper(codigo) = ?",
+                        (total, alias),
+                    )
+                    updated += cur.rowcount
+                conn.commit()
+                counters["record_counts_updated"] = updated
+                counters["record_counts_aliases"] = len(by_alias)
+            except Exception as exc:  # boundary
+                print(f"WARN: falha ao processar RECORD_COUNTS.csv: {exc}", file=sys.stderr)
+                counters["record_counts_updated"] = 0
 
         # Atualiza meta com totais (refletem o estado final do DB, não o batch atual).
         for table, key in _META_KEY_BY_TABLE.items():
