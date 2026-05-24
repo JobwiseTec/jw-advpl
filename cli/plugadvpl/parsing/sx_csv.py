@@ -696,3 +696,248 @@ def parse_record_counts(file_path: Path) -> list[dict[str, Any]]:
             num_rows = 0
         result.append({"table_name": table_name, "num_rows": num_rows})
     return result
+
+
+# ---------------------------------------------------------------------------
+# Universo 6 (Workflow) — schedules + jobs. v0.13.0 / migration 014.
+# Schemas com colunas humanas (ja decodificadas pelo COLETADB), nao
+# colunas fisicas X*_*. PT-BR no header literal.
+# ---------------------------------------------------------------------------
+
+
+def normalize_schedules_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SCHEDULES (header literal PT-BR, vide migration 014)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        codigo = row.get("Codigo", "").strip()
+        if not codigo:
+            continue
+        result.append(
+            {
+                "codigo": codigo,
+                "rotina": row.get("Rotina", "").strip(),
+                "empresa_filial": row.get("Empresa_Filial", "").strip(),
+                "environment": row.get("Environment", "").strip(),
+                "modulo": row.get("Modulo", "").strip(),
+                "status": row.get("Status", "").strip(),
+                "tipo_recorrencia": row.get("Tipo_Recorrencia", "").strip(),
+                "detalhe_recorrencia": row.get("Detalhe_Recorrencia", "").strip(),
+                "execucoes_dia": row.get("Execucoes_Dia", "").strip(),
+                "intervalo_hh_mm": row.get("Intervalo_HH_MM", "").strip(),
+                "data_fim_recorrencia": row.get("Data_Fim_Recorrencia", "").strip(),
+                "hora_inicio": row.get("Hora_Inicio", "").strip(),
+                "data_criacao": row.get("Data_Criacao", "").strip(),
+                "ultima_execucao": row.get("Ultima_Execucao", "").strip(),
+                "ultima_hora": row.get("Ultima_Hora", "").strip(),
+                "recorrencia_raw": row.get("Recorrencia_Raw", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_schedules(file_path: Path) -> list[dict[str, Any]]:
+    """SCHEDULES.csv — agendamentos do scheduler Protheus."""
+    return normalize_schedules_rows(_read_csv(file_path))
+
+
+def normalize_jobs_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows JOBS (parse do appserver*.ini, vide migration 014)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        arquivo = row.get("Arquivo", "").strip()
+        sessao = row.get("Sessao", "").strip()
+        if not arquivo or not sessao:
+            continue
+        result.append(
+            {
+                "arquivo": arquivo,
+                "sessao": sessao,
+                "rotina_main": row.get("Rotina_Main", "").strip(),
+                "refresh_rate": row.get("RefreshRate", "").strip(),
+                "parametros": row.get("Parametros", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_jobs(file_path: Path) -> list[dict[str, Any]]:
+    """JOBS.csv — definicoes [<job>] do appserver*.ini."""
+    return normalize_jobs_rows(_read_csv(file_path))
+
+
+# ---------------------------------------------------------------------------
+# Universo 8 (Menus) — 6 tabelas MPMENU. v0.13.0 / migration 015.
+# Colunas fisicas com prefixos M_/F_/I_/N_/K_/R_ (nao X*_*).
+# ---------------------------------------------------------------------------
+
+
+def normalize_mpmenu_menu_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_MENU (chaves M_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        mid = row.get("M_ID", "").strip()
+        if not mid:
+            continue
+        result.append(
+            {
+                "id": mid,
+                "nome": row.get("M_NAME", "").strip(),
+                "versao": row.get("M_VERSION", "").strip(),
+                "modulo": row.get("M_MODULE", "").strip(),
+                "md5_arquivo": row.get("M_MD5_FILE", "").strip(),
+                "is_default": row.get("M_DEFAULT", "").strip(),
+                "arquivo_menu": row.get("M_ARQMENU", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_menu(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_MENU — definicoes de menu raiz."""
+    return normalize_mpmenu_menu_rows(_read_csv(file_path))
+
+
+def normalize_mpmenu_function_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_FUNCTION (chaves F_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        fid = row.get("F_ID", "").strip()
+        if not fid:
+            continue
+        result.append(
+            {
+                "id": fid,
+                "funcao": row.get("F_FUNCTION", "").strip(),
+                "is_default": row.get("F_DEFAULT", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_function(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_FUNCTION — funcoes ADVPL referenciadas pelos items."""
+    return normalize_mpmenu_function_rows(_read_csv(file_path))
+
+
+def normalize_mpmenu_item_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_ITEM (chaves I_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        iid = row.get("I_ID", "").strip()
+        if not iid:
+            continue
+        result.append(
+            {
+                "id": iid,
+                "id_menu": row.get("I_ID_MENU", "").strip(),
+                "id_pai": row.get("I_FATHER", "").strip(),
+                "ordem": row.get("I_ORDER", "").strip(),
+                "item_id_legado": row.get("I_ITEMID", "").strip(),
+                "tp_menu": row.get("I_TP_MENU", "").strip(),
+                "status": row.get("I_STATUS", "").strip(),
+                "id_funcao": row.get("I_ID_FUNC", "").strip(),
+                "res_name": row.get("I_RESNAME", "").strip(),
+                "tipo": row.get("I_TYPE", "").strip(),
+                "tabelas": row.get("I_TABLES", "").strip(),
+                "acesso": row.get("I_ACCESS", "").strip(),
+                "proprietario": row.get("I_OWNER", "").strip(),
+                "modulo": row.get("I_MODULE", "").strip(),
+                "is_default": row.get("I_DEFAULT", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_item(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_ITEM — items individuais de menu (estrutura hierarquica)."""
+    return normalize_mpmenu_item_rows(_read_csv(file_path))
+
+
+def normalize_mpmenu_i18n_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_I18N (chaves N_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        parent_id = row.get("N_PAREN_ID", "").strip()
+        idioma = row.get("N_LANG", "").strip()
+        if not parent_id or not idioma:
+            continue
+        result.append(
+            {
+                "parent_tipo": row.get("N_PAREN_TP", "").strip(),
+                "parent_id": parent_id,
+                "idioma": idioma,
+                "descricao": row.get("N_DESC", "").strip(),
+                "is_default": row.get("N_DEFAULT", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_i18n(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_I18N — descricoes traduzidas."""
+    return normalize_mpmenu_i18n_rows(_read_csv(file_path))
+
+
+def normalize_mpmenu_key_words_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_KEY_WORDS (chaves K_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        id_item = row.get("K_ID_ITEM", "").strip()
+        idioma = row.get("K_LANG", "").strip()
+        if not id_item or not idioma:
+            continue
+        result.append(
+            {
+                "id_item": id_item,
+                "idioma": idioma,
+                "palavras_chave": row.get("K_DESC", "").strip(),
+                "is_default": row.get("K_DEFAULT", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_key_words(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_KEY_WORDS — palavras-chave de busca."""
+    return normalize_mpmenu_key_words_rows(_read_csv(file_path))
+
+
+def normalize_mpmenu_rw_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows MPMENU_RW (chaves R_*)."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted_recnod(row):
+            continue
+        idioma = row.get("R_LANG", "").strip()
+        if not idioma:
+            continue
+        result.append(
+            {
+                "idioma": idioma,
+                "descricao": row.get("R_DESC", "").strip(),
+                "is_default": row.get("R_DEFAULT", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_mpmenu_rw(file_path: Path) -> list[dict[str, Any]]:
+    """MPMENU_RW — leitura/escrita por idioma."""
+    return normalize_mpmenu_rw_rows(_read_csv(file_path))
+
+
+def _row_is_deleted_recnod(row: dict[str, str]) -> bool:
+    """Filtra rows deletados em CSVs MPMENU (usa R_E_C_D_E_L_ no fim, nao
+    D_E_L_E_T_ como SX). Valor "1" significa deletado."""
+    deleted = row.get("R_E_C_D_E_L_", "").strip().strip('"').strip()
+    return deleted == "1"

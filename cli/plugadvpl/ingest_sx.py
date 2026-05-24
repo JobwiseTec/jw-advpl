@@ -87,6 +87,37 @@ _SX_INGEST_PLAN: list[tuple[str, str, list[str]]] = [
         "campo", "modulo", "classificacao_id", "alias",
         "identificador", "proprietario", "justificativa2", "em_uso", "custom",
     ]),
+    # v0.13.0 — migration 014 (Universo 6 — Workflow)
+    ("schedules.csv", "schedules", [
+        "codigo", "rotina", "empresa_filial", "environment", "modulo", "status",
+        "tipo_recorrencia", "detalhe_recorrencia", "execucoes_dia",
+        "intervalo_hh_mm", "data_fim_recorrencia", "hora_inicio",
+        "data_criacao", "ultima_execucao", "ultima_hora", "recorrencia_raw",
+    ]),
+    ("jobs.csv", "jobs", [
+        "arquivo", "sessao", "rotina_main", "refresh_rate", "parametros",
+    ]),
+    # v0.13.0 — migration 015 (Universo 8 — Menus)
+    ("mpmenu_menu.csv", "mpmenu_menu", [
+        "id", "nome", "versao", "modulo", "md5_arquivo", "is_default", "arquivo_menu",
+    ]),
+    ("mpmenu_function.csv", "mpmenu_function", [
+        "id", "funcao", "is_default",
+    ]),
+    ("mpmenu_item.csv", "mpmenu_item", [
+        "id", "id_menu", "id_pai", "ordem", "item_id_legado", "tp_menu",
+        "status", "id_funcao", "res_name", "tipo", "tabelas", "acesso",
+        "proprietario", "modulo", "is_default",
+    ]),
+    ("mpmenu_i18n.csv", "mpmenu_i18n", [
+        "parent_tipo", "parent_id", "idioma", "descricao", "is_default",
+    ]),
+    ("mpmenu_key_words.csv", "mpmenu_key_words", [
+        "id_item", "idioma", "palavras_chave", "is_default",
+    ]),
+    ("mpmenu_rw.csv", "mpmenu_rw", [
+        "idioma", "descricao", "is_default",
+    ]),
 ]
 
 # Mapeamento de nome de arquivo → função de parsing (resolvida por nome).
@@ -106,6 +137,16 @@ _PARSER_BY_FILE: dict[str, Callable[[Path], list[dict[str, Any]]]] = {
     "xxa.csv": sx_csv.parse_xxa,
     "xal.csv": sx_csv.parse_xal,
     "xam.csv": sx_csv.parse_xam,
+    # v0.13.0 — Universo 6 (Workflow)
+    "schedules.csv": sx_csv.parse_schedules,
+    "jobs.csv": sx_csv.parse_jobs,
+    # v0.13.0 — Universo 8 (Menus)
+    "mpmenu_menu.csv": sx_csv.parse_mpmenu_menu,
+    "mpmenu_function.csv": sx_csv.parse_mpmenu_function,
+    "mpmenu_item.csv": sx_csv.parse_mpmenu_item,
+    "mpmenu_i18n.csv": sx_csv.parse_mpmenu_i18n,
+    "mpmenu_key_words.csv": sx_csv.parse_mpmenu_key_words,
+    "mpmenu_rw.csv": sx_csv.parse_mpmenu_rw,
 }
 
 _BATCH_SIZE = 1000
@@ -129,6 +170,16 @@ _PK_COLS_BY_TABLE: dict[str, tuple[str, ...]] = {
     "dominios":             ("dominio", "cod_dominio", "sequencia"),
     "classificacoes_lgpd":  ("filial", "classificacao_id"),
     "anonimizacao_campos":  ("filial", "alias", "campo"),
+    # v0.13.0 — migration 014 (Workflow)
+    "schedules":            ("codigo",),
+    "jobs":                 ("arquivo", "sessao"),
+    # v0.13.0 — migration 015 (Menus)
+    "mpmenu_menu":          ("id",),
+    "mpmenu_function":      ("id",),
+    "mpmenu_item":          ("id",),
+    "mpmenu_i18n":          ("parent_tipo", "parent_id", "idioma"),
+    "mpmenu_key_words":     ("id_item", "idioma"),
+    "mpmenu_rw":            ("idioma",),
 }
 
 # Mapa CSV → meta.* counter (apenas para os que importam para o usuário/skill).
@@ -148,6 +199,15 @@ _META_KEY_BY_TABLE: dict[str, str] = {
     "dominios":             "total_sx_dominios",
     "classificacoes_lgpd":  "total_sx_classificacoes_lgpd",
     "anonimizacao_campos":  "total_sx_anonimizacao_campos",
+    # v0.13.0 — migrations 014/015
+    "schedules":            "total_workflow_schedules",
+    "jobs":                 "total_workflow_jobs",
+    "mpmenu_menu":          "total_menus",
+    "mpmenu_function":      "total_menu_functions",
+    "mpmenu_item":          "total_menu_items",
+    "mpmenu_i18n":          "total_menu_i18n",
+    "mpmenu_key_words":     "total_menu_key_words",
+    "mpmenu_rw":            "total_menu_rw",
 }
 
 
