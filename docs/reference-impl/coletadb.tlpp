@@ -1,0 +1,1772 @@
+#INCLUDE "TOTVS.CH"
+#INCLUDE "FILEIO.CH"
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+
+/*
++--------------------------------------------------------------------------+
+| COLETADB.tlpp                                                            |
+| Coletor de dicionario Protheus: extrai SX, MPMENU, Schedules, Jobs e    |
+| record counts pra arquivos CSV locais. Saida 100% offline (sem upload). |
+|                                                                          |
+| Dois pontos de entrada:                                                  |
+|   1) UI: U_COLETADB -- dialog interativo do SmartClient.                |
+|   2) API REST: WSRESTFUL COLETADBAPI (PATH /coletadb/run e /file).     |
+|      Cliente externo dispara coleta via POST e baixa CSVs em chunks.   |
+|                                                                          |
+| Versao: 1.0.0                                                            |
+| Linguagem: ADVPL (User Function + WSRESTFUL classic)                     |
+| Compatibilidade: Protheus 12.1.2410+                                     |
+|                                                                          |
+| Encoding ANSI (Windows-1252), CRLF. Strings sem acentos pra portabilidade|
++--------------------------------------------------------------------------+
+*/
+
+/*
++--------------------------------------------------------------------------+
+| LICENSE (MIT)                                                            |
++--------------------------------------------------------------------------+
+| Copyright (c) 2026 plugadvpl contributors                                |
+|                                                                          |
+| Permission is hereby granted, free of charge, to any person obtaining    |
+| a copy of this software and associated documentation files (the         |
+| "Software"), to deal in the Software without restriction, including      |
+| without limitation the rights to use, copy, modify, merge, publish,     |
+| distribute, sublicense, and/or sell copies of the Software, and to      |
+| permit persons to whom the Software is furnished to do so, subject to   |
+| the following conditions:                                                |
+|                                                                          |
+| The above copyright notice and this permission notice shall be          |
+| included in all copies or substantial portions of the Software.         |
+|                                                                          |
+| THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,          |
+| EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF      |
+| MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  |
+| IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY    |
+| CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,    |
+| TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE       |
+| SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                  |
++--------------------------------------------------------------------------+
+*/
+
+#DEFINE CDB_VERSION      "1.0.0"
+#DEFINE CDB_THRESHOLD    10           // minimo de linhas pra tabela contar como ativa
+#DEFINE CDB_LOG_PREFIX   "[COLETADB] "
+#DEFINE CDB_API_CHUNK    4194304      // 4MB por chunk -- limite REST default e 8MB; ficamos com folga
+
+// Lista canonica de SX a extrair (ordem padrao de dicionario Protheus).
+// Nome fisico (com sufixo do environment) e resolvido em runtime via RetSqlName().
+STATIC __aSxList := { ;
+    "SIX", ;
+    "SX1", ;
+    "SX2", ;
+    "SX3", ;
+    "SX5", ;
+    "SX6", ;
+    "SX7", ;
+    "SX9", ;
+    "SXA", ;
+    "SXB", ;
+    "SXG", ;
+    "XXA", ;
+    "XAM", ;
+    "XAL" ;
+}
+
+// SX que aceitam filtro por tabelas ativas (tem coluna que referencia alias).
+// Filtro e sempre aplicado quando aTabAtivas tem conteudo, independente do modo
+// (enxuto/completo) -- nao faz sentido carregar definicao de tabela inexistente
+// ou vazia em nenhum cenario.
+//
+// Fora desta lista (vem sempre completas):
+//   - SX1 (grupos de perguntas), SX5 (tabelas genericas), SX6 (parametros MV_*)
+//     -- sem coluna de alias.
+//   - SXA (pastas do dicionario), SXG (grupos de campos) -- vem completas por
+//     decisao de negocio (metadados compartilhados, filtro indireto via X3
+//     pode esconder pastas/grupos uteis).
+//   - XXA/XAM/XAL -- sem coluna de alias direta ou indireta confiavel.
+STATIC __aSxFiltravel := { "SX2", "SX3", "SX7", "SX9", "SIX", "SXB" }
+
+// MPMENU: 6 queries relacionais
+STATIC __aMpMenu := { ;
+    { "MPMENU_MENU",      "SELECT * FROM MPMENU_MENU WHERE D_E_L_E_T_ = ' ' AND M_NAME NOT LIKE '%BKP%'" }, ;
+    { "MPMENU_FUNCTION",  "SELECT * FROM MPMENU_FUNCTION WHERE D_E_L_E_T_ = ' '" }, ;
+    { "MPMENU_ITEM",      "SELECT * FROM MPMENU_ITEM WHERE D_E_L_E_T_ = ' ' AND I_ID_MENU IN (SELECT M_ID FROM MPMENU_MENU WHERE D_E_L_E_T_ = ' ' AND M_NAME NOT LIKE '%BKP%')" }, ;
+    { "MPMENU_I18N",      "SELECT * FROM MPMENU_I18N WHERE D_E_L_E_T_ = ' ' AND N_PAREN_ID IN (SELECT I_ID FROM MPMENU_ITEM WHERE D_E_L_E_T_ = ' ' AND I_ID_MENU IN (SELECT M_ID FROM MPMENU_MENU WHERE D_E_L_E_T_ = ' ' AND M_NAME NOT LIKE '%BKP%'))" }, ;
+    { "MPMENU_KEY_WORDS", "SELECT * FROM MPMENU_KEY_WORDS WHERE D_E_L_E_T_ = ' ' AND K_ID_ITEM IN (SELECT I_ID FROM MPMENU_ITEM WHERE D_E_L_E_T_ = ' ' AND I_ID_MENU IN (SELECT M_ID FROM MPMENU_MENU WHERE D_E_L_E_T_ = ' ' AND M_NAME NOT LIKE '%BKP%'))" }, ;
+    { "MPMENU_RW",        "SELECT * FROM MPMENU_RW WHERE D_E_L_E_T_ = ' '" } ;
+}
+
+// Console de log em tempo real -- compartilhado entre U_COLETADB (cria
+// o TMultiGet) e LogColetor (atualiza com cada nova mensagem).
+STATIC __cLog := ""
+STATIC __oLog := Nil
+
+/*
++--------------------------------------------------------------------------+
+| U_COLETADB                                                               |
+| Entry point. Abre a tela do coletor em modo geracao local (sem upload).  |
++--------------------------------------------------------------------------+
+*/
+User Function COLETADB()
+    Local oDlg
+    Local oModo, oDirOut, oDirIni
+    Local oFont    := TFont():New("Courier New",, 12,, .F.)
+    Local cModo    := "enxuto"
+    Local cBaseDir := PadR("\temp\", 200)
+    Local cIniDir  := PadR(DescobreRootPath(), 200)
+    Local nThreshold := CDB_THRESHOLD
+
+    // FWGetDialogSize retorna {top, left, bottom, right} relativos a
+    // janela principal. Em contextos sem oMainWnd ativo vem array vazio
+    // -- usamos fallback fixo conservador.
+    Local aCoors := {}
+    If Type("oMainWnd") == "O"
+        aCoors := FWGetDialogSize(oMainWnd)
+    EndIf
+    If Len(aCoors) < 4
+        aCoors := { 0, 0, 700, 1200 }
+    EndIf
+
+    // Reseta o console a cada abertura da tela
+    __cLog := ""
+    __oLog := Nil
+
+    // Escala /2 confirmada na comunidade ADVPL: dialog 780 externo -> 390
+    // de cliente interno. Conteudo usa cols 010..380 + 10 de margem.
+    DEFINE MSDIALOG oDlg TITLE "Coleta de Dicionario Protheus v" + CDB_VERSION ;
+        FROM aCoors[1]/1.15, 0 TO aCoors[3]/1.15, 780 PIXEL ;
+        STYLE DS_MODALFRAME
+
+    // Modo de extracao
+    @ 010, 010 TO 054, 380 LABEL " Modo de extracao " OF oDlg PIXEL
+
+    @ 024, 020 SAY "Modo:" SIZE 030, 008 PIXEL OF oDlg
+    @ 022, 055 COMBOBOX oModo VAR cModo ITEMS { "enxuto", "completo" } SIZE 080, 010 PIXEL OF oDlg
+    @ 024, 145 SAY "(threshold = " + LTrim(Str(nThreshold)) + " linhas)" SIZE 200, 008 PIXEL OF oDlg
+
+    @ 040, 020 SAY "enxuto = so tabelas ativas / completo = todas as SX (troubleshooting)" SIZE 350, 008 PIXEL OF oDlg
+
+    // Pastas: saida do bundle + pasta dos AppServer*.ini (origem dos jobs).
+    // Defaults: \temp\ (output) e RootPath atual (jobs). Usuario pode trocar
+    // via TGet ou botao "..." (cGetFile com GETF_RETDIRECTORY).
+    @ 060, 010 TO 108, 380 LABEL " Pastas " OF oDlg PIXEL
+
+    @ 072, 020 SAY "Saida:"         SIZE 040, 008 PIXEL OF oDlg
+    @ 070, 060 MSGET oDirOut VAR cBaseDir SIZE 260, 010 PIXEL OF oDlg
+    @ 070, 325 BUTTON "..."     SIZE 040, 010 PIXEL OF oDlg ;
+        ACTION PromptDirAtualiza(oDirOut)
+
+    @ 090, 020 SAY "Jobs (INI):"   SIZE 040, 008 PIXEL OF oDlg
+    @ 088, 060 MSGET oDirIni VAR cIniDir  SIZE 260, 010 PIXEL OF oDlg
+    @ 088, 325 BUTTON "..."     SIZE 040, 010 PIXEL OF oDlg ;
+        ACTION PromptDirAtualiza(oDirIni)
+
+    // Console de log em tempo real (TMultiGet readonly, fonte monoespacada).
+    // Log ocupa toda a metade inferior do dialog (208 PIXEL de altura).
+    @ 114, 010 TO 322, 380 LABEL " Log " OF oDlg PIXEL
+
+    __oLog := TMultiGet():New(124, 015, ;
+        {|u| If(PCount() > 0, __cLog := u, __cLog)}, ;
+        oDlg, 365, 194, oFont, .F., , , , .T.)
+    __oLog:lReadOnly := .T.
+
+    // Botoes
+    @ 330, 125 BUTTON "&Gerar CSV"   SIZE 075, 018 PIXEL OF oDlg ;
+        ACTION ColetorExecutar(cModo, nThreshold, AllTrim(cBaseDir), AllTrim(cIniDir))
+    @ 330, 215 BUTTON "&Sair"        SIZE 075, 018 PIXEL OF oDlg ACTION oDlg:End()
+
+    ACTIVATE MSDIALOG oDlg CENTERED
+Return
+
+/*
++--------------------------------------------------------------------------+
+| ColetorExecutar -- variante UI do orquestrador.                         |
+| Reseta o console, delega pra ColetaCoreExecutar e mostra MsgInfo/Alert.|
++--------------------------------------------------------------------------+
+*/
+Static Function ColetorExecutar(cModo, nThreshold, cBaseDir, cIniDir)
+    Local aRet
+
+    // Limpa o console pra nova execucao (so na variante UI)
+    __cLog := ""
+    If ValType(__oLog) == "O"
+        __oLog:SetText("")
+    EndIf
+
+    aRet := ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, "")
+    If !Empty(aRet[4])
+        MsgAlert(aRet[4], "ColetaDB")
+        Return
+    EndIf
+
+    MsgInfo("Arquivos gerados em:" + Chr(13) + Chr(10) + aRet[2], "ColetaDB")
+Return
+
+/*
++--------------------------------------------------------------------------+
+| ColetaCoreExecutar -- nucleo de extracao, sem dependencia de UI.        |
+| Pode ser chamada tanto pela tela (U_COLETADB) quanto pela API REST.    |
+|                                                                          |
+| Args:                                                                    |
+|   cModo        "enxuto" ou "completo"                                   |
+|   nThreshold   minimo de linhas pra tabela contar como ativa            |
+|   cBaseDir     base do bundle (default "\temp\")                        |
+|   cIniDir      pasta dos AppServer*.ini (default DescobreRootPath())    |
+|   cBundleIdOpt forca um bundle id (vazio = gera novo via GerarUuid)    |
+|                                                                          |
+| Retorna array {4}:                                                       |
+|   [1] cBundleId   identificador do bundle                               |
+|   [2] cBundleDir  caminho completo do diretorio gerado                  |
+|   [3] aFiles      lista { {sx_type, path_csv}, ... }                    |
+|   [4] cErr        mensagem de erro (vazio se OK)                        |
++--------------------------------------------------------------------------+
+*/
+Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundleIdOpt)
+    Local cBundleId
+    Local cBundleDir
+    Local aInventario := {}
+    Local aTabAtivas  := {}
+    Local aFilesGerados := {}
+    Local lEnxuto
+
+    Default cBaseDir    := "\temp\"
+    Default cIniDir     := DescobreRootPath()
+    Default cBundleIdOpt := ""
+
+    cBundleId  := Iif(Empty(cBundleIdOpt), GerarUuid(), cBundleIdOpt)
+    cBundleDir := DiretorioBundle(cBundleId, cBaseDir)
+    lEnxuto    := (cModo == "enxuto")
+
+    LogColetor(Replicate("=", 60))
+    LogColetor("Iniciando geracao -- modo: " + cModo + ", threshold: " + LTrim(Str(nThreshold)))
+    LogColetor("Bundle ID: " + cBundleId)
+    LogColetor(Replicate("=", 60))
+
+    LogColetor("Carregando inventario de tabelas...")
+    aInventario := InventarioCarregar(nThreshold)
+    If Empty(aInventario)
+        LogColetor("ERRO: falha ao carregar inventario. Verifique acesso ao banco.")
+        Return { cBundleId, cBundleDir, {}, "Falha ao carregar inventario de tabelas. Verifique acesso ao banco." }
+    EndIf
+
+    aTabAtivas := InventarioFiltrar(aInventario, nThreshold)
+    LogColetor("Inventario carregado: " + LTrim(Str(Len(aTabAtivas))) + " tabelas ativas de " + LTrim(Str(Len(aInventario))) + " totais.")
+
+    If !MakeDir(cBundleDir)
+        LogColetor("ERRO: falha ao criar diretorio: " + cBundleDir)
+        Return { cBundleId, cBundleDir, {}, "Falha ao criar diretorio: " + cBundleDir }
+    EndIf
+    LogColetor("Bundle dir: " + cBundleDir)
+
+    // --- Extracao SX --------------------------------------------------
+    LogColetor(Replicate("-", 60))
+    LogColetor("Extraindo dicionarios SX...")
+    aFilesGerados := ExtrairDicionarioSx(cBundleDir, aTabAtivas, lEnxuto)
+
+    // --- Extracao MPMENU ----------------------------------------------
+    LogColetor("Extraindo MPMENU...")
+    aEval(ExtrairMpMenu(cBundleDir), {|x| aAdd(aFilesGerados, x)})
+
+    // --- Extracao Schedules (via DBSelectArea) ------------------------
+    LogColetor("Extraindo Schedules...")
+    If ExtrairSchedules(cBundleDir + "SCHEDULES.csv") > 0
+        aAdd(aFilesGerados, { "SCHEDULES", cBundleDir + "SCHEDULES.csv" })
+    EndIf
+
+    // --- Extracao Jobs (appserver.ini) --------------------------------
+    LogColetor("Extraindo Jobs do AppServer...")
+    If ExtrairJobs(cBundleDir + "JOBS.csv", cIniDir) > 0
+        aAdd(aFilesGerados, { "JOBS", cBundleDir + "JOBS.csv" })
+    EndIf
+
+    // --- RECORD_COUNTS (reaproveita inventario) -----------------------
+    LogColetor("Gerando RECORD_COUNTS...")
+    GravarRecordCounts(cBundleDir + "RECORD_COUNTS.csv", aInventario)
+    aAdd(aFilesGerados, { "RECORD_COUNTS", cBundleDir + "RECORD_COUNTS.csv" })
+
+    LogColetor(Replicate("-", 60))
+    LogColetor("Extracao concluida: " + LTrim(Str(Len(aFilesGerados))) + " arquivos gerados.")
+    LogColetor("Arquivos gerados em: " + cBundleDir)
+    LogColetor(Replicate("=", 60))
+Return { cBundleId, cBundleDir, aFilesGerados, "" }
+
+/*
++--------------------------------------------------------------------------+
+| InventarioCarregar -- lista tabelas + row counts do DBMS.                  |
+| Retorna { { "SA1010", 12345 }, { "SA2010", 678 }, ... }                  |
+| Detecta DBMS via TCGetDB() e dispara a query apropriada.                 |
+|                                                                          |
+| O filtro >= nThreshold e aplicado direto na query pra evitar trazer      |
+| milhares de tabelas vazias. Oracle usa USER_TAB_STATISTICS (so tabelas   |
+| com ANALYZE recente) -- exige que o DBA rode estatisticas periodicamente,|
+| que e a recomendacao TOTVS de qualquer jeito.                            |
++--------------------------------------------------------------------------+
+*/
+Static Function InventarioCarregar(nThreshold)
+    Local aRet := {}
+    Local cDb := AllTrim(Upper(TCGetDB()))
+    Local cQry := ""
+    Local cAlias := GetNextAlias()
+    Local cTh := LTrim(Str(Iif(nThreshold == Nil, 0, nThreshold), 10, 0))
+
+    Do Case
+        Case cDb == "ORACLE"
+            // user_tab_statistics so traz tabelas com ANALYZE -- corta as
+            // ~3000 tabelas vazias do dicionario que o USER_TABLES retornaria.
+            cQry := "SELECT TABLE_NAME, NUM_ROWS " + ;
+                    "FROM user_tab_statistics " + ;
+                    "WHERE NUM_ROWS >= " + cTh
+        Case cDb == "MSSQL" .Or. cDb == "SQLSRV"
+            cQry := "SELECT t.name AS TABLE_NAME, p.rows AS NUM_ROWS " + ;
+                    "FROM sys.tables t " + ;
+                    "JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1) " + ;
+                    "WHERE p.rows >= " + cTh
+        Case cDb == "POSTGRES" .Or. cDb == "POSTGRESQL"
+            cQry := "SELECT relname AS TABLE_NAME, n_live_tup AS NUM_ROWS " + ;
+                    "FROM pg_stat_user_tables " + ;
+                    "WHERE n_live_tup >= " + cTh
+        Otherwise
+            LogColetor("DBMS desconhecido: " + cDb + " -- inventario vazio")
+            Return aRet
+    EndCase
+
+    LogColetor("Inventario DBMS=" + cDb + " threshold=" + cTh)
+    // Nao usa ChangeQuery: ela uppercaseia identificadores e quebra catalogos
+    // system case-sensitive (sys.tables/sys.partitions no MSSQL com collation CS).
+    DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
+    Do While !(cAlias)->(EOF())
+        aAdd(aRet, { AllTrim((cAlias)->TABLE_NAME), Int((cAlias)->NUM_ROWS) })
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DBCloseArea())
+    LogColetor("Inventario: " + LTrim(Str(Len(aRet))) + " tabelas encontradas")
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| InventarioFiltrar -- extrai aliases ativos do inventario.                |
+| Aplica regex Protheus (3 chars alfanumericos no comeco) e remove tabelas |
+| do sistema (MP_*, SYS_*, TPH_*). Retorna { "SA1", "SA2", "SE1", ... }    |
++--------------------------------------------------------------------------+
+*/
+Static Function InventarioFiltrar(aInventario, nThreshold)
+    Local aRet := {}
+    Local i, cTab, cAlias, nRows
+
+    For i := 1 To Len(aInventario)
+        cTab  := aInventario[i, 1]
+        nRows := aInventario[i, 2]
+
+        // Filtros
+        If nRows < nThreshold
+            Loop
+        EndIf
+        If Left(cTab, 3) == "MP_" .Or. Left(cTab, 4) == "SYS_" .Or. ;
+           Left(cTab, 4) == "TPH_" .Or. Left(cTab, 7) == "MPMENU_"
+            Loop
+        EndIf
+        If Len(cTab) < 3
+            Loop
+        EndIf
+
+        // Alias = 3 primeiros chars do nome fisico
+        cAlias := Upper(Left(cTab, 3))
+        If aScan(aRet, {|x| x == cAlias }) == 0
+            aAdd(aRet, cAlias)
+        EndIf
+    Next
+    LogColetor("Filtro: " + LTrim(Str(Len(aRet))) + " aliases ativos")
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| GetSqlName -- resolve nome fisico de um alias (ex: SX3 -> SX3010).      |
+| 4 niveis em cascata pra cobrir bases com dicionario customizado:        |
+|   1. RetSqlName(cAlias) -- area ja pre-aberta pelo modulo carregado     |
+|   2. ChkFile(cAlias, .F.) + RetSqlName -- forca abertura via dicionario |
+|   3. Query SELECT X2_ARQUIVO FROM SX2 WHERE X2_CHAVE = cAlias           |
+|   4. Heuristica fisica: cAlias + sufixo do SX2 ja resolvido (ex: 010)   |
+|      validado via SELECT * FROM x WHERE 1=0                              |
+| Blindagem com BEGIN SEQUENCE em ChkFile e nivel 4 (builds antigas       |
+| podem lancar excecao em vez de retornar .F.)                            |
++--------------------------------------------------------------------------+
+*/
+Static Function GetSqlName(cAlias)
+    Local cRet := ""
+    Local cQAlias, cSqlSx2, cQry, cSufixo, cTentativa
+    Local lChkOk := .F.
+
+    // Nivel 1: RetSqlName direto (pre-aberta no dicionario carregado)
+    cRet := RetSqlName(cAlias)
+    If !Empty(cRet)
+        Return cRet
+    EndIf
+
+    // Nivel 2: forca abertura via ChkFile. Blindado: em builds antigas
+    // ChkFile pode lancar excecao em vez de retornar .F.
+    BEGIN SEQUENCE
+        lChkOk := ChkFile(cAlias, .F.)
+    RECOVER
+        lChkOk := .F.
+    END SEQUENCE
+    If lChkOk
+        cRet := RetSqlName(cAlias)
+        If !Empty(cRet)
+            Return cRet
+        EndIf
+    EndIf
+
+    // Nivel 3: query SX2 (X2_ARQUIVO). So funciona se a chave existir
+    // no dicionario SX2 dessa base -- bases com customizacao podem nao ter.
+    If cAlias == "SX2"
+        Return ""
+    EndIf
+    cSqlSx2 := RetSqlName("SX2")
+    If Empty(cSqlSx2)
+        BEGIN SEQUENCE
+            lChkOk := ChkFile("SX2", .F.)
+        RECOVER
+            lChkOk := .F.
+        END SEQUENCE
+        If lChkOk
+            cSqlSx2 := RetSqlName("SX2")
+        EndIf
+    EndIf
+    If !Empty(cSqlSx2)
+        cQAlias := GetNextAlias()
+        // RTrim/AllTrim em vez de PadR: alguns clientes armazenam X2_CHAVE
+        // sem padding completo (TRIM no lado SQL garante match).
+        cQry := "SELECT X2_ARQUIVO FROM " + cSqlSx2 + ;
+                " WHERE RTRIM(X2_CHAVE) = '" + AllTrim(cAlias) + "'" + ;
+                " AND D_E_L_E_T_ = ' '"
+        cQry := ChangeQuery(cQry)
+        DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cQAlias, .T., .T.)
+        If !(cQAlias)->(EOF())
+            cRet := AllTrim((cQAlias)->X2_ARQUIVO)
+        EndIf
+        (cQAlias)->(DBCloseArea())
+        If !Empty(cRet)
+            Return cRet
+        EndIf
+    EndIf
+
+    // Nivel 4: heuristica fisica. Pega sufixo do SX2 ja resolvido
+    // (ex: "SX2010" -> sufixo "010") e tenta cAlias+sufixo direto no banco.
+    // Cobre clientes onde a SX7/SX9/XAL/etc. existe fisicamente mas nao
+    // esta registrada no SX2 customizado.
+    If !Empty(cSqlSx2) .And. Len(cSqlSx2) > 3
+        cSufixo    := SubStr(cSqlSx2, 4)
+        cTentativa := AllTrim(cAlias) + cSufixo
+        cQAlias    := GetNextAlias()
+        // WHERE 1=0: portavel (Oracle/SQL Server/PostgreSQL). Se a tabela
+        // existe parseia OK e retorna 0 linhas; se nao existe, ChangeQuery
+        // ou TcGenQry lanca excecao -- capturada pelo BEGIN SEQUENCE.
+        cQry       := "SELECT * FROM " + cTentativa + " WHERE 1=0"
+        BEGIN SEQUENCE
+            cQry := ChangeQuery(cQry)
+            DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cQAlias, .T., .T.)
+            cRet := cTentativa
+            (cQAlias)->(DBCloseArea())
+        RECOVER
+            // tabela nao existe nessa base, segue retorno vazio
+            cRet := ""
+        END SEQUENCE
+        If !Empty(cRet)
+            LogColetor(cAlias + ": resolvido por heuristica fisica -> " + cRet)
+            Return cRet
+        EndIf
+    EndIf
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| ExtrairDicionarioSx -- extrai os 14 SX da lista canonica.                          |
+| Modo enxuto (default): filtro IN (aTabAtivas) aplicado nas SX de         |
+| __aSxFiltravel (SX2/SX3/SX7/SX9/SIX/SXB) pra cortar definicao de         |
+| tabela vazia. SX1/SX5/SX6/SXA/SXG/XXA/XAM/XAL vem completas.             |
+| Modo completo: todas as SX vem inteiras (sem filtro) -- usar so pra      |
+| troubleshooting (bundle bem maior).                                      |
+| Retorna lista { {sx_type, path_csv}, ... } dos arquivos gerados.         |
++--------------------------------------------------------------------------+
+*/
+Static Function ExtrairDicionarioSx(cBundleDir, aTabAtivas, lEnxuto)
+    Local aRet := {}
+    Local i, cSx, cTab, cTabSx3, cQry, cCsv, nRows
+    Local lTemFiltro := Len(aTabAtivas) > 0
+
+    // Resolve nome fisico do SX3 uma unica vez (usado na sub-query de SX7
+    // via join com X3_ARQUIVO/X3_CAMPO). GetSqlName forca abertura da area
+    // via ChkFile pra resolver mesmo quando o modulo carregado nao pre-abriu.
+    cTabSx3 := GetSqlName("SX3")
+
+    For i := 1 To Len(__aSxList)
+        cSx  := __aSxList[i]
+        cTab := GetSqlName(cSx)
+        cCsv := cBundleDir + cSx + ".csv"
+
+        If Empty(cTab)
+            LogColetor(cSx + ": tabela nao existe no dicionario, pulando")
+            Loop
+        EndIf
+
+        LogColetor("  Extraindo " + cSx + " (" + cTab + ")...")
+
+        cQry := "SELECT * FROM " + cTab + " WHERE D_E_L_E_T_ = ' '"
+
+        // Filtro de tabelas ativas: aplicado nas SX de __aSxFiltravel quando
+        // o modo e enxuto E temos lista de aliases ativos. No modo completo,
+        // ou se aTabAtivas vier vazia (DBMS desconhecido), todas as SX vem
+        // inteiras. MontarSqlInBatched divide listas grandes em batches de
+        // 999 elementos pra evitar ORA-01795 (Oracle limita IN a 1000).
+        If lEnxuto .And. aScan(__aSxFiltravel, {|x| x == cSx }) > 0 .And. lTemFiltro
+            Do Case
+                Case cSx == "SX2"
+                    cQry += " AND " + MontarSqlInBatched("X2_CHAVE", aTabAtivas)
+                Case cSx == "SX3"
+                    cQry += " AND " + MontarSqlInBatched("X3_ARQUIVO", aTabAtivas)
+                Case cSx == "SX7"
+                    cQry += " AND X7_CAMPO IN (SELECT X3_CAMPO FROM " + cTabSx3 + " WHERE " + MontarSqlInBatched("X3_ARQUIVO", aTabAtivas) + ")"
+                Case cSx == "SX9"
+                    cQry += " AND (" + MontarSqlInBatched("X9_DOM", aTabAtivas) + " OR " + MontarSqlInBatched("X9_CDOM", aTabAtivas) + ")"
+                Case cSx == "SIX"
+                    cQry += " AND " + MontarSqlInBatched("INDICE", aTabAtivas)
+                Case cSx == "SXB"
+                    cQry += " AND " + MontarSqlInBatched("XB_ALIAS", aTabAtivas)
+            EndCase
+        EndIf
+
+        nRows := QueryExportarCsv(cQry, cCsv)
+        LogColetor(cSx + ": " + LTrim(Str(nRows)) + " linhas -> " + cCsv)
+        If nRows > 0
+            aAdd(aRet, { cSx, cCsv })
+        EndIf
+    Next
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| ExtrairMpMenu -- 6 queries relacionais.                             |
++--------------------------------------------------------------------------+
+*/
+Static Function ExtrairMpMenu(cBundleDir)
+    Local aRet := {}
+    Local i, cName, cQry, cCsv, nRows
+
+    For i := 1 To Len(__aMpMenu)
+        cName := __aMpMenu[i, 1]
+        cQry  := __aMpMenu[i, 2]
+        cCsv  := cBundleDir + cName + ".csv"
+
+        nRows := QueryExportarCsv(cQry, cCsv)
+        LogColetor(cName + ": " + LTrim(Str(nRows)) + " linhas")
+
+        If nRows > 0
+            aAdd(aRet, { cName, cCsv })
+        EndIf
+    Next
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| ExtrairSchedules -- INNER JOIN XX1+XX2+XX0 com BLOB XX1_RECORR cast em  |
+| string (dialect-aware: Oracle/SQL Server/PostgreSQL).                   |
+| Escreve CSV com colunas decodificadas via DecodificaRecorrencia.        |
++--------------------------------------------------------------------------+
+*/
+Static Function ExtrairSchedules(cCsv)
+    Local cDb := AllTrim(Upper(TCGetDB()))
+    Local cSqlXx0 := GetSqlName("XX0")
+    Local cSqlXx1 := GetSqlName("XX1")
+    Local cSqlXx2 := GetSqlName("XX2")
+    Local cBlobCast, cQry
+    Local nRows := 0
+
+    If Empty(cSqlXx1)
+        LogColetor("XX1 nao existe no dicionario, Schedules pulado")
+        Return 0
+    EndIf
+    If Empty(cSqlXx2)
+        LogColetor("XX2 nao existe no dicionario, Schedules pulado")
+        Return 0
+    EndIf
+    If Empty(cSqlXx0)
+        LogColetor("XX0 nao existe no dicionario, Schedules pulado")
+        Return 0
+    EndIf
+
+    // BLOB XX1_RECORR -> texto. Cada DBMS tem seu cast.
+    // Sem cast, TOPCONN nao serializa BLOB direto em cursor.
+    //   Oracle:    DBMS_LOB.SUBSTR pega os 4000 primeiros bytes do BLOB,
+    //              UTL_RAW.CAST_TO_VARCHAR2 reinterpreta como string.
+    //   SQL Server: VARBINARY(MAX) -> VARCHAR(4000) faz raw->text byte-a-byte.
+    //   PostgreSQL: encode(bytea, 'escape') escapa nao-printaveis como \xXX,
+    //              substring limita o tamanho ao mesmo 4000 dos outros DBs.
+    Do Case
+        Case cDb == "ORACLE"
+            cBlobCast := "UTL_RAW.CAST_TO_VARCHAR2(DBMS_LOB.SUBSTR(A.XX1_RECORR, 4000, 1)) AS XX1_RECORR_TXT"
+        Case cDb == "MSSQL" .Or. cDb == "SQLSRV"
+            cBlobCast := "CAST(CAST(A.XX1_RECORR AS VARBINARY(MAX)) AS VARCHAR(4000)) AS XX1_RECORR_TXT"
+        Case cDb == "POSTGRES" .Or. cDb == "POSTGRESQL"
+            cBlobCast := "encode(substring(A.XX1_RECORR from 1 for 4000), 'escape') AS XX1_RECORR_TXT"
+        Otherwise
+            cBlobCast := "'' AS XX1_RECORR_TXT"
+    EndCase
+
+    // B.* (nao explicito): schema XX2 varia entre bases. Algumas tem
+    // XX2_EMP+XX2_FIL separados, outras XX2_EMPFIL concatenado (15 chars).
+    // Deixar o Oracle/SQL Server resolver o que existir.
+    cQry := "SELECT " + cBlobCast + ", " + ;
+            "       A.XX1_CODIGO, A.XX1_USERID, A.XX1_DATA, A.XX1_HORA, A.XX1_ENV, " + ;
+            "       A.XX1_MODULO, A.XX1_ULTDIA, A.XX1_ULTHOR, A.XX1_STATUS, " + ;
+            "       A.XX1_ROTINA, " + ;
+            "       B.* " + ;
+            "FROM " + cSqlXx1 + " A " + ;
+            "INNER JOIN " + cSqlXx2 + " B ON A.XX1_CODIGO = B.XX2_AGEND " + ;
+            "INNER JOIN " + cSqlXx0 + " C ON A.XX1_ENV = C.XX0_ENV " + ;
+            "WHERE A.D_E_L_E_T_ = ' ' " + ;
+            "  AND B.D_E_L_E_T_ = ' ' " + ;
+            "  AND C.D_E_L_E_T_ = ' '"
+
+    nRows := SchedulesEscreverCsv(cQry, cCsv)
+    LogColetor("Schedules: " + LTrim(Str(nRows)) + " linhas")
+Return nRows
+
+/*
++--------------------------------------------------------------------------+
+| SchedulesEscreverCsv -- executa cQry, escreve CSV com colunas DECODIFI- |
+| CADAS do XX1_RECORR_TXT (porta a logica do parse_schedule.py pra ADVPL).|
+| Header fixo de 16 colunas:                                              |
+|   Codigo;Rotina;Empresa_Filial;Environment;Modulo;Status;               |
+|   Tipo_Recorrencia;Detalhe_Recorrencia;Execucoes_Dia;Intervalo_HH_MM;   |
+|   Data_Fim_Recorrencia;Hora_Inicio;Data_Criacao;Ultima_Execucao;        |
+|   Ultima_Hora;Recorrencia_Raw                                           |
++--------------------------------------------------------------------------+
+*/
+Static Function SchedulesEscreverCsv(cQry, cCsv)
+    Local cAlias := GetNextAlias()
+    Local nHandle := FCreate(cCsv, FC_NORMAL)
+    Local nRows := 0
+    Local aRecorr, cLine, cStatusTxt, cRecorrTxt, cEmpFil
+    Local lTemEmpFil := .F., lTemEmp := .F., lTemFil := .F.
+
+    If nHandle == -1
+        LogColetor("ERRO: nao consegui criar " + cCsv)
+        Return 0
+    EndIf
+
+    FWrite(nHandle, ;
+        "Codigo;Rotina;Empresa_Filial;Environment;Modulo;Status;" + ;
+        "Tipo_Recorrencia;Detalhe_Recorrencia;Execucoes_Dia;Intervalo_HH_MM;" + ;
+        "Data_Fim_Recorrencia;Hora_Inicio;Data_Criacao;Ultima_Execucao;" + ;
+        "Ultima_Hora;Recorrencia_Raw" + CRLF)
+
+    cQry := ChangeQuery(cQry)
+    DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
+
+    // Schema XX2 varia: detecta uma vez quais campos existem no cursor.
+    // Bases novas tem XX2_EMPFIL concatenado (15 chars), antigas tem
+    // XX2_EMP+XX2_FIL separadas, e algumas bases nem tem.
+    lTemEmpFil := (cAlias)->(FieldPos("XX2_EMPFIL")) > 0
+    lTemEmp    := (cAlias)->(FieldPos("XX2_EMP"))    > 0
+    lTemFil    := (cAlias)->(FieldPos("XX2_FIL"))    > 0
+
+    Do While !(cAlias)->(EOF())
+        cRecorrTxt := AllTrim((cAlias)->XX1_RECORR_TXT)
+        aRecorr    := DecodificaRecorrencia(cRecorrTxt)
+
+        // Status: "0"=Ativo, "1"=Inativo, outros mantem raw
+        cStatusTxt := AllTrim((cAlias)->XX1_STATUS)
+        Do Case
+            Case cStatusTxt == "0" ; cStatusTxt := "Ativo"
+            Case cStatusTxt == "1" ; cStatusTxt := "Inativo"
+        EndCase
+
+        // Empresa_Filial: prioriza XX2_EMPFIL concat, depois EMP+"/"+FIL
+        cEmpFil := ""
+        Do Case
+            Case lTemEmpFil
+                cEmpFil := AllTrim((cAlias)->XX2_EMPFIL)
+            Case lTemEmp .And. lTemFil
+                cEmpFil := AllTrim((cAlias)->XX2_EMP) + "/" + AllTrim((cAlias)->XX2_FIL)
+            Case lTemEmp
+                cEmpFil := AllTrim((cAlias)->XX2_EMP)
+            Case lTemFil
+                cEmpFil := AllTrim((cAlias)->XX2_FIL)
+        EndCase
+
+        cLine := EscaparCampoCsv(AllTrim((cAlias)->XX1_CODIGO))                                + ";" + ;
+                 EscaparCampoCsv(AllTrim((cAlias)->XX1_ROTINA))                                + ";" + ;
+                 EscaparCampoCsv(cEmpFil)                                                      + ";" + ;
+                 EscaparCampoCsv(AllTrim((cAlias)->XX1_ENV))                                   + ";" + ;
+                 EscaparCampoCsv(ValorParaString((cAlias)->XX1_MODULO))                        + ";" + ;
+                 EscaparCampoCsv(cStatusTxt)                                                   + ";" + ;
+                 EscaparCampoCsv(aRecorr[1])                                                   + ";" + ;
+                 EscaparCampoCsv(aRecorr[2])                                                   + ";" + ;
+                 EscaparCampoCsv(aRecorr[3])                                                   + ";" + ;
+                 EscaparCampoCsv(aRecorr[4])                                                   + ";" + ;
+                 EscaparCampoCsv(aRecorr[5])                                                   + ";" + ;
+                 EscaparCampoCsv(AllTrim((cAlias)->XX1_HORA))                                  + ";" + ;
+                 EscaparCampoCsv(RecorrFormataData(AllTrim((cAlias)->XX1_DATA)))               + ";" + ;
+                 EscaparCampoCsv(RecorrFormataData(AllTrim((cAlias)->XX1_ULTDIA)))             + ";" + ;
+                 EscaparCampoCsv(AllTrim((cAlias)->XX1_ULTHOR))                                + ";" + ;
+                 EscaparCampoCsv(cRecorrTxt)                                                   + CRLF
+
+        FWrite(nHandle, cLine)
+        nRows++
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DBCloseArea())
+
+    FClose(nHandle)
+Return nRows
+
+/*
++--------------------------------------------------------------------------+
+| DecodificaRecorrencia -- parsea XX1_RECORR_TXT e retorna array {5}:    |
+|   [1] Tipo_Desc      (Diario, Semanal, Mensal, Anual, Sempre, Smart)   |
+|   [2] Detalhe        (string humana descrevendo a recorrencia)         |
+|   [3] Execucoes_Dia  ("N" ou "N/A")                                    |
+|   [4] Intervalo      ("HH:MM" ou "N/A")                                |
+|   [5] Data_Fim       ("DD/MM/YYYY" ou "N/A")                           |
+| Formato suportado: prefixo D/W/M/Y/A + tokens Day(N), Execs(N),       |
+| Interval(HH:MM), End(YYYYMMDD), Days(.T..F..F..T..F..F..T.) +          |
+| variantes Smart;A;, Smart;W(...);Init(HM(...));First(D(...));.        |
++--------------------------------------------------------------------------+
+*/
+Static Function DecodificaRecorrencia(cTxt)
+    Local cTipo := "Desconhecido"
+    Local cDet  := ""
+    Local cExe  := "N/A"
+    Local cInt  := "N/A"
+    Local cFim  := "N/A"
+    Local cPref, cDay, cExecs, cInterval, cEnd, cDays, cSmartTipo
+    Local cInit, cFreq, cLimit, cFirst
+    Local cTxtUp
+
+    cTxt := AllTrim(cTxt)
+    If Empty(cTxt) ; Return { cTipo, "(vazio)", cExe, cInt, cFim } ; EndIf
+
+    cTxtUp := Upper(cTxt)
+
+    // Smart variants (prefixo "Smart;")
+    If Left(cTxtUp, 6) == "SMART;"
+        cTipo := "Smart"
+        // Smart;A; -> sempre ativo
+        If "SMART;A;" $ cTxtUp .Or. cTxtUp == "SMART;A"
+            cDet := "Smart: Sempre ativo"
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+        // Smart;W(.F..T...);Init(HM(HH:MM));First(D(YYYYMMDD)HM(HH:MM));
+        If "SMART;W(" $ cTxtUp
+            cDays := RecorrExtraiToken(cTxt, "W")
+            cDet  := "Smart Semanal: " + RecorrDiasSemana(cDays)
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+        // Smart;D(Init(HM(HH:MM)));Freq(HM(HH:MM));Limit(HM(HH:MM));First(...);
+        If "SMART;D(" $ cTxtUp
+            cDet := "Smart Diario"
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+        // Smart;M(...);
+        If "SMART;M(" $ cTxtUp
+            cDet := "Smart Mensal"
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+        // Smart;Y(...);
+        If "SMART;Y(" $ cTxtUp
+            cDet := "Smart Anual"
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+        cDet := "Smart (formato nao reconhecido)"
+        Return { cTipo, cDet, cExe, cInt, cFim }
+    EndIf
+
+    // Anual / Sempre prefixo "A"
+    If Left(cTxtUp, 1) == "A"
+        // ADiscard; ou apenas A -> sempre ativo
+        If cTxtUp == "A" .Or. Left(cTxtUp, 8) == "ADISCARD"
+            cTipo := "Sempre"
+            cDet  := "Sempre ativo (sem agenda)"
+            Return { cTipo, cDet, cExe, cInt, cFim }
+        EndIf
+    EndIf
+
+    // Prefixo D/W/M/Y -- formato classico Each(.T.)/Day(N)/Execs(N)/Interval/End
+    cPref := Left(cTxtUp, 1)
+
+    cExecs    := RecorrExtraiToken(cTxt, "Execs")
+    cInterval := RecorrExtraiToken(cTxt, "Interval")
+    cEnd      := RecorrExtraiToken(cTxt, "End")
+
+    If !Empty(cExecs) ; cExe := AllTrim(cExecs) ; EndIf
+    If !Empty(cInterval) ; cInt := AllTrim(cInterval) ; EndIf
+    If !Empty(cEnd) ; cFim := RecorrFormataData(cEnd) ; EndIf
+
+    Do Case
+        Case cPref == "D"
+            cTipo := "Diario"
+            cDay  := RecorrExtraiAninhado(cTxt, "D", "Day")
+            // EveryDay(.T.) -> "Todos os dias"; Each(.T.)+Day(N) -> "A cada N dia(s)"
+            If "EVERYDAY(.T.)" $ cTxtUp
+                cDet := "Todos os dias"
+            ElseIf "EACH(.T.)" $ cTxtUp
+                cDet := "A cada " + AllTrim(cDay) + " dia(s)"
+            Else
+                cDet := "Diario"
+            EndIf
+        Case cPref == "W"
+            cTipo := "Semanal"
+            cDays := RecorrExtraiToken(cTxt, "W")
+            cDet  := RecorrDiasSemana(cDays)
+        Case cPref == "M"
+            cTipo := "Mensal"
+            cDay  := RecorrExtraiAninhado(cTxt, "M", "Day")
+            If !Empty(cDay)
+                cDet := "Dia " + AllTrim(cDay) + " do mes"
+            Else
+                cDet := "Mensal"
+            EndIf
+        Case cPref == "Y"
+            cTipo := "Anual"
+            cDet  := "Anual"
+        Otherwise
+            cTipo := "Desconhecido"
+            cDet  := "Formato nao reconhecido"
+    EndCase
+Return { cTipo, cDet, cExe, cInt, cFim }
+
+/*
++--------------------------------------------------------------------------+
+| RecorrExtraiToken -- extrai conteudo entre parenteses de Chave(...)    |
+| Ex: RecorrExtraiToken("Execs(0001);Interval(00:00);", "Execs") -> "0001"|
++--------------------------------------------------------------------------+
+*/
+Static Function RecorrExtraiToken(cTxt, cChave)
+    Local nPos, nIni, nFim, cRet := ""
+    nPos := At(cChave + "(", cTxt)
+    If nPos == 0 ; Return "" ; EndIf
+    nIni := nPos + Len(cChave) + 1
+    nFim := At(")", cTxt, nIni)
+    If nFim == 0 ; Return "" ; EndIf
+    cRet := SubStr(cTxt, nIni, nFim - nIni)
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| RecorrExtraiAninhado -- extrai cInner dentro de cOuter.                 |
+| Ex: cOuter="D", cInner="Day" em "D(Each(.F.);Day(1);EveryDay(.T.););"   |
+| retorna "1".                                                            |
++--------------------------------------------------------------------------+
+*/
+Static Function RecorrExtraiAninhado(cTxt, cOuter, cInner)
+    Local cOuterContent := RecorrExtraiToken(cTxt, cOuter)
+    If Empty(cOuterContent) ; Return "" ; EndIf
+Return RecorrExtraiToken(cOuterContent, cInner)
+
+/*
++--------------------------------------------------------------------------+
+| RecorrDiasSemana -- decodifica "W(.F..T..T..T..T..T..F.)" em "Seg,Ter,..."|
+| Domingo, Segunda, ..., Sabado (7 flags na ordem).                        |
++--------------------------------------------------------------------------+
+*/
+Static Function RecorrDiasSemana(cFlags)
+    Local aDias := { "Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab" }
+    Local aRet := {}
+    Local i, nPos, cFlag
+
+    // Procura pelos 7 .T./.F. em sequencia
+    cFlags := Upper(cFlags)
+    nPos := 1
+    For i := 1 To 7
+        // .T. ou .F. = 3 chars
+        cFlag := SubStr(cFlags, nPos, 3)
+        If cFlag == ".T."
+            aAdd(aRet, aDias[i])
+        EndIf
+        nPos += 3
+    Next
+
+    If Len(aRet) == 0 ; Return "(sem dias marcados)" ; EndIf
+Return JoinArrStr(aRet, ", ")
+
+/*
++--------------------------------------------------------------------------+
+| RecorrFormataData -- converte "YYYYMMDD" em "DD/MM/YYYY".               |
+| Se nao bater o formato, retorna a string original.                      |
++--------------------------------------------------------------------------+
+*/
+Static Function RecorrFormataData(cAaaammdd)
+    Local cD, cM, cA
+    cAaaammdd := AllTrim(cAaaammdd)
+    If Len(cAaaammdd) != 8 .Or. !(IsDigit(SubStr(cAaaammdd, 1, 1)))
+        Return cAaaammdd
+    EndIf
+    cA := SubStr(cAaaammdd, 1, 4)
+    cM := SubStr(cAaaammdd, 5, 2)
+    cD := SubStr(cAaaammdd, 7, 2)
+Return cD + "/" + cM + "/" + cA
+
+/*
++--------------------------------------------------------------------------+
+| DescobreRootPath -- retorna RootPath do AppServer (pasta bin/).         |
+| Ordem de fallback: GetSrvProfString("RootPath"), GetPrivProfString do   |
+| appserver.ini, diretorio corrente. Sempre termina com separador.        |
++--------------------------------------------------------------------------+
+*/
+Static Function DescobreRootPath()
+    Local cPath := ""
+
+    // Funcao TOTVS padrao -- le do appserver.ini sem hardcode de path
+    If FindFunction("GetSrvProfString")
+        cPath := AllTrim(GetSrvProfString("RootPath", ""))
+    EndIf
+
+    // Fallback: tenta GetSrvIniIni (build mais nova) / diretorio corrente
+    If Empty(cPath) .And. FindFunction("GetSrvIniIni")
+        cPath := AllTrim(GetSrvIniIni())
+        // Esse retorna o caminho do .ini -- precisamos extrair so a pasta
+        If Empty(cPath) .Or. (!("\" $ cPath) .And. !("/" $ cPath))
+            cPath := ""
+        EndIf
+    EndIf
+
+    // Ultimo recurso: diretorio corrente do AppServer
+    If Empty(cPath)
+        cPath := ".\"
+    EndIf
+
+    // Normaliza separador final pra concatenacao downstream
+    If !(Right(cPath, 1) $ "\/") ; cPath += "\" ; EndIf
+Return cPath
+
+/*
++--------------------------------------------------------------------------+
+| DirRecursivo -- varre cDir e subdirs recursivamente atras de arquivos   |
+| que casem com cMask. Acumula em aRet (passado por referencia) com PATH  |
+| COMPLETO em [i, 1]. Demais colunas (size/date/time/attrs) preservadas   |
+| do Directory().                                                          |
++--------------------------------------------------------------------------+
+*/
+Static Function DirRecursivo(cDir, cMask, aRet)
+    Local i, aArquivos, aSubs
+    Local cNome
+
+    Default aRet := {}
+
+    // Normaliza separador final
+    If !(Right(cDir, 1) $ "\/") ; cDir += "\" ; EndIf
+
+    // Arquivos que casam com a mascara no nivel atual
+    aArquivos := Directory(cDir + cMask)
+    For i := 1 To Len(aArquivos)
+        aAdd(aRet, { ;
+            cDir + aArquivos[i, 1], ;
+            aArquivos[i, 2], ;
+            aArquivos[i, 3], ;
+            aArquivos[i, 4], ;
+            aArquivos[i, 5] ;
+        })
+    Next
+
+    // Subdiretorios -- atributo "D" no campo 5 do Directory(*.*,"D")
+    aSubs := Directory(cDir + "*.*", "D")
+    For i := 1 To Len(aSubs)
+        cNome := aSubs[i, 1]
+        If cNome == "." .Or. cNome == ".."
+            Loop
+        EndIf
+        If "D" $ aSubs[i, 5]
+            DirRecursivo(cDir + cNome + "\", cMask, @aRet)
+        EndIf
+    Next
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| ExtrairJobs -- le todos AppServer_job*.ini do RootPath (recursivo),     |
+| monta CSV com 5 colunas: Arquivo;Sessao;Rotina_Main;RefreshRate;Param.  |
++--------------------------------------------------------------------------+
+*/
+Static Function ExtrairJobs(cCsv, cIniDir)
+    Local nHandle, nFiles, i, j, k
+    Local nRows := 0
+    Local aIniFiles := {}
+    Local cIniPath, cFilename
+    Local cJobsRaw, aSecoes, cSecao, cMainAdv, cRefresh, cRefreshGlb, cParam, cParmN
+    Local aParms, aIniData
+
+    Default cIniDir := DescobreRootPath()
+    If !(Right(cIniDir, 1) $ "\/") ; cIniDir += "\" ; EndIf
+
+    LogColetor("Pasta dos INIs: " + cIniDir)
+
+    nHandle := FCreate(cCsv, FC_NORMAL)
+    If nHandle == -1
+        Return 0
+    EndIf
+
+    FWrite(nHandle, "Arquivo;Sessao;Rotina_Main;RefreshRate;Parametros" + CRLF)
+
+    // Busca recursiva: alguns clientes organizam os jobs em subpastas
+    // (ex: bin/jobs_hml_prd/, bin/jobs_uat/, etc). DirRecursivo varre
+    // toda a arvore a partir de cIniDir procurando AppServer*.ini.
+    aIniFiles := {}
+    DirRecursivo(cIniDir, "AppServer*.ini", @aIniFiles)
+    If Len(aIniFiles) == 0
+        // Algumas builds com FS case-sensitive (Linux) precisam minusculo
+        DirRecursivo(cIniDir, "appserver*.ini", @aIniFiles)
+    EndIf
+    nFiles := Len(aIniFiles)
+    LogColetor("AppServer*.ini encontrados (recursivo): " + LTrim(Str(nFiles)))
+
+    For i := 1 To nFiles
+        // aIniFiles[i, 1] tem o PATH COMPLETO (DirRecursivo concatena
+        // cDir+nome em cada nivel da recursao)
+        cIniPath := aIniFiles[i, 1]
+        cFilename := SubStr(cIniPath, RAt("\", cIniPath) + 1)
+        If Empty(cFilename) .Or. ("/" $ cFilename)
+            cFilename := SubStr(cIniPath, RAt("/", cIniPath) + 1)
+        EndIf
+
+        // GetPrivProfString nao existe em SmartClient WebApp (so Desktop).
+        // Le o INI inteiro uma vez por arquivo e faz lookup em memoria.
+        aIniData := LerIniCompleto(cIniPath)
+
+        // Lista de jobs ativos via [OnStart].jobs=Sessao1,Sessao2,...
+        // Se nao existir essa chave, o ini nao expoe jobs e e ignorado.
+        cJobsRaw := AllTrim(GetIniValue(aIniData, "OnStart", "jobs", ""))
+        If Empty(cJobsRaw) ; Loop ; EndIf
+
+        // RefreshRate global de [OnStart] -- fallback pra sessoes sem o proprio
+        cRefreshGlb := AllTrim(GetIniValue(aIniData, "OnStart", "RefreshRate", ""))
+
+        aSecoes := SeparaCsv(cJobsRaw, ",")
+
+        For j := 1 To Len(aSecoes)
+            cSecao := AllTrim(aSecoes[j])
+            If Empty(cSecao) ; Loop ; EndIf
+
+            cMainAdv := AllTrim(GetIniValue(aIniData, cSecao, "main", ""))
+            If Empty(cMainAdv) ; cMainAdv := "N/A" ; EndIf
+
+            cRefresh := AllTrim(GetIniValue(aIniData, cSecao, "RefreshRate", ""))
+            If Empty(cRefresh)
+                cRefresh := Iif(Empty(cRefreshGlb), "N/A", cRefreshGlb)
+            EndIf
+
+            // Parametros: prioridade pra "parm=" unico; senao concatena
+            // parm1..parmN (limite 99) com "|" -- mesma logica do script
+            // de referencia em bash.
+            cParam := AllTrim(GetIniValue(aIniData, cSecao, "parm", ""))
+            If Empty(cParam)
+                aParms := {}
+                For k := 1 To 99
+                    cParmN := AllTrim(GetIniValue(aIniData, cSecao, "parm" + LTrim(Str(k)), ""))
+                    If !Empty(cParmN)
+                        aAdd(aParms, cParmN)
+                    EndIf
+                Next
+                If Len(aParms) > 0
+                    cParam := JoinArrStr(aParms, "|")
+                EndIf
+            EndIf
+            If Empty(cParam) ; cParam := "N/A" ; EndIf
+
+            FWrite(nHandle, ;
+                EscaparCampoCsv(cFilename) + ";" + ;
+                EscaparCampoCsv(cSecao)    + ";" + ;
+                EscaparCampoCsv(cMainAdv)  + ";" + ;
+                EscaparCampoCsv(cRefresh)  + ";" + ;
+                EscaparCampoCsv(cParam)    + CRLF)
+            nRows++
+        Next
+    Next
+
+    FClose(nHandle)
+    LogColetor("Jobs: " + LTrim(Str(nRows)) + " linhas (" + LTrim(Str(nFiles)) + " inis)")
+Return nRows
+
+/*
++--------------------------------------------------------------------------+
+| LerIniCompleto -- le o INI inteiro e retorna array de tuplas            |
+|   { { SECAO_UPPER, CHAVE_UPPER, valor }, ... }                           |
+| Funciona em qualquer SmartClient (Desktop, WebApp) porque usa FOpen/    |
+| FRead em vez de GetPrivProfString (Windows API, indisponivel em WebApp).|
++--------------------------------------------------------------------------+
+*/
+Static Function LerIniCompleto(cFile)
+    Local aRet := {}
+    Local nHandle, nSize, cBuffer, cRead
+    Local nIni, nFim, cLinha, cSecaoAtual := ""
+    Local nPos, cChave, cValor
+
+    nHandle := FOpen(cFile, FO_READ)
+    If nHandle == -1 ; Return aRet ; EndIf
+
+    cBuffer := ""
+    cRead := Space(8192)
+    Do While (nSize := FRead(nHandle, @cRead, 8192)) > 0
+        cBuffer += SubStr(cRead, 1, nSize)
+    EndDo
+    FClose(nHandle)
+
+    // Normaliza line endings: CRLF/CR -> LF
+    cBuffer := StrTran(cBuffer, Chr(13) + Chr(10), Chr(10))
+    cBuffer := StrTran(cBuffer, Chr(13), Chr(10))
+
+    nIni := 1
+    Do While nIni <= Len(cBuffer)
+        nFim := At(Chr(10), SubStr(cBuffer, nIni))
+        If nFim == 0
+            cLinha := SubStr(cBuffer, nIni)
+            nIni := Len(cBuffer) + 1
+        Else
+            cLinha := SubStr(cBuffer, nIni, nFim - 1)
+            nIni += nFim
+        EndIf
+        cLinha := AllTrim(cLinha)
+
+        If Empty(cLinha) .Or. Left(cLinha, 1) == ";" .Or. Left(cLinha, 1) == "#"
+            Loop
+        EndIf
+
+        // [Secao]
+        If Left(cLinha, 1) == "[" .And. Right(cLinha, 1) == "]"
+            cSecaoAtual := AllTrim(SubStr(cLinha, 2, Len(cLinha) - 2))
+            Loop
+        EndIf
+
+        // chave=valor (so processa se ja estamos dentro de uma secao)
+        If Empty(cSecaoAtual) ; Loop ; EndIf
+        nPos := At("=", cLinha)
+        If nPos == 0 ; Loop ; EndIf
+
+        cChave := AllTrim(SubStr(cLinha, 1, nPos - 1))
+        cValor := AllTrim(SubStr(cLinha, nPos + 1))
+        If !Empty(cChave)
+            aAdd(aRet, { Upper(cSecaoAtual), Upper(cChave), cValor })
+        EndIf
+    EndDo
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| GetIniValue -- lookup case-insensitive em estrutura de LerIniCompleto.  |
+| Substitui GetPrivProfString para SmartClient WebApp.                    |
++--------------------------------------------------------------------------+
+*/
+Static Function GetIniValue(aIni, cSecao, cChave, cDefault)
+    Local i, cSecUp, cChvUp
+    Default cDefault := ""
+
+    cSecUp := Upper(AllTrim(cSecao))
+    cChvUp := Upper(AllTrim(cChave))
+
+    For i := 1 To Len(aIni)
+        If aIni[i, 1] == cSecUp .And. aIni[i, 2] == cChvUp
+            Return aIni[i, 3]
+        EndIf
+    Next
+Return cDefault
+
+/*
++--------------------------------------------------------------------------+
+| SeparaCsv -- split simples de uma string por delimitador (1 char).      |
++--------------------------------------------------------------------------+
+*/
+Static Function SeparaCsv(cStr, cDelim)
+    Local aRet := {}
+    Local nPos, cParte
+    Default cDelim := ","
+
+    Do While !Empty(cStr)
+        nPos := At(cDelim, cStr)
+        If nPos == 0
+            aAdd(aRet, cStr)
+            Exit
+        EndIf
+        cParte := SubStr(cStr, 1, nPos - 1)
+        aAdd(aRet, cParte)
+        cStr := SubStr(cStr, nPos + Len(cDelim))
+    EndDo
+Return aRet
+
+/*
++--------------------------------------------------------------------------+
+| JoinArrStr -- une array de strings com separador.                       |
++--------------------------------------------------------------------------+
+*/
+Static Function JoinArrStr(aLista, cSep)
+    Local cRet := ""
+    Local i
+    Default cSep := ","
+    For i := 1 To Len(aLista)
+        If i > 1 ; cRet += cSep ; EndIf
+        cRet += aLista[i]
+    Next
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| GravarRecordCounts -- escreve CSV com 2 colunas: TABLE_NAME;NUM_ROWS.   |
+| Reusa o inventario ja carregado pra evitar segunda query no DBMS.       |
++--------------------------------------------------------------------------+
+*/
+Static Function GravarRecordCounts(cCsv, aInventario)
+    Local nHandle := FCreate(cCsv, FC_NORMAL)
+    Local i
+
+    If nHandle == -1 ; Return 0 ; EndIf
+
+    FWrite(nHandle, "TABLE_NAME;NUM_ROWS" + CRLF)
+    For i := 1 To Len(aInventario)
+        FWrite(nHandle, aInventario[i, 1] + ";" + LTrim(Str(aInventario[i, 2])) + CRLF)
+    Next
+    FClose(nHandle)
+Return Len(aInventario)
+
+/*
++--------------------------------------------------------------------------+
+| QueryExportarCsv -- executa cQry e dumpa o resultado em cCsv.            |
+| Header = nomes dos campos do cursor. Linhas escaped via EscaparCampoCsv.|
++--------------------------------------------------------------------------+
+*/
+Static Function QueryExportarCsv(cQry, cCsv)
+    Local cAlias := GetNextAlias()
+    Local nHandle := FCreate(cCsv, FC_NORMAL)
+    Local nRows := 0
+    Local i, cLine, cVal, xVal
+    Local aFields := {}
+
+    If nHandle == -1
+        LogColetor("ERRO: nao criou " + cCsv)
+        Return 0
+    EndIf
+
+    cQry := ChangeQuery(cQry)
+    DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
+
+    // Lista campos do cursor
+    For i := 1 To (cAlias)->(FCount())
+        aAdd(aFields, (cAlias)->(FieldName(i)))
+    Next
+
+    // Header
+    cLine := ""
+    For i := 1 To Len(aFields)
+        If i > 1 ; cLine += ";" ; EndIf
+        cLine += aFields[i]
+    Next
+    FWrite(nHandle, cLine + CRLF)
+
+    // Linhas
+    Do While !(cAlias)->(EOF())
+        cLine := ""
+        For i := 1 To Len(aFields)
+            xVal := (cAlias)->(FieldGet(i))
+            cVal := ValorParaString(xVal)
+            If i > 1 ; cLine += ";" ; EndIf
+            cLine += EscaparCampoCsv(cVal)
+        Next
+        FWrite(nHandle, cLine + CRLF)
+        nRows++
+        (cAlias)->(DbSkip())
+    EndDo
+
+    (cAlias)->(DBCloseArea())
+    FClose(nHandle)
+Return nRows
+
+/*
++--------------------------------------------------------------------------+
+| ValorParaString -- converte valor de qualquer tipo pra string CSV-safe.   |
++--------------------------------------------------------------------------+
+*/
+Static Function ValorParaString(xVal)
+    Local cTipo := ValType(xVal)
+    Local cRet := ""
+
+    Do Case
+        Case cTipo == "C"
+            cRet := AllTrim(xVal)
+        Case cTipo == "N"
+            cRet := AllTrim(Str(xVal))
+        Case cTipo == "D"
+            cRet := Iif(Empty(xVal), "", DToS(xVal))
+        Case cTipo == "L"
+            cRet := Iif(xVal, "T", "F")
+        Case cTipo == "U"
+            cRet := ""
+        Otherwise
+            cRet := AllTrim(cValToChar(xVal))
+    EndCase
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| EscaparCampoCsv -- escapa string pra CSV (com ; -- envolve em aspas).     |
++--------------------------------------------------------------------------+
+*/
+Static Function EscaparCampoCsv(cStr)
+    Local cRet := cStr
+
+    // Remove CRLF (normaliza)
+    cRet := StrTran(cRet, Chr(13), " ")
+    cRet := StrTran(cRet, Chr(10), " ")
+
+    // Se tem ; ou " -- escapa
+    If ";" $ cRet .Or. '"' $ cRet
+        cRet := StrTran(cRet, '"', '""')
+        cRet := '"' + cRet + '"'
+    EndIf
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| TamanhoArquivo -- tamanho em bytes (FSeek FS_END).                      |
+| Retorna 0 se nao conseguir abrir.                                       |
++--------------------------------------------------------------------------+
+*/
+Static Function TamanhoArquivo(cPath)
+    Local nSize := 0
+    Local nHandle := FOpen(cPath, FO_READ)
+    If nHandle != -1
+        nSize := FSeek(nHandle, 0, FS_END)
+        FClose(nHandle)
+    EndIf
+Return nSize
+
+/*
++--------------------------------------------------------------------------+
+| HashSha256Arquivo -- SHA-256 hex de arquivo. Usa Sha2_256 nativo do TLPP.|
+| Se Sha2_256 nao existir nessa build, retorna "" (sem hash -- cliente    |
+| pode pular validacao).                                                  |
++--------------------------------------------------------------------------+
+*/
+Static Function HashSha256Arquivo(cPath)
+    Local cHash := ""
+    Local oHash
+
+    If FindFunction("Sha2_256")
+        // Sha2_256(cInput, nFlag) -- nFlag 1 = input e caminho de arquivo
+        cHash := Sha2_256(cPath, 1)
+    EndIf
+
+    If Empty(cHash) .And. FindFunction("tHash")
+        // Fallback: tHash():Digest sobre MemoRead (Protheus 12 R23+)
+        oHash := tHash():New("SHA256")
+        If !Empty(oHash)
+            cHash := oHash:Digest(MemoRead(cPath))
+        EndIf
+    EndIf
+Return Lower(cHash)
+
+/*
++--------------------------------------------------------------------------+
+| MontarSqlIn -- gera lista pra clausula IN: "'SA1','SA2','SE1'"          |
+| (uso direto, sem proteger limite -- usar MontarSqlInBatched pra >1000)   |
++--------------------------------------------------------------------------+
+*/
+Static Function MontarSqlIn(aLista)
+    Local cRet := ""
+    Local i
+    For i := 1 To Len(aLista)
+        If i > 1 ; cRet += "," ; EndIf
+        cRet += "'" + aLista[i] + "'"
+    Next
+Return cRet
+
+/*
++--------------------------------------------------------------------------+
+| MontarSqlInBatched -- monta "(col IN (l1) OR col IN (l2))" dividindo a   |
+| lista em batches de 999 elementos. Oracle limita IN a 1000 (ORA-01795); |
+| outros DBMS aceitam mais mas a expressao OR funciona em qualquer um.    |
++--------------------------------------------------------------------------+
+*/
+Static Function MontarSqlInBatched(cColuna, aLista)
+    Local cRet := ""
+    Local nLote := 999
+    Local nTotal := Len(aLista)
+    Local i, j, cBatch, nFim
+
+    If nTotal == 0
+        Return "1=0"   // expressao sempre falsa (sem itens, sem match)
+    EndIf
+
+    // Caso simples: cabe em 1 IN
+    If nTotal <= nLote
+        Return cColuna + " IN (" + MontarSqlIn(aLista) + ")"
+    EndIf
+
+    // Caso batched: monta (col IN (l1) OR col IN (l2) OR ...)
+    For i := 1 To nTotal Step nLote
+        nFim := Min(i + nLote - 1, nTotal)
+        cBatch := ""
+        For j := i To nFim
+            If j > i ; cBatch += "," ; EndIf
+            cBatch += "'" + aLista[j] + "'"
+        Next
+        If !Empty(cRet) ; cRet += " OR " ; EndIf
+        cRet += cColuna + " IN (" + cBatch + ")"
+    Next
+Return "(" + cRet + ")"
+
+/*
++--------------------------------------------------------------------------+
+| GerarUuid -- gera identificador unico de 32 chars hex.                  |
+| Sem deps externas: usa FwTimeStamp + Seconds + contador static.         |
++--------------------------------------------------------------------------+
+*/
+STATIC __nUuidSeq := 0
+
+Static Function GerarUuid()
+    Local cFallback := ""
+    Local nNum, i
+
+    __nUuidSeq++
+    nNum := Val(StrTran(FwTimeStamp(3), "T", "")) + (Seconds() * 1000) + (__nUuidSeq * 7919)
+    For i := 1 To 32
+        cFallback += SubStr("0123456789abcdef", Mod(Int(nNum / (2 ^ (i * 2))), 16) + 1, 1)
+    Next
+Return cFallback
+
+/*
++--------------------------------------------------------------------------+
+| DiretorioBundle -- diretorio local pra acumular CSVs.                    |
+| Estrutura: <cBase>\YYYYMMDD_HHMMSS_<bundle_id_short>\                    |
++--------------------------------------------------------------------------+
+*/
+Static Function DiretorioBundle(cBundleId, cBase)
+    Local cTs := DToS(Date()) + "_" + StrTran(Time(), ":", "")
+    Local cShort := SubStr(cBundleId, 1, 8)
+    Local cDir
+
+    Default cBase := "\temp\"
+    // Normaliza separador final
+    If !(Right(cBase, 1) $ "\/") ; cBase += "\" ; EndIf
+
+    cDir := cBase + cTs + "_" + cShort + "\"
+
+    // Cria a arvore garantindo cada nivel; MakeDir e idempotente
+    MakeDir(cBase)
+    MakeDir(cDir)
+Return cDir
+
+/*
++--------------------------------------------------------------------------+
+| LogColetor -- escreve no console log (TMultiGet da tela) e no console.log|
+| do AppServer. Adiciona timestamp [HH:MM:SS] em cada linha. Atualiza      |
+| o TMultiGet em tempo real via ProcessMessages() pra a UI nao travar.    |
++--------------------------------------------------------------------------+
+*/
+Static Function LogColetor(cMsg)
+    __cLog += "[" + Time() + "] " + cMsg + CRLF
+    ConOut(CDB_LOG_PREFIX + cMsg)
+
+    If ValType(__oLog) == "O"
+        __oLog:SetText(__cLog)
+        __oLog:Refresh()
+        __oLog:GoEnd()
+        // ProcessMessages so esvazia a fila; SysRefresh forca o paint da
+        // janela mesmo dentro de loops bloqueantes (queries Oracle longas).
+        // Sem SysRefresh, mensagens emitidas antes de uma query so apareciam
+        // depois dela terminar.
+        ProcessMessages()
+        SysRefresh()
+    EndIf
+Return
+
+/*
++--------------------------------------------------------------------------+
+| PromptDirAtualiza -- abre dialog do SO pra selecionar pasta e atualiza   |
+| o TGet passado. Usa cGetFile com flag 64 (GETF_RETDIRECTORY) que faz a   |
+| caixa retornar apenas a pasta (sem nome de arquivo). Mantem a pasta      |
+| atual se o usuario cancelar.                                             |
++--------------------------------------------------------------------------+
+*/
+Static Function PromptDirAtualiza(oGet)
+    Local cAtual := ""
+    Local cNovo  := ""
+    Local nFlags := 64    // GETF_RETDIRECTORY -- retorna so a pasta
+
+    // VarGet/VarPut so existem em TMSGet -- algumas builds criam TGet "puro"
+    // pelo comando MSGET, e ai quebra com "Cannot find method TGET:VARGET".
+    // Padrao mais portavel: ler/escrever via :bSetGet (codeblock que liga
+    // ao VAR do MSGET) com fallback pra :cText quando o codeblock nao existe.
+    If ValType(oGet:bSetGet) == "B"
+        cAtual := AllTrim(cValToChar(Eval(oGet:bSetGet)))
+    EndIf
+    If Empty(cAtual) .And. ValType(oGet:cText) == "C"
+        cAtual := AllTrim(oGet:cText)
+    EndIf
+
+    cNovo := cGetFile("", "Selecione a pasta", 0, cAtual, .T., nFlags, .T.)
+    If Empty(cNovo) ; Return ; EndIf
+
+    // Garante separador final pra concatenacao downstream funcionar
+    If !(Right(cNovo, 1) $ "\/") ; cNovo += "\" ; EndIf
+
+    // Padding pra 200 chars (mesmo tamanho do Space() original) -- senao
+    // o MSGET reclama de "tamanho incompativel" no proximo paint
+    cNovo := PadR(cNovo, 200)
+
+    // Escreve via bSetGet (preferido) com fallback pra cText
+    If ValType(oGet:bSetGet) == "B"
+        Eval(oGet:bSetGet, cNovo)
+    ElseIf ValType(oGet:cText) == "C"
+        oGet:cText := cNovo
+    EndIf
+
+    oGet:Refresh()
+Return
+
+/*
++==========================================================================+
+| API REST                                                                  |
+| Pre-requisito appserver.ini:                                              |
+|   [HTTPV11]                                                               |
+|     ENABLE=1                                                              |
+|     PORT=8080  (ou outra)                                                 |
+|   [HTTPURI]                                                               |
+|     URL=/rest                                                             |
+|     PrepareIn=<emp>,<fil>     -- empresa/filial padrao                   |
+|     Security=1                                                            |
+|     CORSEnable=1                                                          |
+|                                                                           |
+| Cliente externo (workspace) usa:                                          |
+|   POST /rest/coletadb/run    -> manifest com size_bytes/chunks/sha256    |
+|   GET  /rest/coletadb/file   -> bytes do arquivo (chunked se > 4MB)     |
++==========================================================================+
+*/
+/*
++--------------------------------------------------------------------------+
+| POST /coletadb/run                                                       |
+| Body (JSON, todos opcionais):                                            |
+|   { "modo": "enxuto"|"completo", "threshold": 10,                      |
+|     "base_dir": "\\temp\\", "ini_dir": "<path>" }                       |
+| Resposta 200:                                                            |
+|   { "bundle_id": "abc...", "bundle_dir": "\\temp\\YYYYMMDD_HHMMSS_abc\\",|
+|     "files": [{"name":"SX3.csv","path":"...","size_bytes":N,           |
+|                "chunks":N,"chunk_size":4194304,"sha256":"..."}, ...] }  |
++--------------------------------------------------------------------------+
+*/
+@Post(endpoint="/coletadb/run", description="Executa coleta e retorna manifest")
+User Function CDBRun()
+    Local cBody  := ""
+    Local oReq, cErr := ""
+    Local cModo  := "enxuto"
+    Local nTh    := CDB_THRESHOLD
+    Local cBase  := "\temp\"
+    Local cIni   := DescobreRootPath()
+    Local aRet, aFiles, oFile
+    Local cResp  := ""
+    Local i, nSize, nChunks, cHash, cPath
+
+    // Body opcional: vazio = defaults; mal-formado = 400
+    cBody := AllTrim(oRest:GetBodyRequest())
+    If !Empty(cBody)
+        // REST entra UTF-8; fonte e cp1252 -- decode obrigatorio
+        cBody := DecodeUtf8(cBody)
+        oReq  := JsonObject():New()
+        cErr  := oReq:FromJson(cBody)
+        If !Empty(cErr)
+            oRest:SetStatusCode(400)
+            oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+            oRest:SetResponse(EncodeUtf8('{"error":"JSON invalido: ' + cErr + '"}'))
+            Return .T.
+        EndIf
+
+        If ValType(oReq["modo"]) == "C"
+            cModo := Lower(AllTrim(oReq["modo"]))
+            If cModo != "enxuto" .And. cModo != "completo"
+                oRest:SetStatusCode(422)
+                oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+                oRest:SetResponse(EncodeUtf8('{"error":"modo deve ser enxuto ou completo"}'))
+                Return .T.
+            EndIf
+        EndIf
+        If ValType(oReq["threshold"]) == "N"
+            nTh := Int(oReq["threshold"])
+        EndIf
+        If ValType(oReq["base_dir"]) == "C" .And. !Empty(oReq["base_dir"])
+            cBase := AllTrim(oReq["base_dir"])
+        EndIf
+        If ValType(oReq["ini_dir"]) == "C" .And. !Empty(oReq["ini_dir"])
+            cIni := AllTrim(oReq["ini_dir"])
+        EndIf
+    EndIf
+
+    // Reset console (instancia REST nao tem UI mas LogColetor ainda escreve
+    // no ConOut do AppServer pra rastreio)
+    __cLog := ""
+
+    aRet := ColetaCoreExecutar(cModo, nTh, cBase, cIni, "")
+    If !Empty(aRet[4])
+        oRest:SetStatusCode(500)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"' + StrTran(aRet[4], '"', '\"') + '"}'))
+        Return .T.
+    EndIf
+
+    aFiles := aRet[3]
+
+    // Acumula em variavel local (oRest:SetResponse e cumulativo -- chama 1x no fim)
+    cResp := '{"bundle_id":"' + aRet[1] + ;
+             '","bundle_dir":"' + StrTran(aRet[2], '\', '\\') + ;
+             '","modo":"' + cModo + ;
+             '","threshold":' + LTrim(Str(nTh)) + ;
+             ',"chunk_size":' + LTrim(Str(CDB_API_CHUNK)) + ;
+             ',"files":['
+
+    For i := 1 To Len(aFiles)
+        oFile   := aFiles[i]
+        // oFile[1] = sx_type (ex: "SX3"), oFile[2] = path completo do CSV
+        cPath   := oFile[2]
+        nSize   := TamanhoArquivo(cPath)
+        nChunks := Iif(nSize <= 0, 0, Int((nSize - 1) / CDB_API_CHUNK) + 1)
+        cHash   := HashSha256Arquivo(cPath)
+
+        If i > 1 ; cResp += "," ; EndIf
+        cResp += '{"name":"' + oFile[1] + '.csv"' + ;
+                 ',"path":"' + StrTran(cPath, '\', '\\') + '"' + ;
+                 ',"size_bytes":' + LTrim(Str(nSize)) + ;
+                 ',"chunks":' + LTrim(Str(nChunks)) + ;
+                 ',"sha256":"' + cHash + '"}'
+    Next
+    cResp += ']}'
+
+    oRest:SetStatusCode(200)
+    oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+    oRest:SetResponse(EncodeUtf8(cResp))
+Return .T.
+
+/*
++--------------------------------------------------------------------------+
+| GET /coletadb/file?path=<full_path>&offset=<N>&limit=<N>                 |
+| Devolve os bytes do CSV no intervalo [offset, offset+limit).             |
+|                                                                          |
+| Headers de resposta:                                                     |
+|   Content-Type: application/octet-stream                                 |
+|   X-Total-Size: <bytes totais do arquivo>                                |
+|   X-Chunk-Range: <start>-<end>/<total>                                   |
+|                                                                          |
+| Defaults: offset=0, limit=CDB_API_CHUNK (4MB). Limit nunca passa de     |
+| CDB_API_CHUNK -- cliente itera offset += chunk_size ate atingir total.  |
+|                                                                          |
+| Status:                                                                  |
+|   400 -- path ausente, path traversal, extensao nao permitida           |
+|   404 -- arquivo nao existe ou inacessivel                              |
+|   416 -- offset alem do tamanho do arquivo                              |
+|   200 -- ok (mesmo no chunk final, nao usamos 206 pra simplicidade)     |
++--------------------------------------------------------------------------+
+*/
+@Post(endpoint="/coletadb/file", description="Baixa arquivo do bundle em chunks")
+User Function CDBFile()
+    Local cPath := ""
+    Local nOff  := 0
+    Local nLim  := CDB_API_CHUNK
+    Local nH, nTotal, cBuf, nRead, nEnd
+    Local cExt
+    Local cBody, oReq, cErr := ""
+
+    // Body JSON obrigatorio: {"path":"...","offset":0,"limit":N}
+    cBody := AllTrim(oRest:GetBodyRequest())
+    If Empty(cBody)
+        oRest:SetStatusCode(400)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"body JSON obrigatorio com path"}'))
+        Return .T.
+    EndIf
+
+    cBody := DecodeUtf8(cBody)
+    oReq  := JsonObject():New()
+    cErr  := oReq:FromJson(cBody)
+    If !Empty(cErr)
+        oRest:SetStatusCode(400)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"JSON invalido: ' + cErr + '"}'))
+        Return .T.
+    EndIf
+
+    // Path obrigatorio
+    If ValType(oReq["path"]) == "C"
+        cPath := AllTrim(oReq["path"])
+    EndIf
+    If Empty(cPath)
+        oRest:SetStatusCode(400)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"campo path obrigatorio"}'))
+        Return .T.
+    EndIf
+
+    // Anti path-traversal: bloqueia ".." em qualquer posicao
+    If ".." $ cPath
+        oRest:SetStatusCode(400)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"path invalido (.. nao permitido)"}'))
+        Return .T.
+    EndIf
+
+    // Whitelist de extensao: so .csv (o coletor so gera csv)
+    cExt := Lower(SubStr(cPath, RAt(".", cPath)))
+    If cExt != ".csv"
+        oRest:SetStatusCode(400)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"so .csv permitido"}'))
+        Return .T.
+    EndIf
+
+    // offset/limit opcionais
+    If ValType(oReq["offset"]) == "N"
+        nOff := Int(oReq["offset"])
+        If nOff < 0 ; nOff := 0 ; EndIf
+    EndIf
+    If ValType(oReq["limit"]) == "N"
+        nLim := Int(oReq["limit"])
+        If nLim <= 0 .Or. nLim > CDB_API_CHUNK ; nLim := CDB_API_CHUNK ; EndIf
+    EndIf
+
+    // Abre o arquivo e descobre tamanho total
+    nH := FOpen(cPath, FO_READ)
+    If nH == -1
+        oRest:SetStatusCode(404)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"arquivo nao encontrado ou inacessivel"}'))
+        Return .T.
+    EndIf
+    nTotal := FSeek(nH, 0, FS_END)
+
+    // offset alem do tamanho -> 416 (Range Not Satisfiable)
+    If nOff >= nTotal
+        FClose(nH)
+        oRest:SetStatusCode(416)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetHeaderResponse("X-Total-Size", LTrim(Str(nTotal)))
+        oRest:SetResponse(EncodeUtf8('{"error":"offset alem do EOF","total_size":' + LTrim(Str(nTotal)) + '}'))
+        Return .T.
+    EndIf
+
+    // Posiciona e le o chunk
+    FSeek(nH, nOff, FS_SET)
+    cBuf  := Space(nLim)
+    nRead := FRead(nH, @cBuf, nLim)
+    FClose(nH)
+
+    If nRead <= 0
+        oRest:SetStatusCode(500)
+        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"falha na leitura do chunk"}'))
+        Return .T.
+    EndIf
+
+    cBuf := Left(cBuf, nRead)
+    nEnd := nOff + nRead - 1
+
+    oRest:SetStatusCode(200)
+    oRest:SetHeaderResponse("Content-Type", "application/octet-stream")
+    oRest:SetHeaderResponse("X-Total-Size",  LTrim(Str(nTotal)))
+    oRest:SetHeaderResponse("X-Chunk-Range", LTrim(Str(nOff)) + "-" + LTrim(Str(nEnd)) + "/" + LTrim(Str(nTotal)))
+    oRest:SetHeaderResponse("Content-Length", LTrim(Str(nRead)))
+    oRest:SetResponse(cBuf)
+Return .T.

@@ -53,6 +53,7 @@ from plugadvpl.ingest_log import (
     ingest_log_paths,
 )
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
+from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
@@ -1533,6 +1534,198 @@ def ingest_sx_cmd(
         ctx,
         summary_rows,
         title="Ingest SX — rows por tabela",
+        next_steps=[
+            "plugadvpl impacto A1_COD",
+            "plugadvpl gatilho A1_COD",
+        ],
+    )
+
+
+@app.command(name="ingest-protheus")
+def ingest_protheus_cmd(
+    ctx: typer.Context,
+    endpoint: Annotated[
+        str,
+        typer.Option(
+            "--endpoint",
+            help="URL base REST do Protheus (ex: http://protheus:8181/rest)",
+        ),
+    ] = "",
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User pra HTTP Basic auth. Fallback: env var PROTHEUS_USER.",
+        ),
+    ] = "",
+    password: Annotated[
+        str,
+        typer.Option(
+            "--password",
+            help="Password pra HTTP Basic auth. Fallback: env var PROTHEUS_PASS.",
+        ),
+    ] = "",
+    modo: Annotated[
+        str,
+        typer.Option(
+            "--modo",
+            help="'enxuto' (so tabelas com >= threshold rows) ou 'completo'.",
+        ),
+    ] = "enxuto",
+    threshold: Annotated[
+        int,
+        typer.Option(
+            "--threshold",
+            help="Min de rows pra tabela contar como ativa (modo enxuto).",
+        ),
+    ] = 10,
+    base_dir: Annotated[
+        str,
+        typer.Option(
+            "--base-dir",
+            help="Pasta NO SERVIDOR onde bundle e criado (vazio = default do servidor).",
+        ),
+    ] = "",
+    ini_dir: Annotated[
+        str,
+        typer.Option(
+            "--ini-dir",
+            help="Pasta NO SERVIDOR dos appserver*.ini (vazio = DescobreRootPath).",
+        ),
+    ] = "",
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="So roda /coletadb/run e mostra manifest, nao baixa nem ingere.",
+        ),
+    ] = False,
+    timeout_run_s: Annotated[
+        float,
+        typer.Option("--timeout-run", help="Timeout do /coletadb/run em segundos."),
+    ] = 300.0,
+    timeout_file_s: Annotated[
+        float,
+        typer.Option("--timeout-file", help="Timeout do /coletadb/file (por chunk)."),
+    ] = 60.0,
+) -> None:
+    """Indexa dicionario SX via REST API do COLETADB (Universo 5).
+
+    Workflow: POST /coletadb/run -> manifest; POST /coletadb/file em loop
+    pra baixar cada CSV em chunks de 4MB; chama ingest_sx no tmp local.
+
+    Auth via HTTP Basic (AppServer Security=1). Reusa o MESMO user/senha
+    do compile (env vars PROTHEUS_USER/PROTHEUS_PASS ou flags --user/--password).
+
+    Convive com `ingest-sx` — quem nao tem COLETADB instalado continua
+    usando CSV exportado do Configurador.
+    """
+    import os
+
+    from plugadvpl.coletadb_client import ColetaDBClient, ColetaDBError
+
+    if not endpoint:
+        typer.secho(
+            "--endpoint obrigatorio. Ex: --endpoint http://protheus:8181/rest",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    effective_user = user or os.environ.get("PROTHEUS_USER", "")
+    effective_pass = password or os.environ.get("PROTHEUS_PASS", "")
+    if not effective_user:
+        typer.secho(
+            "Auth obrigatoria: passe --user/--password ou defina "
+            "PROTHEUS_USER/PROTHEUS_PASS (mesmas creds do compile).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if modo not in ("enxuto", "completo"):
+        typer.secho(
+            f"--modo deve ser 'enxuto' ou 'completo' (recebido: {modo!r})",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    client = ColetaDBClient(
+        endpoint=endpoint,
+        user=effective_user,
+        password=effective_pass,
+        timeout_run_s=timeout_run_s,
+        timeout_file_s=timeout_file_s,
+    )
+
+    db_path: Path = ctx.obj["db"]
+
+    if dry_run:
+        try:
+            manifest = client.run(
+                modo=modo, threshold=threshold,
+                base_dir=base_dir, ini_dir=ini_dir,
+            )
+        except ColetaDBError as exc:
+            typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
+            if exc.hint:
+                typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(code=1) from exc
+        rows = [
+            {
+                "file": f.name,
+                "size_bytes": f.size_bytes,
+                "chunks": f.chunks,
+                "sha256_short": f.sha256[:16] + "..." if f.sha256 else "",
+            }
+            for f in manifest.files
+        ]
+        _render_from_ctx(
+            ctx, rows,
+            title=(
+                f"COLETADB manifest — bundle_id={manifest.bundle_id} "
+                f"modo={manifest.modo} files={len(manifest.files)}"
+            ),
+        )
+        return
+
+    try:
+        counters = do_ingest_via_rest(
+            client, db_path,
+            modo=modo, threshold=threshold,
+            base_dir=base_dir, ini_dir=ini_dir,
+        )
+    except ColetaDBError as exc:
+        typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
+        if exc.hint:
+            typer.secho(f"hint: {exc.hint}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=1) from exc
+
+    ingest_inner = counters.get("ingest_counters", {})
+    summary_rows: list[dict[str, object]] = [
+        {
+            "tabela": tabela,
+            "rows": ingest_inner.get("per_table", {}).get(tabela, 0),
+        }
+        for tabela in (
+            "tabelas", "campos", "indices", "gatilhos", "parametros",
+            "perguntas", "tabelas_genericas", "relacionamentos", "pastas",
+            "consultas", "grupos_campo",
+        )
+    ]
+    summary_rows.append(
+        {"tabela": "_TOTAL", "rows": ingest_inner.get("total_rows", 0)},
+    )
+
+    if not ctx.obj["quiet"]:
+        mb = counters.get("bytes_downloaded", 0) / (1024 * 1024)
+        typer.secho(
+            f"OK {counters['files_downloaded']} arquivos baixados "
+            f"({mb:.1f}MB, {counters.get('files_skipped', 0)} non-MVP pulados) "
+            f"em {counters['duration_ms']}ms — bundle {counters['bundle_id'][:16]}",
+            err=True,
+        )
+    _render_from_ctx(
+        ctx, summary_rows,
+        title=f"Ingest REST — rows por tabela (bundle {counters['bundle_id'][:8]})",
         next_steps=[
             "plugadvpl impacto A1_COD",
             "plugadvpl gatilho A1_COD",

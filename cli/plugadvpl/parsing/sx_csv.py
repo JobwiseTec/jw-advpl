@@ -174,9 +174,14 @@ def _row_is_deleted(row: dict[str, str]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def parse_sx2(file_path: Path) -> list[dict[str, Any]]:
-    """SX2 — Tabelas (X2_CHAVE, X2_NOME, X2_MODO)."""
-    rows = _read_csv(file_path)
+def normalize_sx2_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX2 brutas (chaves X2_*) pro schema do DB.
+
+    Compartilhado entre :func:`parse_sx2` (path CSV) e
+    :mod:`plugadvpl.ingest_rest` (path REST). Ambas chegam aqui com
+    ``list[dict[str, str]]`` e saem com ``list[dict[str, Any]]`` pronto
+    pra :func:`plugadvpl.ingest_sx._bulk_insert`.
+    """
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -195,9 +200,13 @@ def parse_sx2(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx3(file_path: Path) -> list[dict[str, Any]]:
-    """SX3 — Campos (full metadata: F3, CBOX, validações, owner)."""
-    rows = _read_csv(file_path)
+def parse_sx2(file_path: Path) -> list[dict[str, Any]]:
+    """SX2 — Tabelas (X2_CHAVE, X2_NOME, X2_MODO)."""
+    return normalize_sx2_rows(_read_csv(file_path))
+
+
+def normalize_sx3_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX3 brutas (chaves X3_*) pro schema do DB. Ver :func:`normalize_sx2_rows`."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -255,9 +264,13 @@ def parse_sx3(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_six(file_path: Path) -> list[dict[str, Any]]:
-    """SIX — Índices. ATENÇÃO: colunas SEM prefixo (INDICE, ORDEM, CHAVE...)."""
-    rows = _read_csv(file_path)
+def parse_sx3(file_path: Path) -> list[dict[str, Any]]:
+    """SX3 — Campos (full metadata: F3, CBOX, validações, owner)."""
+    return normalize_sx3_rows(_read_csv(file_path))
+
+
+def normalize_six_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SIX brutas (chaves SEM prefixo: INDICE, ORDEM, ...)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -283,9 +296,13 @@ def parse_six(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx7(file_path: Path) -> list[dict[str, Any]]:
-    """SX7 — Gatilhos. Inclui condition (X7_CONDIC) e seek metadata."""
-    rows = _read_csv(file_path)
+def parse_six(file_path: Path) -> list[dict[str, Any]]:
+    """SIX — Índices. ATENÇÃO: colunas SEM prefixo (INDICE, ORDEM, CHAVE...)."""
+    return normalize_six_rows(_read_csv(file_path))
+
+
+def normalize_sx7_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX7 brutas (chaves X7_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -319,9 +336,13 @@ def parse_sx7(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx1(file_path: Path) -> list[dict[str, Any]]:
-    """SX1 — Perguntas (groups + individual questions in MV_PARxx scheme)."""
-    rows = _read_csv(file_path)
+def parse_sx7(file_path: Path) -> list[dict[str, Any]]:
+    """SX7 — Gatilhos. Inclui condition (X7_CONDIC) e seek metadata."""
+    return normalize_sx7_rows(_read_csv(file_path))
+
+
+def normalize_sx1_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX1 brutas (chaves X1_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -347,9 +368,13 @@ def parse_sx1(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx5(file_path: Path) -> list[dict[str, Any]]:
-    """SX5 — Tabelas genéricas (códigos auxiliares: estado civil, tipo NF, ...)."""
-    rows = _read_csv(file_path)
+def parse_sx1(file_path: Path) -> list[dict[str, Any]]:
+    """SX1 — Perguntas (groups + individual questions in MV_PARxx scheme)."""
+    return normalize_sx1_rows(_read_csv(file_path))
+
+
+def normalize_sx5_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX5 brutas (chaves X5_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -370,9 +395,13 @@ def parse_sx5(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx6(file_path: Path) -> list[dict[str, Any]]:
-    """SX6 — Parâmetros MV_*. Inclui validacao e init (cada vez mais comuns em ERP moderno)."""
-    rows = _read_csv(file_path)
+def parse_sx5(file_path: Path) -> list[dict[str, Any]]:
+    """SX5 — Tabelas genéricas (códigos auxiliares: estado civil, tipo NF, ...)."""
+    return normalize_sx5_rows(_read_csv(file_path))
+
+
+def normalize_sx6_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX6 brutas (chaves X6_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -400,9 +429,13 @@ def parse_sx6(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sx9(file_path: Path) -> list[dict[str, Any]]:
-    """SX9 — Relacionamentos (FK lógicas entre tabelas)."""
-    rows = _read_csv(file_path)
+def parse_sx6(file_path: Path) -> list[dict[str, Any]]:
+    """SX6 — Parâmetros MV_*. Inclui validacao e init (cada vez mais comuns em ERP moderno)."""
+    return normalize_sx6_rows(_read_csv(file_path))
+
+
+def normalize_sx9_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SX9 brutas (chaves X9_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -427,9 +460,13 @@ def parse_sx9(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sxa(file_path: Path) -> list[dict[str, Any]]:
-    """SXA — Pastas/folders (organização visual de campos no cadastro)."""
-    rows = _read_csv(file_path)
+def parse_sx9(file_path: Path) -> list[dict[str, Any]]:
+    """SX9 — Relacionamentos (FK lógicas entre tabelas)."""
+    return normalize_sx9_rows(_read_csv(file_path))
+
+
+def normalize_sxa_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SXA brutas (chaves XA_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -450,9 +487,13 @@ def parse_sxa(file_path: Path) -> list[dict[str, Any]]:
     return result
 
 
-def parse_sxb(file_path: Path) -> list[dict[str, Any]]:
-    """SXB — Consultas F3 (telas de pesquisa para campos)."""
-    rows = _read_csv(file_path)
+def parse_sxa(file_path: Path) -> list[dict[str, Any]]:
+    """SXA — Pastas/folders (organização visual de campos no cadastro)."""
+    return normalize_sxa_rows(_read_csv(file_path))
+
+
+def normalize_sxb_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SXB brutas (chaves XB_*)."""
     result: list[dict[str, Any]] = []
     for row in rows:
         if _row_is_deleted(row):
@@ -469,6 +510,34 @@ def parse_sxb(file_path: Path) -> list[dict[str, Any]]:
                 "coluna": row.get("XB_COLUNA", "").strip(),
                 "descricao": row.get("XB_DESCRI", "").strip(),
                 "conteudo": row.get("XB_CONTEM", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_sxb(file_path: Path) -> list[dict[str, Any]]:
+    """SXB — Consultas F3 (telas de pesquisa para campos)."""
+    return normalize_sxb_rows(_read_csv(file_path))
+
+
+def normalize_sxg_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows SXG brutas (chaves XG_*). Pre-validacao de header
+    nao acontece aqui — quem chama deve garantir que sao linhas SXG."""
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted(row):
+            continue
+        grupo = row.get("XG_GRUPO", "").strip()
+        if not grupo:
+            continue
+        result.append(
+            {
+                "grupo": grupo,
+                "descricao": row.get("XG_DESCRIC", "").strip(),
+                "tamanho_max": _safe_int(row.get("XG_TAMMAX", "0")),
+                "tamanho_min": _safe_int(row.get("XG_TAMMIN", "0")),
+                "tamanho": _safe_int(row.get("XG_TAMANHO", "0")),
+                "total_campos": 0,  # preenchido pelo ingest_sx via SQL
             }
         )
     return result
@@ -499,22 +568,4 @@ def parse_sxg(file_path: Path) -> list[dict[str, Any]]:
             file=sys.stderr,
         )
         return []
-    rows = _read_csv(file_path)
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        if _row_is_deleted(row):
-            continue
-        grupo = row.get("XG_GRUPO", "").strip()
-        if not grupo:
-            continue
-        result.append(
-            {
-                "grupo": grupo,
-                "descricao": row.get("XG_DESCRIC", "").strip(),
-                "tamanho_max": _safe_int(row.get("XG_TAMMAX", "0")),
-                "tamanho_min": _safe_int(row.get("XG_TAMMIN", "0")),
-                "tamanho": _safe_int(row.get("XG_TAMANHO", "0")),
-                "total_campos": 0,  # preenchido pelo ingest_sx via SQL
-            }
-        )
-    return result
+    return normalize_sxg_rows(_read_csv(file_path))
