@@ -66,7 +66,35 @@
 //
 // Ambos descobertos rodando smoke contra base de teste sem schema MSSQL
 // completo, com leitura de protheus.log expondo a stack real.
-#DEFINE CDB_VERSION      "1.0.1"
+//
+// v1.0.2 (2026-05-24, plugadvpl): 3 fixes da issue #9 (bugs do reference-impl
+// reportados pela IA da fabrica TBarbito apos smoke ponta-a-ponta):
+//
+//   3) HashSha256Arquivo agora hasheia o CONTEUDO via MemoRead em vez do
+//      path literal. Sha2_256(cStr, nFmt) espera string como input (nFmt
+//      controla so o formato de saida: 1=hex lower). v1.0.1 passava cPath
+//      e gerava hash do path string -- "valido" mas inutil pra integrity
+//      check. Manifest agora traz sha256 real do conteudo.
+//
+//   4) DiretorioBundle agora detecta SO via IsSrvUnix() e usa "/" em
+//      Linux ou "\" em Windows. v1.0.1 forcava "\" em qualquer SO -- em
+//      AppServer Linux o manifest saia com bundle_dir "\temp\xxx\" que
+//      cliente Python tinha que normalizar pra "/". Tambem normaliza
+//      separadores misturados no cBase passado pelo caller.
+//
+//   5) InventarioCarregar agora devolve Nil em falha real (DBMS desconhecido
+//      ou TOPCONN caiu, capturado via ErrorBlock+BEGIN SEQUENCE) vs {}
+//      quando query rodou mas threshold filtrou tudo. ColetaCoreExecutar
+//      diferencia: Nil -> aborta com mensagem de erro de DB; {} -> apenas
+//      avisa "threshold filtrou tudo, bundle sera parcial" e continua.
+//      Antes v1.0.1: threshold=999999 em healthcheck dava "Falha ao
+//      carregar inventario" enganoso (DB estava bem, so filtrou tudo).
+//
+// Bug "Postgres ENCODE syntax invalida" (#9 item 2) tambem reportado
+// mas era falso alarme: codigo usa Postgres substring(... FROM N FOR M)
+// que NAO tem virgulas internas (palavras-chave FROM/FOR), e encode(blob,
+// 'escape') ja tem a virgula correta. Reporter leu errado a sintaxe.
+#DEFINE CDB_VERSION      "1.0.2"
 #DEFINE CDB_THRESHOLD    10           // minimo de linhas pra tabela contar como ativa
 #DEFINE CDB_LOG_PREFIX   "[COLETADB] "
 #DEFINE CDB_API_CHUNK    4194304      // 4MB por chunk -- limite REST default e 8MB; ficamos com folga
@@ -262,13 +290,23 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
 
     LogColetor("Carregando inventario de tabelas...")
     aInventario := InventarioCarregar(nThreshold)
-    If Empty(aInventario)
-        LogColetor("ERRO: falha ao carregar inventario. Verifique acesso ao banco.")
+    // v1.0.2: Nil = falha real (DBMS desconhecido / TOPCONN caiu).
+    //         {}  = consulta ok mas threshold filtrou todas as tabelas
+    //               (ex: threshold=999999 em healthcheck). Continua com
+    //               bundle parcial (manifest com 0 SX rows e MPMENU ainda
+    //               extraido caso schema permita) em vez de reportar erro
+    //               de DB enganoso.
+    If aInventario == Nil
+        LogColetor("ERRO: falha ao carregar inventario. Verifique conexao TOPCONN e permissao em catalogos do DBMS.")
         Return { cBundleId, cBundleDir, {}, "Falha ao carregar inventario de tabelas. Verifique acesso ao banco." }
     EndIf
 
     aTabAtivas := InventarioFiltrar(aInventario, nThreshold)
-    LogColetor("Inventario carregado: " + LTrim(Str(Len(aTabAtivas))) + " tabelas ativas de " + LTrim(Str(Len(aInventario))) + " totais.")
+    If Len(aInventario) == 0
+        LogColetor("AVISO: inventario carregado vazio -- threshold=" + LTrim(Str(nThreshold)) + " filtrou TODAS as tabelas. Bundle sera parcial.")
+    Else
+        LogColetor("Inventario carregado: " + LTrim(Str(Len(aTabAtivas))) + " tabelas ativas de " + LTrim(Str(Len(aInventario))) + " totais.")
+    EndIf
 
     If !MakeDir(cBundleDir)
         LogColetor("ERRO: falha ao criar diretorio: " + cBundleDir)
@@ -346,6 +384,8 @@ Static Function InventarioCarregar(nThreshold)
     Local cQry := ""
     Local cAlias := GetNextAlias()
     Local cTh := LTrim(Str(Iif(nThreshold == Nil, 0, nThreshold), 10, 0))
+    Local bOldErr
+    Local lFalhou := .F.
 
     Do Case
         Case cDb == "ORACLE"
@@ -364,11 +404,20 @@ Static Function InventarioCarregar(nThreshold)
                     "FROM pg_stat_user_tables " + ;
                     "WHERE n_live_tup >= " + cTh
         Otherwise
-            LogColetor("DBMS desconhecido: " + cDb + " -- inventario vazio")
-            Return aRet
+            LogColetor("DBMS desconhecido: " + cDb + " -- inventario indisponivel")
+            // v1.0.2: Nil sinaliza "nao consegui carregar"; {} sinaliza
+            // "carregou ok mas threshold filtrou tudo". Caller distingue.
+            Return Nil
     EndCase
 
     LogColetor("Inventario DBMS=" + cDb + " threshold=" + cTh)
+
+    // v1.0.2: ErrorBlock + BEGIN SEQUENCE pra capturar erro do TOPCONN
+    // (catalogo sem permissao, conexao caiu, etc) e diferenciar de
+    // "consulta retornou 0 rows". Sem isso, falha de conexao caia em
+    // excecao nativa sem trace.
+    bOldErr := ErrorBlock({|e| Break(e)})
+    BEGIN SEQUENCE
     // Nao usa ChangeQuery: ela uppercaseia identificadores e quebra catalogos
     // system case-sensitive (sys.tables/sys.partitions no MSSQL com collation CS).
     DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
@@ -377,6 +426,16 @@ Static Function InventarioCarregar(nThreshold)
         (cAlias)->(DbSkip())
     EndDo
     (cAlias)->(DBCloseArea())
+    RECOVER
+        LogColetor("ERRO: query de inventario falhou no TOPCONN (catalogo sem permissao? conexao caiu?)")
+        lFalhou := .T.
+    END SEQUENCE
+    ErrorBlock(bOldErr)
+
+    If lFalhou
+        Return Nil
+    EndIf
+
     LogColetor("Inventario: " + LTrim(Str(Len(aRet))) + " tabelas encontradas")
 Return aRet
 
@@ -1403,25 +1462,43 @@ Return nSize
 
 /*
 +--------------------------------------------------------------------------+
-| HashSha256Arquivo -- SHA-256 hex de arquivo. Usa Sha2_256 nativo do TLPP.|
-| Se Sha2_256 nao existir nessa build, retorna "" (sem hash -- cliente    |
-| pode pular validacao).                                                  |
+| HashSha256Arquivo -- SHA-256 hex de arquivo (v1.0.2).                    |
+| Sha2_256(cStr, nFmt) recebe CONTEUDO da string, nao path -- o nFmt 1    |
+| controla formato de SAIDA (hex lower), nao input. v1.0.1 passava cPath  |
+| literal e retornava o hash do PATH STRING (inutil pra integrity check). |
+| Fix: MemoRead do arquivo, hash do conteudo. Tem limite ~256MB do        |
+| MemoRead em builds recentes; pra arquivos maiores retorna "" e cliente  |
+| pula a validacao com warning.                                           |
 +--------------------------------------------------------------------------+
 */
 Static Function HashSha256Arquivo(cPath)
     Local cHash := ""
+    Local cContent := ""
     Local oHash
 
-    If FindFunction("Sha2_256")
-        // Sha2_256(cInput, nFlag) -- nFlag 1 = input e caminho de arquivo
-        cHash := Sha2_256(cPath, 1)
+    If !File(cPath)
+        Return ""
     EndIf
 
+    cContent := MemoRead(cPath)
+    If Empty(cContent)
+        // Arquivo vazio ou MemoRead estourou limite. Retorna "" pro cliente
+        // pular validacao -- prefirivel a hash mentiroso.
+        Return ""
+    EndIf
+
+    // Sha2_256(cInput, nFmt) -- nFmt 1 = lowercase hex (default).
+    // OBS: nFmt nao significa "input e path" -- input e sempre string.
+    If FindFunction("Sha2_256")
+        cHash := Sha2_256(cContent, 1)
+    EndIf
+
+    // Fallback: classe tHash (Protheus 12.1.2210+).
     If Empty(cHash) .And. FindFunction("tHash")
-        // Fallback: tHash():Digest sobre MemoRead (Protheus 12 R23+)
         oHash := tHash():New("SHA256")
         If !Empty(oHash)
-            cHash := oHash:Digest(MemoRead(cPath))
+            oHash:Update(cContent)
+            cHash := oHash:Digest()
         EndIf
     EndIf
 Return Lower(cHash)
@@ -1505,12 +1582,29 @@ Static Function DiretorioBundle(cBundleId, cBase)
     Local cTs := DToS(Date()) + "_" + StrTran(Time(), ":", "")
     Local cShort := SubStr(cBundleId, 1, 8)
     Local cDir
+    Local cSep
+    Local lUnix := .F.
 
-    Default cBase := "\temp\"
-    // Normaliza separador final
-    If !(Right(cBase, 1) $ "\/") ; cBase += "\" ; EndIf
+    Default cBase := ""
 
-    cDir := cBase + cTs + "_" + cShort + "\"
+    // v1.0.2: separador de path OS-aware. AppServer Linux usa "/"; antes
+    // v1.0.1 forcava "\" em qualquer SO -- manifest cliente recebia path
+    // com mistura "\temp\fake\" rodando em Linux e tinha que normalizar.
+    If FindFunction("IsSrvUnix")
+        lUnix := IsSrvUnix()
+    EndIf
+
+    cSep := Iif(lUnix, "/", "\")
+    If Empty(cBase)
+        cBase := cSep + "temp" + cSep
+    EndIf
+
+    // Normaliza separadores misturados (caller passou path Windows num
+    // server Linux ou vice-versa) e garante separador final.
+    cBase := StrTran(cBase, Iif(lUnix, "\", "/"), cSep)
+    If !(Right(cBase, 1) $ "\/") ; cBase += cSep ; EndIf
+
+    cDir := cBase + cTs + "_" + cShort + cSep
 
     // Cria a arvore garantindo cada nivel; MakeDir e idempotente
     MakeDir(cBase)

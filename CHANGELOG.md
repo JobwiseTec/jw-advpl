@@ -4,6 +4,36 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed — `docs/reference-impl/coletadb.tlpp` v1.0.2 (issue #9, 3 bugs)
+
+Três bugs reportados pela IA da fábrica @tbarbito após smoke ponta-a-ponta
+contra Protheus 7.00.240223P. Versão do reference-impl: **1.0.1 → 1.0.2**.
+
+- **`HashSha256Arquivo` (bug #3):** v1.0.1 passava `cPath` literal pro
+  `Sha2_256(cStr, nFmt)` que espera **conteúdo** como input — `nFmt` é só
+  formato de saída (1=hex lower), não "input é path". Manifest saía com
+  hash do path string em vez do conteúdo (inútil pra integrity check).
+  Fix: `MemoRead(cPath)` antes, daí `Sha2_256(cContent, 1)`. Fallback
+  via `tHash` corrigido também.
+- **`DiretorioBundle` (bug #4):** path separator hardcoded `\` em qualquer
+  SO. Em AppServer Linux o `bundle_dir` saía `\temp\xxx\` e o cliente
+  Python tinha que normalizar. Fix: detecta SO via `IsSrvUnix()`, usa `/`
+  em Linux + normaliza separadores misturados no `cBase` passado pelo
+  caller.
+- **`InventarioCarregar` (bug #5):** false positive quando `threshold`
+  alto (ex: 999999 em healthcheck) filtrava todas as tabelas — mensagem
+  enganosa "Falha ao carregar inventario. Verifique acesso ao banco"
+  apesar do DB estar OK. Fix: distinção `Nil` (falha real de TOPCONN/DBMS)
+  vs `{}` (carregou ok mas threshold filtrou tudo). `ColetaCoreExecutar`
+  só aborta no `Nil`; no `{}` apenas avisa "bundle será parcial" e segue.
+  Adicionado `ErrorBlock + BEGIN SEQUENCE` na query do catálogo pra
+  capturar exceptions de TOPCONN (catálogo sem permissão, conexão caiu).
+
+**Bug "Postgres ENCODE syntax inválida"** (issue #9 item 2) era falso
+alarme — código usa `substring(... FROM N FOR M)` (Postgres tem sintaxe
+`FROM/FOR` sem vírgulas internas) + `encode(blob, 'escape')` com vírgula
+correta. Reporter leu errado a sintaxe.
+
 ### Fixed — Gotchas reais do smoke COLETADB.tlpp incorporados nas skills
 
 Quatro lições do smoke ponta-a-ponta contra Protheus 7.00.240223P (Docker
