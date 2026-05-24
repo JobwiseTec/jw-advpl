@@ -4,17 +4,25 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
-### Fixed — `docs/reference-impl/coletadb.tlpp` v1.0.2 (issue #9, 3 bugs)
+### Fixed — `docs/reference-impl/coletadb.tlpp` v1.0.3 (issue #9, 3 bugs)
 
 Três bugs reportados pela IA da fábrica @tbarbito após smoke ponta-a-ponta
-contra Protheus 7.00.240223P. Versão do reference-impl: **1.0.1 → 1.0.2**.
+contra Protheus 7.00.240223P. Versão do reference-impl: **1.0.1 → 1.0.3**
+(v1.0.2 intermediário trocou Sha2_256 por MemoRead+Sha2_256, mas smoke
+local provou que essa build não tem `Sha2_256`/`HashStr`/`tHash` —
+v1.0.3 adicionou fallback ordenado pra `Sha1`/`MD5` + metadata `hash_algo`).
 
-- **`HashSha256Arquivo` (bug #3):** v1.0.1 passava `cPath` literal pro
-  `Sha2_256(cStr, nFmt)` que espera **conteúdo** como input — `nFmt` é só
-  formato de saída (1=hex lower), não "input é path". Manifest saía com
-  hash do path string em vez do conteúdo (inútil pra integrity check).
-  Fix: `MemoRead(cPath)` antes, daí `Sha2_256(cContent, 1)`. Fallback
-  via `tHash` corrigido também.
+- **`HashSha256Arquivo` → `HashArquivo` (bug #3):** v1.0.1 passava `cPath`
+  literal pro `Sha2_256(cStr, nFmt)` que espera **conteúdo** como input.
+  Smoke local revelou problema mais profundo: build 7.00.240223P **não
+  tem `Sha2_256`** (nem `HashStr`/`tHash`) — só `Sha1`/`MD5`/`CRC32`.
+  v1.0.3 trocou função pra `HashArquivo(cPath)` retornando
+  `{ hash_hex, algo }` com fallback ordenado: Sha2_256 → Sha1 → MD5.
+  Manifest agora emite `hash` + `hash_algo` + `hash_partial` (flag pra
+  arquivos > 64KB onde `MemoRead` trunca). Campo legado `sha256` mantido
+  por compat: vazio se algo != sha256, populado caso contrário.
+  Validado em smoke: 21/21 arquivos com `hash` sha1 (40 chars hex) +
+  `hash_partial=true` nos 11 arquivos maiores que 64KB.
 - **`DiretorioBundle` (bug #4):** path separator hardcoded `\` em qualquer
   SO. Em AppServer Linux o `bundle_dir` saía `\temp\xxx\` e o cliente
   Python tinha que normalizar. Fix: detecta SO via `IsSrvUnix()`, usa `/`

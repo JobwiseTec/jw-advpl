@@ -94,7 +94,15 @@
 // mas era falso alarme: codigo usa Postgres substring(... FROM N FOR M)
 // que NAO tem virgulas internas (palavras-chave FROM/FOR), e encode(blob,
 // 'escape') ja tem a virgula correta. Reporter leu errado a sintaxe.
-#DEFINE CDB_VERSION      "1.0.2"
+//
+// v1.0.3 (2026-05-24, plugadvpl): smoke real revelou que build 7.00.240223P
+// nao tem Sha2_256/HashStr/tHash -- so Sha1/MD5/CRC32. HashSha256Arquivo
+// virou HashArquivo retornando { hash, algo } com fallback ordenado.
+// Manifest agora emite hash + hash_algo + hash_partial.
+// Limitacao: MemoRead trunca em 64KB nessa build, hash de arquivos maiores
+// e parcial (suficiente pra detectar corrupcao de transfer, mas nao prova
+// integridade total). Cliente Python precisa replicar leitura limitada.
+#DEFINE CDB_VERSION      "1.0.3"
 #DEFINE CDB_THRESHOLD    10           // minimo de linhas pra tabela contar como ativa
 #DEFINE CDB_LOG_PREFIX   "[COLETADB] "
 #DEFINE CDB_API_CHUNK    4194304      // 4MB por chunk -- limite REST default e 8MB; ficamos com folga
@@ -1471,37 +1479,52 @@ Return nSize
 | pula a validacao com warning.                                           |
 +--------------------------------------------------------------------------+
 */
-Static Function HashSha256Arquivo(cPath)
+/*
++--------------------------------------------------------------------------+
+| HashArquivo -- hash hex do arquivo + algoritmo usado.                    |
+|                                                                          |
+| Retorna array { cHash, cAlgo } onde:                                     |
+|   cHash = hex lowercase ou "" se nenhuma funcao de hash existe na build |
+|   cAlgo = "sha256" | "sha1" | "md5" | "" (vazio sse cHash vazio)        |
+|                                                                          |
+| Estrategia ordenada por preferencia:                                     |
+|   1. Sha2_256(cContent, 1)  -> "sha256"  (tlpp-core recente)             |
+|   2. Sha1(cContent)          -> "sha1"    (Protheus 12.1+ universal)     |
+|   3. MD5(cContent)           -> "md5"     (Protheus 12.1+ universal)    |
+|                                                                          |
+| LIMITACAO: MemoRead trunca em ~64KB nessa build. Pra arquivos maiores   |
+| o hash e dos PRIMEIROS 64KB apenas (suficiente pra detectar corrupcao  |
+| de transfer mas nao prova integridade total). Cliente precisa replicar |
+| a leitura limitada -- ver hash_partial no manifest.                     |
++--------------------------------------------------------------------------+
+*/
+Static Function HashArquivo(cPath)
     Local cHash := ""
+    Local cAlgo := ""
     Local cContent := ""
-    Local oHash
 
     If !File(cPath)
-        Return ""
+        Return { "", "" }
     EndIf
 
     cContent := MemoRead(cPath)
     If Empty(cContent)
-        // Arquivo vazio ou MemoRead estourou limite. Retorna "" pro cliente
-        // pular validacao -- prefirivel a hash mentiroso.
-        Return ""
+        Return { "", "" }
     EndIf
 
-    // Sha2_256(cInput, nFmt) -- nFmt 1 = lowercase hex (default).
-    // OBS: nFmt nao significa "input e path" -- input e sempre string.
-    If FindFunction("Sha2_256")
-        cHash := Sha2_256(cContent, 1)
-    EndIf
+    Do Case
+        Case FindFunction("Sha2_256")
+            cHash := Sha2_256(cContent, 1)
+            cAlgo := "sha256"
+        Case FindFunction("Sha1")
+            cHash := Sha1(cContent)
+            cAlgo := "sha1"
+        Case FindFunction("MD5")
+            cHash := MD5(cContent)
+            cAlgo := "md5"
+    EndCase
 
-    // Fallback: classe tHash (Protheus 12.1.2210+).
-    If Empty(cHash) .And. FindFunction("tHash")
-        oHash := tHash():New("SHA256")
-        If !Empty(oHash)
-            oHash:Update(cContent)
-            cHash := oHash:Digest()
-        EndIf
-    EndIf
-Return Lower(cHash)
+Return { Lower(cHash), Iif(Empty(cHash), "", cAlgo) }
 
 /*
 +--------------------------------------------------------------------------+
@@ -1719,7 +1742,8 @@ User Function CDBRun()
     Local cIni   := DescobreRootPath()
     Local aRet, aFiles, oFile
     Local cResp  := ""
-    Local i, nSize, nChunks, cHash, cPath
+    Local i, nSize, nChunks, cPath
+    Local aHash                                                      // v1.0.3: { hash_hex, algo }
     Local oException                                                 // v1.0.1: RECOVERY
 
     // v1.0.1: BEGIN SEQUENCE captura excecoes nativas (DB driver,
@@ -1790,14 +1814,21 @@ User Function CDBRun()
         cPath   := oFile[2]
         nSize   := TamanhoArquivo(cPath)
         nChunks := Iif(nSize <= 0, 0, Int((nSize - 1) / CDB_API_CHUNK) + 1)
-        cHash   := HashSha256Arquivo(cPath)
+        // v1.0.3: HashArquivo retorna { hash, algo }. Build sem Sha2_256
+        // usa Sha1 ou MD5 com fallback em ordem; cliente checa via algo.
+        // Pra arquivos > ~64KB hash e parcial (MemoRead trunca) -- flag
+        // hash_partial avisa o cliente.
+        aHash   := HashArquivo(cPath)
 
         If i > 1 ; cResp += "," ; EndIf
         cResp += '{"name":"' + oFile[1] + '.csv"' + ;
                  ',"path":"' + StrTran(cPath, '\', '\\') + '"' + ;
                  ',"size_bytes":' + LTrim(Str(nSize)) + ;
                  ',"chunks":' + LTrim(Str(nChunks)) + ;
-                 ',"sha256":"' + cHash + '"}'
+                 ',"hash":"' + aHash[1] + '"' + ;
+                 ',"hash_algo":"' + aHash[2] + '"' + ;
+                 ',"hash_partial":' + Iif(nSize > 65535 .And. !Empty(aHash[1]), "true", "false") + ;
+                 ',"sha256":"' + Iif(aHash[2] == "sha256", aHash[1], "") + '"}'
     Next
     cResp += ']}'
 
