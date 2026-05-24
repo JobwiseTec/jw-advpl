@@ -49,7 +49,24 @@
 +--------------------------------------------------------------------------+
 */
 
-#DEFINE CDB_VERSION      "1.0.0"
+// v1.0.1 (2026-05-24, plugadvpl): 2 fixes que destravavam smoke contra
+// AppServer Protheus 7.00.240223P-20251003:
+//
+//   1) SetHeaderResponse(key, val) -> SetKeyHeaderResponse(key, val).
+//      Nesta build o metodo antigo de 2-args mudou assinatura (espera
+//      JsonObject ou string unica "Header: value"), gerando excecao
+//      'argument #0 error, expected J->C' em runtime. setKeyHeaderResponse
+//      e o canonico atual em tlpp-rest. Aplicado nas 19 ocorrencias do
+//      arquivo (CDBRun, CDBFile + helpers de erro).
+//
+//   2) BEGIN SEQUENCE / RECOVER USING em CDBRun + CDBFile pra capturar
+//      qualquer outra excecao nativa (DB driver, FOpen, etc.) que ainda
+//      escape e virar JSON {"error": "<msg real>"} com HTTP 500 estruturado,
+//      evitando o "500 vazio" do REST framework.
+//
+// Ambos descobertos rodando smoke contra base de teste sem schema MSSQL
+// completo, com leitura de protheus.log expondo a stack real.
+#DEFINE CDB_VERSION      "1.0.1"
 #DEFINE CDB_THRESHOLD    10           // minimo de linhas pra tabela contar como ativa
 #DEFINE CDB_LOG_PREFIX   "[COLETADB] "
 #DEFINE CDB_API_CHUNK    4194304      // 4MB por chunk -- limite REST default e 8MB; ficamos com folga
@@ -260,25 +277,45 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
     LogColetor("Bundle dir: " + cBundleDir)
 
     // --- Extracao SX --------------------------------------------------
+    // v1.0.1: cada extracao envolvida em BEGIN SEQUENCE pra que falha numa
+    // (ex: tabela XX2 inexistente em base sem schedules) nao derrube as
+    // outras. Cliente recebe bundle parcial em vez de 500.
     LogColetor(Replicate("-", 60))
     LogColetor("Extraindo dicionarios SX...")
-    aFilesGerados := ExtrairDicionarioSx(cBundleDir, aTabAtivas, lEnxuto)
+    BEGIN SEQUENCE
+        aFilesGerados := ExtrairDicionarioSx(cBundleDir, aTabAtivas, lEnxuto)
+    RECOVER
+        LogColetor("WARN: ExtrairDicionarioSx falhou — bundle continuara sem SX")
+        aFilesGerados := {}
+    END SEQUENCE
 
     // --- Extracao MPMENU ----------------------------------------------
     LogColetor("Extraindo MPMENU...")
-    aEval(ExtrairMpMenu(cBundleDir), {|x| aAdd(aFilesGerados, x)})
+    BEGIN SEQUENCE
+        aEval(ExtrairMpMenu(cBundleDir), {|x| aAdd(aFilesGerados, x)})
+    RECOVER
+        LogColetor("WARN: ExtrairMpMenu falhou — bundle continuara sem MPMENU")
+    END SEQUENCE
 
     // --- Extracao Schedules (via DBSelectArea) ------------------------
     LogColetor("Extraindo Schedules...")
-    If ExtrairSchedules(cBundleDir + "SCHEDULES.csv") > 0
-        aAdd(aFilesGerados, { "SCHEDULES", cBundleDir + "SCHEDULES.csv" })
-    EndIf
+    BEGIN SEQUENCE
+        If ExtrairSchedules(cBundleDir + "SCHEDULES.csv") > 0
+            aAdd(aFilesGerados, { "SCHEDULES", cBundleDir + "SCHEDULES.csv" })
+        EndIf
+    RECOVER
+        LogColetor("WARN: ExtrairSchedules falhou (tabela XX* inexistente?) — bundle continuara sem SCHEDULES")
+    END SEQUENCE
 
     // --- Extracao Jobs (appserver.ini) --------------------------------
     LogColetor("Extraindo Jobs do AppServer...")
-    If ExtrairJobs(cBundleDir + "JOBS.csv", cIniDir) > 0
-        aAdd(aFilesGerados, { "JOBS", cBundleDir + "JOBS.csv" })
-    EndIf
+    BEGIN SEQUENCE
+        If ExtrairJobs(cBundleDir + "JOBS.csv", cIniDir) > 0
+            aAdd(aFilesGerados, { "JOBS", cBundleDir + "JOBS.csv" })
+        EndIf
+    RECOVER
+        LogColetor("WARN: ExtrairJobs falhou — bundle continuara sem JOBS")
+    END SEQUENCE
 
     // --- RECORD_COUNTS (reaproveita inventario) -----------------------
     LogColetor("Gerando RECORD_COUNTS...")
@@ -649,6 +686,7 @@ Static Function SchedulesEscreverCsv(cQry, cCsv)
     Local nRows := 0
     Local aRecorr, cLine, cStatusTxt, cRecorrTxt, cEmpFil
     Local lTemEmpFil := .F., lTemEmp := .F., lTemFil := .F.
+    Local bOldErr                                                    // v1.0.1
 
     If nHandle == -1
         LogColetor("ERRO: nao consegui criar " + cCsv)
@@ -662,6 +700,14 @@ Static Function SchedulesEscreverCsv(cQry, cCsv)
         "Ultima_Hora;Recorrencia_Raw" + CRLF)
 
     cQry := ChangeQuery(cQry)
+
+    // v1.0.1: ErrorBlock + BEGIN SEQUENCE pra capturar erro do TOPCONN
+    // (tabela XX*/SX* inexistente fisicamente quebra DbUseArea com excecao
+    // que NAO eh capturada por BEGIN SEQUENCE simples). Pattern oficial
+    // Protheus: ErrorBlock({|e| Break(e)}) converte erro nativo em
+    // SEQUENCE break que o RECOVER pega.
+    bOldErr := ErrorBlock({|e| Break(e)})
+    BEGIN SEQUENCE
     DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
 
     // Schema XX2 varia: detecta uma vez quais campos existem no cursor.
@@ -717,6 +763,13 @@ Static Function SchedulesEscreverCsv(cQry, cCsv)
         (cAlias)->(DbSkip())
     EndDo
     (cAlias)->(DBCloseArea())
+    RECOVER
+        // v1.0.1: tabela XX0/XX1/XX2 inexistente fisicamente — desiste do
+        // Schedules e devolve 0 rows pro caller continuar bundle parcial.
+        LogColetor("WARN: SchedulesEscreverCsv falhou (tabela XX* inexistente?) — 0 rows")
+        nRows := 0
+    END SEQUENCE
+    ErrorBlock(bOldErr)
 
     FClose(nHandle)
 Return nRows
@@ -1238,6 +1291,7 @@ Static Function QueryExportarCsv(cQry, cCsv)
     Local nRows := 0
     Local i, cLine, cVal, xVal
     Local aFields := {}
+    Local bOldErr                                                    // v1.0.1
 
     If nHandle == -1
         LogColetor("ERRO: nao criou " + cCsv)
@@ -1245,6 +1299,11 @@ Static Function QueryExportarCsv(cQry, cCsv)
     EndIf
 
     cQry := ChangeQuery(cQry)
+
+    // v1.0.1: ErrorBlock + BEGIN SEQUENCE pra capturar erro de TOPCONN
+    // (objeto SQL inexistente) sem matar a thread. Vide SchedulesEscreverCsv.
+    bOldErr := ErrorBlock({|e| Break(e)})
+    BEGIN SEQUENCE
     DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
 
     // Lista campos do cursor
@@ -1275,6 +1334,11 @@ Static Function QueryExportarCsv(cQry, cCsv)
     EndDo
 
     (cAlias)->(DBCloseArea())
+    RECOVER
+        LogColetor("WARN: QueryExportarCsv falhou (objeto SQL inexistente?) — 0 rows")
+        nRows := 0
+    END SEQUENCE
+    ErrorBlock(bOldErr)
     FClose(nHandle)
 Return nRows
 
@@ -1562,6 +1626,13 @@ User Function CDBRun()
     Local aRet, aFiles, oFile
     Local cResp  := ""
     Local i, nSize, nChunks, cHash, cPath
+    Local oException                                                 // v1.0.1: RECOVERY
+
+    // v1.0.1: BEGIN SEQUENCE captura excecoes nativas (DB driver,
+    // FOpen falhando, divisao por zero, etc.) que estavam virando
+    // 500 Internal Server Error sem trace no log. Agora qualquer
+    // excecao vira HTTP 500 com {"error": "<msg real>"} estruturado.
+    BEGIN SEQUENCE
 
     // Body opcional: vazio = defaults; mal-formado = 400
     cBody := AllTrim(oRest:GetBodyRequest())
@@ -1572,7 +1643,7 @@ User Function CDBRun()
         cErr  := oReq:FromJson(cBody)
         If !Empty(cErr)
             oRest:SetStatusCode(400)
-            oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+            oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
             oRest:SetResponse(EncodeUtf8('{"error":"JSON invalido: ' + cErr + '"}'))
             Return .T.
         EndIf
@@ -1581,7 +1652,7 @@ User Function CDBRun()
             cModo := Lower(AllTrim(oReq["modo"]))
             If cModo != "enxuto" .And. cModo != "completo"
                 oRest:SetStatusCode(422)
-                oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+                oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
                 oRest:SetResponse(EncodeUtf8('{"error":"modo deve ser enxuto ou completo"}'))
                 Return .T.
             EndIf
@@ -1604,7 +1675,7 @@ User Function CDBRun()
     aRet := ColetaCoreExecutar(cModo, nTh, cBase, cIni, "")
     If !Empty(aRet[4])
         oRest:SetStatusCode(500)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"' + StrTran(aRet[4], '"', '\"') + '"}'))
         Return .T.
     EndIf
@@ -1637,8 +1708,24 @@ User Function CDBRun()
     cResp += ']}'
 
     oRest:SetStatusCode(200)
-    oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+    oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
     oRest:SetResponse(EncodeUtf8(cResp))
+
+    RECOVER USING oException
+        // v1.0.1: ultima rede de seguranca. Qualquer excecao nao tratada
+        // ate aqui (DB driver, IO, JSON, etc.) vira JSON estruturado com a
+        // mensagem real do erro, evitando o "500 vazio" do REST framework.
+        cErr := ""
+        If ValType(oException) == "O" .And. AttIsMemberOf(oException, "Description")
+            cErr := AllTrim(oException:Description)
+        ElseIf ValType(oException) == "C"
+            cErr := AllTrim(oException)
+        EndIf
+        If Empty(cErr) ; cErr := "Excecao sem descricao no CDBRun" ; EndIf
+        oRest:SetStatusCode(500)
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"' + StrTran(cErr, '"', '\"') + '"}'))
+    END SEQUENCE
 Return .T.
 
 /*
@@ -1669,12 +1756,16 @@ User Function CDBFile()
     Local nH, nTotal, cBuf, nRead, nEnd
     Local cExt
     Local cBody, oReq, cErr := ""
+    Local oException                                                 // v1.0.1: RECOVERY
 
-    // Body JSON obrigatorio: {"path":"...","offset":0,"limit":N}
+    // v1.0.1: BEGIN SEQUENCE captura qualquer excecao nativa (FOpen,
+    // FSeek, FRead em path corrompido, etc.) que estava virando 500
+    // vazio do REST framework. Vide nota em CDBRun.
+    BEGIN SEQUENCE
     cBody := AllTrim(oRest:GetBodyRequest())
     If Empty(cBody)
         oRest:SetStatusCode(400)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"body JSON obrigatorio com path"}'))
         Return .T.
     EndIf
@@ -1684,7 +1775,7 @@ User Function CDBFile()
     cErr  := oReq:FromJson(cBody)
     If !Empty(cErr)
         oRest:SetStatusCode(400)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"JSON invalido: ' + cErr + '"}'))
         Return .T.
     EndIf
@@ -1695,7 +1786,7 @@ User Function CDBFile()
     EndIf
     If Empty(cPath)
         oRest:SetStatusCode(400)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"campo path obrigatorio"}'))
         Return .T.
     EndIf
@@ -1703,7 +1794,7 @@ User Function CDBFile()
     // Anti path-traversal: bloqueia ".." em qualquer posicao
     If ".." $ cPath
         oRest:SetStatusCode(400)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"path invalido (.. nao permitido)"}'))
         Return .T.
     EndIf
@@ -1712,7 +1803,7 @@ User Function CDBFile()
     cExt := Lower(SubStr(cPath, RAt(".", cPath)))
     If cExt != ".csv"
         oRest:SetStatusCode(400)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"so .csv permitido"}'))
         Return .T.
     EndIf
@@ -1731,7 +1822,7 @@ User Function CDBFile()
     nH := FOpen(cPath, FO_READ)
     If nH == -1
         oRest:SetStatusCode(404)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"arquivo nao encontrado ou inacessivel"}'))
         Return .T.
     EndIf
@@ -1741,8 +1832,8 @@ User Function CDBFile()
     If nOff >= nTotal
         FClose(nH)
         oRest:SetStatusCode(416)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
-        oRest:SetHeaderResponse("X-Total-Size", LTrim(Str(nTotal)))
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("X-Total-Size", LTrim(Str(nTotal)))
         oRest:SetResponse(EncodeUtf8('{"error":"offset alem do EOF","total_size":' + LTrim(Str(nTotal)) + '}'))
         Return .T.
     EndIf
@@ -1755,7 +1846,7 @@ User Function CDBFile()
 
     If nRead <= 0
         oRest:SetStatusCode(500)
-        oRest:SetHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
         oRest:SetResponse(EncodeUtf8('{"error":"falha na leitura do chunk"}'))
         Return .T.
     EndIf
@@ -1764,9 +1855,23 @@ User Function CDBFile()
     nEnd := nOff + nRead - 1
 
     oRest:SetStatusCode(200)
-    oRest:SetHeaderResponse("Content-Type", "application/octet-stream")
-    oRest:SetHeaderResponse("X-Total-Size",  LTrim(Str(nTotal)))
-    oRest:SetHeaderResponse("X-Chunk-Range", LTrim(Str(nOff)) + "-" + LTrim(Str(nEnd)) + "/" + LTrim(Str(nTotal)))
-    oRest:SetHeaderResponse("Content-Length", LTrim(Str(nRead)))
+    oRest:SetKeyHeaderResponse("Content-Type", "application/octet-stream")
+    oRest:SetKeyHeaderResponse("X-Total-Size",  LTrim(Str(nTotal)))
+    oRest:SetKeyHeaderResponse("X-Chunk-Range", LTrim(Str(nOff)) + "-" + LTrim(Str(nEnd)) + "/" + LTrim(Str(nTotal)))
+    oRest:SetKeyHeaderResponse("Content-Length", LTrim(Str(nRead)))
     oRest:SetResponse(cBuf)
+
+    RECOVER USING oException
+        // v1.0.1: vide CDBRun. Captura qualquer excecao nao tratada.
+        cErr := ""
+        If ValType(oException) == "O" .And. AttIsMemberOf(oException, "Description")
+            cErr := AllTrim(oException:Description)
+        ElseIf ValType(oException) == "C"
+            cErr := AllTrim(oException)
+        EndIf
+        If Empty(cErr) ; cErr := "Excecao sem descricao no CDBFile" ; EndIf
+        oRest:SetStatusCode(500)
+        oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
+        oRest:SetResponse(EncodeUtf8('{"error":"' + StrTran(cErr, '"', '\"') + '"}'))
+    END SEQUENCE
 Return .T.
