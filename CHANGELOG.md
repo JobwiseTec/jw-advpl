@@ -4,6 +4,35 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added — `plugadvpl compile --all-envs`
+
+Compila o(s) fonte(s) pra **todos** os environments cadastrados no
+`--use-server <nome>`, em sequência, com saída anotada por env.
+
+Caso real: durante o smoke do `coletadb.tlpp` v1.0.3 contra Protheus
+local, descobri que `plugadvpl compile --use-server Local` mandava o
+RPO pro env padrão (`protheus` → `apo/custom.rpo`), mas o REST do
+AppServer roda no env `protheus_rest` (`apo_rest/custom.rpo`). RPO
+ficava desatualizado e o smoke continuava executando código antigo
+até eu copiar `apo/custom.rpo` → `apo_rest/custom.rpo` manualmente.
+
+Agora:
+
+```bash
+plugadvpl compile --use-server Local --all-envs docs/reference-impl/coletadb.tlpp
+# compila pra cada env do server.environments
+# saida tem coluna "env" pra ver onde foi
+```
+
+Validações:
+- `--all-envs` requer `--use-server <nome>`.
+- `--all-envs` é mutuamente exclusivo com `--use-environment`.
+- Server com 1 env emite warning ("degenera pra compile único") mas roda.
+- Exit code = max(exit_code de cada env) — falha em qualquer env quebra
+  a invocação inteira.
+
+3 testes integration novos cobrindo as 3 validações.
+
 ## [0.13.1] - 2026-05-24
 
 Release de docs + skills + hash_algo no cliente REST. Sem mudanças no

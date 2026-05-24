@@ -2932,6 +2932,13 @@ def compile_callback(
         str,
         typer.Option("--use-environment", help="Override do environment do server (opcional)"),
     ] = "",
+    all_envs: Annotated[
+        bool,
+        typer.Option(
+            "--all-envs",
+            help="Compila pra TODOS os environments do --use-server (RPO sync entre envs)",
+        ),
+    ] = False,
     yes: Annotated[
         bool,
         typer.Option(
@@ -3003,7 +3010,7 @@ def compile_callback(
     suspicious_flags = {
         "--mode", "--includes", "-I", "--changed-since",
         "--no-warnings", "--timeout", "--no-security-warning",
-        "--use-server", "--use-environment", "--format", "-f",
+        "--use-server", "--use-environment", "--all-envs", "--format", "-f",
         "--init-config", "--force", "--doctor", "--install-advpls",
         "--list-servers", "--add-server", "--remove-server",
         "--import-tds-servers", "--yes", "-y", "--probe-appserver",
@@ -3033,7 +3040,23 @@ def compile_callback(
         typer.secho(f"runtime config error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
 
+    # v0.13.2: --all-envs exige --use-server e é incompatível com --use-environment
+    if all_envs:
+        if not use_server:
+            typer.secho(
+                "--all-envs requer --use-server <nome>",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        if use_environment:
+            typer.secho(
+                "--all-envs e --use-environment são mutuamente exclusivos",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+
     # --use-server: sobrescreve [appserver] do runtime.toml com server do registry global
+    srv = None
     if use_server:
         from plugadvpl.compile_servers import get_server
         srv = get_server(use_server)
@@ -3044,11 +3067,12 @@ def compile_callback(
                 fg=typer.colors.RED, err=True,
             )
             raise typer.Exit(code=2)
-        runtime_cfg = _apply_server_override(
-            runtime_cfg, srv, use_environment, requested_mode=mode,
-        )
+        if not all_envs:
+            runtime_cfg = _apply_server_override(
+                runtime_cfg, srv, use_environment, requested_mode=mode,
+            )
 
-    if mode == "cli" and runtime_cfg is None:
+    if mode == "cli" and runtime_cfg is None and not all_envs:
         typer.secho(
             f"runtime.toml required for cli mode at {root}/.plugadvpl/runtime.toml. "
             "Run: plugadvpl compile --init-config OU passe --use-server <nome>",
@@ -3064,6 +3088,52 @@ def compile_callback(
         includes_override=includes if includes else None,
         changed_since=changed_since,
     )
+
+    # --all-envs: itera os environments cadastrados no server e roda compile
+    # por env, anotando linha com a coluna "env". Exit code = max dos envs.
+    if all_envs:
+        assert srv is not None
+        if len(srv.environments) < 2:
+            typer.secho(
+                f"AVISO: server '{srv.name}' só tem {len(srv.environments)} env "
+                f"({srv.environments}) — --all-envs degenera pra compile único.",
+                fg=typer.colors.YELLOW,
+            )
+        all_rows: list[dict[str, object]] = []
+        worst_exit = 0
+        mode_used_first = "?"
+        next_steps: list[str] = []
+        for env_name in srv.environments:
+            try:
+                env_runtime_cfg = _apply_server_override(
+                    runtime_cfg, srv, env_name, requested_mode=mode,
+                )
+            except typer.Exit:
+                # _apply_server_override já printou erro estruturado
+                raise
+            try:
+                env_result = compile_run(request, runtime_cfg=env_runtime_cfg, root=root)
+            except KeyboardInterrupt:
+                typer.secho("interrupted", fg=typer.colors.YELLOW, err=True)
+                raise typer.Exit(code=130)
+            if mode_used_first == "?":
+                mode_used_first = str(env_result.summary.get("mode_used", "?"))
+                next_steps = list(env_result.next_steps)
+            for row in env_result.rows:
+                annotated = dict(row)
+                annotated["env"] = env_name
+                all_rows.append(annotated)
+            worst_exit = max(worst_exit, env_result.exit_code)
+
+        _render_from_ctx(
+            ctx,
+            all_rows,
+            columns=["env", "arquivo", "ok", "mode", "duration_ms", "exit_code"],
+            title=f"compile --all-envs ({mode_used_first}) — {len(srv.environments)} envs",
+            next_steps=next_steps,
+        )
+        raise typer.Exit(code=worst_exit)
+
     try:
         result = compile_run(request, runtime_cfg=runtime_cfg, root=root)
     except KeyboardInterrupt:

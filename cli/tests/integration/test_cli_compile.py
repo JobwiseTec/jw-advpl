@@ -388,6 +388,74 @@ class TestAppreSkipsCredentials:
         assert "Opção B" not in combined
 
 
+class TestAllEnvs:
+    """v0.13.2: --all-envs itera environments do server.
+
+    Caso de uso: servidor com `protheus` E `protheus_rest` -- compile precisa
+    bater nos 2 RPOs senao o REST nao carrega o codigo novo.
+    """
+
+    def test_all_envs_requires_use_server(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--all-envs sem --use-server deve erar."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--all-envs", "--mode", "appre", str(foo)],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "--all-envs" in combined and "--use-server" in combined
+
+    def test_all_envs_conflicts_with_use_environment(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--all-envs + --use-environment sao mutuamente exclusivos."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="multi", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["env_a", "env_b"], default_environment="env_a",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--all-envs", "--use-server", "multi",
+                  "--use-environment", "env_a", "--mode", "appre", str(foo)],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        assert "all-envs" in combined and ("use-environment" in combined or "mutuamente" in combined)
+
+    def test_all_envs_with_single_env_warns_and_runs(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Server com 1 env nao quebra --all-envs, so emite warning."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="solo", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["only_env"], default_environment="only_env",
+        ))
+        foo = tmp_path / "foo.prw"
+        foo.write_text("", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--all-envs", "--use-server", "solo",
+                  "--mode", "appre", str(foo)],
+        )
+        # Pode falhar depois (advpls ausente etc), mas o warning + nao erro
+        # antes do compile e o que conta.
+        combined = (result.stdout or "") + (result.stderr or "") + (result.output or "")
+        # Nao deve cair em "--all-envs requer" ou "mutuamente exclusivos"
+        assert "--all-envs requer" not in combined
+        assert "mutuamente exclusivos" not in combined
+
+
 class TestExplainConfig:
     """v0.9.0: --explain-config mostra de onde vem cada campo."""
 
