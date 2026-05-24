@@ -4,6 +4,67 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-24
+
+### Added — U5b: XXA/XAL/XAM + RECORD_COUNTS do bundle COLETADB
+
+Estende o `ingest-protheus` pra absorver 4 dos 10 CSVs extras que o
+`COLETADB.tlpp` v1.0.1 emite além dos 11 SX padrão. Cobertura sobe de
+**11/21 → 15/21 CSVs** do bundle. Resta MPMENU (6) + SCHEDULES + JOBS
+pra Universos 6/8 (releases futuras).
+
+Migration nova `013_universo2_extras.sql` cria 3 tabelas SQLite com
+chave composta `WITHOUT ROWID`:
+
+- **`dominios`** (de XXA.csv) — Tabela de Domínios hierárquicos
+  (DOM/CDOM com 3 idiomas + tipo). PK `(dominio, cod_dominio, sequencia)`.
+  Diferente do SX5 (genéricas), XXA tem domínios estruturados —
+  cada DOM pode ter N CDOM com descrição em PT/ES/EN.
+- **`classificacoes_lgpd`** (de XAL.csv) — Catálogo master LGPD de
+  tipos de dado sensível. Ex: id=501 desc="Nome", id=502 desc="CPF".
+  PK `(filial, classificacao_id)`.
+- **`anonimizacao_campos`** (de XAM.csv) — Mapa de campos a anonimizar
+  com FK pra `classificacoes_lgpd` via `classificacao_id`. Inclui
+  justificativa, módulo, alias, flag `em_uso`. PK `(filial, alias, campo)`.
+
+**`RECORD_COUNTS.csv`** não cria tabela nova — popula `tabelas.num_rows`
+(coluna placeholder existente desde migration 002). Match por prefix
+de 3 chars do nome físico (ex: `SA1010` → alias `SA1`), agregando
+multi-empresa. Tabelas non-Protheus (TOP_/SYS_/MP_/TPH) filtradas.
+
+### Changed
+
+- `_SX_INGEST_PLAN` (CSV path) ganha 3 entries: xxa.csv, xal.csv, xam.csv
+- `_PARSER_BY_FILE`, `_PK_COLS_BY_TABLE`, `_META_KEY_BY_TABLE` estendidos
+- `_MVP_TABLES` (REST path) inclui XXA, XAL, XAM, RECORD_COUNTS
+- `SCHEMA_VERSION` bumped 12 → 13
+
+### Validation
+
+Smoke real contra Protheus 7.00.240223P (base local com Docker MSSQL,
+COLETADB.tlpp v1.0.1 deployed):
+
+- `ingest-protheus --modo completo --threshold 0` → **395.858 SX rows**
+- `dominios`: 49 rows
+- `classificacoes_lgpd`: 20 rows
+- `anonimizacao_campos`: **5.112 rows**
+- `tabelas.num_rows` populado em 69 tabelas (top: SX5=11.682, SYD=10.338, CC2=5.507)
+
+Suite full: **1017 passed**, 2 skipped (real-advpls smoke), zero regressão.
+
+### Use cases destravados
+
+- Queries de LGPD: "quais campos da SA1 estão marcados pra anonimizar?"
+- Queries de domínio: "que valores aceita o campo X que tem XXA_DOM='Y'?"
+- Priorização por volume: "top 20 tabelas com mais rows pra revisar primeiro"
+
+### Pendente pra Universos futuros
+
+- **U6 (Workflow):** SCHEDULES (agendamentos + recorrência decodificada)
+  + JOBS (parse recursivo de `appserver*.ini`)
+- **U8 (Menus):** MPMENU completo (6 tabelas: MENU/FUNCTION/ITEM/I18N/
+  KEY_WORDS/RW), cross-link com fontes e PEs
+
 ## [0.11.0] - 2026-05-22
 
 ### Added — U5 Live Protheus Inspector — `ingest-protheus` via REST
