@@ -34,15 +34,22 @@ if TYPE_CHECKING:
     from plugadvpl.coletadb_client import ColetaDBClient, Manifest
 
 
-# Tabelas que o plugin ingere via REST. v0.12.0 (migration 013) estendeu
-# pra cobrir XXA/XAM/XAL (SX extras LGPD/dominios) + RECORD_COUNTS
-# (inventario fisico DBMS via UPDATE em tabelas.num_rows). MPMENU/SCHEDULES/
-# JOBS ainda ficam pra Universos 6/8 (releases futuras).
+# Tabelas que o plugin ingere via REST. v0.13.0 cobre todos os 21 CSVs
+# que o COLETADB.tlpp emite:
+#   - 11 SX padrao (v0.11.0)
+#   - 3 SX extras LGPD/dominios + RECORD_COUNTS (v0.12.0, migration 013)
+#   - SCHEDULES + JOBS (v0.13.0, migration 014, Universo 6 Workflow)
+#   - 6 MPMENU (v0.13.0, migration 015, Universo 8 Menus)
 _MVP_TABLES: frozenset[str] = frozenset({
     "SIX", "SX1", "SX2", "SX3", "SX5",
     "SX6", "SX7", "SX9", "SXA", "SXB", "SXG",
     # v0.12.0 — extras (migration 013)
     "XXA", "XAL", "XAM", "RECORD_COUNTS",
+    # v0.13.0 — Universo 6 Workflow (migration 014)
+    "SCHEDULES", "JOBS",
+    # v0.13.0 — Universo 8 Menus (migration 015)
+    "MPMENU_MENU", "MPMENU_FUNCTION", "MPMENU_ITEM",
+    "MPMENU_I18N", "MPMENU_KEY_WORDS", "MPMENU_RW",
 })
 
 
