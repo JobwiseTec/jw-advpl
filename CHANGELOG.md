@@ -4,6 +4,25 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added — Skill `advpl-tlpp-named-params`
+
+- Nova skill dedicada documentando **named arguments** em chamadas TLPP via
+  operador **`=`** (igualdade). Inclui requisitos de versão (AppServer
+  20.3.2.0+ para funções/métodos, 24.3.1.0+ para `Classe():New()`), regras
+  de mistura posicional + nomeado, fronteira TLPP→ADVPL, e diretrizes de
+  refactor de `Static Function` legada.
+- Cross-ref recíproca com [[advpl-tlpp]] e seção 2.3 de `reference.md`.
+
+### Fixed — Documentação TLPP
+
+- `skills/advpl-tlpp/SKILL.md`: separa "tipagem opcional e defaults na
+  assinatura" (`numeric n := 0`) de "named args na chamada" (`f(n=10)`) —
+  antes a seção misturava os dois conceitos.
+- `skills/advpl-tlpp/reference.md` seção 2.3: corrige operador errado
+  (`:` virou `=`), adiciona versões mínimas de AppServer, exemplos de
+  mistura posicional + nomeado, construtor de classe, fronteira `.tlpp`/
+  `.prw`, comparativo e integração REST tlppCore.
+
 ## [0.13.0] - 2026-05-24
 
 ### Added — Universo 6 (Workflow) + Universo 8 (Menus): cobertura final 21/21 CSVs

@@ -212,21 +212,142 @@ Return nil
 
 > **Atenção:** Uma função chamada `myFunction001()` no ADVPL era armazenada como `myFunction` (10 chars). Em TLPP, será armazenada como `myFunction001`. Código existente que chama `myFunction()` quebrará ao migrar para TLPP.
 
-### 2.3 Parâmetros Nomeados
+### 2.3 Parâmetros Nomeados na Chamada
 
-O TLPP suporta **parâmetros nomeados**, permitindo chamar funções especificando o nome do parâmetro:
+> **Não confundir** com default value na assinatura (`numeric n := 0`). São coisas diferentes:
+> - **Default na assinatura**: `function f(n := 0)` — o `:=` define o valor que `n` assume se o caller omitir.
+> - **Named arg na chamada**: `f(n=10)` — o `=` passa o valor `10` pro parâmetro formal chamado `n`, sem depender da posição.
+
+**Versão mínima:**
+- Funções/métodos: **AppServer 20.3.2.0+**
+- Instanciação via `New()` em classes: **AppServer 24.3.1.0+** (versões anteriores falham na compilação ao usar named args em construtor)
+
+**Operador oficial: `=` (igualdade simples).** Não é `:=` (atribuição) nem `:` (dois-pontos — esse é send-message a objeto, sintaxe diferente).
+
+#### Sintaxe básica
 
 ```tlpp
-namespace meu.exemplo
+// Assinatura inalterada — sem marcação especial
+function xParams(p1, p2, p3, p4, p5, p6, p7, p8)
+return .T.
 
-function criarUsuario(cNome as Character, nIdade as Numeric, lAtivo as Logical)
-  ConOut("Nome: " + cNome)
-  ConOut("Idade: " + cValToChar(nIdade))
-Return
+// Chamada nomeada — ordem livre
+xParams(p2=b, p1=a, p6=f)
+// p3, p4, p5, p7, p8 ficam Nil (ou default se a assinatura tiver)
 
-// Chamada com parâmetros nomeados
-meu.exemplo.criarUsuario(cNome: "Ana", nIdade: 30, lAtivo: .T.)
+// Mistura permitida: posicionais primeiro, nomeados depois
+xParams(a, b, p7=g, p8=h)
+// p1=a (posicional), p2=b (posicional), p7=g (nomeado), p8=h (nomeado)
 ```
+
+#### Com tipagem
+
+```tlpp
+function xFunc(nParm as numeric, cParm as character, lParm as logical)
+return .T.
+
+// As mesmas checagens de tipo da chamada posicional também valem na nomeada
+xFunc(cParm="ACME", lParm=.T., nParm=42)
+```
+
+#### Em construtor de classe (requer 24.3.1.0+)
+
+```tlpp
+namespace custom.exemplo
+
+class namedParametersConstructorClass
+    public method new(_cParameter as character, _dParameter as date, ;
+                      _lParameter as logical,   _nParameter as numeric)
+endclass
+
+method new(_cParameter, _dParameter, _lParameter, _nParameter) class namedParametersConstructorClass
+    // ...
+return self
+
+// Caller — versão híbrida (posicionais + nomeados)
+local oRes := namedParametersConstructorClass():New( ;
+    cValue, dValue, _lParameter=.T., _nParameter=42 ;
+)
+```
+
+#### Fronteira TLPP → ADVPL clássico
+
+A **chamada precisa partir de código `.tlpp`** (compilador TLPP é quem entende a sintaxe `nome=valor` no call site). Mas o **callee pode estar em `.tlpp` ou `.prw` ADVPL** — não há restrição na fronteira para a função chamada. Ou seja, é perfeitamente válido um `.tlpp` chamar uma `User Function` `.prw` usando named args.
+
+#### Caso prático — função de validação consolidada
+
+Uma função única substitui várias validadoras especializadas; cada caller paga só pelos params que precisa:
+
+```tlpp
+function U_ValidaParams(dataInicial, dataFinal, dataRef)
+    local oRet := JsonObject():New()
+    // valida apenas os params não-vazios
+return oRet
+
+// Caller A — só intervalo
+oVal := U_ValidaParams(dataInicial=cIni, dataFinal=cFim)
+
+// Caller B — só data de referência
+oVal := U_ValidaParams(dataRef=cCorte)
+
+// Caller C — intervalo + corte
+oVal := U_ValidaParams(dataInicial=cIni, dataRef=cCorte)
+```
+
+Adicionar `cMoeda` à assinatura no futuro **não quebra** nenhum dos callers acima.
+
+#### Integração com REST tlppCore
+
+Endpoints `@Get`/`@Post` podem chamar funções com named args:
+
+```tlpp
+@Get(endpoint="/relatorio")
+user function relatorioEndpoint()
+    local oVal := U_ValidaParams( ;
+        dataInicial = oRest:getQueryRequest()['datainicial'], ;
+        dataFinal   = oRest:getQueryRequest()['datafinal']    ;
+    )
+    // ...
+return .T.
+```
+
+#### Comparativo posicional vs nomeado
+
+| Característica         | Posicional (legacy)        | Nomeado (TLPP 20.3.2+)        |
+|------------------------|----------------------------|--------------------------------|
+| Rigor de ordem         | Obrigatório seguir assinatura | Livre (ou posicional → nomeado) |
+| Params opcionais       | `,,nil,` placeholders      | Omissão direta                 |
+| Legibilidade           | Baixa (ruído sintático)    | Alta (autodocumentado)         |
+| Refactor (add param)   | Quebra todos os callers    | Imuna se inserido como opcional |
+| Validação de tipos     | Igual                      | Igual                          |
+| Fronteira ADVPL→TLPP   | Permitida                  | Caller TEM que ser `.tlpp`     |
+| Construtor `New()`     | Funciona desde sempre      | Só AppServer 24.3.1.0+         |
+
+#### Anti-padrões
+
+```tlpp
+// RUIM — placeholders posicionais em código TLPP novo
+processaPedido("001", , "ACME", , .T.)
+
+// BOM — nomeado
+processaPedido(cNumero="001", cCliente="ACME", lEmite=.T.)
+
+// RUIM — operador errado (não compila)
+processaPedido(cNumero:="001")     // := é atribuição, não named arg
+processaPedido(cNumero:"001")      // : é send-message a objeto
+```
+
+#### Diretrizes pra refactor de Static Function legada
+
+1. **Migrar callers de posicional → nomeado** ao converter `.prw` legado pra `.tlpp` é passo recomendado.
+2. **Validar a assinatura** antes de cada chamada — typo no nome do param formal causa erro (compilador valida).
+3. **Manter paridade** entre nome da var local e nome do param formal quando possível — facilita leitura.
+4. **Proibir `,,nil,`** em code review pra fontes `.tlpp` novos.
+5. **Funções de validação/config** com vários opcionais: projete pra serem chamadas com named args (1 função substitui N especializadas).
+
+**Sources:**
+- [Parâmetros Nomeados em TLPP — Hugo Guilherme Gomes / TOTVS Developers](https://medium.com/totvsdevelopers/par%C3%A2metros-nomeados-em-tlpp-ec2211bfe346)
+- [TLPP - Recursos de Linguagem — TDN TOTVS](https://tdn.totvs.com/display/tec/TLPP+-+Recursos+de+Linguagem)
 
 ### 2.4 Includes TLPP
 

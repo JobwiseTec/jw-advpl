@@ -58,7 +58,7 @@ endclass
 
 Veja `[[advpl-fundamentals]]` pra detalhe da regra de 10 chars em ADVPL clássico.
 
-## Tipagem opcional e parâmetros nomeados
+## Tipagem opcional e valores default na assinatura
 
 ```tlpp
 function processOrder(string cNumero, numeric nValor := 0.00, boolean lEmite := .T.) as logical
@@ -68,7 +68,34 @@ endfunction
 
 Tipos suportados: `string`, `numeric`, `boolean`, `date`, `array`, `object`, `codeblock`, `json`, `character`, `logical`.
 
-Tipagem é **opcional** — função pode ser declarada sem tipos (`function foo(x, y)`). Mas com tipagem o compilador checa em build, evita erros em runtime.
+Tipagem é **opcional** — função pode ser declarada sem tipos (`function foo(x, y)`). Mas com tipagem o compilador checa em build, evita erros em runtime. O `:=` nessa posição é **default value** na assinatura (se o caller omitir, vira o default), e não tem nada a ver com named args na chamada (próxima seção).
+
+## Parâmetros nomeados na chamada (named arguments)
+
+Recurso liberado em **AppServer 20.3.2.0+** (funções/métodos) e **24.3.1.0+** (classes via `New()`). Permite passar argumentos pelo nome formal usando o operador **`=`** (igualdade), em vez de pela posição:
+
+```tlpp
+// Assinatura — inalterada, sem marcação especial
+function xParams(p1, p2, p3, p4, p5, p6, p7, p8)
+return .T.
+
+// Chamada nomeada — ordem livre, omissão de opcionais
+xParams(p2=b, p1=a, p6=f)
+
+// Mistura permitida: posicionais primeiro, nomeados depois
+xParams(a, b, p7=g, p8=h)
+```
+
+Regras práticas:
+- **Caller precisa estar em `.tlpp`**; callee pode estar em `.tlpp` OU `.prw` ADVPL. Não há restrição da fronteira ADVPL.
+- **Operador é `=`** (igualdade), NÃO `:=` (atribuição) nem `:` (dois-pontos — esse é send-message a objeto).
+- **Ordem livre** quando todos forem nomeados; quando misturar, posicionais vêm primeiro.
+- **Tipagem é mantida**: se a assinatura tem `as numeric`, named arg também é checado.
+- **`New()` de classe**: só funciona em AppServer 24.3.1.0+.
+
+Caso forte: refactor de `Static Function` longa com muitos opcionais — caller paga só pelo que precisa, e adicionar param novo opcional não quebra callers existentes.
+
+Detalhes (gotchas, exemplos REST tlppCore, anti-padrões posicionais legados): ver [[advpl-tlpp-named-params]] (skill dedicada) ou [`reference.md`](reference.md) seção 2.3.
 
 ## Namespaces
 
@@ -311,6 +338,7 @@ Return Nil
 
 ## Cross-references com outras skills
 
+- `[[advpl-tlpp-named-params]]` — named arguments na chamada (operador `=`, AppServer 20.3.2.0+).
 - `[[advpl-fundamentals]]` — 10-char limit em `.prw`, escopos, reservadas.
 - `[[advpl-webservice]]` — REST tlppCore (annotations) vs WSRESTFUL clássico.
 - `[[advpl-encoding]]` — `.tlpp` é UTF-8 por padrão (vs cp1252 em `.prw`).
