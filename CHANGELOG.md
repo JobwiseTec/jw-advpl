@@ -4,6 +4,74 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-24
+
+### Added — Universo 6 (Workflow) + Universo 8 (Menus): cobertura final 21/21 CSVs
+
+Fecha a absorção completa do bundle COLETADB.tlpp v1.0.1. Plugin agora
+ingere **TODOS** os 21 CSVs (v0.11.0: 11; v0.12.0: 15; **v0.13.0: 21**).
+
+#### Universo 6 — Workflow (migration 014)
+
+- **`schedules`** (16 cols): agendamentos do scheduler interno
+  (XX0/XX1/XX2, com recorrência decodificada pelo COLETADB). PK `codigo`.
+  Campos humanos: `tipo_recorrencia` (Diario/Semanal/Mensal/...),
+  `detalhe_recorrencia`, `intervalo_hh_mm`, `recorrencia_raw` (debug).
+- **`jobs`** (5 cols): parse recursivo de `appserver*.ini`. PK composta
+  `(arquivo, sessao)`. Index em `rotina_main`.
+
+#### Universo 8 — Menus (migration 015, 6 tabelas relacionais)
+
+- `mpmenu_menu`: menus raiz (SIGAFAT, SIGAEST, ...)
+- `mpmenu_function`: funções ADVPL referenciadas
+- `mpmenu_item`: items hierárquicos (FK menu + self-FK pai)
+- `mpmenu_i18n`: descrições traduzidas (PT/ES/EN)
+- `mpmenu_key_words`: palavras-chave de busca
+- `mpmenu_rw`: leitura/escrita por idioma
+
+`SCHEMA_VERSION` bumped 13 → 15.
+
+CSVs MPMENU usam `R_E_C_D_E_L_` (vs `D_E_L_E_T_` das SX) — helper
+`_row_is_deleted_recnod()` adicionado.
+
+### Validation
+
+Smoke real contra Protheus 7.00.240223P:
+- SX padrão: **461.956 rows**
+- SX extras: 5.181
+- Workflow: 0 (base sem agendamentos)
+- **Menus: 66.098 rows** (12.589 items + 7.549 funcs + 37.767 i18n)
+
+JOIN cross-table validado — top funções por items: EDAPP (58), WFC002 (38), MATA020 (32).
+
+Suite full: 1015 passed.
+
+### Use cases destravados
+
+```sql
+-- Em qual menu aparece a função X?
+SELECT m.nome, mi.item_id_legado
+FROM mpmenu_function mf JOIN mpmenu_item mi ON mi.id_funcao = mf.id
+JOIN mpmenu_menu m ON m.id = mi.id_menu WHERE mf.funcao = 'MATA020';
+
+-- Qual rotina está agendada pra rodar diariamente?
+SELECT codigo, rotina, hora_inicio FROM schedules
+WHERE tipo_recorrencia = 'Diario' AND status = '1';
+
+-- Quais jobs chamam HTTP_START?
+SELECT arquivo, sessao FROM jobs WHERE rotina_main = 'HTTP_START';
+```
+
+### Cobertura final 21/21 CSVs do bundle COLETADB
+
+| | v0.11.0 | v0.12.0 | **v0.13.0** |
+|---|---|---|---|
+| SX padrão (11) | ✅ | ✅ | ✅ |
+| SX extras (3) + RECORD_COUNTS | ❌ | ✅ | ✅ |
+| SCHEDULES + JOBS | ❌ | ❌ | ✅ |
+| MPMENU (6) | ❌ | ❌ | ✅ |
+| **Total** | **52%** | **71%** | **100%** ✓ |
+
 ## [0.12.0] - 2026-05-24
 
 ### Added — U5b: XXA/XAL/XAM + RECORD_COUNTS do bundle COLETADB
