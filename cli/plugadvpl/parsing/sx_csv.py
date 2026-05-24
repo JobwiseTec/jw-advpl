@@ -569,3 +569,130 @@ def parse_sxg(file_path: Path) -> list[dict[str, Any]]:
         )
         return []
     return normalize_sxg_rows(_read_csv(file_path))
+
+
+def normalize_xxa_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows XXA brutas (chaves XXA_*) pro schema do DB.
+
+    XXA = Tabela de Dominios (codigos auxiliares hierarquicos com chave
+    composta DOM/CDOM). v0.12.0 — migration 013.
+    """
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted(row):
+            continue
+        dominio = row.get("XXA_DOM", "").strip()
+        cod_dominio = row.get("XXA_CDOM", "").strip()
+        if not dominio or not cod_dominio:
+            continue
+        result.append(
+            {
+                "dominio": dominio,
+                "cod_dominio": cod_dominio,
+                "sequencia": row.get("XXA_SEQUEN", "").strip(),
+                "descricao": row.get("XXA_DESCRI", "").strip(),
+                "descricao_es": row.get("XXA_DSCSPA", "").strip(),
+                "descricao_en": row.get("XXA_DSCENG", "").strip(),
+                "tipo": row.get("XXA_TYPE", "").strip(),
+            }
+        )
+    return result
+
+
+def parse_xxa(file_path: Path) -> list[dict[str, Any]]:
+    """XXA — Tabela de Dominios (codigos hierarquicos)."""
+    return normalize_xxa_rows(_read_csv(file_path))
+
+
+def normalize_xal_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows XAL brutas (chaves XAL_*).
+
+    XAL = Classificacoes LGPD (catalogo master). v0.12.0 — migration 013.
+    """
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted(row):
+            continue
+        classificacao_id = row.get("XAL_ID", "").strip()
+        if not classificacao_id:
+            continue
+        proprietario = row.get("XAL_PROPRI", "").strip()
+        result.append(
+            {
+                "filial": row.get("XAL_FILIAL", "").strip(),
+                "classificacao_id": classificacao_id,
+                "descricao": row.get("XAL_DESC", "").strip(),
+                "tipo": row.get("XAL_TIPO", "").strip(),
+                "proprietario": proprietario,
+                "custom": 1 if proprietario and proprietario != "S" else 0,
+            }
+        )
+    return result
+
+
+def parse_xal(file_path: Path) -> list[dict[str, Any]]:
+    """XAL — Classificacoes LGPD."""
+    return normalize_xal_rows(_read_csv(file_path))
+
+
+def normalize_xam_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Normaliza rows XAM brutas (chaves XAM_*).
+
+    XAM = Anonimizacao de Campos LGPD. FK pra XAL via classificacao_id.
+    v0.12.0 — migration 013.
+    """
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_is_deleted(row):
+            continue
+        campo = row.get("XAM_FIELD", "").strip()
+        alias = row.get("XAM_ALIAS", "").strip()
+        if not campo or not alias:
+            continue
+        proprietario = row.get("XAM_PROPRI", "").strip()
+        result.append(
+            {
+                "filial": row.get("XAM_FILIAL", "").strip(),
+                "classificacao": row.get("XAM_CLASSI", "").strip(),
+                "anonimizar": row.get("XAM_ANONIM", "").strip(),
+                "justificativa": row.get("XAM_JUSTIF", "").strip(),
+                "campo": campo,
+                "modulo": row.get("XAM_MODULE", "").strip(),
+                "classificacao_id": row.get("XAM_IDXAL", "").strip(),
+                "alias": alias,
+                "identificador": row.get("XAM_IDENT", "").strip(),
+                "proprietario": proprietario,
+                "justificativa2": row.get("XAM_JUSTI2", "").strip(),
+                "em_uso": row.get("XAM_SINUSE", "").strip(),
+                "custom": 1 if proprietario and proprietario != "S" else 0,
+            }
+        )
+    return result
+
+
+def parse_xam(file_path: Path) -> list[dict[str, Any]]:
+    """XAM — Anonimizacao de Campos LGPD."""
+    return normalize_xam_rows(_read_csv(file_path))
+
+
+def parse_record_counts(file_path: Path) -> list[dict[str, Any]]:
+    """RECORD_COUNTS.csv — inventario fisico DBMS, atualiza tabelas.num_rows.
+
+    Retorna ``[{"table_name": "...", "num_rows": N}, ...]`` — ingest_sx
+    pega isso e faz UPDATE em ``tabelas SET num_rows = ?`` por match no
+    nome fisico (ex: "SA1010" do RECORD_COUNTS bate com tabelas com
+    prefix "SA1"). Tabelas sem prefix Protheus reconhecido sao ignoradas.
+    v0.12.0 — migration 013.
+    """
+    rows = _read_csv(file_path)
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        table_name = row.get("TABLE_NAME", "").strip()
+        if not table_name:
+            continue
+        try:
+            num_rows = int(row.get("NUM_ROWS", "0") or "0")
+        except (ValueError, TypeError):
+            num_rows = 0
+        result.append({"table_name": table_name, "num_rows": num_rows})
+    return result
