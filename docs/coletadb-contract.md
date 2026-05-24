@@ -4,11 +4,18 @@
 
 | Item | Valor |
 |---|---|
-| **Versão** | 1.0.0 (validada contra `COLETADB.tlpp` em 2026-05-21) |
+| **Versão** | 1.0.0 (validada contra `COLETADB.tlpp` em 2026-05-21, smoke test contra Protheus 2510 em 2026-05-23) |
 | **Status** | Stable (post-pivot da Seção 5 especulativa) |
 | **Tipo de transporte** | HTTP/HTTPS REST + JSON envelope + binary chunks |
 | **Padrão** | Bundle pattern (servidor gera CSV local; cliente baixa em chunks) |
+| **Build mínima Protheus testada** | 7.00.240223P-20251003 (Docker `emebatista/protheus-2510`) |
 | **Spec MD** | [`docs/superpowers/specs/2026-05-21-u5-ingest-protheus.md`](superpowers/specs/2026-05-21-u5-ingest-protheus.md) §5-bis |
+
+## Compatibilidade conhecida (smoke 2026-05-23)
+
+⚠️ Na build **7.00.240223P** o `@Post(endpoint=..., description=...)` decorando `User Function` no `tlpp-rest.th` **não injeta o objeto global `oRest`** — qualquer função que toca `oRest:GetBodyRequest()`/`SetResponse()` retorna **HTTP 500** sem trace na resposta. Workaround: refatorar `COLETADB.tlpp` pra `WSRESTFUL classic` (provado funcional na mesma build). Esse problema é do tlpp-rest do AppServer, não do contrato — qualquer servidor conformante (TLPP modern, classic, ou outra linguagem) funciona desde que respeite o pattern bundle abaixo. Detalhes do refactor: issue de bugs do `COLETADB.tlpp` (a abrir).
+
+⚠️ Header HTTP `Accept`: cliente envia **`Accept: */*`** (não `application/octet-stream`). O REST framework do Protheus rejeita `octet-stream` com `HTTP 400` *antes* de chegar no WSMETHOD. Servidor é livre pra escolher `Content-Type` de resposta (`octet-stream` pra binário, `application/json` pra erros).
 
 ## 1. Princípio
 

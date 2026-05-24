@@ -170,6 +170,90 @@ class TestRun:
         assert exc_info.value.status == 401
 
 
+class TestSmokeRegression:
+    """Regressao do smoke test contra Protheus real (2026-05-23)."""
+
+    def test_post_bytes_sends_accept_star(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Smoke 2026-05-23: REST framework do Protheus rejeita
+        'Accept: application/octet-stream' com HTTP 400 antes do WSMETHOD.
+        Cliente DEVE enviar 'Accept: */*' no /file."""
+        captured: dict[str, Any] = {}
+
+        def capturing(req, **kwargs):  # noqa: ARG001
+            captured["headers"] = dict(req.headers)
+            return _fake_binary_response(
+                200, b"data",
+                headers={"X-Total-Size": "4", "Content-Length": "4"},
+            )
+
+        monkeypatch.setattr("plugadvpl.coletadb_client.urlopen", capturing)
+        client = ColetaDBClient(
+            endpoint="http://x/rest", user="u", password="p", chunk_size=4,
+        )
+        import hashlib
+        bf = BundleFile(
+            name="t.csv", path="/tmp/t.csv", size_bytes=4, chunks=1,
+            sha256=hashlib.sha256(b"data").hexdigest(),
+        )
+        client.download_file(bf, tmp_path / "t.csv")
+        # Accept header DEVE ser */* (HTTP normaliza pra Title-Case '*/*')
+        assert captured["headers"]["Accept"] == "*/*"
+
+    def test_400_error_exposes_server_body(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Smoke 2026-05-23: erro 400 do server pode ter JSON estruturado
+        tipo {'error': 'msg'} — cliente DEVE expor essa msg pro usuario."""
+        monkeypatch.setattr(
+            "plugadvpl.coletadb_client.urlopen",
+            _urlopen_returning(400, {"error": "campo X obrigatorio"}),
+        )
+        client = ColetaDBClient(
+            endpoint="http://x/rest", user="u", password="p",
+        )
+        with pytest.raises(ColetaDBError) as exc_info:
+            client.run()
+        msg = str(exc_info.value)
+        assert "campo X obrigatorio" in msg
+
+    def test_500_error_exposes_server_body(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Smoke 2026-05-23: erro 500 tambem deve mostrar body do server
+        (ate o ultimo retry). Plugin nao silencia mensagens."""
+        monkeypatch.setattr(
+            "plugadvpl.coletadb_client.urlopen",
+            _urlopen_returning(500, {"error": "Postgres ENCODE syntax error"}),
+        )
+        monkeypatch.setattr("plugadvpl.coletadb_client.time.sleep", lambda *_: None)
+        client = ColetaDBClient(
+            endpoint="http://x/rest", user="u", password="p",
+            retry_count=1, retry_backoff_s=0,
+        )
+        with pytest.raises(ColetaDBError) as exc_info:
+            client.run()
+        msg = str(exc_info.value)
+        assert "Postgres ENCODE syntax error" in msg
+
+    def test_401_with_server_msg_includes_it_in_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Erro de auth com mensagem do server vira hint completo."""
+        monkeypatch.setattr(
+            "plugadvpl.coletadb_client.urlopen",
+            _urlopen_returning(401, {"error": "user 'X' nao tem permissao REST"}),
+        )
+        client = ColetaDBClient(
+            endpoint="http://x/rest", user="X", password="p",
+        )
+        with pytest.raises(ColetaDBError) as exc_info:
+            client.run()
+        msg = str(exc_info.value)
+        assert "user 'X' nao tem permissao" in msg
+
+
 class TestAuth:
     def test_basic_auth_sends_authorization_header(
         self, monkeypatch: pytest.MonkeyPatch,

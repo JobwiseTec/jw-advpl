@@ -220,6 +220,37 @@ class ColetaDBClient:
         path = path if path.startswith("/") else f"/{path}"
         return self._endpoint + path
 
+    @staticmethod
+    def _extract_error_msg(exc: HTTPError) -> str:
+        """Le body de um HTTPError e extrai mensagem util pro usuario.
+
+        Smoke test (2026-05-23) mostrou que o server pode retornar JSON
+        estruturado tipo ``{"error":"campo X obrigatorio"}`` em respostas
+        4xx/5xx — silenciar isso esconde a causa real. Tenta parse JSON,
+        fallback pra texto truncado. Se tudo falha, retorna ``exc.reason``.
+        """
+        try:
+            body = exc.read()
+        except Exception:  # pragma: no cover - HTTPError sem body legivel
+            return exc.reason or ""
+        if not body:
+            return exc.reason or ""
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+            if isinstance(parsed, dict):
+                err = parsed.get("error") or parsed.get("message")
+                if err:
+                    return str(err)
+                # Sem chave conhecida — devolve compactado
+                return json.dumps(parsed, ensure_ascii=False)[:500]
+        except (ValueError, UnicodeDecodeError):
+            pass
+        try:
+            text = body.decode("utf-8", errors="replace").strip()
+            return text[:500] if text else (exc.reason or "")
+        except Exception:  # pragma: no cover
+            return exc.reason or ""
+
     def _post_with_retry(
         self,
         url: str,
@@ -238,20 +269,24 @@ class ColetaDBClient:
                     return resp_body, resp_headers
             except HTTPError as exc:
                 last_exc = exc
+                server_msg = self._extract_error_msg(exc)
                 if exc.code == 401:
                     raise ColetaDBError(
-                        f"401 Unauthorized em {url} — user/senha invalidos",
+                        f"401 Unauthorized em {url} — user/senha invalidos"
+                        + (f" (server: {server_msg})" if server_msg else ""),
                         status=401, code="UNAUTHORIZED",
                         hint="Confira credenciais do Protheus (mesmas do compile)",
                     ) from exc
                 if exc.code == 403:
                     raise ColetaDBError(
-                        f"403 Forbidden em {url} — sem permissao",
+                        f"403 Forbidden em {url} — sem permissao"
+                        + (f" (server: {server_msg})" if server_msg else ""),
                         status=403, code="FORBIDDEN",
                     ) from exc
                 if exc.code == 404:
                     raise ColetaDBError(
-                        f"404 Not Found em {url} — endpoint nao encontrado",
+                        f"404 Not Found em {url} — endpoint nao encontrado"
+                        + (f" (server: {server_msg})" if server_msg else ""),
                         status=404, code="NOT_FOUND",
                         hint=(
                             "1) Confirme URL em [coletadb] do runtime.toml; "
@@ -270,7 +305,7 @@ class ColetaDBClient:
                     return body, {"X-Total-Size": "0"}
                 if exc.code == 422:
                     raise ColetaDBError(
-                        f"422 em {url}: {exc.reason}",
+                        f"422 em {url}: {server_msg or exc.reason}",
                         status=422, code="VALIDATION_ERROR",
                     ) from exc
                 if 500 <= exc.code < 600:
@@ -278,12 +313,15 @@ class ColetaDBClient:
                         time.sleep(self._retry_backoff_s * (2**attempt))
                         continue
                     raise ColetaDBError(
-                        f"{exc.code} server error em {url} apos {self._retry_count} tentativas",
+                        f"{exc.code} server error em {url} apos {self._retry_count} tentativas"
+                        + (f" (server: {server_msg})" if server_msg else ""),
                         status=exc.code, code="SERVER_ERROR",
                     ) from exc
-                # Outros codes — sem retry
+                # Outros codes — sem retry. Inclui body do server pra debug
+                # (smoke test mostrou que 400 do REST framework Protheus tem
+                # mensagem util tipo "Accept type not supported").
                 raise ColetaDBError(
-                    f"HTTP {exc.code} em {url}: {exc.reason}",
+                    f"HTTP {exc.code} em {url}: {server_msg or exc.reason}",
                     status=exc.code,
                 ) from exc
             except URLError as exc:
@@ -335,12 +373,20 @@ class ColetaDBClient:
         *,
         timeout: float,
     ) -> tuple[bytes, dict[str, str]]:
-        """POST + binary response. Usado pelo /file (octet-stream)."""
+        """POST + binary response. Usado pelo /file (octet-stream).
+
+        Smoke test contra Protheus build 7.00.240223P (2026-05-23) mostrou
+        que o REST framework do AppServer rejeita ``Accept: application/octet-stream``
+        com HTTP 400 *antes* de chegar no WSMETHOD (sem trace no log do
+        AppServer). Curl manual com ``Accept: */*`` funciona. Usamos */*
+        aqui — server e responsabilidade de setar Content-Type correto
+        (octet-stream pra binario, application/json pra erros).
+        """
         url = self._build_url(path)
         body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {
             "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/octet-stream",
+            "Accept": "*/*",
             **self._auth_header(),
         }
         return self._post_with_retry(url, body_bytes, headers, timeout)
