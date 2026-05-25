@@ -55,3 +55,36 @@ class TestHttpProbe:
         is_up, status = _http_probe("127.0.0.1", 8019)
         assert is_up is False
         assert status == 0
+
+
+class TestRunTq:
+    """run_tq(server, timeout_s, no_healthcheck) -> TqResult."""
+
+    def test_happy_path_restart_then_healthcheck_up(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """restart_cmd exit 0 + healthcheck retorna 200 no 3o ping → ok=True."""
+        srv = _make_server(restart_cmd="echo restart")
+
+        # Mock subprocess.run pra exit_code=0
+        fake_run = mock.MagicMock(return_value=mock.MagicMock(
+            returncode=0, stderr=""
+        ))
+        monkeypatch.setattr("plugadvpl.tq.subprocess.run", fake_run)
+
+        # Mock _http_probe: 2 falhas + 1 sucesso
+        probe_calls = [(False, 0), (False, 0), (True, 200)]
+        probe_iter = iter(probe_calls)
+        monkeypatch.setattr(
+            "plugadvpl.tq._http_probe",
+            lambda *a, **kw: next(probe_iter),
+        )
+        # Mock time.sleep pra não esperar de verdade
+        monkeypatch.setattr("plugadvpl.tq.time.sleep", lambda s: None)
+
+        result = run_tq(srv, timeout_s=60)
+        assert result.ok is True
+        assert result.healthcheck_status == "up"
+        assert result.healthcheck_attempts == 3
+        assert result.restart_exit_code == 0
+        assert result.error == ""

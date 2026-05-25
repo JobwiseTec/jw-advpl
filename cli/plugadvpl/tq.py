@@ -67,4 +67,107 @@ def run_tq(
 ) -> TqResult:
     """Executa ``restart_cmd`` + healthcheck. Function pure-ish: só side
     effects são ``subprocess.run`` + sockets do healthcheck."""
-    raise NotImplementedError  # TDD nas Tasks 5+
+    start_total = time.monotonic()
+
+    if not server.restart_cmd:
+        return TqResult(
+            ok=False,
+            server_name=server.name,
+            restart_cmd="",
+            restart_exit_code=-1,
+            restart_duration_ms=0,
+            restart_stderr="",
+            healthcheck_status="not_run",
+            healthcheck_attempts=0,
+            healthcheck_duration_ms=0,
+            total_duration_ms=0,
+            error=f"server '{server.name}' sem restart_cmd. Configure: "
+            f"plugadvpl compile --set-restart-cmd {server.name} --cmd '<comando>'",
+        )
+
+    # Restart
+    restart_start = time.monotonic()
+    try:
+        proc = subprocess.run(
+            server.restart_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s + 10,
+        )
+        restart_exit = proc.returncode
+        restart_stderr = (proc.stderr or "").strip()
+    except subprocess.TimeoutExpired:
+        restart_exit = -2
+        restart_stderr = f"restart_cmd timeout após {timeout_s + 10}s"
+    restart_dur_ms = int((time.monotonic() - restart_start) * 1000)
+
+    if restart_exit != 0:
+        return TqResult(
+            ok=False,
+            server_name=server.name,
+            restart_cmd=server.restart_cmd,
+            restart_exit_code=restart_exit,
+            restart_duration_ms=restart_dur_ms,
+            restart_stderr=restart_stderr,
+            healthcheck_status="not_run",
+            healthcheck_attempts=0,
+            healthcheck_duration_ms=0,
+            total_duration_ms=int((time.monotonic() - start_total) * 1000),
+            error=f"restart_cmd falhou (exit={restart_exit}): {restart_stderr or '(sem stderr)'}",
+        )
+
+    # Healthcheck
+    if no_healthcheck:
+        return TqResult(
+            ok=True,
+            server_name=server.name,
+            restart_cmd=server.restart_cmd,
+            restart_exit_code=0,
+            restart_duration_ms=restart_dur_ms,
+            restart_stderr=restart_stderr,
+            healthcheck_status="skipped",
+            healthcheck_attempts=0,
+            healthcheck_duration_ms=0,
+            total_duration_ms=int((time.monotonic() - start_total) * 1000),
+        )
+
+    hc_start = time.monotonic()
+    attempts = 0
+    healthy = False
+    while (time.monotonic() - hc_start) < timeout_s:
+        time.sleep(1)
+        attempts += 1
+        is_up, status = _http_probe(server.host, server.port, timeout=2.0)
+        if is_up and status in {200, 401, 404}:
+            healthy = True
+            break
+    hc_dur_ms = int((time.monotonic() - hc_start) * 1000)
+
+    if not healthy:
+        return TqResult(
+            ok=False,
+            server_name=server.name,
+            restart_cmd=server.restart_cmd,
+            restart_exit_code=0,
+            restart_duration_ms=restart_dur_ms,
+            restart_stderr=restart_stderr,
+            healthcheck_status="timeout",
+            healthcheck_attempts=attempts,
+            healthcheck_duration_ms=hc_dur_ms,
+            total_duration_ms=int((time.monotonic() - start_total) * 1000),
+            error=f"healthcheck timeout após {timeout_s}s ({attempts} tentativas)",
+        )
+
+    return TqResult(
+        ok=True,
+        server_name=server.name,
+        restart_cmd=server.restart_cmd,
+        restart_exit_code=0,
+        restart_duration_ms=restart_dur_ms,
+        restart_stderr=restart_stderr,
+        healthcheck_status="up",
+        healthcheck_attempts=attempts,
+        healthcheck_duration_ms=hc_dur_ms,
+        total_duration_ms=int((time.monotonic() - start_total) * 1000),
+    )
