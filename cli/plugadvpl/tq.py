@@ -48,7 +48,16 @@ def _http_probe(host: str, port: int, timeout: float = 2.0) -> tuple[bool, int]:
 
     Não levanta exceção — todos os erros viram ``(False, 0)``.
     """
-    raise NotImplementedError  # TDD na Task 4
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        try:
+            conn.request("GET", "/")
+            resp = conn.getresponse()
+            return (True, resp.status)
+        finally:
+            conn.close()
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return (False, 0)
 
 
 def run_tq(
