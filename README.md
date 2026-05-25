@@ -347,6 +347,8 @@ O CLI Python expõe **30 subcomandos**, todos espelhados em slash commands do pl
 | `/plugadvpl:compile --install-advpls` | Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
 | `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto |
 | `/plugadvpl:compile --all-envs` | Compila pra **todos** os environments do `--use-server` (RPO sync entre envs — ex: `protheus` + `protheus_rest`) |
+| `/plugadvpl:compile --set-restart-cmd <server> --cmd "<cmd>"` | Configura o `restart_cmd` do server no registry global (consumido pelo `tq`) |
+| `/plugadvpl:tq --use-server <nome>` | Restart do AppServer + healthcheck HTTP (Troca Quente MVP local). Encadeia bem com `compile --all-envs` |
 | `/plugadvpl:compile --probe-appserver <host:port \| path>` | Descobre build do AppServer. Modo **network** (`host:port`) invoca `advpls cli action=validate`, retorna build + flag SSL. Modo **log** (path) parseia `protheus.log` como fallback offline |
 | `/plugadvpl:compile --set-credentials <server>` / `--clear-credentials <server>` | Salva user+senha no **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service). Prompt seguro com `getpass`. Plugin nunca grava senha em arquivo |
 | `/plugadvpl:compile --explain-config` | JSON estruturado mostrando ordem de precedência (CLI flag > runtime.toml > registry > keyring > env > auto-detect) + de onde veio cada campo + estado das credenciais (senha sempre redacted) |
@@ -680,7 +682,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 ### Próximas entregas
 
-- **Sub-plugin `plugadvpl-ops`** (planejado) — `apply-patch` (aplicar `.PTM` via advpls, idempotente com backup) e `tq` (Troca Quente — hot-swap de RPO com versionamento + rollback). Issues [#4](https://github.com/JoniPraia/plugadvpl/issues/4) e [#5](https://github.com/JoniPraia/plugadvpl/issues/5)
+- **Sub-plugin `plugadvpl-ops`** (planejado) — `apply-patch` (aplicar `.PTM` via advpls, idempotente com backup). Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). O `tq` (Troca Quente) MVP já está entregue como `plugadvpl tq` no core; versão robusta pra produção (versionamento + .ini editing + rollback) fica pra issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) quando justificar
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
 ---
@@ -692,6 +694,8 @@ Histórico detalhado do que cada release entregou. Newest first. CHANGELOG compl
 ### Em desenvolvimento (unreleased)
 
 - **`plugadvpl compile --all-envs`** — compila pra todos os environments do `--use-server` em sequência, anota linha com coluna `env`, exit code é o pior dos envs. Caso de uso: server com `protheus` + `protheus_rest` precisa de RPO sync entre os 2; antes era cópia manual `apo/custom.rpo` → `apo_rest/custom.rpo`
+- **`plugadvpl tq`** — Troca Quente MVP local: restart do AppServer (via `restart_cmd` configurado no server) + healthcheck HTTP. Resolve o passo manual que ainda existia depois do `compile --all-envs` (rodar `restart-totvs.bat` + curl loop). Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) — escopo cortado pra MVP, versão robusta pra produção fica pra v0.15+
+- **`plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"`** — flag nova no compile pra configurar o `restart_cmd` no registry global (consumido pelo `plugadvpl tq`)
 
 ### v0.13.1 — Hash dinâmico no cliente REST + docs sync
 

@@ -4,6 +4,39 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added — `plugadvpl tq` (Troca Quente MVP local)
+
+Restart do AppServer Protheus + healthcheck HTTP, automatizando o passo
+manual que ainda existia depois do `compile --all-envs` (`restart-totvs.bat`
++ curl loop até voltar). Tipicamente usado encadeado:
+
+```bash
+plugadvpl compile --use-server Local --all-envs <fonte> && \
+plugadvpl tq --use-server Local
+```
+
+Componentes:
+
+- Campo novo `restart_cmd` no `Server` dataclass do registry global. Default
+  `""`, backwards-compat com servers existentes.
+- `plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"` — flag nova
+  pra configurar o cmd no registry. Validação: `--set-restart-cmd` sem
+  `--cmd` erra com mensagem clara.
+- `plugadvpl tq` — novo subcomando. Flags: `--use-server`, `--timeout`
+  (default 60s), `--no-healthcheck`, `--dry-run`.
+- Healthcheck via `http.client.HTTPConnection` (GET `/`) considera AppServer
+  up só quando responde HTTP 200/401/404. TCP-only daria false positive
+  cedo demais (porta abre antes do REST estar pronto na build 7.00.x).
+- 5xx no healthcheck NÃO conta como up — continua tentando até timeout.
+
+16 testes novos (8 unit no `tq.py` + 5 integration do subcomando + 3
+integration do `--set-restart-cmd` no `test_cli_compile.py`). Spec e plano
+em `docs/superpowers/specs/` e `docs/superpowers/plans/`.
+
+Escopo MVP cortou versionamento de RPO, edição de `appserver.ini` e
+rollback automático — fica pra issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5)
+quando precisar da versão robusta pra produção.
+
 ### Added — `plugadvpl compile --all-envs`
 
 Compila o(s) fonte(s) pra **todos** os environments cadastrados no
