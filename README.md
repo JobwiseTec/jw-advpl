@@ -9,7 +9,7 @@
 
 > Plugin Claude Code + CLI Python que indexa fontes **ADVPL/TLPP** (TOTVS Protheus) em SQLite com FTS5 — para o Claude responder sobre o seu Protheus sem queimar contexto lendo `.prw` cru.
 
-> ⚠️ **EDITANDO `.prw` cp1252?** Read/Edit do Claude são UTF-8 only — bytes acentuados viram `?` e o Edit corrompe acentos não-editados. **Use sempre `plugadvpl edit-prw stage <arq>` ANTES e `commit <arq>` DEPOIS** (v0.8.9+). Detalhes: skill `/plugadvpl:edit-prw` ou seção [Encoding](#encoding) abaixo.
+> ⚠️ **EDITANDO `.prw` cp1252?** Read/Edit do Claude são UTF-8 only — bytes acentuados viram `?` e o Edit corrompe acentos não-editados. **Use sempre `plugadvpl edit-prw stage <arq>` ANTES e `commit <arq>` DEPOIS**. Detalhes: skill `/plugadvpl:edit-prw` ou seção [Encoding](#encoding) abaixo.
 
 ---
 
@@ -289,9 +289,9 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ## Comandos disponíveis
 
-O CLI Python expõe **30 subcomandos** (Universo 1-8 + Fase 0/1), todos espelhados em slash commands do plugin Claude Code.
+O CLI Python expõe **30 subcomandos**, todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
-### Universo 1 — Fontes (v0.1)
+### Fontes
 
 | Comando | Função |
 |---|---|
@@ -304,13 +304,13 @@ O CLI Python expõe **30 subcomandos** (Universo 1-8 + Fase 0/1), todos espelhad
 | `/plugadvpl:callees <funcao>` | O que a função chama (call graph direto) |
 | `/plugadvpl:tables <T>` | Quem usa a tabela `T` (`--mode read/write/reclock`) |
 | `/plugadvpl:param <MV>` | Onde o parâmetro `MV_*` aparece |
-| `/plugadvpl:arch <arq>` | **Visão arquitetural** — use SEMPRE antes de `Read`. Inclui `tabelas_via_execauto_resolvidas` (v0.4.1+) |
+| `/plugadvpl:arch <arq>` | **Visão arquitetural** — use SEMPRE antes de `Read`. Inclui `tabelas_via_execauto_resolvidas` |
 | `/plugadvpl:lint [arq]` | Lint findings (`--severity`, `--regra`, `--cross-file`) |
 | `/plugadvpl:doctor` | Diagnósticos (encoding, órfãos, FTS sync, lookups) |
 | `/plugadvpl:grep <pattern>` | Busca textual nos chunks (`--mode fts/literal/identifier`) |
 | `/plugadvpl:help` | Lista comandos (atalho do CLI `--help`) |
 
-### Universo 2 — Dicionário SX (v0.3)
+### Dicionário SX
 
 | Comando | Função |
 |---|---|
@@ -319,15 +319,15 @@ O CLI Python expõe **30 subcomandos** (Universo 1-8 + Fase 0/1), todos espelhad
 | `/plugadvpl:gatilho <campo>` | Cadeia de gatilhos SX7 origem → destino (`--depth 1..3`) |
 | `/plugadvpl:sx-status` | Counts por tabela do dicionário SX |
 
-### Universo 3 — Rastreabilidade (v0.4)
+### Rastreabilidade
 
 | Comando | Função |
 |---|---|
-| **`/plugadvpl:workflow`** | **(v0.4.0)** Lista os 4 mecanismos de execução não-direta: `workflow`/`schedule`/`job_standalone`/`mail_send` (filtros `--kind`/`--target`/`--arquivo`) |
-| **`/plugadvpl:execauto`** | **(v0.4.1)** Resolve `MsExecAuto({\|x,y,z\| MATA410(x,y,z)}, ...)` → rotina canônica + módulo + tabelas inferidas (filtros `--routine`/`--modulo`/`--op`/`--dynamic`) |
-| **`/plugadvpl:docs [modulo]`** | **(v0.4.2)** Catálogo de Protheus.doc agregado por módulo/autor/tipo. Modo `--show <fn>` em Markdown estruturado, `--orphans` cruza com BP-007 |
+| `/plugadvpl:workflow` | Lista os 4 mecanismos de execução não-direta: `workflow`/`schedule`/`job_standalone`/`mail_send` (filtros `--kind`/`--target`/`--arquivo`) |
+| `/plugadvpl:execauto` | Resolve `MsExecAuto({\|x,y,z\| MATA410(x,y,z)}, ...)` → rotina canônica + módulo + tabelas inferidas (filtros `--routine`/`--modulo`/`--op`/`--dynamic`) |
+| `/plugadvpl:docs [modulo]` | Catálogo de Protheus.doc agregado por módulo/autor/tipo. Modo `--show <fn>` em Markdown estruturado, `--orphans` cruza com BP-007 |
 
-### Universo 4 — Trace + Qualidade (v0.5/v0.6)
+### Trace + Qualidade
 
 | Comando | Função |
 |---|---|
@@ -336,21 +336,22 @@ O CLI Python expõe **30 subcomandos** (Universo 1-8 + Fase 0/1), todos espelhad
 | `/plugadvpl:hotspots` | Top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor |
 | `/plugadvpl:cobertura-doc` | % de funções com Protheus.doc por módulo ou tipo de source |
 
-### Fase 0 / Fase 1 — Runtime ADVPL (v0.7/v0.8/v0.9)
+### Runtime ADVPL — edit + compile
 
 | Comando | Função |
 |---|---|
-| `/plugadvpl:edit-prw {check\|open\|save\|stage\|commit}` | **(v0.7.0+)** Conversão CP1252↔UTF-8 in-place. Workflow `stage`→edita→`commit` evita corromper acentos ao editar `.prw` com Claude |
-| `/plugadvpl:edit-prw clean [target]` | **(v0.8.11)** Remove `.bak` acumulado dos ciclos stage/commit. `--dry-run` lista sem deletar, `--yes` skipa confirmação |
-| `/plugadvpl:compile <fonte>` | **(v0.8.0+)** Compila ADVPL via wrapper sobre binário oficial `advpls` (TOTVS). 2 modos: `appre` (local, pré-processador) ou `cli` (full via AppServer TCP) |
-| `/plugadvpl:compile --doctor` | **(v0.8.4)** Pre-flight check estruturado em JSON. Auto-detecta advpls + includes + AppServer. Retorna `next_actions` ordenadas pro agente seguir |
-| `/plugadvpl:compile --install-advpls` | **(v0.8.6)** Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
-| `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | **(v0.8.7+)** Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto. Em v0.8.11, `--import-tds-servers` passou a ler `buildVersion` + `includes` corretamente |
-| `/plugadvpl:compile --probe-appserver <host:port \| path>` | **(v0.8.11/0.8.12)** Descobre build do AppServer. Modo **network** (`host:port`) invoca `advpls cli action=validate` — mesmo mecanismo que o TDS-VSCode usa, retorna build + flag SSL. Modo **log** (path) parseia `protheus.log` como fallback offline |
-| `/plugadvpl:compile --set-credentials <server>` / `--clear-credentials <server>` | **(v0.9.0)** Salva user+senha no **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service). Prompt seguro com `getpass`. Plugin nunca grava senha em arquivo |
-| `/plugadvpl:compile --explain-config` | **(v0.9.0)** JSON estruturado mostrando ordem de precedência (CLI flag > runtime.toml > registry > keyring > env > auto-detect) + de onde veio cada campo + estado das credenciais (senha sempre redacted) |
+| `/plugadvpl:edit-prw {check\|open\|save\|stage\|commit}` | Conversão CP1252↔UTF-8 in-place. Workflow `stage`→edita→`commit` evita corromper acentos ao editar `.prw` com Claude |
+| `/plugadvpl:edit-prw clean [target]` | Remove `.bak` acumulado dos ciclos stage/commit. `--dry-run` lista sem deletar, `--yes` skipa confirmação |
+| `/plugadvpl:compile <fonte>` | Compila ADVPL via wrapper sobre binário oficial `advpls` (TOTVS). 2 modos: `appre` (local, pré-processador) ou `cli` (full via AppServer TCP) |
+| `/plugadvpl:compile --doctor` | Pre-flight check estruturado em JSON. Auto-detecta advpls + includes + AppServer. Retorna `next_actions` ordenadas pro agente seguir |
+| `/plugadvpl:compile --install-advpls` | Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
+| `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto |
+| `/plugadvpl:compile --all-envs` | Compila pra **todos** os environments do `--use-server` (RPO sync entre envs — ex: `protheus` + `protheus_rest`) |
+| `/plugadvpl:compile --probe-appserver <host:port \| path>` | Descobre build do AppServer. Modo **network** (`host:port`) invoca `advpls cli action=validate`, retorna build + flag SSL. Modo **log** (path) parseia `protheus.log` como fallback offline |
+| `/plugadvpl:compile --set-credentials <server>` / `--clear-credentials <server>` | Salva user+senha no **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service). Prompt seguro com `getpass`. Plugin nunca grava senha em arquivo |
+| `/plugadvpl:compile --explain-config` | JSON estruturado mostrando ordem de precedência (CLI flag > runtime.toml > registry > keyring > env > auto-detect) + de onde veio cada campo + estado das credenciais (senha sempre redacted) |
 
-**Setup zero-config recomendado (v0.9.1+)**:
+**Setup zero-config recomendado**:
 ```bash
 # 1x na vida em cada máquina:
 plugadvpl compile --install-advpls               # baixa/copia advpls (~118MB)
@@ -360,26 +361,26 @@ plugadvpl compile --set-credentials <nome>       # prompt seguro, salva no cofre
 # Daí em diante, em qualquer projeto, qualquer shell — zero env var, zero runtime.toml:
 plugadvpl compile --mode cli --use-server <nome> FONTE.PRW
 
-# appre (sem AppServer) nem precisa de credencial desde v0.9.1:
+# appre (sem AppServer) nem precisa de credencial:
 plugadvpl compile --mode appre --use-server <nome> FONTE.PRW
 ```
 
 Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info conversacional do que coletar) e [docs/setup-compile.md](docs/setup-compile.md) (guia técnico passo-a-passo).
 
-### Universo 5 — Auditoria de ambiente Protheus (v0.10)
+### Auditoria de ambiente Protheus
 
 | Comando | Função |
 |---|---|
-| `/plugadvpl:ini-audit [paths]` | **(v0.10.0)** Audita `appserver.ini`/`dbaccess.ini`/`smartclient.ini`/`tss.ini`/`broker.ini` contra **487 regras TDN-oficiais** filtradas por tipo+role (14 roles: `broker_http`/`slave_rest`/`dbaccess_master`/...). Auto-discover via glob, cache hash+mtime, `--severity critical/warning/info`, `--show-ok-with-note` pra justificativas documentadas |
-| `/plugadvpl:log-diagnose [paths]` | **(v0.10.0)** Diagnostica `console.log`/`error.log`/`profile.log`/`compila.log` contra **19 alert rules** + **93 correction tips** com URL TDN. Pipeline 2 estágios (tokenize → match reverso); janela `--since 24h` relativa ao último timestamp do log; `--category database/thread_error/rpo/...`, captura `ORA-xxx`/username/host quando aparece |
+| `/plugadvpl:ini-audit [paths]` | Audita `appserver.ini`/`dbaccess.ini`/`smartclient.ini`/`tss.ini`/`broker.ini` contra **487 regras TDN-oficiais** filtradas por tipo+role (14 roles: `broker_http`/`slave_rest`/`dbaccess_master`/...). Auto-discover via glob, cache hash+mtime, `--severity critical/warning/info`, `--show-ok-with-note` pra justificativas documentadas |
+| `/plugadvpl:log-diagnose [paths]` | Diagnostica `console.log`/`error.log`/`profile.log`/`compila.log` contra **19 alert rules** + **93 correction tips** com URL TDN. Pipeline 2 estágios (tokenize → match reverso); janela `--since 24h` relativa ao último timestamp do log; `--category database/thread_error/rpo/...`, captura `ORA-xxx`/username/host quando aparece |
 
-### Universo 5b — Ingestão ao vivo via REST (v0.11 → v0.13.1)
+### Ingestão ao vivo via REST
 
 | Comando | Função |
 |---|---|
-| `/plugadvpl:ingest-protheus --endpoint <url>` | **(v0.11.0)** Consome `COLETADB.tlpp` no AppServer Protheus via REST. Bundle pattern: `/coletadb/run` retorna manifest com 21 CSVs (paths + sizes + hash), `/coletadb/file` baixa cada CSV em chunks de 4MB com verificação de integridade. Auth via HTTP Basic (mesmo cofre do `compile`). Modo `enxuto` (≥ threshold rows) ou `completo` |
-| Cobertura 21/21 do bundle | **(v0.13.0)** Plugin consome **todas** as tabelas do bundle COLETADB: 11 SX padrão (SX1..SXG+SIX) + 3 SX adicional (XXA/XAM/XAL) + 6 menu (`mpmenu_*`) + SCHEDULES (XX0/XX1/XX2 com recorrência decodificada) + JOBS (parse de `appserver*.ini`) + RECORD_COUNTS (inventário de rows físicas → `tabelas.num_rows`) |
-| Hash dinâmico | **(v0.13.1)** Manifest emite `hash`+`hash_algo`+`hash_partial` (server v1.0.3+ — algumas builds Protheus não têm `Sha2_256`). Cliente escolhe `hashlib.new(algo)` (sha256/sha1/md5) e respeita partial-hash pra arquivos > 64KB onde `MemoRead` trunca. Mantém compat com campo `sha256` legado |
+| `/plugadvpl:ingest-protheus --endpoint <url>` | Consome `COLETADB.tlpp` no AppServer Protheus via REST. Bundle pattern: `/coletadb/run` retorna manifest com 21 CSVs (paths + sizes + hash), `/coletadb/file` baixa cada CSV em chunks de 4MB com verificação de integridade. Auth via HTTP Basic (mesmo cofre do `compile`). Modo `enxuto` (≥ threshold rows) ou `completo` |
+| Cobertura completa do dicionário | Plugin consome **todas** as 21 tabelas do bundle COLETADB: 11 SX padrão (SX1..SXG+SIX) + 3 SX adicional (XXA/XAM/XAL) + 6 menu (`mpmenu_*`) + SCHEDULES (XX0/XX1/XX2 com recorrência decodificada) + JOBS (parse de `appserver*.ini`) + RECORD_COUNTS (inventário de rows físicas → `tabelas.num_rows`) |
+| Hash dinâmico | Manifest emite `hash`+`hash_algo`+`hash_partial` (algumas builds Protheus não têm `Sha2_256`). Cliente escolhe `hashlib.new(algo)` (sha256/sha1/md5) e respeita partial-hash pra arquivos > 64KB onde `MemoRead` trunca. Mantém compat com campo `sha256` legado |
 
 Reference impl do servidor: [`docs/reference-impl/coletadb.tlpp`](docs/reference-impl/coletadb.tlpp) (MIT, ~1900 linhas). Reference completa dos subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
 
@@ -398,10 +399,10 @@ Além dos 30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-mvc` | MenuDef/ModelDef/ViewDef, hooks bCommit/bTudoOk, FWFormStruct |
 | `advpl-mvc-avancado` | Eventos MVC, validações cruzadas, FWMVCRotAuto |
 | `advpl-tlpp` | TLPP moderno — OO, namespaces, annotations, tipagem opcional + defaults |
-| `advpl-tlpp-named-params` | **(v0.13.1)** Parâmetros nomeados na chamada via operador `=` (AppServer 20.3.2.0+ funções/métodos, 24.3.1.0+ construtores) |
+| `advpl-tlpp-named-params` | Parâmetros nomeados na chamada via operador `=` (AppServer 20.3.2.0+ funções/métodos, 24.3.1.0+ construtores) |
 | `advpl-embedded-sql` | BeginSql/EndSql, TCQuery, `%xfilial%`, `%notDel%`, `%table%` |
 | `advpl-pontos-entrada` | User Function NOME(PARAMIXB), retorno via PARAMIXB[última] |
-| `advpl-webservice` | REST (`WSRESTFUL`, `@Get/@Post`) e SOAP — **(v0.13.1)** inclui gotcha `SetKeyHeaderResponse` em build 7.00.240223P + `@Post` só com `User Function` (não Static/Method) |
+| `advpl-webservice` | REST (`WSRESTFUL`, `@Get/@Post`) e SOAP — inclui gotcha `SetKeyHeaderResponse` em build 7.00.240223P + `@Post` só com `User Function` (não Static/Method) |
 | `advpl-web` | Interfaces web — Webex / HTML / WebExpress |
 | `advpl-jobs-rpc` | `RpcSetEnv`, `StartJob`, `MsRunInThread`, funções proibidas em job |
 | `advpl-matxfis` | Família fiscal (NF-e, SPED, ECF, REINF, integração SF2/SD2/SF3) |
@@ -409,9 +410,9 @@ Além dos 30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-dicionario-sx` | Estrutura SX1/SX2/SX3/SX5/SX6/SX7/SIX/SXA/SXB + cookbook SQL pra criar campo (clonar bitmap `X3_USADO`, checklist, armadilhas v12.1.7+) |
 | `advpl-dicionario-sx-validacoes` | Expressões ADVPL embutidas em X3_VALID/INIT/WHEN/VLDUSER, X7_REGRA, X1_VALID, X6_VALID/INIT — guia pra análise de impacto |
 | `advpl-refactoring` | 6 padrões com before/after (DbSeek loop, Posicione repetido, IFs hardcoded, AxCadastro→MVC, string concat em loop, RecLock sem Begin Transaction) — usar quando o pedido for "melhorar"/"refatorar"/"está lento" |
-| `advpl-debugging` | Top 30 erros comuns em produção + métodos de debug — **(v0.13.1)** inclui seção `Begin Sequence / Recover` precisa de `ErrorBlock({\|e\| Break(e)})` pra capturar exceptions nativas (TOPCONN, REST, native) |
+| `advpl-debugging` | Top 30 erros comuns em produção + métodos de debug — inclui seção `Begin Sequence / Recover` precisa de `ErrorBlock({\|e\| Break(e)})` pra capturar exceptions nativas (TOPCONN, REST, native) |
 | `advpl-code-review` | 40 regras BP/SEC/PERF/MOD/SX (28 single-file + 11 cross-file `SX-001..SX-011` + 1 encoding) |
-| `ingest-protheus` | **(v0.11.0+)** Workflow do `ingest-protheus` (REST ao vivo via COLETADB) |
+| `ingest-protheus` | Workflow do `ingest-protheus` (REST ao vivo via COLETADB) |
 
 Também incluídos: **5 agents** especializados (`advpl-analyzer`, `advpl-impact-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-log-investigator`), **1 SessionStart hook** Node.js que faz onboarding cross-platform do `.plugadvpl/` e **2 auditores** (`advpl-ini-auditor`, `advpl-log-investigator`) que envelopam `ini-audit`/`log-diagnose` com correction tips TDN.
 
@@ -430,7 +431,7 @@ Visão geral do pipeline:
 
 O plugin é dividido em **camadas independentes** — cada uma adiciona um tipo de informação ao índice SQLite e seus próprios subcomandos. Você pode usar só as que fazem sentido pro seu projeto.
 
-### Universo 1 — Ingestão de fontes (v0.1)
+### Universo 1 — Ingestão de fontes
 
 **O que faz**: `plugadvpl ingest` escaneia recursivamente o `--root`, encontra arquivos `.prw`/`.prx`/`.tlpp`/`.apw`, e parseia cada um em paralelo (`ProcessPoolExecutor` com `min(8, cpu_count())` para projetos ≥200 arquivos; single-thread para projetos pequenos). De cada fonte extrai:
 
@@ -452,7 +453,7 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 
 **Comandos**: `init`, `ingest`, `reindex`, `find`, `callers`, `callees`, `tables`, `param`, `arch`, `lint`, `grep`, `doctor`, `status`.
 
-### Universo 2 — Dicionário SX (v0.3)
+### Universo 2 — Dicionário SX
 
 **O que faz**: `plugadvpl ingest-sx <pasta-csv>` ingere o dicionário SX exportado do Configurador (SIGACFG → Misc → Exportar Dicionário em CSV) em 11 tabelas: `tabelas` (SX2), `campos` (SX3), `gatilhos` (SX7), `parametros` (SX6), `perguntas` (SX1), `consultas` (SXB), `pastas` (SXA), `relacionamentos` (SX9), `indices` (SIX), `tabelas_genericas` (SX5), `grupos_campo` (SXG).
 
@@ -464,7 +465,7 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 
 **Comandos**: `ingest-sx`, `impacto`, `gatilho`, `sx-status` + **11 regras cross-file** `SX-001..SX-011` (X3_VALID chama função inexistente, X7_REGRA aponta pra campo inexistente, MV_PAR* não usado em fonte, etc.).
 
-### Universo 3 — Rastreabilidade (v0.4)
+### Universo 3 — Rastreabilidade
 
 **O que faz**: indexa formas de execução **não-direta** que `callers`/`callees` não pegam (porque não há call literal):
 
@@ -474,7 +475,7 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 
 **Comandos**: `workflow`, `execauto`, `docs` (`--show <fn>` em Markdown, `--orphans` cruza com BP-007).
 
-### Universo 4 — Trace + Qualidade (v0.5/v0.6)
+### Universo 4 — Trace + Qualidade
 
 **O que faz**: 2 features distintas que fecham o ciclo de análise.
 
@@ -485,7 +486,7 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 - `plugadvpl hotspots` — top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor
 - `plugadvpl cobertura-doc` — % de funções com Protheus.doc por módulo ou source_type
 
-### Fase 0 — Quick wins (v0.7)
+### Fase 0 — Quick wins
 
 **Lint rules de runtime** que só faziam sentido depois do parser maduro:
 
@@ -495,7 +496,7 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 - **Comando `edit-prw`** — conversão CP1252↔UTF-8 com backup
 - **Contract doc `U_EXEC`** + reference impl MIT (`docs/examples/uexec.prw`) pra execução headless de função ADVPL via REST (pavimenta Fase 2)
 
-### Fase 1 — Compilação (v0.8) ← NOVO
+### Fase 1 — Compilação
 
 **`plugadvpl compile <fonte>`** é um **wrapper Python sobre o binário oficial `advpls`** (TOTVS — distribuído na extensão TDS-VSCode pública). Devolve **JSON estruturado** consumível por CI, com auto-detect de includes, modo `appre` (local) ou `cli` (full via AppServer).
 
@@ -505,7 +506,7 @@ Veja a seção dedicada [**Compilação ADVPL**](#compilação-advpl) logo abaix
 
 ## Compilação ADVPL
 
-Camada de runtime entregue nas versões v0.7/v0.8 — fecha o ciclo "ler/analisar → **compilar** → executar → testar".
+Camada de runtime que fecha o ciclo "ler/analisar → **compilar** → executar → testar".
 
 ### O que NÃO fazemos
 
@@ -603,7 +604,7 @@ Crédito completo do `advpls` na seção [Créditos](#créditos).
 | **`cli`** | AppServer TCP (RPC) | TUDO — semântica + binding + gera RPO | CI rigoroso, build final |
 | **`auto`** (default) | `cli` se AppServer responde, senão `appre` | depende | Default sensato |
 
-### Workflow zero-config para usuário novo (v0.9.1+)
+### Workflow zero-config para usuário novo
 
 ```bash
 # 1. Instala advpls (1x por máquina)
@@ -646,7 +647,7 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ### Segurança
 
-- **Credenciais NUNCA gravadas em arquivo do plugin** — só nomes de env var no `runtime.toml` e no `servers.json`. Senha vive em UM destes lugares (em ordem de precedência): env var → **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service, v0.9.0+, cifrado por DPAPI/Keychain/SecretService) → erro didático
+- **Credenciais NUNCA gravadas em arquivo do plugin** — só nomes de env var no `runtime.toml` e no `servers.json`. Senha vive em UM destes lugares (em ordem de precedência): env var → **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service, cifrado por DPAPI/Keychain/SecretService) → erro didático
 - **Prompt seguro** em `--set-credentials` usa `getpass` (senha não ecoa, confirmação dupla)
 - **`--explain-config` redacted** — campo `password` aparece como `<set>` / `<unset>`, nunca o valor
 - **Tempfile `.ini` em CP1252 + permissão 0o600** (POSIX); tempdir 0o700 via `mkdtemp`
@@ -668,42 +669,132 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 ## Status
 
-**v0.13.1 — cobertura 100% do dicionário Protheus via REST + reference impl `coletadb.tlpp` v1.0.3 com hash dinâmico.**
+Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **30 subcomandos** cobrindo Universo 1 → 8 + Fase 0/1 (parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log)
+- **30 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
 - **50 skills** (19 knowledge + 31 slash command wrappers), 5 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`), 1 SessionStart hook
-- **Schema v15** — 15 migrations cobrindo Universo 1-8 (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
+- **Schema SQLite v15** — 15 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
 - **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **1023 testes verde** (unit + integration + bench + smoke real opcional) — ~74s suite full
-- **`coletadb.tlpp` v1.0.3** — reference impl MIT do servidor REST com bundle pattern (21 CSVs em chunks de 4MB, hash dinâmico sha256/sha1/md5)
+- Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 
-**Highlights recentes (v0.10 → v0.13.1):**
+### Próximas entregas
 
-| Versão | Destaque |
-|---|---|
-| **v0.13.1** | Cliente Python aceita `hash_algo`+`hash_partial` do manifest v1.0.3 (escolhe `hashlib.new(algo)` dinamicamente; hasheia primeiros 65535 bytes quando partial). Docs sync pós-cobertura 100%. Skills incorporam 4 gotchas do smoke real (`SetKeyHeaderResponse`, `@Post + Static Function`, `ErrorBlock + Break`, `function` lowercase em build antiga). Skill nova `advpl-tlpp-named-params` (operador `=`, AppServer 20.3.2.0+) |
-| **v0.13.0** | **Cobertura 100% do bundle COLETADB**: 21/21 CSVs. Universo 6 (Workflow: `schedules`+`jobs`) e Universo 8 (Menus: 6 tabelas `mpmenu_*`). 5 fixes do reference impl `coletadb.tlpp` (issue #9): hash com fallback sha1/md5, path separator OS-aware, distinção falha-DB vs threshold-filtra-tudo |
-| **v0.12.0** | Universo 2 estendido (XXA/XAL/XAM) + RECORD_COUNTS (inventário de rows físicas pós-processado em `tabelas.num_rows`). Cobertura 15/21 |
-| **v0.11.0** | **Universo 5b — ingest ao vivo via REST**: `plugadvpl ingest-protheus` consome `COLETADB.tlpp` no AppServer. Bundle pattern (manifest + chunks 4MB + verificação sha256). Paridade funcional com `ingest-sx` |
-| **v0.10.0** | **Universo 5 — auditoria de ambiente**: `ini-audit` (487 regras TDN-oficiais filtradas por tipo+role pra `appserver.ini`/`dbaccess.ini`/`smartclient.ini`/`tss.ini`/`broker.ini`) + `log-diagnose` (19 alert rules + 93 correction tips contra `console.log`/`error.log`/`profile.log`/`compila.log`) |
+- **Sub-plugin `plugadvpl-ops`** (planejado) — `apply-patch` (aplicar `.PTM` via advpls, idempotente com backup) e `tq` (Troca Quente — hot-swap de RPO com versionamento + rollback). Issues [#4](https://github.com/JoniPraia/plugadvpl/issues/4) e [#5](https://github.com/JoniPraia/plugadvpl/issues/5)
+- **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
-**Roadmap.**
+---
 
-- **v0.1** *(shipped)* — Universo 1: parser de fontes, FTS5, 13 regras lint single-file, 14 subcomandos CLI
-- **v0.2** *(shipped)* — 21k linhas de referência ADVPL/TLPP em 5 skills novas + 6 reforçadas
-- **v0.3** *(shipped)* — Universo 2: ingest SX1..SXG, `impacto`/`gatilho`/`sx-status`, 11 cross-file `SX-001..SX-011`
-- **v0.4** *(shipped)* — Universo 3: `workflow`/`execauto`/`docs`
-- **v0.5/v0.6** *(shipped)* — Universo 4: `trace`, `metrics`, `hotspots`, `cobertura-doc`
-- **v0.7** *(shipped)* — Fase 0 (Quick Wins): `edit-prw`, contract doc `U_EXEC` + reference MIT
-- **v0.8** *(shipped)* — Fase 1: `plugadvpl compile` (modos `appre`/`cli`, doctor, install-advpls, registry global de servers)
-- **v0.9** *(shipped)* — Cofre nativo do OS pra credenciais + `--probe-appserver` + zero-config flow
-- **v0.10** *(shipped)* — Universo 5: `ini-audit` + `log-diagnose`
-- **v0.11/v0.12/v0.13** *(shipped)* — Universo 5b + 6 + 8: ingest REST cobertura 21/21 (todo o bundle COLETADB)
-- **v0.13.1** *(shipped)* — Hash dinâmico no cliente REST + 4 gotchas do smoke nas skills
-- **v0.14 (planejado)** — Sub-plugin `plugadvpl-ops`: `apply-patch` (`.PTM` via advpls, idempotente) e `tq` (Troca Quente — hot-swap de RPO com versionamento + rollback). Vide issues #4 e #5
-- **Futuro** — `plugadvpl compile --all-envs` (RPO sync entre múltiplos environments do server), `sx-drift` (compara DB local vs estado atual do AppServer via REST)
+## Evolução por versão
 
-Detalhes em [CHANGELOG.md](CHANGELOG.md) e specs em `docs/universo*/`, `docs/fase*/`.
+Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### Em desenvolvimento (unreleased)
+
+- **`plugadvpl compile --all-envs`** — compila pra todos os environments do `--use-server` em sequência, anota linha com coluna `env`, exit code é o pior dos envs. Caso de uso: server com `protheus` + `protheus_rest` precisa de RPO sync entre os 2; antes era cópia manual `apo/custom.rpo` → `apo_rest/custom.rpo`
+
+### v0.13.1 — Hash dinâmico no cliente REST + docs sync
+
+- Cliente Python (`coletadb_client.py`) aceita campos `hash` + `hash_algo` + `hash_partial` do manifest v1.0.3+ do servidor. Escolhe `hashlib.new(algo)` dinamicamente (sha256/sha1/md5); quando `hash_partial=True` hasheia só os primeiros 65535 bytes pra casar com `MemoRead` truncado do server. Fallback pro campo legado `sha256` (servers v1.0.x). 6 testes unitários novos
+- Reference impl `coletadb.tlpp` v1.0.3 — 3 fixes da issue #9: `HashSha256Arquivo` → `HashArquivo` com fallback Sha1/MD5 (build 7.00.240223P não tem Sha2_256), `DiretorioBundle` OS-aware via `IsSrvUnix()`, `InventarioCarregar` distingue Nil (falha real) de `{}` (threshold filtrou tudo)
+- Skill nova `advpl-tlpp-named-params` — named arguments TLPP via operador `=` (não `:=` nem `:`); AppServer 20.3.2.0+ pra funções/métodos, 24.3.1.0+ pra `Classe():New()`
+- 4 gotchas reais do smoke incorporados nas skills:
+  - `advpl-webservice`: `SetHeaderResponse` → `SetKeyHeaderResponse` (build 7.00+ rejeita 2-args na variante sem `Key`); `@Post`/`@Get` só funciona com `User Function` (não `Static Function` nem `Method`)
+  - `advpl-debugging`: nova seção sobre `Begin Sequence / Recover` precisar de `ErrorBlock({|e| Break(e)})` antes pra capturar exceptions nativas (TOPCONN, REST, native)
+  - `advpl-tlpp`: gotcha `function` lowercase rejeitada em build 7.00.x mesmo com `tlpp-core.th`
+- Docs sync: `skills/ingest-protheus/SKILL.md` reflete cobertura 21/21; `docs/reference-impl/README.md` ganha seção "Hash do bundle (v1.0.3+)"
+
+### v0.13.0 — Cobertura 100% do bundle COLETADB
+
+- **Universo 6 (Workflow)**: ingestão de `schedules` (XX0/XX1/XX2 com recorrência decodificada pelo COLETADB — `tipo_recorrencia`, `detalhe_recorrencia`, `recorrencia_raw` pra debug) e `jobs` (parse recursivo de `appserver*.ini` com PK `(arquivo, sessao)` e índice em `rotina_main`). Migration 014
+- **Universo 8 (Menus)**: 6 tabelas relacionais — `mpmenu_menu` (raiz, SIGAFAT/SIGAEST/...), `mpmenu_function` (funções ADVPL referenciadas), `mpmenu_item` (hierarquia com FK menu + self-FK pai), `mpmenu_i18n` (descrições traduzidas PT/ES/EN), `mpmenu_key_words`, `mpmenu_rw`. Migration 015
+- Plugin agora ingere **TODOS** os 21 CSVs do bundle COLETADB: 11 SX padrão + 3 SX adicional (XXA/XAM/XAL) + 6 menu + SCHEDULES + JOBS + RECORD_COUNTS
+- CSVs MPMENU usam `R_E_C_D_E_L_="1"` em vez de `D_E_L_E_T_="*"` das SX — helper `_row_is_deleted_recnod()` cobre os dois
+- Reference impl `coletadb.tlpp` v1.0.1: `SetHeaderResponse` → `SetKeyHeaderResponse` (19 ocorrências) + BEGIN SEQUENCE individual por extração pra falha parcial em base sem schema completo
+- Smoke validado contra Protheus 7.00.240223P: 461.956 SX rows + 5.181 LGPD/dominios + 66.098 menu rows
+
+### v0.12.0 — Universo 2 estendido + RECORD_COUNTS
+
+- Ingestão de XXA/XAL/XAM (3 SX adicional do bundle COLETADB) — tabelas que o MVP do v0.11 não cobria
+- `RECORD_COUNTS.csv` post-processado pra popular `tabelas.num_rows` com inventário de rows físicas via DBMS query (em vez de COUNT(*) por tabela). Permite ordenar/filtrar tabelas por tamanho real
+- Cobertura subiu de 11/21 → 15/21 CSVs do bundle
+
+### v0.11.0 — Universo 5b: ingest ao vivo via REST
+
+- **`plugadvpl ingest-protheus --endpoint <url>`**: consome `COLETADB.tlpp` no AppServer Protheus via REST. Bundle pattern:
+  1. `POST /coletadb/run` → servidor gera CSVs locais em `\temp\<ts>_<uuid>\` + retorna manifest JSON com paths/sizes/hashes
+  2. `POST /coletadb/file` → cliente baixa cada CSV em chunks de 4MB com verificação de integridade
+  3. `ingest_sx(tmp_dir)` → reusa machinery existente do CSV path
+- Auth via HTTP Basic (`AppServer Security=1`) reutilizando o cofre nativo do `compile`
+- Modo `enxuto` (≥ threshold rows, default 10) ou `completo` (todas as SX inclusive vazias)
+- Paridade funcional com `ingest-sx`: mesmo dataset baixado via REST produz o mesmo DB que o CSV path produziria
+- Reference impl `coletadb.tlpp` v1.0.0 entregue em `docs/reference-impl/` (MIT, ~1800 linhas)
+
+### v0.10 — Universo 5: auditoria de ambiente Protheus
+
+- **`/plugadvpl:ini-audit`** — audita `appserver.ini`/`dbaccess.ini`/`smartclient.ini`/`tss.ini`/`broker.ini` contra **487 regras TDN-oficiais** filtradas por tipo+role. 14 roles cobertas (`broker_http`, `slave_rest`, `dbaccess_master`, `tss_emissor`, etc). Auto-discover via glob, cache por hash+mtime, severidades `critical`/`warning`/`info`, `--show-ok-with-note` pra justificar exceções
+- **`/plugadvpl:log-diagnose`** — diagnostica `console.log`/`error.log`/`profile.log`/`compila.log` contra **19 alert rules** + **93 correction tips** com URL TDN pra cada. Pipeline 2 estágios (tokenize → match reverso); janela `--since 24h` relativa ao último timestamp do log; `--category database/thread_error/rpo/`...; captura `ORA-xxx`/username/host quando aparece
+- 2 agents novos: `advpl-ini-auditor`, `advpl-log-investigator`
+
+### v0.9 — Cofre nativo do OS + zero-config
+
+- **`compile --set-credentials <server>`** / `--clear-credentials <server>` — user+senha no Win Credential Manager / macOS Keychain / Linux Secret Service. Prompt seguro com `getpass`, plugin nunca grava senha em arquivo
+- **`compile --explain-config`** — JSON estruturado mostrando ordem de precedência (CLI flag > runtime.toml > registry > keyring > env > auto-detect) + de onde veio cada campo (senha sempre redacted)
+- `--use-server + --mode appre` deixou de exigir credenciais (appre é pré-processador local)
+- v0.9.3 reescreve skill `advpl-webservice`: comparação WSRESTFUL × notation (`@Get/@Post`), ~3× speedup do notation, `@Patch` exclusivo, REST-DOC/Swagger automático
+- v0.9.4 fix install: `marketplace.json` trocou `source: github` → `source: url` com HTTPS explícita (resolve `Permission denied (publickey)` em users sem SSH key)
+
+### v0.8 — Fase 1: compile wrapper sobre `advpls`
+
+- **`plugadvpl compile <fonte>`** — wrapper sobre binário oficial `advpls` (TOTVS) em 2 modos: `appre` (local, pré-processador) ou `cli` (full via AppServer TCP)
+- `compile --doctor` — pre-flight check estruturado em JSON. Auto-detecta advpls + includes + AppServer. Retorna `next_actions` ordenadas
+- `compile --install-advpls` — instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB), sempre pede confirmação
+- `compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` — registry global de AppServers em `~/.plugadvpl/servers.json` estilo TDS-VSCode
+- `compile --probe-appserver <host:port | path>` — descobre build do AppServer. Modo network invoca `advpls cli action=validate`; modo log parseia `protheus.log` offline
+
+### v0.7 — Fase 0: Quick Wins
+
+- **`/plugadvpl:edit-prw {check|open|save|stage|commit}`** — conversão CP1252↔UTF-8 in-place. Workflow `stage`→edita→`commit` evita corromper acentos ao editar `.prw` com Claude
+- 5 regras de lint novas: `WS-001`/`WS-002`/`WS-003` (webservice), `XF-001` (xFilial), `ENC-001` (encoding)
+- Contract doc `U_EXEC` + reference impl MIT (precursor do COLETADB)
+
+### v0.5/v0.6 — Universo 4: Trace + Qualidade
+
+- **`/plugadvpl:trace <entidade>`** — grafo unificado cross-universo: dado um `campo`/`funcao`/`tabela`/`arquivo`/`parametro`/`pergunte`, devolve TODOS os pontos onde aparece (fontes + SX + workflow + jobs + ExecAuto + Protheus.doc)
+- **`/plugadvpl:metrics [arq]`** — complexidade ciclomática McCabe, LOC, nesting, fan-out, params, `has_doc` por função
+- **`/plugadvpl:hotspots`** — Top-N funções por critério (`--tipo user_func/method/calls/risk`) pra priorizar refactor
+- **`/plugadvpl:cobertura-doc`** — % de funções com Protheus.doc por módulo
+
+### v0.4 — Universo 3: Rastreabilidade
+
+- **`/plugadvpl:workflow`** — lista os 4 mecanismos de execução não-direta: `workflow`/`schedule`/`job_standalone`/`mail_send`
+- **`/plugadvpl:execauto`** — resolve `MsExecAuto({|x,y,z| MATA410(x,y,z)}, ...)` → rotina canônica + módulo + tabelas inferidas
+- **`/plugadvpl:docs [modulo]`** — catálogo de Protheus.doc agregado por módulo/autor/tipo. Modo `--show <fn>` em Markdown estruturado, `--orphans` cruza com BP-007
+
+### v0.3 — Universo 2: Dicionário SX
+
+- **`/plugadvpl:ingest-sx <pasta-csv>`** — ingere dicionário SX exportado em CSV (sx1..sxg)
+- **`/plugadvpl:impacto <campo>`** (killer feature) — cruza referências a um campo em fontes ↔ SX3 ↔ SX7 ↔ SX1 com `--depth 1..3`
+- **`/plugadvpl:gatilho <campo>`** — cadeia de gatilhos SX7 origem → destino
+- **`/plugadvpl:sx-status`** — counts por tabela do dicionário SX
+- 11 regras cross-file novas `SX-001..SX-011` (consistência fontes ↔ dicionário)
+- 2 skills novas: `advpl-dicionario-sx`, `advpl-dicionario-sx-validacoes`
+- v0.3.3: skills `advpl-refactoring` (6 padrões before/after) e `advpl-debugging` (top 30 erros)
+
+### v0.2 — Knowledge base ADVPL/TLPP
+
+- 21k linhas de referência embarcadas em 5 skills novas (`advpl-mvc`, `advpl-mvc-avancado`, `advpl-tlpp`, `advpl-embedded-sql`, `advpl-pontos-entrada`) + 6 reforçadas
+- Sem código novo do CLI — pura adição de conhecimento operacional pro Claude
+
+### v0.1 — Universo 1: parser de fontes
+
+- Parser regex strip-first sobre `.prw`/`.prx`/`.tlpp`/`.apw` com extração paralela em `ProcessPoolExecutor`
+- SQLite + FTS5 unicode61 + FTS5 trigram (pra grep literal 10-50× mais rápido que regex)
+- 14 subcomandos iniciais (`init`/`ingest`/`reindex`/`status`/`find`/`callers`/`callees`/`tables`/`param`/`arch`/`lint`/`doctor`/`grep`/`help`)
+- 13 regras de lint single-file (best-practice, security, performance, modernization)
+- 1 SessionStart hook Node.js cross-platform pra onboarding do `.plugadvpl/`
+
+Specs detalhadas em `docs/universo*/`, `docs/fase*/`.
 
 ---
 
