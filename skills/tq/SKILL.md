@@ -1,0 +1,59 @@
+---
+description: Troca Quente (MVP local) — restart do AppServer Protheus + healthcheck HTTP. Use quando precisar restartar o AppServer após `compile` e esperar voltar pra testar.
+disable-model-invocation: true
+arguments: [opcoes]
+allowed-tools: [Bash]
+---
+
+# `/plugadvpl:tq`
+
+Executa o `restart_cmd` configurado pro server (registry global) e espera o AppServer voltar via healthcheck HTTP (GET `/` retornando 200/401/404).
+
+MVP pra testes locais — não faz versionamento de RPO, edição de `.ini` ou rollback. A versão completa pra produção fica pra [issue #5](https://github.com/JoniPraia/plugadvpl/issues/5).
+
+## Pré-requisito
+
+Server cadastrado com `restart_cmd` configurado:
+
+```bash
+plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.bat"
+```
+
+## Uso
+
+```
+/plugadvpl:tq --use-server <nome>
+/plugadvpl:tq --use-server <nome> --timeout 120
+/plugadvpl:tq --use-server <nome> --no-healthcheck
+/plugadvpl:tq --use-server <nome> --dry-run
+```
+
+## Argumentos
+
+- `--use-server NAME` — nome do server no registry. **Obrigatório**.
+- `--timeout N` — timeout do healthcheck em segundos (default 60).
+- `--no-healthcheck` — só roda o `restart_cmd`, pula o loop de healthcheck.
+- `--dry-run` — mostra o que faria sem executar.
+
+## Execucao
+
+```bash
+uvx plugadvpl@0.13.1 tq $ARGUMENTS
+```
+
+## Encadeamento típico
+
+Depois de compilar pra vários envs com `--all-envs`, restartar:
+
+```bash
+plugadvpl compile --use-server Local --all-envs <fonte> && \
+plugadvpl tq --use-server Local
+```
+
+## Erros comuns
+
+- **`--use-server obrigatório`** — passe `--use-server <nome>`
+- **`server '<nome>' não cadastrado`** — registry vazio ou nome errado. Rode `plugadvpl compile --list-servers`
+- **`server '<nome>' sem restart_cmd`** — configure: `plugadvpl compile --set-restart-cmd <nome> --cmd "<cmd>"`
+- **`restart_cmd falhou (exit=N)`** — o shell command retornou non-zero; verifique stderr no output
+- **`healthcheck timeout`** — AppServer não voltou em N segundos. Aumente `--timeout` ou verifique manualmente
