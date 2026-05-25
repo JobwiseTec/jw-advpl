@@ -62,7 +62,7 @@ class Server:
 - [ ] **Step 2: Roda suite full pra garantir backwards-compat**
 
 Run: `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5`
-Expected: `1026 passed, 2 skipped, 6 deselected` (mesmos números do baseline). Se algum teste de `test_compile_servers.py` quebrar, é porque o registry JSON antigo não tem o campo — `Server(**raw)` espera `restart_cmd` mas o JSON tem só `includes`. Solução: NÃO é problema pra default (`Server(name=..., includes=[...])` funciona com default `restart_cmd=""`), mas se quebrar, verificar o `load_registry` em compile_servers.py:67 (`Server(**s)`) — pode precisar `Server(**s, restart_cmd=s.get("restart_cmd", ""))` ou usar try/except.
+Expected: `1028 passed, 2 skipped, 6 deselected` (baseline atual em 2026-05-25). Se algum teste de `test_compile_servers.py` quebrar, é porque o registry JSON antigo não tem o campo — `Server(**raw)` espera `restart_cmd` mas o JSON tem só `includes`. Solução: NÃO é problema pra default (`Server(name=..., includes=[...])` funciona com default `restart_cmd=""`), mas se quebrar, verificar o `load_registry` em compile_servers.py:67 (`Server(**s)`) — pode precisar `Server(**s, restart_cmd=s.get("restart_cmd", ""))` ou usar try/except.
 
 - [ ] **Step 3: Commit**
 
@@ -226,16 +226,16 @@ class TestSetRestartCmd:
         assert "ghost" in combined and "não cadastrado" in combined
 ```
 
-- [ ] **Step 6: Run os 3 testes — esperado FAIL no primeiro (handler retorna 0 mas restart_cmd não foi persistido) E PASS nos outros 2 (validações já cobertas)**
+- [ ] **Step 6: Run os 3 testes — esperado: 3 PASS (handler implementado em Step 4)**
 
 Run: `cd cli && uv run pytest tests/integration/test_cli_compile.py::TestSetRestartCmd -v --tb=short 2>&1 | tail -15`
 
-Se o primeiro teste passar — tudo OK. Se não, debugar `_handle_set_restart_cmd`.
+Se algum falhar, debugar `_handle_set_restart_cmd` ou as flags `--set-restart-cmd`/`--cmd` no `compile_cmd`.
 
 - [ ] **Step 7: Roda suite full pra garantir nada quebrou**
 
 Run: `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5`
-Expected: `1029 passed` (1026 + 3 novos).
+Expected: `1031 passed` (1028 baseline + 3 novos).
 
 - [ ] **Step 8: Commit**
 
@@ -890,7 +890,7 @@ Expected: PASSED.
 - [ ] **Step 3: Roda suite full pra garantir sanidade**
 
 Run: `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5`
-Expected: `1035 passed` (1029 + 6 testes novos do tq.py).
+Expected: `1039 passed` (1031 + 8 testes novos do tq.py: 2 do _http_probe + 6 do run_tq).
 
 - [ ] **Step 4: Commit**
 
@@ -912,8 +912,7 @@ nao chama _http_probe nem time.sleep. healthcheck_status=skipped."
 
 - [ ] **Step 1: Localiza o lugar pra inserir**
 
-Run: `grep -n "^@app.command\|^def _handle_set_restart_cmd" cli/plugadvpl/cli.py | tail -5`
-Anota o final do arquivo. O `@app.command("tq")` vai bem ANTES da última função `_handle_*` (logo após `_handle_explain_config` ou similar).
+Use a tool **Grep** com pattern `^@app\.command|^def _handle_set_restart_cmd` em `cli/plugadvpl/cli.py` pra ver os anchors do arquivo. O `@app.command("tq")` vai bem ANTES da última função `_handle_*` (logo após `_handle_set_restart_cmd` da Task 2).
 
 - [ ] **Step 2: Adiciona a definição do comando**
 
@@ -1154,7 +1153,7 @@ Expected: 5 passes.
 - [ ] **Step 3: Roda suite full**
 
 Run: `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5`
-Expected: `1040 passed` (1035 + 5 novos).
+Expected: `1044 passed` (1039 + 5 integration tests novos do tq).
 
 - [ ] **Step 4: Commit**
 
@@ -1258,13 +1257,20 @@ uso, encadeamento tipico com --all-envs, erros comuns."
 - Modify: `README.md` (tabela "Runtime ADVPL — edit + compile" + seção "Próximas entregas" + "Evolução por versão")
 - Modify: `CHANGELOG.md` (entry sob `[Unreleased]`)
 
-- [ ] **Step 1: Adiciona linha `tq` na tabela de runtime**
+- [ ] **Step 1: Adiciona linhas `tq` e `--set-restart-cmd` na tabela de runtime**
 
-Edita `README.md`. Procura a tabela "### Runtime ADVPL — edit + compile" (seção "Comandos disponíveis"). Adiciona uma linha NOVA DEPOIS da linha de `--all-envs`:
+Use a tool **Grep** em `README.md` com pattern `--all-envs` pra localizar a linha exata. Daí use **Edit** pra adicionar 2 linhas NOVAS DEPOIS dessa linha (preserva contexto anterior pra Edit não ambíguo):
 
+`old_string`:
 ```markdown
-| `/plugadvpl:tq --use-server <nome>` | Restart do AppServer + healthcheck HTTP (Troca Quente MVP local). Usa o `restart_cmd` configurado no server via `--set-restart-cmd`. Encadeia bem com `compile --all-envs` |
-| `/plugadvpl:compile --set-restart-cmd <server> --cmd "<cmd>"` | Configura o `restart_cmd` do server no registry global pra uso pelo `plugadvpl tq` |
+| `/plugadvpl:compile --all-envs` | Compila pra **todos** os environments do `--use-server` (RPO sync entre envs — ex: `protheus` + `protheus_rest`) |
+```
+
+`new_string` (mesma linha + 2 novas):
+```markdown
+| `/plugadvpl:compile --all-envs` | Compila pra **todos** os environments do `--use-server` (RPO sync entre envs — ex: `protheus` + `protheus_rest`) |
+| `/plugadvpl:compile --set-restart-cmd <server> --cmd "<cmd>"` | Configura o `restart_cmd` do server no registry global (consumido pelo `tq`) |
+| `/plugadvpl:tq --use-server <nome>` | Restart do AppServer + healthcheck HTTP (Troca Quente MVP local). Encadeia bem com `compile --all-envs` |
 ```
 
 - [ ] **Step 2: Atualiza seção "Próximas entregas"**
@@ -1318,8 +1324,10 @@ Componentes:
   cedo demais (porta abre antes do REST estar pronto na build 7.00.x).
 - 5xx no healthcheck NÃO conta como up — continua tentando até timeout.
 
-11 testes novos (6 unit + 5 integration). Spec e plano em
-`docs/superpowers/specs/` e `docs/superpowers/plans/`.
+13 testes novos (8 unit no `tq.py` + 5 integration do subcomando)
+mais 3 integration do `--set-restart-cmd` (já no `test_cli_compile.py`).
+Total 16 testes adicionados. Spec e plano em `docs/superpowers/specs/`
+e `docs/superpowers/plans/`.
 
 Escopo MVP cortou versionamento de RPO, edição de `appserver.ini` e
 rollback automático — fica pra issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5)
@@ -1329,7 +1337,7 @@ quando precisar da versão robusta pra produção.
 - [ ] **Step 5: Run suite full final**
 
 Run: `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5`
-Expected: `1040 passed` (mesmo do final da Task 13 — README/CHANGELOG não mudam testes).
+Expected: `1044 passed` (mesmo do final da Task 13 — README/CHANGELOG não mudam testes).
 
 - [ ] **Step 6: Commit**
 
@@ -1389,7 +1397,7 @@ Expected: HTTP 200/401/404 — algum status REST válido.
 
 ## Verificação final
 
-- [ ] **Suite full verde:** `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5` → `1040 passed`
+- [ ] **Suite full verde:** `cd cli && uv run pytest --tb=short -q 2>&1 | tail -5` → `1044 passed`
 - [ ] **Help do tq aparece:** `plugadvpl tq --help` mostra 4 flags
 - [ ] **Help do compile mostra --set-restart-cmd:** `plugadvpl compile --help | grep restart`
 - [ ] **README tem `tq` na tabela de runtime + atualiza Próximas entregas**
