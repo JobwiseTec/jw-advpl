@@ -217,7 +217,7 @@ de .ini ou rollback (issue #5 cobre a versão completa pra prod).
 Server cadastrado COM `restart_cmd` configurado:
 
 \`\`\`bash
-plugadvpl compile --set-restart-cmd Local "cmd.exe /c gaps\\restart-totvs.bat"
+plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.bat"
 \`\`\`
 
 ## Uso
@@ -318,7 +318,7 @@ Documentado em `gaps/local-test-env.md`:
 
 ```bash
 # Setup uma vez
-plugadvpl compile --set-restart-cmd Local "cmd.exe /c D:\\IA\\Projetos\\plugadvpl\\gaps\\restart-totvs.bat"
+plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c D:\\IA\\Projetos\\plugadvpl\\gaps\\restart-totvs.bat"
 
 # Validação
 plugadvpl compile --use-server Local --all-envs docs/reference-impl/coletadb.tlpp
@@ -333,7 +333,7 @@ plugadvpl tq --use-server Local
 |---|---|
 | `cli/plugadvpl/compile_servers.py` | Adiciona `restart_cmd: str = ""` ao `Server` |
 | `cli/plugadvpl/cli.py` | Adiciona handler `--set-restart-cmd` ao `compile`; adiciona subcomando `tq` |
-| `cli/plugadvpl/tq.py` | **NOVO** — `run_tq()` + `_tcp_ping()` + `TqResult` |
+| `cli/plugadvpl/tq.py` | **NOVO** — `run_tq()` + `_http_probe()` + `TqResult` |
 | `cli/tests/unit/test_tq.py` | **NOVO** — 6 casos unit |
 | `cli/tests/integration/test_cli_tq.py` | **NOVO** — 7 casos integration |
 | `skills/tq/SKILL.md` | **NOVO** — slash command wrapper (padrão skill-as-command do projeto, `disable-model-invocation: true`). NÃO há diretório `commands/` separado neste projeto |
