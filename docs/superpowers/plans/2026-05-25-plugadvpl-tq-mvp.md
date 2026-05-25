@@ -1350,7 +1350,8 @@ atualiza 'Proximas entregas' (tq MVP entregue, plugadvpl-ops fica so
 com apply-patch), bloco 'Em desenvolvimento' lista tq + --all-envs.
 
 CHANGELOG: entry detalhada sob [Unreleased] documentando componentes,
-escopo MVP vs issue #5 completa, testes novos (6 unit + 5 integration)."
+escopo MVP vs issue #5 completa, testes novos (8 unit no tq.py + 5
+integration do subcomando + 3 do --set-restart-cmd = 16 total)."
 ```
 
 ---
