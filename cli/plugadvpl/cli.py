@@ -3176,6 +3176,83 @@ def compile_callback(
     raise typer.Exit(code=result.exit_code)
 
 
+@app.command("tq")
+def tq_cmd(
+    ctx: typer.Context,
+    use_server: Annotated[
+        str,
+        typer.Option("--use-server", help="Server do registry (~/.plugadvpl/servers.json)"),
+    ] = "",
+    timeout: Annotated[
+        int,
+        typer.Option("--timeout", help="Timeout do healthcheck em segundos (default 60)"),
+    ] = 60,
+    no_healthcheck: Annotated[
+        bool,
+        typer.Option("--no-healthcheck", help="Só executa restart_cmd, pula healthcheck"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Mostra o que faria, não executa"),
+    ] = False,
+) -> None:
+    """Restart do AppServer + healthcheck (Troca Quente MVP local)."""
+    from dataclasses import asdict
+    from plugadvpl.compile_servers import get_server
+    from plugadvpl.tq import run_tq
+
+    if not use_server:
+        typer.secho("--use-server obrigatório", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    srv = get_server(use_server)
+    if srv is None:
+        typer.secho(
+            f"Server '{use_server}' não cadastrado.\n"
+            f"  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if not srv.restart_cmd:
+        typer.secho(
+            f"Server '{use_server}' sem restart_cmd. Configure:\n"
+            f"  plugadvpl compile --set-restart-cmd {use_server} --cmd '<comando>'",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if dry_run:
+        rows = [{
+            "server": srv.name,
+            "host": f"{srv.host}:{srv.port}",
+            "restart_cmd": srv.restart_cmd,
+            "healthcheck": "skipped" if no_healthcheck else f"GET / (timeout {timeout}s)",
+            "dry_run": True,
+        }]
+        _render_from_ctx(
+            ctx, rows,
+            columns=["server", "host", "restart_cmd", "healthcheck", "dry_run"],
+            title=f"tq --dry-run ({srv.name})",
+            next_steps=[f"plugadvpl tq --use-server {srv.name}  # roda de verdade"],
+        )
+        raise typer.Exit(code=0)
+
+    result = run_tq(srv, timeout_s=timeout, no_healthcheck=no_healthcheck)
+    rows = [asdict(result)]
+    _render_from_ctx(
+        ctx, rows,
+        columns=[
+            "ok", "server_name", "restart_exit_code", "restart_duration_ms",
+            "healthcheck_status", "healthcheck_attempts", "total_duration_ms",
+            "error",
+        ],
+        title=f"tq ({srv.name})",
+        next_steps=[],
+    )
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
 def _handle_list_servers(ctx: typer.Context) -> None:
     """Lista servers cadastrados em ~/.plugadvpl/servers.json."""
     from plugadvpl.compile_servers import list_servers, registry_path, default_server
