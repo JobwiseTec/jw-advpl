@@ -42,3 +42,16 @@ class TestHttpProbe:
         is_up, status = _http_probe("127.0.0.1", 8019, timeout=2.0)
         assert is_up is True
         assert status == 200
+
+    def test_returns_false_when_connection_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AppServer down (TCP refused) → (False, 0)."""
+        def raise_refused(*args, **kwargs):  # noqa: ARG001
+            raise ConnectionRefusedError("nope")
+        monkeypatch.setattr(
+            "plugadvpl.tq.http.client.HTTPConnection", raise_refused
+        )
+        is_up, status = _http_probe("127.0.0.1", 8019)
+        assert is_up is False
+        assert status == 0
