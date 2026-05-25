@@ -2914,6 +2914,20 @@ def compile_callback(
             help="Salva user+pass do server no cofre do OS (Win Credential Manager / macOS Keychain / Linux Secret Service)",
         ),
     ] = "",
+    set_restart_cmd: Annotated[
+        str,
+        typer.Option(
+            "--set-restart-cmd",
+            help="Nome do server pra configurar restart_cmd (use junto com --cmd)",
+        ),
+    ] = "",
+    cmd_value: Annotated[
+        str,
+        typer.Option(
+            "--cmd",
+            help='Comando shell pro restart (use com --set-restart-cmd). Ex: "cmd.exe /c restart.bat"',
+        ),
+    ] = "",
     clear_credentials_for: Annotated[
         str,
         typer.Option(
@@ -2990,6 +3004,16 @@ def compile_callback(
         _handle_set_credentials(set_credentials_for)
         return
 
+    if set_restart_cmd:
+        if not cmd_value:
+            typer.secho(
+                "--set-restart-cmd requer --cmd '<comando>'",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        _handle_set_restart_cmd(set_restart_cmd, cmd_value)
+        return
+
     if clear_credentials_for:
         _handle_clear_credentials(clear_credentials_for)
         return
@@ -3015,6 +3039,7 @@ def compile_callback(
         "--list-servers", "--add-server", "--remove-server",
         "--import-tds-servers", "--yes", "-y", "--probe-appserver",
         "--set-credentials", "--clear-credentials", "--explain-config",
+        "--set-restart-cmd", "--cmd",
     }
     misplaced = [str(f) for f in files if str(f) in suspicious_flags]
     if misplaced:
@@ -3517,6 +3542,37 @@ def _handle_set_credentials(server_name: str) -> None:
         f"  user+pass automaticamente — sem precisar exportar env var.\n"
         f"\n"
         f"  Para remover: plugadvpl compile --clear-credentials {server_name}",
+        fg=typer.colors.GREEN,
+    )
+
+
+def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
+    """Grava o restart_cmd no server do registry global (v0.14)."""
+    from dataclasses import replace
+    from plugadvpl.compile_servers import (
+        ServersRegistry,
+        get_server,
+        load_registry,
+        save_registry,
+    )
+
+    srv = get_server(server_name)
+    if srv is None:
+        typer.secho(
+            f"Server '{server_name}' não cadastrado.\n"
+            f"  Liste: plugadvpl compile --list-servers\n"
+            f"  Cadastre: plugadvpl compile --add-server",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    new_srv = replace(srv, restart_cmd=cmd)
+    registry = load_registry()
+    new_servers = [new_srv if s.name == server_name else s for s in registry.servers]
+    save_registry(ServersRegistry(default=registry.default, servers=new_servers))
+
+    typer.secho(
+        f"restart_cmd setado pra '{server_name}': {cmd!r}",
         fg=typer.colors.GREEN,
     )
 

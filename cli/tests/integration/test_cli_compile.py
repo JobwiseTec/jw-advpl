@@ -388,6 +388,59 @@ class TestAppreSkipsCredentials:
         assert "Opção B" not in combined
 
 
+class TestSetRestartCmd:
+    """v0.14: --set-restart-cmd grava restart_cmd no server do registry."""
+
+    def test_set_restart_cmd_happy_path(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server, get_server
+        add_server(Server(
+            name="local-dev", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["env_a"], default_environment="env_a",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--set-restart-cmd", "local-dev",
+                  "--cmd", "echo restart"],
+        )
+        assert result.exit_code == 0, result.output
+        srv = get_server("local-dev")
+        assert srv is not None
+        assert srv.restart_cmd == "echo restart"
+
+    def test_set_restart_cmd_without_cmd_errors(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="x", host="127.0.0.1", port=1234, build="7.00.240223P",
+            environments=["env_a"], default_environment="env_a",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--set-restart-cmd", "x"],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "--cmd" in combined
+
+    def test_set_restart_cmd_unknown_server_errors(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile",
+                  "--set-restart-cmd", "ghost",
+                  "--cmd", "echo x"],
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "ghost" in combined and "não cadastrado" in combined
+
+
 class TestAllEnvs:
     """v0.13.2: --all-envs itera environments do server.
 
