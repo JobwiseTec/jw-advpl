@@ -39,37 +39,53 @@ class Server:
 - Persistido no JSON do registry — fica disponível pra qualquer projeto no mesmo `host:user`.
 - Lido por `tq.py` via `compile_servers.get_server(name).restart_cmd`.
 
-### 2. `plugadvpl compile --set-restart-cmd <server> "<cmd>"` — nova flag
+### 2. `plugadvpl compile --set-restart-cmd <server>` + `--cmd "<command>"` — duas flags coordenadas
 
-Mesma família das outras `--set-credentials`/`--set-*`. Implementação:
+Optei por **2 flags separadas** em vez de `tuple[str, str]` (que é não-padrão e cria UX ambígua). Padrão consistente com outras "--set-*" do compile:
 
 ```python
 @app.command("compile")
 def compile_cmd(
     # ...
     set_restart_cmd: Annotated[
-        tuple[str, str] | None,
+        str,
         typer.Option(
             "--set-restart-cmd",
-            help='Configura restart_cmd do server: --set-restart-cmd <nome> "<cmd>"',
+            help="Nome do server pra configurar restart_cmd (use junto com --cmd)",
         ),
-    ] = None,
+    ] = "",
+    cmd_value: Annotated[
+        str,
+        typer.Option(
+            "--cmd",
+            help='Comando shell (usado com --set-restart-cmd). Ex: "cmd.exe /c restart.bat"',
+        ),
+    ] = "",
     # ...
 ):
     if set_restart_cmd:
-        server_name, cmd = set_restart_cmd
-        _handle_set_restart_cmd(server_name, cmd)
+        if not cmd_value:
+            typer.secho("--set-restart-cmd requer --cmd '<comando>'", fg=RED, err=True)
+            raise typer.Exit(2)
+        _handle_set_restart_cmd(set_restart_cmd, cmd_value)
         return
 ```
 
+Uso:
+
+```bash
+plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.bat"
+plugadvpl compile --set-restart-cmd dev-linux --cmd "sudo systemctl restart totvs-appserver12"
+```
+
 `_handle_set_restart_cmd(server_name, cmd)`:
-1. Busca server no registry.
-2. Erra com mensagem clara se não existir.
-3. Reescreve o `Server` com `restart_cmd=cmd`.
-4. Salva o registry.
+1. Busca server no registry via `get_server(server_name)`.
+2. Erra com mensagem clara se não existir + lista servers via `--list-servers`.
+3. Reescreve o `Server` (dataclass frozen — uso `replace(server, restart_cmd=cmd)`).
+4. Persiste o registry via `save_registry()`.
 5. Echo de confirmação: `restart_cmd setado pra '<server>': '<cmd>'`.
 
-**Tem CSV-edge-case:** typer aceita tuple[str, str] via 2 positional args. Validar isso na implementação — pode ser que precise duas flags ou um único arg `"<nome>:<cmd>"`. Decidir no PR.
+Adicionar `--set-restart-cmd` + `--cmd` à lista `suspicious_flags` no `compile` pra catch positional reordering errors.
 
 ### 3. `plugadvpl tq` — novo subcomando
 
@@ -86,30 +102,34 @@ def tq_cmd(
     # ...
 ```
 
+> **Formato de saída:** o `tq` honra `--format json` do contexto global do CLI (mesmo
+> padrão de `compile` e `ingest-protheus`). Não é flag local do `tq` — herda da
+> opção root `plugadvpl --format json tq ...`. Render via `_render_from_ctx`.
+
 Fluxo:
 
 ```
 1. Valida --use-server passado (erro estruturado se vazio)
 2. Resolve server via compile_servers.get_server(use_server)
 3. Valida server.restart_cmd não vazio → erro com hint:
-   "Configure: plugadvpl compile --set-restart-cmd <name> '<cmd>'"
+   "Configure: plugadvpl compile --set-restart-cmd <name> --cmd '<cmd>'"
 4. Se --dry-run: imprime restart_cmd + healthcheck plan + return 0
-5. Pre-flight: TCP ping inicial (informativo, registra was_up=True/False)
-6. Executa restart_cmd via subprocess.run(shell=True)
+5. Executa restart_cmd via subprocess.run(shell=True)
    - timeout = timeout + 10s pra dar margem
-7. Se exit_code != 0:
+6. Se exit_code != 0:
    - Imprime restart_cmd + stderr capturado
    - Return TqResult(ok=False, error=...) com exit_code 1
-8. Se --no-healthcheck: return TqResult(ok=True) sem loop
-9. Healthcheck loop:
+7. Se --no-healthcheck: return TqResult(ok=True, healthcheck_status="skipped") sem loop
+8. Healthcheck loop:
    - start_ts = monotonic()
+   - attempts = 0
    - while monotonic() - start_ts < timeout:
-     - sleep(1s)
-     - try: socket.create_connection((host, port), timeout=2)
-       - http_status = quick GET pra "/" via httplib
-       - if status in {200, 401, 404}: break, healthy=True
-   - if !healthy: return TqResult(ok=False, error="healthcheck timeout") com exit_code 1
-10. Render table/JSON + return TqResult(ok=True)
+     - sleep(1s) (exceto na primeira iteração)
+     - attempts += 1
+     - is_up, status = _http_probe(host, port, timeout=2.0)
+     - se is_up E status in {200, 401, 404}: healthy=True, break
+   - se !healthy: return TqResult(ok=False, healthcheck_status="timeout", error=...)
+9. Render table/JSON + return TqResult(ok=True, healthcheck_status="up")
 ```
 
 ### 4. `cli/plugadvpl/tq.py` — módulo novo
@@ -117,16 +137,19 @@ Fluxo:
 ```python
 """Troca Quente (MVP local) — restart + healthcheck do AppServer."""
 
+from __future__ import annotations
+
+import http.client
 import socket
 import subprocess
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Literal
 
 from plugadvpl.compile_servers import Server
 
 
-HealthcheckStatus = Literal["up", "timeout", "skipped"]
+HealthcheckStatus = Literal["up", "timeout", "skipped", "not_run"]
 
 
 @dataclass(frozen=True)
@@ -141,7 +164,6 @@ class TqResult:
     healthcheck_attempts: int
     healthcheck_duration_ms: int
     total_duration_ms: int
-    was_up_before: bool
     error: str  # vazio se ok=True
 
 
@@ -150,17 +172,27 @@ def run_tq(
     timeout_s: int = 60,
     no_healthcheck: bool = False,
 ) -> TqResult:
-    """Executa restart_cmd + healthcheck. Pure function, sem side effects além
-    do subprocess + socket."""
+    """Executa restart_cmd + healthcheck. Pure-ish: sem side effects além
+    do subprocess (restart_cmd) + socket/http (healthcheck)."""
     # ... implementação ...
 
 
-def _tcp_ping(host: str, port: int, timeout: float = 2.0) -> bool:
-    """Tenta abrir socket TCP. Retorna True se conectou + recebeu algo HTTP-like."""
+def _http_probe(host: str, port: int, timeout: float = 2.0) -> tuple[bool, int]:
+    """Tenta GET / via http.client.HTTPConnection.
+
+    Retorna (is_up, status_code):
+    - is_up=True E status_code in {200, 401, 404} significa AppServer respondeu HTTP
+    - is_up=False E status_code=0 significa socket falhou (TCP refused / timeout)
+    - is_up=True E status_code 5xx significa porta abriu mas REST quebrou (raro)
+
+    O caller checa o status pra decidir healthy vs not.
+    """
     # ... implementação ...
 ```
 
-`run_tq` é a função core, pure-ish (deterministic dado server + tempo de execução).
+`run_tq` é a função core, pure-ish (deterministic dado server + tempo de execução). `_http_probe` faz tanto o TCP connect quanto o HTTP GET — não há `_tcp_ping` separado.
+
+Por que HTTP e não só TCP: na build 7.00.240223P observamos que a porta abre alguns segundos antes do REST estar pronto (processo iniciou mas WSRESTFUL ainda carregando). `200/401/404` é a prova real de "AppServer respondeu HTTP" — TCP-only daria false positive cedo demais.
 
 ### 5. Skill `skills/tq/SKILL.md` — wrapper Claude Code
 
@@ -221,7 +253,7 @@ tq (Local) → cmd.exe /c gaps\restart-totvs.bat
 └────────────┴────────┘
 ```
 
-### JSON (`--format json`)
+### JSON (`plugadvpl --format json tq ...`)
 
 ```json
 {
@@ -235,12 +267,11 @@ tq (Local) → cmd.exe /c gaps\restart-totvs.bat
   "healthcheck_attempts": 17,
   "healthcheck_duration_ms": 15876,
   "total_duration_ms": 18217,
-  "was_up_before": true,
   "error": ""
 }
 ```
 
-Schema estável, consumível por CI/agentes.
+Schema estável, consumível por CI/agentes. `healthcheck_status` ∈ `{up, timeout, skipped, not_run}`.
 
 ## Erros estruturados
 
@@ -256,25 +287,30 @@ Schema estável, consumível por CI/agentes.
 
 ### Unit (`cli/tests/unit/test_tq.py`)
 
-Mock `subprocess.run` + `socket.create_connection`. Casos:
+Mock `subprocess.run` + `http.client.HTTPConnection`. Casos:
 
-1. **happy path** — restart_cmd ok + healthcheck ok no 3º ping
-2. **restart_cmd vazio** — server sem restart_cmd → TqResult.ok=False, error apropriado
-3. **restart exit non-zero** — subprocess retorna exit=1 → TqResult.ok=False, captura stderr
-4. **healthcheck timeout** — todos os pings falham → TqResult.ok=False, healthcheck_status="timeout"
-5. **--no-healthcheck** — pula loop, retorna ok=True direto pós-restart
-6. **--dry-run** — não executa restart_cmd, retorna preview
+1. **happy path** — restart_cmd ok + healthcheck retorna (True, 200) no 3º ping → TqResult.ok=True, healthcheck_status="up", attempts=3
+2. **restart_cmd vazio** — `run_tq(server_sem_cmd)` → TqResult.ok=False, error contém "restart_cmd"
+3. **restart exit non-zero** — `subprocess.run` mock retorna `returncode=1` + stderr → TqResult.ok=False, restart_stderr capturado
+4. **healthcheck timeout** — todos `_http_probe` retornam (False, 0) → TqResult.ok=False, healthcheck_status="timeout", attempts >= timeout/sleep_interval
+5. **healthcheck false positive guard** — `_http_probe` retorna (True, 503) → não considera up, continua tentando
+6. **--no-healthcheck** — `run_tq(server, no_healthcheck=True)` → ok=True, healthcheck_status="skipped", attempts=0
+
+Total: 6 unit tests.
 
 ### Integration (`cli/tests/integration/test_cli_tq.py`)
 
 Via `CliRunner`. Casos:
 
-1. **tq sem --use-server** — exit 2 + mensagem
-2. **tq com server não existente** — exit 2 + hint
-3. **tq com server sem restart_cmd** — exit 2 + hint pro `--set-restart-cmd`
-4. **tq --dry-run com server válido** — exit 0 + preview impresso
-5. **compile --set-restart-cmd grava no registry corretamente** — read back confere
-6. **tq --format json** — output válido + schema esperado
+1. **tq sem --use-server** — exit 2 + mensagem "--use-server obrigatório"
+2. **tq com server não existente** — exit 2 + hint pra `--list-servers`
+3. **tq com server sem restart_cmd** — exit 2 + hint pro `--set-restart-cmd ... --cmd ...`
+4. **tq --dry-run com server válido** — exit 0 + preview impresso (restart_cmd + healthcheck plan), sem chamar subprocess
+5. **compile --set-restart-cmd + --cmd grava no registry** — exec o set, depois `get_server` confere `restart_cmd` populado
+6. **compile --set-restart-cmd sem --cmd** — exit 2 + mensagem clara
+7. **--format json no tq** — `plugadvpl --format json tq --use-server X --dry-run` produz JSON parseável com chaves esperadas
+
+Total: 7 integration tests.
 
 ### Smoke real (manual, não automatizado)
 
@@ -299,9 +335,8 @@ plugadvpl tq --use-server Local
 | `cli/plugadvpl/cli.py` | Adiciona handler `--set-restart-cmd` ao `compile`; adiciona subcomando `tq` |
 | `cli/plugadvpl/tq.py` | **NOVO** — `run_tq()` + `_tcp_ping()` + `TqResult` |
 | `cli/tests/unit/test_tq.py` | **NOVO** — 6 casos unit |
-| `cli/tests/integration/test_cli_tq.py` | **NOVO** — 6 casos integration |
-| `skills/tq/SKILL.md` | **NOVO** — wrapper slash command |
-| `commands/tq.md` | **NOVO** — claude code slash command file (se padrão exigir) |
+| `cli/tests/integration/test_cli_tq.py` | **NOVO** — 7 casos integration |
+| `skills/tq/SKILL.md` | **NOVO** — slash command wrapper (padrão skill-as-command do projeto, `disable-model-invocation: true`). NÃO há diretório `commands/` separado neste projeto |
 | `CHANGELOG.md` | Entry em `[Unreleased]` |
 | `README.md` | Adiciona `tq` à tabela "Runtime ADVPL — edit + compile"; ajusta seção "Próximas entregas" pra refletir que MVP foi entregue |
 
@@ -329,14 +364,16 @@ Issue #5 fica aberta — documenta que TQ "completo" virá em v0.15+ quando prec
 
 ## Esforço estimado
 
-- `restart_cmd` field + `--set-restart-cmd` handler: ~30min
-- `tq.py` core (run_tq, _tcp_ping, TqResult): ~1h
-- Subcomando CLI + flag parsing: ~30min
-- 12 testes (6 unit + 6 integration): ~1h
-- Skill + slash command + README + CHANGELOG: ~30min
-- Smoke real validation: ~30min
+- `restart_cmd` field em `Server` + `--set-restart-cmd` + `--cmd` handler + validação suspicious_flags: ~45min
+- `tq.py` core (`run_tq`, `_http_probe`, `TqResult`): ~1.5h
+- Subcomando CLI + render_from_ctx integration: ~30min
+- 13 testes (6 unit + 7 integration) com mocks pra subprocess + http.client: ~1.5h
+- Skill + README + CHANGELOG entries: ~45min
+- Smoke real validation contra base local: ~30min
 
-**Total: ~3-4h**.
+**Total: ~5h**.
+
+Ajustado pra cima do estimate original (3-4h) considerando que mocks de subprocess + `http.client.HTTPConnection` pra 6 unit cases dão mais trabalho que reconheci na primeira passada.
 
 ## Riscos
 
