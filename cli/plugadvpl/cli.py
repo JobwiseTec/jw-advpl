@@ -3183,6 +3183,13 @@ def tq_cmd(
         str,
         typer.Option("--use-server", help="Server do registry (~/.plugadvpl/servers.json)"),
     ] = "",
+    port_override: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            help="Override da porta pro healthcheck (default usa server.port; útil quando REST está em porta diferente do TCP do advpls)",
+        ),
+    ] = 0,
     timeout: Annotated[
         int,
         typer.Option("--timeout", help="Timeout do healthcheck em segundos (default 60)"),
@@ -3222,10 +3229,12 @@ def tq_cmd(
         )
         raise typer.Exit(code=2)
 
+    hc_port = port_override if port_override > 0 else srv.port
+
     if dry_run:
         rows = [{
             "server": srv.name,
-            "host": f"{srv.host}:{srv.port}",
+            "host": f"{srv.host}:{hc_port}",
             "restart_cmd": srv.restart_cmd,
             "healthcheck": "skipped" if no_healthcheck else f"GET / (timeout {timeout}s)",
             "dry_run": True,
@@ -3238,7 +3247,10 @@ def tq_cmd(
         )
         raise typer.Exit(code=0)
 
-    result = run_tq(srv, timeout_s=timeout, no_healthcheck=no_healthcheck)
+    result = run_tq(
+        srv, timeout_s=timeout, no_healthcheck=no_healthcheck,
+        port_override=port_override,
+    )
     rows = [asdict(result)]
     _render_from_ctx(
         ctx, rows,

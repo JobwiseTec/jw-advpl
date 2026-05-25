@@ -64,6 +64,7 @@ def run_tq(
     server: Server,
     timeout_s: int = 60,
     no_healthcheck: bool = False,
+    port_override: int = 0,
 ) -> TqResult:
     """Executa ``restart_cmd`` + healthcheck. Function pure-ish: só side
     effects são ``subprocess.run`` + sockets do healthcheck."""
@@ -135,10 +136,11 @@ def run_tq(
     hc_start = time.monotonic()
     attempts = 0
     healthy = False
+    hc_port = port_override if port_override > 0 else server.port
     while (time.monotonic() - hc_start) < timeout_s:
         time.sleep(1)
         attempts += 1
-        is_up, status = _http_probe(server.host, server.port, timeout=2.0)
+        is_up, status = _http_probe(server.host, hc_port, timeout=2.0)
         if is_up and status in {200, 401, 404}:
             healthy = True
             break

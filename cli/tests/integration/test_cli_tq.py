@@ -81,6 +81,30 @@ class TestTqDryRun:
         assert "dry_run" in combined.lower() or "dry-run" in combined.lower()
 
 
+class TestTqPortOverride:
+    """--port override do server.port (caso real: TCP advpls != REST port)."""
+
+    def test_dry_run_with_port_override_uses_new_port(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="dev", host="127.0.0.1", port=1234,  # TCP advpls
+            build="7.00.240223P", environments=["env_a"],
+            default_environment="env_a",
+            restart_cmd="echo restart",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq",
+                  "--use-server", "dev", "--port", "8019",
+                  "--dry-run"]
+        )
+        assert result.exit_code == 0, result.output
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "8019" in combined  # porta override aparece no host display
+
+
 class TestTqJsonOutput:
     """--format json honra schema documentado."""
 

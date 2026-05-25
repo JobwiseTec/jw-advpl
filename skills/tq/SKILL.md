@@ -31,6 +31,7 @@ plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.
 ## Argumentos
 
 - `--use-server NAME` — nome do server no registry. **Obrigatório**.
+- `--port N` — override da porta pro healthcheck. Default usa `server.port`, mas se o REST do AppServer roda em porta diferente do TCP do `advpls` (caso típico: TCP=1234, REST=8019), passe o `--port`.
 - `--timeout N` — timeout do healthcheck em segundos (default 60).
 - `--no-healthcheck` — só roda o `restart_cmd`, pula o loop de healthcheck.
 - `--dry-run` — mostra o que faria sem executar.
