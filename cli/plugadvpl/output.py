@@ -11,6 +11,7 @@ Convenções:
 - ``next_steps`` é uma lista opcional de comandos sugeridos (LLM hints), sempre
   impressa em stderr para não poluir o stdout JSON/MD.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,9 +84,7 @@ def _render_json(
         "shown": len(rows),
         "truncated": truncated,
     }
-    sys.stdout.write(
-        json.dumps(payload, ensure_ascii=False, indent=None if compact else 2)
-    )
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=None if compact else 2))
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -105,9 +104,7 @@ def _render_md(
     sys.stdout.write("| " + " | ".join(cols) + " |\n")
     sys.stdout.write("|" + "|".join("---" for _ in cols) + "|\n")
     for r in rows:
-        sys.stdout.write(
-            "| " + " | ".join(_md_cell(r.get(c, "")) for c in cols) + " |\n"
-        )
+        sys.stdout.write("| " + " | ".join(_md_cell(r.get(c, "")) for c in cols) + " |\n")
     if truncated:
         sys.stdout.write(
             f"\n_... e mais {remaining} resultados; refine os filtros ou aumente --limit_\n"

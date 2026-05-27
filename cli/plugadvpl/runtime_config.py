@@ -7,6 +7,7 @@ Convenções:
 - Função ``load()`` é pura: recebe Path, devolve dataclass imutável ou None.
 - Validações falham com ``RuntimeConfigError`` (mensagem clara apontando a chave).
 """
+
 from __future__ import annotations
 
 import os
@@ -78,7 +79,7 @@ def _tcp_ping(host: str, port: int, timeout: float = 1.0) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return False
 
 
@@ -94,23 +95,17 @@ def _require_section(d: dict[str, object], section: str, src: Path) -> dict[str,
     return val
 
 
-def _require_key(
-    section_dict: dict[str, object], key: str, src: Path, section_name: str
-) -> object:
+def _require_key(section_dict: dict[str, object], key: str, src: Path, section_name: str) -> object:
     """Valida que key existe no dict da seção; erro com path do TOML se ausente."""
     if key not in section_dict:
-        raise RuntimeConfigError(
-            f"missing required key [{section_name}].{key} in {src}"
-        )
+        raise RuntimeConfigError(f"missing required key [{section_name}].{key} in {src}")
     return section_dict[key]
 
 
 def _require_env(varname: str, ref: str) -> str:
     val = os.environ.get(varname)
     if val is None:
-        raise RuntimeConfigError(
-            f"env var {varname} (referenced by {ref}) is not set"
-        )
+        raise RuntimeConfigError(f"env var {varname} (referenced by {ref}) is not set")
     return val
 
 
@@ -139,9 +134,7 @@ def load(root: Path) -> RuntimeConfig | None:
     try:
         resolved = binary.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
-        raise RuntimeConfigError(
-            f"binary path resolution failed for {binary}: {exc}"
-        ) from exc
+        raise RuntimeConfigError(f"binary path resolution failed for {binary}: {exc}") from exc
     is_symlink = binary.is_symlink()
     tds_ls = TdsLsConfig(binary=resolved, binary_is_symlink=is_symlink)
 
@@ -149,7 +142,7 @@ def load(root: Path) -> RuntimeConfig | None:
     asv = _require_section(raw, "appserver", toml_path)
     appserver = AppserverConfig(
         host=str(_require_key(asv, "host", toml_path, "appserver")),
-        port=int(cast(int, _require_key(asv, "port", toml_path, "appserver"))),
+        port=int(cast("int", _require_key(asv, "port", toml_path, "appserver"))),
         secure=bool(asv.get("secure", False)),
         build=str(_require_key(asv, "build", toml_path, "appserver")),
         environment=str(_require_key(asv, "environment", toml_path, "appserver")),
@@ -175,14 +168,13 @@ def load(root: Path) -> RuntimeConfig | None:
     includes_raw = cmp_raw.get("includes", [])
     if not isinstance(includes_raw, list):
         raise RuntimeConfigError(
-            f"[compile].includes in {toml_path} must be an array, "
-            f"got {type(includes_raw).__name__}"
+            f"[compile].includes in {toml_path} must be an array, got {type(includes_raw).__name__}"
         )
     compile_cfg = CompileConfig(
         recompile=bool(cmp_raw.get("recompile", True)),
         includes=tuple(Path(str(p)) for p in includes_raw),
         mode=str(cmp_raw.get("mode", "auto")),
-        timeout_seconds=int(cast(int, cmp_raw.get("timeout_seconds", 120))),
+        timeout_seconds=int(cast("int", cmp_raw.get("timeout_seconds", 120))),
         include_warnings=bool(cmp_raw.get("include_warnings", True)),
     )
 

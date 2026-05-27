@@ -19,21 +19,27 @@ jobs:
 
   lint-code:
     # Escopo incremental: roda em arquivos limpos. Conforme legado for sendo
-    # corrigido, adicionar arquivos aqui. Lista canonica:
-    # https://github.com/JoniPraia/plugadvpl/issues/X (todo)
+    # corrigido, adicionar arquivos aqui. Roadmap: issue #17.
     runs-on: ubuntu-latest
+    env:
+      LINT_FILES: >-
+        plugadvpl/tq.py
+        plugadvpl/compile_servers.py
+        plugadvpl/runtime_config.py
+        plugadvpl/output.py
+        plugadvpl/scan.py
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v8.1.0
       - name: ruff check
         working-directory: cli
-        run: uv sync && uv run ruff check plugadvpl/tq.py plugadvpl/compile_servers.py
+        run: uv sync && uv run ruff check $LINT_FILES
       - name: ruff format --check
         working-directory: cli
-        run: uv run ruff format --check plugadvpl/tq.py plugadvpl/compile_servers.py
+        run: uv run ruff format --check $LINT_FILES
       - name: mypy
         working-directory: cli
-        run: uv run mypy plugadvpl/tq.py plugadvpl/compile_servers.py
+        run: uv run mypy $LINT_FILES
 
   test-cli:
     runs-on: ${{ matrix.os }}

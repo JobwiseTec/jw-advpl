@@ -3,6 +3,7 @@
 Usa ``os.walk`` (1 traversal) em vez de ``Path.rglob`` (N traversals por padrão),
 aplicando filtros de extensão, dedup case-insensitive e limites de tamanho.
 """
+
 from __future__ import annotations
 
 import os
