@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-27
+
 ### Added — `plugadvpl tq` (Troca Quente MVP local)
 
 Restart do AppServer Protheus + healthcheck HTTP, automatizando o passo

@@ -677,12 +677,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **50 skills** (19 knowledge + 31 slash command wrappers), 5 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`), 1 SessionStart hook
 - **Schema SQLite v15** — 15 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
 - **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1023 testes verde** (unit + integration + bench + smoke real opcional) — ~74s suite full
+- **1043 testes verde** (unit + integration + bench + smoke real opcional) — ~83s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 
 ### Próximas entregas
 
-- **Sub-plugin `plugadvpl-ops`** (planejado) — `apply-patch` (aplicar `.PTM` via advpls, idempotente com backup). Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). O `tq` (Troca Quente) MVP já está entregue como `plugadvpl tq` no core; versão robusta pra produção (versionamento + .ini editing + rollback) fica pra issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) quando justificar
+- **`plugadvpl tq` v2** — `--all-envs` + `--confirm-prod` (flag `is_prod` no `Server` dataclass) pra encadear Troca Quente em todos os envs do server com guarda contra restart acidental em PROD. v0.15.0
+- **Skill `/plugadvpl:deploy`** — orquestra `compile → tq → smoke` em prompt. Reduz fricção do flow de dev. v0.14.1
+- **`apply-patch`** (planejado) — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). Sub-plugin `plugadvpl-ops` foi descartado: fica no core junto com `tq`
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
 ---
@@ -691,11 +693,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
-### Em desenvolvimento (unreleased)
+### v0.14.0 — Troca Quente MVP local + compile multi-env
 
+- **`plugadvpl tq`** — Troca Quente MVP local: restart do AppServer (via `restart_cmd` configurado no server) + healthcheck HTTP esperando 200/401/404 (5xx não conta como up). Flags `--use-server`, `--port` (override só pro healthcheck quando REST roda em porta diferente do TCP), `--timeout` (default 60s), `--no-healthcheck`, `--dry-run`. Resolve o passo manual que ainda existia depois do `compile --all-envs` (rodar `restart-totvs.bat` + curl loop). Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) — escopo cortado pra MVP local; `.ini` editing, RPO versionado e rollback automático foram descartados em favor de `restart_cmd` arbitrário (ver [comment de fechamento](https://github.com/JoniPraia/plugadvpl/issues/5#issuecomment-4553802738))
+- **`plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"`** — flag nova no compile pra configurar o `restart_cmd` no registry global (consumido pelo `plugadvpl tq`). Valida que `--cmd` veio junto, erra com hint pra `--list-servers` se o server não existe
 - **`plugadvpl compile --all-envs`** — compila pra todos os environments do `--use-server` em sequência, anota linha com coluna `env`, exit code é o pior dos envs. Caso de uso: server com `protheus` + `protheus_rest` precisa de RPO sync entre os 2; antes era cópia manual `apo/custom.rpo` → `apo_rest/custom.rpo`
-- **`plugadvpl tq`** — Troca Quente MVP local: restart do AppServer (via `restart_cmd` configurado no server) + healthcheck HTTP. Resolve o passo manual que ainda existia depois do `compile --all-envs` (rodar `restart-totvs.bat` + curl loop). Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) — escopo cortado pra MVP, versão robusta pra produção fica pra v0.15+
-- **`plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"`** — flag nova no compile pra configurar o `restart_cmd` no registry global (consumido pelo `plugadvpl tq`)
+- **Skill `/plugadvpl:tq`** — wrapper slash command pro subcomando
+- 16 testes novos (8 unit em `tq.py` + 5 integration do subcomando + 3 do `--set-restart-cmd`). Suite full: 1043 passed
 
 ### v0.13.1 — Hash dinâmico no cliente REST + docs sync
 
