@@ -19,11 +19,14 @@ Princípios de segurança:
   ``CredentialResolution.keyring_available = False`` deixa o fluxo escolher
   fallback.
 """
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
+
+KeyringKind = Literal["user", "password"]
 
 # Service name fixo no cofre — único namespace pro plugadvpl.
 KEYRING_SERVICE = "plugadvpl"
@@ -63,11 +66,20 @@ class CredentialResolution:
         }
 
 
-def _try_import_keyring() -> object | None:
-    """Importa keyring com fallback gracioso. Retorna None se backend não disponível."""
+def _try_import_keyring() -> Any:
+    """Importa keyring com fallback gracioso. Retorna None se backend não disponível.
+
+    Lazy import: o pacote ``keyring`` tem backends que tocam D-Bus / Credential
+    Manager no import — se isso falhar (Linux server sem D-Bus, container
+    minimalista), o módulo todo trava se for top-level. Por isso PLC0415 fica.
+
+    Tipo de retorno é ``Any`` em vez de ``ModuleType | None`` porque keyring é
+    consumido via duck-typing (``.get_password()``, ``.set_password()``) e
+    tipar como ``ModuleType`` exige forward-refs que confundem mypy.
+    """
     try:
-        import keyring  # type: ignore[import-untyped]
-        from keyring.errors import KeyringError  # type: ignore[import-untyped]  # noqa: F401
+        import keyring  # noqa: PLC0415
+        from keyring.errors import KeyringError  # noqa: F401, PLC0415
     except ImportError:
         return None
     # Tentar pegar o backend — se for o NullBackend (Linux server sem D-Bus),
@@ -88,7 +100,7 @@ def keyring_available() -> bool:
     return _try_import_keyring() is not None
 
 
-def _username_key(server_name: str, kind: Literal["user", "password"]) -> str:
+def _username_key(server_name: str, kind: KeyringKind) -> str:
     return f"{server_name}:{kind}"
 
 
@@ -125,16 +137,16 @@ def clear_credentials_from_keyring(server_name: str) -> tuple[bool, bool]:
         return False, False
     removed_user = False
     removed_pwd = False
-    for kind, flag in (("user", "u"), ("password", "p")):
+    for kind in ("user", "password"):
         try:
-            kr.delete_password(KEYRING_SERVICE, _username_key(server_name, kind))  # type: ignore[arg-type]
-            if flag == "u":
-                removed_user = True
-            else:
-                removed_pwd = True
+            kr.delete_password(KEYRING_SERVICE, _username_key(server_name, kind))
         except Exception:
-            # Não existe ou backend falhou — ok, idempotente
-            pass
+            # Backend pode falhar (D-Bus, perms) ou senha não existir — op é idempotente
+            continue
+        if kind == "user":
+            removed_user = True
+        else:
+            removed_pwd = True
     return removed_user, removed_pwd
 
 

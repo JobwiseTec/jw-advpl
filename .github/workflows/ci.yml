@@ -30,6 +30,7 @@ jobs:
         plugadvpl/compile_parser.py
         plugadvpl/compile_probe.py
         plugadvpl/compile_servers.py
+        plugadvpl/credentials.py
         plugadvpl/db.py
         plugadvpl/edit_prw.py
         plugadvpl/ingest.py
