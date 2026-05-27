@@ -15,8 +15,10 @@ Dois caminhos:
 Ambos retornam dataclasses imutáveis. Sem efeito colateral além do subprocess
 do advpls (network) e leitura de filesystem (log).
 """
+
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -24,6 +26,9 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from plugadvpl.compile import _decode_advpls_output
+from plugadvpl.edit_prw import encode_cp1252_bytes
 
 
 @dataclass(frozen=True)
@@ -98,9 +103,7 @@ def is_host_port(target: str) -> bool:
         return False
     # Edge case windows: "D:1234" técnico match mas se filesystem path existe
     # (raro mas possível) prefere o filesystem.
-    if Path(target).exists():
-        return False
-    return True
+    return not Path(target).exists()
 
 
 def _resolve_log_path(target: Path) -> Path | None:
@@ -215,12 +218,9 @@ def probe_appserver_network(
         ``build`` preenchido se sucesso. Nunca lança exceção (pra facilitar
         composição em fluxos de doctor / auto-detect).
     """
-    from plugadvpl.compile import _decode_advpls_output
-    from plugadvpl.edit_prw import encode_cp1252_bytes
-
     tempdir = Path(tempfile.mkdtemp(prefix="plugadvpl-probe-"))
     if os.name == "posix":
-        os.chmod(tempdir, 0o700)
+        tempdir.chmod(0o700)
     log_file = tempdir / "validate.log"
     ini_path = tempdir / "validate.ini"
     ini_content = _build_validate_ini(host, port, log_file)
@@ -240,16 +240,23 @@ def probe_appserver_network(
                 [str(advpls_binary), "cli", str(ini_path)],
                 capture_output=True,
                 timeout=timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             return NetworkProbeResult(
-                host=host, port=port, build="", secure=None,
+                host=host,
+                port=port,
+                build="",
+                secure=None,
                 error=f"advpls timed out after {timeout}s probing {host}:{port}",
                 raw_output="",
             )
         except FileNotFoundError as exc:
             return NetworkProbeResult(
-                host=host, port=port, build="", secure=None,
+                host=host,
+                port=port,
+                build="",
+                secure=None,
                 error=f"advpls binary not found at {advpls_binary}: {exc}",
                 raw_output="",
             )
@@ -258,16 +265,17 @@ def probe_appserver_network(
         stderr = _decode_advpls_output(proc.stderr)
         log_text = ""
         if log_file.is_file():
-            try:
+            with contextlib.suppress(OSError):
                 log_text = log_file.read_text(encoding="cp1252", errors="replace")
-            except OSError:
-                pass
         combined = "\n".join([stdout, stderr, log_text])
 
         build, secure = _parse_validate_output(combined)
         if not build:
             return NetworkProbeResult(
-                host=host, port=port, build="", secure=secure,
+                host=host,
+                port=port,
+                build="",
+                secure=secure,
                 error=(
                     f"advpls returned no build (exit={proc.returncode}). "
                     f"AppServer pode estar down, em SSL sem flag, ou versão "
@@ -276,11 +284,13 @@ def probe_appserver_network(
                 raw_output=combined[:1000],
             )
         return NetworkProbeResult(
-            host=host, port=port, build=build, secure=secure,
-            error="", raw_output="",
+            host=host,
+            port=port,
+            build=build,
+            secure=secure,
+            error="",
+            raw_output="",
         )
     finally:
-        try:
+        with contextlib.suppress(OSError):
             shutil.rmtree(tempdir, ignore_errors=True)
-        except OSError:
-            pass

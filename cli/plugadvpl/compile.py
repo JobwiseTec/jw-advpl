@@ -3,6 +3,7 @@
 Único módulo que toca subprocess + filesystem. Demais (runtime_config,
 compile_parser) são funções puras. Spec: docs/fase1/compile-design.md §5, §7.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,10 +16,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from plugadvpl.compile_doctor import _detect_advpls
 from plugadvpl.compile_parser import Diagnostic, parse_diagnostics
+from plugadvpl.edit_prw import encode_cp1252_bytes
 
 if TYPE_CHECKING:
     from plugadvpl.runtime_config import RuntimeConfig
+
+# Exit codes acima de 255 ou negativos sao convencao Unix (signal) ou Windows
+# unsigned overflow — normaliza pra 1.
+_MAX_POSIX_EXIT_CODE = 255
 
 
 @dataclass(frozen=True)
@@ -50,9 +57,7 @@ class ResolvedFiles:
 _VALID_EXTS = (".prw", ".prx", ".tlpp", ".tlpp.ch")
 
 
-def resolve_files(
-    files: list[Path], changed_since: str | None, root: Path
-) -> ResolvedFiles:
+def resolve_files(files: list[Path], changed_since: str | None, root: Path) -> ResolvedFiles:
     if changed_since:
         files = _resolve_changed_since(changed_since, root)
     valid: list[Path] = []
@@ -76,7 +81,10 @@ def _resolve_changed_since(ref: str, root: Path) -> list[Path]:
     try:
         proc = subprocess.run(
             ["git", "diff", "--name-only", ref, "--", "*.prw", "*.prx", "*.tlpp"],
-            cwd=root, capture_output=True, text=True, check=True,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
@@ -103,11 +111,11 @@ _UTF16_BE_BOM = b"\xfe\xff"
 def _decode_advpls_output(raw: bytes) -> str:
     """Decodifica saída do advpls tratando BOM UTF-16 (PowerShell/WinSrv) e fallback CP1252."""
     if raw.startswith(_UTF16_LE_BOM):
-        return raw[len(_UTF16_LE_BOM):].decode("utf-16-le", errors="replace")
+        return raw[len(_UTF16_LE_BOM) :].decode("utf-16-le", errors="replace")
     if raw.startswith(_UTF16_BE_BOM):
-        return raw[len(_UTF16_BE_BOM):].decode("utf-16-be", errors="replace")
+        return raw[len(_UTF16_BE_BOM) :].decode("utf-16-be", errors="replace")
     if raw.startswith(_UTF8_BOM):
-        raw = raw[len(_UTF8_BOM):]
+        raw = raw[len(_UTF8_BOM) :]
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -130,7 +138,6 @@ def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
     if runtime_cfg is not None:
         return runtime_cfg.tds_ls.binary
     # 3. Auto-detect (pasta interna ~/.plugadvpl/advpls/, PATH, extensão VSCode)
-    from plugadvpl.compile_doctor import _detect_advpls
     detected = _detect_advpls()
     if detected is not None:
         return detected
@@ -143,9 +150,7 @@ def _resolve_advpls(runtime_cfg: RuntimeConfig | None) -> Path:
     )
 
 
-def _build_ini_script(
-    runtime_cfg: RuntimeConfig, files: list[Path], includes: list[Path]
-) -> str:
+def _build_ini_script(runtime_cfg: RuntimeConfig, files: list[Path], includes: list[Path]) -> str:
     """Gera conteúdo do script .ini do advpls cli mode (formato §6 do spec).
 
     v0.8.11: env vars validadas aqui (não mais no load do TOML), porque
@@ -195,11 +200,9 @@ def _write_secure_ini(content: str) -> tuple[Path, Path]:
     Retorna (ini_path, tempdir_path) — caller é responsável por shutil.rmtree.
     Em Windows, mode é ignorado mas o uuid no path do mkdtemp mitiga reading-by-name.
     """
-    from plugadvpl.edit_prw import encode_cp1252_bytes
-
     tempdir = Path(tempfile.mkdtemp(prefix="plugadvpl-"))
     if os.name == "posix":
-        os.chmod(tempdir, 0o700)
+        tempdir.chmod(0o700)
     ini_path = tempdir / "compile.ini"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_BINARY"):  # Windows
@@ -227,9 +230,7 @@ def _build_appre_args(
     return args
 
 
-def _collect_errprw_diagnostics(
-    output_dir: Path, files: list[Path]
-) -> dict[str, list[Diagnostic]]:
+def _collect_errprw_diagnostics(output_dir: Path, files: list[Path]) -> dict[str, list[Diagnostic]]:
     """Lê ``<basename>.errprw`` para cada fonte em ``files``.
 
     Diagnostics do advpls ``appre`` NÃO vão para stdout/stderr — vão para
@@ -253,8 +254,11 @@ def _collect_errprw_diagnostics(
         if not content.strip():
             continue
         diags, _unmatched = parse_diagnostics(
-            stdout=content, stderr="", mode="appre",
-            requested_files=[fonte], force_arquivo=fonte,
+            stdout=content,
+            stderr="",
+            mode="appre",
+            requested_files=[fonte],
+            force_arquivo=fonte,
         )
         if diags:
             by_file[str(fonte)] = diags
@@ -271,7 +275,7 @@ def _normalize_exit_code(returncode: int) -> int:
     if returncode == 0:
         return 0
     # Casos negativos (Unix signal) ou > 255 (Windows unsigned). Mapeia para 1.
-    if returncode < 0 or returncode > 255:
+    if returncode < 0 or returncode > _MAX_POSIX_EXIT_CODE:
         return 1
     return returncode
 
@@ -299,21 +303,37 @@ def _build_setup_error_result(files: list[Path], mode: str, exit_code: int) -> C
 def _build_timeout_result(files: list[Path], timeout: int | None, mode: str) -> CompileResult:
     rows: list[dict[str, object]] = []
     for f in files:
-        rows.append({
-            "arquivo": str(f), "ok": False, "mode": mode,
-            "duration_ms": (timeout or 0) * 1000, "exit_code": 124,
-            "counts": {"error": 1, "warning": 0, "info": 0, "unknown": 0},
-            "diagnostics": [{
-                "severidade": "error", "arquivo": str(f), "linha": 0, "coluna": 0,
-                "mensagem": f"compile timeout after {timeout}s",
-                "codigo": "", "raw": "",
-            }],
-        })
+        rows.append(
+            {
+                "arquivo": str(f),
+                "ok": False,
+                "mode": mode,
+                "duration_ms": (timeout or 0) * 1000,
+                "exit_code": 124,
+                "counts": {"error": 1, "warning": 0, "info": 0, "unknown": 0},
+                "diagnostics": [
+                    {
+                        "severidade": "error",
+                        "arquivo": str(f),
+                        "linha": 0,
+                        "coluna": 0,
+                        "mensagem": f"compile timeout after {timeout}s",
+                        "codigo": "",
+                        "raw": "",
+                    }
+                ],
+            }
+        )
     summary: dict[str, object] = {
-        "total_files": len(files), "ok": 0, "failed": len(files),
-        "total_errors": len(files), "total_warnings": 0,
-        "mode_used": mode, "appserver_reachable": False,
-        "runtime_config_loaded": False, "output_truncated": False,
+        "total_files": len(files),
+        "ok": 0,
+        "failed": len(files),
+        "total_errors": len(files),
+        "total_warnings": 0,
+        "mode_used": mode,
+        "appserver_reachable": False,
+        "runtime_config_loaded": False,
+        "output_truncated": False,
     }
     return CompileResult(rows=rows, summary=summary, next_steps=[], exit_code=1)
 
@@ -322,22 +342,20 @@ def _build_next_steps(rows: list[dict[str, object]], mode: str) -> list[str]:
     if all(r["ok"] for r in rows):
         return []
     failed_files = [
-        str(r["arquivo"]) for r in rows
-        if not r["ok"] and r["arquivo"] != "__unmatched__"
+        str(r["arquivo"]) for r in rows if not r["ok"] and r["arquivo"] != "__unmatched__"
     ]
     steps: list[str] = []
 
     # Hint específico pro erro mais comum: include Protheus faltando (C2090).
     # Detecta varrendo diagnostics de todas as rows.
-    has_c2090 = any(
-        any(
-            isinstance(d, dict) and d.get("codigo") == "C2090"
-            for d in (r.get("diagnostics") or [])
-            if isinstance(d, dict)
-        )
-        for r in rows
-        if isinstance(r.get("diagnostics"), list)
-    )
+    has_c2090 = False
+    for r in rows:
+        diags = r.get("diagnostics")
+        if not isinstance(diags, list):
+            continue
+        if any(isinstance(d, dict) and d.get("codigo") == "C2090" for d in diags):
+            has_c2090 = True
+            break
     if has_c2090:
         steps.append(
             "# Erro C2090 = include Protheus faltando. Setup completo em "
@@ -356,7 +374,7 @@ def _build_next_steps(rows: list[dict[str, object]], mode: str) -> list[str]:
     return steps
 
 
-def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) -> CompileResult:
+def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) -> CompileResult:  # noqa: PLR0912, PLR0915 -- orquestrador end-to-end (resolve files, monta ini, dispara advpls, parseia output); split em fases viraria boilerplate sem ganho de clareza
     resolved = resolve_files(request.files, request.changed_since, root)
     files = resolved.valid_files
     mode = pick_mode(request.mode, runtime_cfg)
@@ -366,8 +384,7 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
     if mode == "cli":
         if runtime_cfg is None:
             print(
-                "ERROR: runtime.toml required for cli mode. "
-                "Run: plugadvpl compile --init-config",
+                "ERROR: runtime.toml required for cli mode. Run: plugadvpl compile --init-config",
                 file=sys.stderr,
             )
             return _build_setup_error_result(files, mode, exit_code=2)
@@ -378,7 +395,7 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
                 f"TDS-LS envia user/password sem TLS sobre TCP. Recomendado:\n"
                 f"  ssh -L {runtime_cfg.appserver.port}:localhost:{runtime_cfg.appserver.port} "
                 f"user@{runtime_cfg.appserver.host} -N\n"
-                f"  # depois altere host = \"127.0.0.1\" em runtime.toml\n"
+                f'  # depois altere host = "127.0.0.1" em runtime.toml\n'
                 f"(suprima com --no-security-warning)",
                 file=sys.stderr,
             )
@@ -402,7 +419,7 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         # dedicado (limpo no finally) pra isolar do CWD do processo.
         tempdir = Path(tempfile.mkdtemp(prefix="plugadvpl-appre-"))
         if os.name == "posix":
-            os.chmod(tempdir, 0o700)
+            tempdir.chmod(0o700)
         args = _build_appre_args(binary, includes, files, tempdir)
 
     start = time.monotonic()
@@ -448,7 +465,10 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
     normalized_returncode = _normalize_exit_code(proc.returncode)
 
     matched, unmatched = parse_diagnostics(
-        stdout=stdout, stderr=stderr, mode=mode, requested_files=files,
+        stdout=stdout,
+        stderr=stderr,
+        mode=mode,
+        requested_files=files,
     )
 
     # group diagnostics by file (requested only — defensivos vão pra __unmatched__)
@@ -479,15 +499,17 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         # Sem essa segunda condição, advpls que crasha sem produzir output marcaria ok=true.
         has_structured = counts["error"] > 0 or counts["warning"] > 0 or counts["info"] > 0
         ok_flag = counts["error"] == 0 and (normalized_returncode == 0 or has_structured)
-        rows.append({
-            "arquivo": fpath,
-            "ok": ok_flag,
-            "mode": mode,
-            "duration_ms": duration_ms,
-            "exit_code": normalized_returncode,
-            "counts": counts,
-            "diagnostics": [d.to_dict() for d in diags],
-        })
+        rows.append(
+            {
+                "arquivo": fpath,
+                "ok": ok_flag,
+                "mode": mode,
+                "duration_ms": duration_ms,
+                "exit_code": normalized_returncode,
+                "counts": counts,
+                "diagnostics": [d.to_dict() for d in diags],
+            }
+        )
 
     # Bucket __unmatched__: unmatched do parser + defensivos do agrupamento
     all_unmatched = defensive_unmatched + list(unmatched)
@@ -498,15 +520,17 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
             "info": sum(1 for d in all_unmatched if d.severidade == "info"),
             "unknown": sum(1 for d in all_unmatched if d.severidade == "unknown"),
         }
-        rows.append({
-            "arquivo": "__unmatched__",
-            "ok": False,
-            "mode": mode,
-            "duration_ms": duration_ms,
-            "exit_code": normalized_returncode,
-            "counts": unmatched_counts,
-            "diagnostics": [d.to_dict() for d in all_unmatched],
-        })
+        rows.append(
+            {
+                "arquivo": "__unmatched__",
+                "ok": False,
+                "mode": mode,
+                "duration_ms": duration_ms,
+                "exit_code": normalized_returncode,
+                "counts": unmatched_counts,
+                "diagnostics": [d.to_dict() for d in all_unmatched],
+            }
+        )
 
     total_errors = 0
     total_warnings = 0
@@ -515,9 +539,7 @@ def run(request: CompileRequest, runtime_cfg: RuntimeConfig | None, root: Path) 
         if isinstance(counts_obj, dict):
             total_errors += int(counts_obj.get("error", 0) or 0)
             total_warnings += int(counts_obj.get("warning", 0) or 0)
-    failed_requested = sum(
-        1 for r in rows if r["arquivo"] in files_set and not r["ok"]
-    )
+    failed_requested = sum(1 for r in rows if r["arquivo"] in files_set and not r["ok"])
     # Exit do plugin: 1 se há error parseado OU subprocess falhou sem produzir
     # diagnostic (caso comum: advpls crash, includes faltando que travam pré).
     has_any_failure = total_errors > 0 or failed_requested > 0

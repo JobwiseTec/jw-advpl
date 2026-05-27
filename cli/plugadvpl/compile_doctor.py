@@ -10,6 +10,7 @@ Princípios:
 - ``next_actions`` é lista ordenada por dependência: cada ação tem ``action``,
   ``question`` e ``candidates`` (quando aplicável).
 """
+
 from __future__ import annotations
 
 import os
@@ -17,8 +18,16 @@ import shutil
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from plugadvpl.runtime_config import RuntimeConfig
+from plugadvpl.compile_installer import installed_binary_path
+from plugadvpl.compile_servers import list_servers, tds_vscode_servers_path
+
+if TYPE_CHECKING:
+    from plugadvpl.runtime_config import RuntimeConfig
+
+# Heuristica de encoding: primeiro byte non-ASCII; usado pra estimar cp1252 vs utf-8
+_ASCII_HIGH_BIT = 0x80
 
 # Paths comuns onde advpls.exe pode estar (Windows).
 _ADVPLS_WIN_CANDIDATES: list[str] = [
@@ -109,7 +118,6 @@ def _detect_advpls() -> Path | None:
         return Path(env_path)
 
     # 2. Pasta interna do plugadvpl (instalação gerenciada)
-    from plugadvpl.compile_installer import installed_binary_path
     internal = installed_binary_path()
     if internal.is_file():
         return internal
@@ -137,7 +145,15 @@ def _detect_advpls() -> Path | None:
         if not ext_dir.is_dir():
             continue
         for entry in ext_dir.glob("totvs.tds-vscode-*"):
-            cand = entry / "node_modules" / "@totvs" / "tds-ls" / "bin" / os_subdir / f"advpls{ext_suffix}"
+            cand = (
+                entry
+                / "node_modules"
+                / "@totvs"
+                / "tds-ls"
+                / "bin"
+                / os_subdir
+                / f"advpls{ext_suffix}"
+            )
             if cand.is_file():
                 return cand
 
@@ -165,7 +181,7 @@ def _tcp_ping(host: str, port: int, timeout: float = 1.0) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return False
 
 
@@ -187,7 +203,7 @@ def _count_prw_cp1252(root: Path, sample_limit: int = 20) -> tuple[int, int]:
             except OSError:
                 continue
             # Heuristica simples: bytes 0x80-0xFF presentes mas nao decoda como utf-8 strict
-            if any(b >= 0x80 for b in head):
+            if any(b >= _ASCII_HIGH_BIT for b in head):
                 try:
                     head.decode("utf-8")
                 except UnicodeDecodeError:
@@ -197,7 +213,7 @@ def _count_prw_cp1252(root: Path, sample_limit: int = 20) -> tuple[int, int]:
     return total, cp1252_count
 
 
-def run_doctor(
+def run_doctor(  # noqa: PLR0912, PLR0915 -- orquestrador de checks heterogeneos (advpls binary, includes, runtime.toml, env vars, AppServer); split em sub-doctors viraria boilerplate sem ganho de clareza
     root: Path, runtime_cfg: RuntimeConfig | None
 ) -> DoctorResult:
     """Diagnostica setup do compile. Função pura (lê fs + TCP ping)."""
@@ -210,45 +226,53 @@ def run_doctor(
     binary: Path | None = None
     if runtime_cfg is not None:
         binary = runtime_cfg.tds_ls.binary
-        checks.append(Check(
-            name="advpls_binary",
-            ok=binary.is_file(),
-            detail=f"runtime.toml [tds_ls].binary = {binary}",
-        ))
+        checks.append(
+            Check(
+                name="advpls_binary",
+                ok=binary.is_file(),
+                detail=f"runtime.toml [tds_ls].binary = {binary}",
+            )
+        )
     else:
         binary = _detect_advpls()
         if binary:
-            checks.append(Check(
-                name="advpls_binary",
-                ok=True,
-                detail=f"auto-detected: {binary}",
-                hint="Sete PLUGADVPL_ADVPLS_BINARY ou [tds_ls].binary no runtime.toml pra fixar.",
-            ))
+            checks.append(
+                Check(
+                    name="advpls_binary",
+                    ok=True,
+                    detail=f"auto-detected: {binary}",
+                    hint="Sete PLUGADVPL_ADVPLS_BINARY ou [tds_ls].binary no runtime.toml pra fixar.",
+                )
+            )
         else:
-            checks.append(Check(
-                name="advpls_binary",
-                ok=False,
-                detail="advpls não encontrado em PATH, env var, ou locais comuns",
-                hint="Baixe extensão tds-vscode do Marketplace (ver docs/setup-compile.md §Binário advpls).",
-            ))
+            checks.append(
+                Check(
+                    name="advpls_binary",
+                    ok=False,
+                    detail="advpls não encontrado em PATH, env var, ou locais comuns",
+                    hint="Baixe extensão tds-vscode do Marketplace (ver docs/setup-compile.md §Binário advpls).",
+                )
+            )
             appre_ok = False
             cli_ok = False
-            next_actions.append(NextAction(
-                action="set_advpls_binary",
-                question=(
-                    "PRECISO: binário advpls (compilador oficial TOTVS, ~38MB).\n"
-                    "  RECOMENDADO: rode `plugadvpl compile --install-advpls` — modo\n"
-                    "  interativo que pergunta se você quer:\n"
-                    "    (a) Copiar de um path local (se já tem advpls instalado)\n"
-                    "    (b) Baixar do Marketplace VSCode público (~118MB, sem precisar VSCode)\n"
-                    "  O comando explica tudo + pede confirmação antes de qualquer ação.\n"
-                    "  Após instalar, advpls fica em ~/.plugadvpl/advpls/bin/<os>/ e o\n"
-                    "  --doctor detecta automaticamente nas próximas chamadas.\n"
-                    "  Alternativa manual: setar PLUGADVPL_ADVPLS_BINARY=<path>\n"
-                    "  Mais info: docs/compile-checklist.md §1"
-                ),
-                candidates=[],
-            ))
+            next_actions.append(
+                NextAction(
+                    action="set_advpls_binary",
+                    question=(
+                        "PRECISO: binário advpls (compilador oficial TOTVS, ~38MB).\n"
+                        "  RECOMENDADO: rode `plugadvpl compile --install-advpls` — modo\n"
+                        "  interativo que pergunta se você quer:\n"
+                        "    (a) Copiar de um path local (se já tem advpls instalado)\n"
+                        "    (b) Baixar do Marketplace VSCode público (~118MB, sem precisar VSCode)\n"
+                        "  O comando explica tudo + pede confirmação antes de qualquer ação.\n"
+                        "  Após instalar, advpls fica em ~/.plugadvpl/advpls/bin/<os>/ e o\n"
+                        "  --doctor detecta automaticamente nas próximas chamadas.\n"
+                        "  Alternativa manual: setar PLUGADVPL_ADVPLS_BINARY=<path>\n"
+                        "  Mais info: docs/compile-checklist.md §1"
+                    ),
+                    candidates=[],
+                )
+            )
 
     # --- 2. Includes Protheus ---
     configured_includes: list[Path] = []
@@ -260,178 +284,205 @@ def run_doctor(
     )
 
     if has_includes_configured:
-        checks.append(Check(
-            name="includes_protheus",
-            ok=True,
-            detail=f"configurado em runtime.toml: {configured_includes[0]}",
-        ))
+        checks.append(
+            Check(
+                name="includes_protheus",
+                ok=True,
+                detail=f"configurado em runtime.toml: {configured_includes[0]}",
+            )
+        )
     else:
         detected = _detect_includes()
         if detected:
-            checks.append(Check(
-                name="includes_protheus",
-                ok=False,
-                detail=f"não configurado, mas detectei {len(detected)} pasta(s) candidata(s)",
-                hint=f"Use --includes <pasta> ou configure [compile].includes no runtime.toml.",
-            ))
-            next_actions.append(NextAction(
-                action="set_includes",
-                question=(
-                    f"PRECISO: pasta com includes Protheus (PRTOPDEF.CH, protheus.ch, ~1100 .ch).\n"
-                    f"  Detectei {len(detected)} pasta(s) candidata(s) — confirme qual usar OU informe outra:\n"
-                    "  Mais info: docs/compile-checklist.md §2"
-                ),
-                candidates=[str(p) for p in detected],
-            ))
+            checks.append(
+                Check(
+                    name="includes_protheus",
+                    ok=False,
+                    detail=f"não configurado, mas detectei {len(detected)} pasta(s) candidata(s)",
+                    hint="Use --includes <pasta> ou configure [compile].includes no runtime.toml.",
+                )
+            )
+            next_actions.append(
+                NextAction(
+                    action="set_includes",
+                    question=(
+                        f"PRECISO: pasta com includes Protheus (PRTOPDEF.CH, protheus.ch, ~1100 .ch).\n"
+                        f"  Detectei {len(detected)} pasta(s) candidata(s) — confirme qual usar OU informe outra:\n"
+                        "  Mais info: docs/compile-checklist.md §2"
+                    ),
+                    candidates=[str(p) for p in detected],
+                )
+            )
         else:
-            checks.append(Check(
-                name="includes_protheus",
-                ok=False,
-                detail="nenhuma pasta de includes Protheus detectada",
-                hint=(
-                    "Includes não vêm com tds-vscode — precisam vir de instalação Protheus. "
-                    "Ver docs/compile-checklist.md §2."
-                ),
-            ))
-            next_actions.append(NextAction(
-                action="set_includes",
-                question=(
-                    "PRECISO: pasta com includes Protheus (contém PRTOPDEF.CH, protheus.ch + ~1100 .ch).\n"
-                    "  Tipicamente em <protheus-root>/Include/ — vem com instalação do AppServer.\n"
-                    "  Sem AppServer/SDK local? Use --mode cli (compila no AppServer remoto, que já tem).\n"
-                    "  Mais info: docs/compile-checklist.md §2"
-                ),
-                candidates=[],
-            ))
+            checks.append(
+                Check(
+                    name="includes_protheus",
+                    ok=False,
+                    detail="nenhuma pasta de includes Protheus detectada",
+                    hint=(
+                        "Includes não vêm com tds-vscode — precisam vir de instalação Protheus. "
+                        "Ver docs/compile-checklist.md §2."
+                    ),
+                )
+            )
+            next_actions.append(
+                NextAction(
+                    action="set_includes",
+                    question=(
+                        "PRECISO: pasta com includes Protheus (contém PRTOPDEF.CH, protheus.ch + ~1100 .ch).\n"
+                        "  Tipicamente em <protheus-root>/Include/ — vem com instalação do AppServer.\n"
+                        "  Sem AppServer/SDK local? Use --mode cli (compila no AppServer remoto, que já tem).\n"
+                        "  Mais info: docs/compile-checklist.md §2"
+                    ),
+                    candidates=[],
+                )
+            )
         appre_ok = False  # appre sem includes geralmente falha
 
     # --- 3. runtime.toml (necessário pra cli) ---
     runtime_toml_path = root / ".plugadvpl" / "runtime.toml"
     if runtime_cfg is not None:
-        checks.append(Check(
-            name="runtime_toml",
-            ok=True,
-            detail=f"carregado de {runtime_cfg.source_path}",
-        ))
+        checks.append(
+            Check(
+                name="runtime_toml",
+                ok=True,
+                detail=f"carregado de {runtime_cfg.source_path}",
+            )
+        )
     else:
-        checks.append(Check(
-            name="runtime_toml",
-            ok=False,
-            detail=f"{runtime_toml_path} não existe (modo cli requer)",
-            hint="Rode `plugadvpl compile --init-config` para gerar template.",
-        ))
+        checks.append(
+            Check(
+                name="runtime_toml",
+                ok=False,
+                detail=f"{runtime_toml_path} não existe (modo cli requer)",
+                hint="Rode `plugadvpl compile --init-config` para gerar template.",
+            )
+        )
         cli_ok = False
         # Verifica se há servers cadastrados globalmente — se sim, sugere --use-server
-        from plugadvpl.compile_servers import list_servers, tds_vscode_servers_path
         cadastrados = list_servers()
         if cadastrados:
-            next_actions.append(NextAction(
-                action="use_server",
-                question=(
-                    f"OPCAO RAPIDA: voce ja tem {len(cadastrados)} server(s) cadastrado(s)!\n"
-                    "  Em vez de criar runtime.toml, compile direto com:\n"
-                    f"    plugadvpl compile --use-server <nome> --mode cli <fonte>\n"
-                    "  Liste com: plugadvpl compile --list-servers"
-                ),
-                candidates=[s.name for s in cadastrados],
-            ))
+            next_actions.append(
+                NextAction(
+                    action="use_server",
+                    question=(
+                        f"OPCAO RAPIDA: voce ja tem {len(cadastrados)} server(s) cadastrado(s)!\n"
+                        "  Em vez de criar runtime.toml, compile direto com:\n"
+                        f"    plugadvpl compile --use-server <nome> --mode cli <fonte>\n"
+                        "  Liste com: plugadvpl compile --list-servers"
+                    ),
+                    candidates=[s.name for s in cadastrados],
+                )
+            )
         elif tds_vscode_servers_path().is_file():
-            next_actions.append(NextAction(
-                action="import_tds_servers",
+            next_actions.append(
+                NextAction(
+                    action="import_tds_servers",
+                    question=(
+                        "OPCAO RAPIDA: detectei TDS-VSCode servers.json — posso importar.\n"
+                        "  Rode: plugadvpl compile --import-tds-servers\n"
+                        "  Depois: plugadvpl compile --use-server <nome> --mode cli <fonte>"
+                    ),
+                    candidates=[],
+                )
+            )
+        next_actions.append(
+            NextAction(
+                action="create_runtime_toml",
                 question=(
-                    "OPCAO RAPIDA: detectei TDS-VSCode servers.json — posso importar.\n"
-                    "  Rode: plugadvpl compile --import-tds-servers\n"
-                    "  Depois: plugadvpl compile --use-server <nome> --mode cli <fonte>"
+                    f"OUTRO CAMINHO: arquivo runtime.toml em {runtime_toml_path}.\n"
+                    "  Rode: plugadvpl compile --init-config\n"
+                    "  Depois edite o TOML preenchendo 5 dados:\n"
+                    "    1. [tds_ls].binary    — path do advpls\n"
+                    "    2. [appserver].host/port/build/environment — info do AppServer\n"
+                    "    3. [auth].user_env/password_env — NOMES das env vars (não valores!)\n"
+                    "    4. [compile].includes — lista de pastas .ch\n"
+                    "  Como descobrir cada dado: docs/compile-checklist.md §3-§5\n"
+                    "  ALTERNATIVA: cadastre o server uma vez via 'plugadvpl compile --add-server'\n"
+                    "  e use --use-server <nome> em qualquer projeto sem criar runtime.toml."
                 ),
                 candidates=[],
-            ))
-        next_actions.append(NextAction(
-            action="create_runtime_toml",
-            question=(
-                f"OUTRO CAMINHO: arquivo runtime.toml em {runtime_toml_path}.\n"
-                "  Rode: plugadvpl compile --init-config\n"
-                "  Depois edite o TOML preenchendo 5 dados:\n"
-                "    1. [tds_ls].binary    — path do advpls\n"
-                "    2. [appserver].host/port/build/environment — info do AppServer\n"
-                "    3. [auth].user_env/password_env — NOMES das env vars (não valores!)\n"
-                "    4. [compile].includes — lista de pastas .ch\n"
-                "  Como descobrir cada dado: docs/compile-checklist.md §3-§5\n"
-                "  ALTERNATIVA: cadastre o server uma vez via 'plugadvpl compile --add-server'\n"
-                "  e use --use-server <nome> em qualquer projeto sem criar runtime.toml."
-            ),
-            candidates=[],
-        ))
+            )
+        )
 
     # --- 4. env vars (cli) ---
     if runtime_cfg is not None:
         for var_attr in ("user_env", "password_env"):
             var_name = getattr(runtime_cfg.auth, var_attr)
             is_set = bool(os.environ.get(var_name))
-            checks.append(Check(
-                name=f"env_var_{var_attr}",
-                ok=is_set,
-                detail=f"${var_name} {'OK' if is_set else 'NÃO setada'}",
-                hint=(
-                    f"export {var_name}=<valor> (NUNCA commitar)"
-                    if not is_set else ""
-                ),
-            ))
+            checks.append(
+                Check(
+                    name=f"env_var_{var_attr}",
+                    ok=is_set,
+                    detail=f"${var_name} {'OK' if is_set else 'NÃO setada'}",
+                    hint=(f"export {var_name}=<valor> (NUNCA commitar)" if not is_set else ""),
+                )
+            )
             if not is_set:
                 cli_ok = False
-                next_actions.append(NextAction(
-                    action="set_env_var",
-                    question=(
-                        f"Setar variável de ambiente ${var_name}. "
-                        f"{'Senha (secret — não logarei)' if 'password' in var_attr else 'Usuário Protheus'}."
-                    ),
-                    var_name=var_name,
-                    secret=("password" in var_attr),
-                ))
+                next_actions.append(
+                    NextAction(
+                        action="set_env_var",
+                        question=(
+                            f"Setar variável de ambiente ${var_name}. "
+                            f"{'Senha (secret — não logarei)' if 'password' in var_attr else 'Usuário Protheus'}."
+                        ),
+                        var_name=var_name,
+                        secret=("password" in var_attr),
+                    )
+                )
 
     # --- 5. AppServer reachable (cli) ---
     if runtime_cfg is not None:
         reachable = runtime_cfg.appserver_reachable  # já checado no load
-        checks.append(Check(
-            name="appserver_reachable",
-            ok=reachable,
-            detail=(
-                f"{runtime_cfg.appserver.host}:{runtime_cfg.appserver.port} "
-                f"{'responde' if reachable else 'NÃO responde'}"
-            ),
-            hint=(
-                "Inicie AppServer ou suba SSH tunnel (`ssh -L 1234:localhost:1234 user@host -N`)."
-                if not reachable else ""
-            ),
-        ))
+        checks.append(
+            Check(
+                name="appserver_reachable",
+                ok=reachable,
+                detail=(
+                    f"{runtime_cfg.appserver.host}:{runtime_cfg.appserver.port} "
+                    f"{'responde' if reachable else 'NÃO responde'}"
+                ),
+                hint=(
+                    "Inicie AppServer ou suba SSH tunnel (`ssh -L 1234:localhost:1234 user@host -N`)."
+                    if not reachable
+                    else ""
+                ),
+            )
+        )
         if not reachable:
             cli_ok = False
-            next_actions.append(NextAction(
-                action="start_appserver",
-                question=(
-                    f"AppServer em {runtime_cfg.appserver.host}:{runtime_cfg.appserver.port} "
-                    "não responde. Iniciar localmente OU subir SSH tunnel pra remoto. "
-                    "Sem isso, --mode cli não funciona (use --mode appre por enquanto)."
-                ),
-                candidates=[],
-            ))
+            next_actions.append(
+                NextAction(
+                    action="start_appserver",
+                    question=(
+                        f"AppServer em {runtime_cfg.appserver.host}:{runtime_cfg.appserver.port} "
+                        "não responde. Iniciar localmente OU subir SSH tunnel pra remoto. "
+                        "Sem isso, --mode cli não funciona (use --mode appre por enquanto)."
+                    ),
+                    candidates=[],
+                )
+            )
 
     # --- 6. Edit safety: avisa se houver .prw cp1252 no root (info-only) ---
     total_prw, cp1252_count = _count_prw_cp1252(root)
     if cp1252_count > 0:
-        checks.append(Check(
-            name="edit_prw_safety",
-            ok=True,  # informativo — não bloqueia compile
-            detail=(
-                f"detectei {cp1252_count}/{total_prw} .prw em cp1252 no root "
-                f"(sample). Antes de Edit/Write nesses, use `plugadvpl edit-prw "
-                f"stage <arq>` e depois `commit`."
-            ),
-            hint=(
-                "Read/Edit do Claude são UTF-8 only → bytes acentuados viram "
-                "'?' → Edit corrompe acentos não-editados. "
-                "Ver skill /plugadvpl:edit-prw."
-            ),
-        ))
+        checks.append(
+            Check(
+                name="edit_prw_safety",
+                ok=True,  # informativo — não bloqueia compile
+                detail=(
+                    f"detectei {cp1252_count}/{total_prw} .prw em cp1252 no root "
+                    f"(sample). Antes de Edit/Write nesses, use `plugadvpl edit-prw "
+                    f"stage <arq>` e depois `commit`."
+                ),
+                hint=(
+                    "Read/Edit do Claude são UTF-8 only → bytes acentuados viram "
+                    "'?' → Edit corrompe acentos não-editados. "
+                    "Ver skill /plugadvpl:edit-prw."
+                ),
+            )
+        )
 
     # --- Status global ---
     modes: list[str] = []

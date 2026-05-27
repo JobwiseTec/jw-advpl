@@ -24,8 +24,11 @@ jobs:
     env:
       LINT_FILES: >-
         plugadvpl/__main__.py
+        plugadvpl/compile.py
+        plugadvpl/compile_doctor.py
         plugadvpl/compile_installer.py
         plugadvpl/compile_parser.py
+        plugadvpl/compile_probe.py
         plugadvpl/compile_servers.py
         plugadvpl/db.py
         plugadvpl/edit_prw.py
