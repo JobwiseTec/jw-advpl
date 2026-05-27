@@ -46,10 +46,17 @@ class CredentialResolution:
         return bool(self.user) and bool(self.password)
 
     def to_safe_dict(self) -> dict[str, object]:
-        """Dump seguro pra log/--explain-config: SEM senha, só fonte."""
+        """Dump seguro pra log/--explain-config: SEM senha, só fonte.
+
+        Importante: extrai ``bool(self.password)`` numa variável intermediária
+        antes de montar o dict pra deixar a sanitização explícita pra ferramentas
+        de análise de fluxo (CodeQL). Sem o intermediário, o data-flow tracker
+        marca o dict como tainted mesmo com o ternário substituindo o valor.
+        """
+        has_password = bool(self.password)
         return {
             "user": self.user if self.user else "",
-            "password": "<set>" if self.password else "<unset>",
+            "password": "<set>" if has_password else "<unset>",
             "user_source": self.user_source,
             "password_source": self.password_source,
             "keyring_available": self.keyring_available,

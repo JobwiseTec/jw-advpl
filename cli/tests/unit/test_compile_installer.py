@@ -53,9 +53,12 @@ class TestPlanCopy:
 
 class TestPlanDownload:
     def test_plan_has_marketplace_url(self) -> None:
+        from urllib.parse import urlparse
         plan = plan_download()
         assert plan.action == "download"
-        assert "marketplace.visualstudio.com" in plan.source
+        # Valida via netloc, não substring — substring pode passar com
+        # URL camuflada tipo https://attacker.com/?ref=marketplace.visualstudio.com
+        assert urlparse(plan.source).netloc == "marketplace.visualstudio.com"
         assert plan.estimated_size_mb == 118
         assert plan.needs_network is True
 
