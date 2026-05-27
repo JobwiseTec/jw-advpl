@@ -682,7 +682,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 ### Próximas entregas
 
-- **`apply-patch`** (planejado) — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). Sub-plugin `plugadvpl-ops` foi descartado: fica no core junto com `tq`
+- **`apply-patch`** — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4)
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
 ---
@@ -691,26 +691,25 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
-### v0.15.0 — `tq --confirm-prod` + `is_prod` no Server
+### v0.15.0 — Guarda contra restart acidental em PROD
 
-- **Guarda contra restart acidental em PROD** — server marcado via `plugadvpl compile --mark-prod <nome>` exige `--confirm-prod` no `tq`. `--no-prod` desfaz. `--list-servers` mostra marcador `PROD` ao lado do nome
-- **Campo `is_prod`** no `Server` dataclass (default `False`, backwards-compat com registry existente)
-- 7 testes integration novos (`TestTqConfirmProd` + `TestMarkProd`). Suite full: 1051 passed
-- **Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) fechada** — escopo MVP local entregue em v0.14.0–v0.15.0; itens PROD-grade restantes (`.ini` editing, RPO versionado, rollback automático, sub-plugin `plugadvpl-ops`) descartados conscientemente
+- **`plugadvpl tq --confirm-prod`** — server marcado como produção (via `plugadvpl compile --mark-prod <nome>`) exige a flag explícita; `--no-prod` desfaz. `--dry-run` continua dispensando a guarda (preview não causa side-effect)
+- **Campo `is_prod`** no `Server` dataclass — default `False`, backwards-compat com registry existente. `compile --list-servers` mostra marcador `PROD` ao lado do nome
+- 7 testes integration novos
+- Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) fechada — escopo MVP local entregue; itens PROD-grade restantes (`.ini` editing, RPO versionado, rollback automático, sub-plugin `plugadvpl-ops`) descartados ([análise](https://github.com/JoniPraia/plugadvpl/issues/5#issuecomment-4553802738))
 
 ### v0.14.1 — Hints acionáveis no `tq` + skill `/plugadvpl:deploy`
 
 - **Hints estruturados quando `tq` falha** — antes só mostrava `healthcheck timeout após N tentativas`; agora lista `console.log` do AppServer, valida `--port` vs porta REST configurada, sugere bump de `--timeout`. Mesmo padrão pra `restart_cmd` exit non-zero
 - **Skill `/plugadvpl:deploy`** — orquestrador `compile → tq → smoke` num passo só. Pre-flight, encadeamento `&&` (compile com erro aborta antes do restart), tabela de troubleshoot pós-deploy
-- Bump `uvx plugadvpl@0.13.x` → `@0.14.1` em todas as 26 skills + `plugin.json` + `marketplace.json`
 
 ### v0.14.0 — Troca Quente MVP local + compile multi-env
 
-- **`plugadvpl tq`** — Troca Quente MVP local: restart do AppServer (via `restart_cmd` configurado no server) + healthcheck HTTP esperando 200/401/404 (5xx não conta como up). Flags `--use-server`, `--port` (override só pro healthcheck quando REST roda em porta diferente do TCP), `--timeout` (default 60s), `--no-healthcheck`, `--dry-run`. Resolve o passo manual que ainda existia depois do `compile --all-envs` (rodar `restart-totvs.bat` + curl loop). Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) — escopo cortado pra MVP local; `.ini` editing, RPO versionado e rollback automático foram descartados em favor de `restart_cmd` arbitrário (ver [comment de fechamento](https://github.com/JoniPraia/plugadvpl/issues/5#issuecomment-4553802738))
-- **`plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"`** — flag nova no compile pra configurar o `restart_cmd` no registry global (consumido pelo `plugadvpl tq`). Valida que `--cmd` veio junto, erra com hint pra `--list-servers` se o server não existe
+- **`plugadvpl tq`** — restart do AppServer (via `restart_cmd` configurado no server) + healthcheck HTTP esperando 200/401/404 (5xx não conta como up). Flags `--use-server`, `--port` (override só pro healthcheck quando REST roda em porta diferente do TCP), `--timeout` (default 60s), `--no-healthcheck`, `--dry-run`. Resolve o passo manual de `restart-totvs.bat` + curl loop pós-`compile`
+- **`plugadvpl compile --set-restart-cmd <server> --cmd "<cmd>"`** — configura o `restart_cmd` no registry global. Valida que `--cmd` veio junto, erra com hint pra `--list-servers` se o server não existe
 - **`plugadvpl compile --all-envs`** — compila pra todos os environments do `--use-server` em sequência, anota linha com coluna `env`, exit code é o pior dos envs. Caso de uso: server com `protheus` + `protheus_rest` precisa de RPO sync entre os 2; antes era cópia manual `apo/custom.rpo` → `apo_rest/custom.rpo`
 - **Skill `/plugadvpl:tq`** — wrapper slash command pro subcomando
-- 16 testes novos (8 unit em `tq.py` + 5 integration do subcomando + 3 do `--set-restart-cmd`). Suite full: 1043 passed
+- 16 testes novos (8 unit em `tq.py` + 5 integration do subcomando + 3 do `--set-restart-cmd`). Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) — escopo cortado pra MVP local
 
 ### v0.13.1 — Hash dinâmico no cliente REST + docs sync
 
