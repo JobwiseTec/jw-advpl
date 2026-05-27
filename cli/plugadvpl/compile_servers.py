@@ -125,7 +125,7 @@ def add_server(server: Server, make_default: bool = False) -> ServersRegistry:
     """
     registry = load_registry()
     others = [s for s in registry.servers if s.name != server.name]
-    new_servers = others + [server]
+    new_servers = [*others, server]
     new_default = registry.default
     if make_default or not new_default:
         new_default = server.name

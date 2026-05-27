@@ -6,14 +6,13 @@ Spec: docs/superpowers/specs/2026-05-25-plugadvpl-tq-mvp-design.md
 from __future__ import annotations
 
 import http.client
-import socket
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from plugadvpl.compile_servers import Server
-
+if TYPE_CHECKING:
+    from plugadvpl.compile_servers import Server
 
 HealthcheckStatus = Literal["up", "timeout", "skipped", "not_run"]
 
@@ -56,7 +55,7 @@ def _http_probe(host: str, port: int, timeout: float = 2.0) -> tuple[bool, int]:
             return (True, resp.status)
         finally:
             conn.close()
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return (False, 0)
 
 
@@ -95,6 +94,7 @@ def run_tq(
             capture_output=True,
             text=True,
             timeout=timeout_s + 10,
+            check=False,
         )
         restart_exit = proc.returncode
         restart_stderr = (proc.stderr or "").strip()

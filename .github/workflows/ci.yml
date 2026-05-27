@@ -17,6 +17,24 @@ jobs:
         working-directory: cli
         run: uv sync && uv run python ../scripts/validate_plugin.py
 
+  lint-code:
+    # Escopo incremental: roda em arquivos limpos. Conforme legado for sendo
+    # corrigido, adicionar arquivos aqui. Lista canonica:
+    # https://github.com/JoniPraia/plugadvpl/issues/X (todo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: ruff check
+        working-directory: cli
+        run: uv sync && uv run ruff check plugadvpl/tq.py plugadvpl/compile_servers.py
+      - name: ruff format --check
+        working-directory: cli
+        run: uv run ruff format --check plugadvpl/tq.py plugadvpl/compile_servers.py
+      - name: mypy
+        working-directory: cli
+        run: uv run mypy plugadvpl/tq.py plugadvpl/compile_servers.py
+
   test-cli:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -75,3 +93,13 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uvx --from ./cli plugadvpl version
       - run: uvx --from ./cli plugadvpl --help
+      # Cobre runtime real: doctor descobre estado do ambiente e cli wiring,
+      # falha cedo se algum import quebra ou config tem regressao. Sai 0 mesmo
+      # com needs_setup (nao tem advpls/runtime no runner).
+      - run: uvx --from ./cli plugadvpl --format json compile --doctor
+      # Indexa um fonte ADVPL real do proprio repo (coletadb.tlpp) + roda arch
+      # contra o que foi indexado. Cobre o caminho init -> ingest -> query
+      # completo num ambiente novo. Usa --root direto na pasta dos fontes.
+      - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl init
+      - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl ingest
+      - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl --format json arch coletadb.tlpp
