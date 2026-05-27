@@ -93,13 +93,11 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uvx --from ./cli plugadvpl version
       - run: uvx --from ./cli plugadvpl --help
-      # Cobre runtime real: doctor descobre estado do ambiente e cli wiring,
-      # falha cedo se algum import quebra ou config tem regressao. Sai 0 mesmo
-      # com needs_setup (nao tem advpls/runtime no runner).
-      - run: uvx --from ./cli plugadvpl --format json compile --doctor
       # Indexa um fonte ADVPL real do proprio repo (coletadb.tlpp) + roda arch
       # contra o que foi indexado. Cobre o caminho init -> ingest -> query
       # completo num ambiente novo. Usa --root direto na pasta dos fontes.
+      # (compile --doctor sai 1 com needs_setup no runner sem advpls/protheus,
+      # nao serve pra smoke aqui.)
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl init
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl ingest
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl --format json arch coletadb.tlpp

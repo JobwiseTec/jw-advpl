@@ -12,6 +12,7 @@ Convenções de segurança:
   ser sensível em ambientes corporativos).
 - ``~/.plugadvpl/`` é per-user, fora de qualquer projeto/repo.
 """
+
 from __future__ import annotations
 
 import json
@@ -140,8 +141,8 @@ def remove_server(name: str) -> bool:
     others = [s for s in registry.servers if s.name != name]
     if len(others) == len(registry.servers):
         return False
-    new_default = registry.default if registry.default != name else (
-        others[0].name if others else ""
+    new_default = (
+        registry.default if registry.default != name else (others[0].name if others else "")
     )
     save_registry(ServersRegistry(default=new_default, servers=others))
     return True
@@ -208,23 +209,23 @@ def import_from_tds_vscode() -> list[Server]:
         secure = bool(secure_raw) if isinstance(secure_raw, bool) else (secure_raw == 1)
         # v0.8.11 fix bug 1: TDS-VSCode usa "buildVersion" (não "build").
         # Aceita ambos pra compat com formatos antigos.
-        build_str = str(
-            cfg.get("buildVersion") or cfg.get("build") or ""
-        )
+        build_str = str(cfg.get("buildVersion") or cfg.get("build") or "")
         # v0.8.11: também importa includes do TDS — antes eram perdidos
         includes_raw = cfg.get("includes") or []
         includes_list: list[str] = []
         if isinstance(includes_raw, list):
             includes_list = [str(p) for p in includes_raw if p]
-        out.append(Server(
-            name=name,
-            host=str(cfg.get("address") or "127.0.0.1"),
-            port=port,
-            build=build_str,
-            environments=envs,
-            default_environment=default_env,
-            secure=secure,
-            notes="imported from TDS-VSCode",
-            includes=includes_list,
-        ))
+        out.append(
+            Server(
+                name=name,
+                host=str(cfg.get("address") or "127.0.0.1"),
+                port=port,
+                build=build_str,
+                environments=envs,
+                default_environment=default_env,
+                secure=secure,
+                notes="imported from TDS-VSCode",
+                includes=includes_list,
+            )
+        )
     return out
