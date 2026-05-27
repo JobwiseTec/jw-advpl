@@ -12,6 +12,7 @@ compile via ``credentials.py``). Sem bearer tokens.
 Stdlib only (``urllib.request``) — sem dep nova. Pattern espelha
 :mod:`plugadvpl.compile_installer`.
 """
+
 from __future__ import annotations
 
 import base64
@@ -19,12 +20,17 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from http import HTTPStatus
+from pathlib import Path
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-DEFAULT_TIMEOUT_RUN_S = 300.0      # /run pode demorar (gera CSV do dicionario)
-DEFAULT_TIMEOUT_FILE_S = 60.0      # /file le 4MB de disk
+# Limite superior exclusivo do range 5xx (server errors)
+_HTTP_5XX_UPPER = 600
+
+DEFAULT_TIMEOUT_RUN_S = 300.0  # /run pode demorar (gera CSV do dicionario)
+DEFAULT_TIMEOUT_FILE_S = 60.0  # /file le 4MB de disk
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_RETRY_BACKOFF_S = 2.0
 DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024  # 4MB, casa com CDB_API_CHUNK do servidor
@@ -34,14 +40,14 @@ DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024  # 4MB, casa com CDB_API_CHUNK do servidor
 class BundleFile:
     """Um arquivo do bundle gerado pelo /run."""
 
-    name: str          # "SX3.csv"
-    path: str          # full path NO SERVIDOR (usado em /file)
+    name: str  # "SX3.csv"
+    path: str  # full path NO SERVIDOR (usado em /file)
     size_bytes: int
     chunks: int
-    sha256: str        # legado v1.0.x — preenchido só quando hash_algo=sha256
+    sha256: str  # legado v1.0.x — preenchido só quando hash_algo=sha256
     # v1.0.3+ — hash com algoritmo dinâmico
-    hash: str = ""     # hex lower; vazio se nenhuma função existe na build
-    hash_algo: str = ""    # "sha256" | "sha1" | "md5" | ""
+    hash: str = ""  # hex lower; vazio se nenhuma função existe na build
+    hash_algo: str = ""  # "sha256" | "sha1" | "md5" | ""
     hash_partial: bool = False  # True quando arquivo > 64KB e build trunca MemoRead
 
 
@@ -172,7 +178,6 @@ class ColetaDBClient:
           - ``hash_partial=True`` -> hasheia so primeiros 65535 bytes (match
             do MemoRead truncado do server). Resto do arquivo nao e validado.
         """
-        from pathlib import Path
         dest = Path(dest_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         total_written = 0
@@ -186,7 +191,9 @@ class ColetaDBClient:
                     "limit": self._chunk_size,
                 }
                 chunk_bytes, headers = self._post_bytes(
-                    "/coletadb/file", payload, timeout=self._timeout_file_s,
+                    "/coletadb/file",
+                    payload,
+                    timeout=self._timeout_file_s,
                 )
                 if not chunk_bytes:
                     break
@@ -235,7 +242,6 @@ class ColetaDBClient:
             return
 
         hasher = hashlib.new(algo)
-        from pathlib import Path
         dest = Path(dest_path)
         # Se hash_partial, server so hasheou os primeiros 65535 bytes
         # (MemoRead truncado). Cliente faz o mesmo pra casar.
@@ -270,7 +276,7 @@ class ColetaDBClient:
     # ---------------------------------------------------------------------
 
     def _auth_header(self) -> dict[str, str]:
-        cred = f"{self._user}:{self._password}".encode("utf-8")
+        cred = f"{self._user}:{self._password}".encode()
         encoded = base64.b64encode(cred).decode("ascii")
         return {"Authorization": f"Basic {encoded}"}
 
@@ -323,36 +329,39 @@ class ColetaDBClient:
                 req = Request(url, data=body_bytes, headers=headers, method="POST")
                 with urlopen(req, timeout=timeout) as resp:
                     resp_body = resp.read()
-                    resp_headers = {k: v for k, v in resp.headers.items()}
+                    resp_headers = dict(resp.headers.items())
                     return resp_body, resp_headers
             except HTTPError as exc:
                 last_exc = exc
                 server_msg = self._extract_error_msg(exc)
-                if exc.code == 401:
+                if exc.code == HTTPStatus.UNAUTHORIZED:
                     raise ColetaDBError(
                         f"401 Unauthorized em {url} — user/senha invalidos"
                         + (f" (server: {server_msg})" if server_msg else ""),
-                        status=401, code="UNAUTHORIZED",
+                        status=HTTPStatus.UNAUTHORIZED,
+                        code="UNAUTHORIZED",
                         hint="Confira credenciais do Protheus (mesmas do compile)",
                     ) from exc
-                if exc.code == 403:
+                if exc.code == HTTPStatus.FORBIDDEN:
                     raise ColetaDBError(
                         f"403 Forbidden em {url} — sem permissao"
                         + (f" (server: {server_msg})" if server_msg else ""),
-                        status=403, code="FORBIDDEN",
+                        status=HTTPStatus.FORBIDDEN,
+                        code="FORBIDDEN",
                     ) from exc
-                if exc.code == 404:
+                if exc.code == HTTPStatus.NOT_FOUND:
                     raise ColetaDBError(
                         f"404 Not Found em {url} — endpoint nao encontrado"
                         + (f" (server: {server_msg})" if server_msg else ""),
-                        status=404, code="NOT_FOUND",
+                        status=HTTPStatus.NOT_FOUND,
+                        code="NOT_FOUND",
                         hint=(
                             "1) Confirme URL em [coletadb] do runtime.toml; "
                             "2) Peca ao TI compilar COLETADB.tlpp no AppServer; "
                             "3) Confirme [HTTPV11]/[HTTPURI] habilitados no appserver.ini"
                         ),
                     ) from exc
-                if exc.code == 416:
+                if exc.code == HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE:
                     # 416 Range Not Satisfiable: offset alem do EOF — sinal de fim
                     # de download. Cliente deve tratar como "fim normal", nao erro.
                     # Para isso, lemos o body e retornamos pra caller decidir.
@@ -361,19 +370,21 @@ class ColetaDBClient:
                     except Exception:  # pragma: no cover
                         body = b""
                     return body, {"X-Total-Size": "0"}
-                if exc.code == 422:
+                if exc.code == HTTPStatus.UNPROCESSABLE_ENTITY:
                     raise ColetaDBError(
                         f"422 em {url}: {server_msg or exc.reason}",
-                        status=422, code="VALIDATION_ERROR",
+                        status=HTTPStatus.UNPROCESSABLE_ENTITY,
+                        code="VALIDATION_ERROR",
                     ) from exc
-                if 500 <= exc.code < 600:
+                if HTTPStatus.INTERNAL_SERVER_ERROR <= exc.code < _HTTP_5XX_UPPER:
                     if attempt < self._retry_count - 1:
                         time.sleep(self._retry_backoff_s * (2**attempt))
                         continue
                     raise ColetaDBError(
                         f"{exc.code} server error em {url} apos {self._retry_count} tentativas"
                         + (f" (server: {server_msg})" if server_msg else ""),
-                        status=exc.code, code="SERVER_ERROR",
+                        status=exc.code,
+                        code="SERVER_ERROR",
                     ) from exc
                 # Outros codes — sem retry. Inclui body do server pra debug
                 # (smoke test mostrou que 400 do REST framework Protheus tem
@@ -417,7 +428,7 @@ class ColetaDBClient:
         }
         resp_bytes, _ = self._post_with_retry(url, body_bytes, headers, timeout)
         try:
-            return json.loads(resp_bytes.decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(resp_bytes.decode("utf-8")))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ColetaDBError(
                 f"Response do {path} nao e JSON valido: {exc}",

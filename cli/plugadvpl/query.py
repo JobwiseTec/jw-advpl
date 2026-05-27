@@ -14,15 +14,26 @@ Convenções:
 - Funções que mexem com JSON (campos como ``capabilities``, ``funcoes``)
   desserializam via :mod:`json` para que o renderer veja list/dict nativos.
 """
+
 from __future__ import annotations
 
 import json
 import re
 import sqlite3
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from plugadvpl.db import get_meta
+from plugadvpl.parsing.execauto import parse_tables
+from plugadvpl.parsing.protheus_doc import parse_json_dict, parse_json_list
+from plugadvpl.parsing.stripper import strip_advpl
+from plugadvpl.parsing.triggers import parse_metadata
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+# Trigram FTS5 (fonte_chunks_fts_tri, migration 001) precisa de patterns >= 3
+# chars; abaixo disso o speedup nao compensa e cai pro LIKE puro.
+_FTS_TRIGRAM_MIN_CHARS = 3
 
 
 def find_function(conn: sqlite3.Connection, nome: str) -> list[dict[str, Any]]:
@@ -102,18 +113,17 @@ def callers(conn: sqlite3.Connection, nome: str) -> list[dict[str, Any]]:
         # Self-call quando: a função-pai é o próprio nome OU o arquivo de
         # origem (sem extensão) bate com o nome buscado.
         arq_base = (arquivo or "").upper().rsplit(".", 1)[0]
-        is_self = (
-            (funcao or "").upper() == nome_up
-            or arq_base == nome_up
+        is_self = (funcao or "").upper() == nome_up or arq_base == nome_up
+        out.append(
+            {
+                "arquivo": arquivo,
+                "funcao": funcao,
+                "linha": linha,
+                "tipo": tipo,
+                "contexto": contexto,
+                "is_self_call": is_self,
+            }
         )
-        out.append({
-            "arquivo": arquivo,
-            "funcao": funcao,
-            "linha": linha,
-            "tipo": tipo,
-            "contexto": contexto,
-            "is_self_call": is_self,
-        })
     return out
 
 
@@ -292,16 +302,27 @@ def log_diagnose_query(
                f.correction_tip, f.tdn_url, f.username, f.computer_name, f.ora_code
         FROM log_findings f
         JOIN log_files lf ON lf.id = f.file_id
-        WHERE {' AND '.join(where)}
+        WHERE {" AND ".join(where)}
         ORDER BY
             CASE f.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
             lf.arquivo, f.line_number DESC
     """
     rows = conn.execute(sql, params).fetchall()
     cols = [
-        "arquivo", "log_tipo", "linha", "timestamp", "thread_id",
-        "severidade", "categoria", "rule_id", "message",
-        "sugestao_fix", "tdn_url", "usuario", "host", "ora_code",
+        "arquivo",
+        "log_tipo",
+        "linha",
+        "timestamp",
+        "thread_id",
+        "severidade",
+        "categoria",
+        "rule_id",
+        "message",
+        "sugestao_fix",
+        "tdn_url",
+        "usuario",
+        "host",
+        "ora_code",
     ]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
@@ -350,8 +371,17 @@ def ini_audit_query(
     """
     rows = conn.execute(sql, params).fetchall()
     cols = [
-        "arquivo", "tipo", "role", "section", "key",
-        "linha", "regra_id", "severidade", "snippet", "sugestao_fix", "status",
+        "arquivo",
+        "tipo",
+        "role",
+        "section",
+        "key",
+        "linha",
+        "regra_id",
+        "severidade",
+        "snippet",
+        "sugestao_fix",
+        "status",
     ]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
@@ -418,9 +448,7 @@ def status(
     ]
 
 
-def stale_files(
-    conn: sqlite3.Connection, root_files: dict[str, int]
-) -> list[dict[str, Any]]:
+def stale_files(conn: sqlite3.Connection, root_files: dict[str, int]) -> list[dict[str, Any]]:
     """Lista arquivos cujo ``mtime_ns`` no DB difere do filesystem.
 
     Args:
@@ -483,7 +511,6 @@ def doctor_func_count_check(
         adiciona N rows ``funcs_detail`` (1 por fonte com discrepância),
         sem truncagem.
     """
-    from plugadvpl.parsing.stripper import strip_advpl
     # Conta funcs no DB por arquivo (fonte_chunks com tipo_simbolo de function).
     parsed_by_file: dict[str, int] = {}
     for row in conn.execute(
@@ -528,8 +555,7 @@ def doctor_func_count_check(
                 "parser indexa toda função em código (ok)"
                 if n_real == 0
                 else "; ".join(
-                    f"{arq} (em código={c} parser={p})"
-                    for arq, _r, c, p in sorted(real_bug_rows)
+                    f"{arq} (em código={c} parser={p})" for arq, _r, c, p in sorted(real_bug_rows)
                 )
             ),
         },
@@ -546,24 +572,28 @@ def doctor_func_count_check(
     ]
     if detail:
         for arquivo, raw, code, parser in sorted(real_bug_rows + commented_rows):
-            classificacao = "real_bug" if (arquivo, raw, code, parser) in real_bug_rows else "commented_out"
+            classificacao = (
+                "real_bug" if (arquivo, raw, code, parser) in real_bug_rows else "commented_out"
+            )
             # v0.4.9: preenche count + detail string pra render table mostrar
             # info util (renderer so conhece schema check/status/count/detail).
             # Colunas estruturais (arquivo/grep_raw/...) continuam pra JSON.
-            rows.append({
-                "check": "funcs_detail",
-                "status": "warn" if classificacao == "real_bug" else "info",
-                "count": raw - parser,
-                "detail": (
-                    f"{arquivo}: grep_raw={raw} grep_code={code} "
-                    f"parser={parser} class={classificacao}"
-                ),
-                "arquivo": arquivo,
-                "grep_raw": raw,
-                "grep_code": code,
-                "parser": parser,
-                "classificacao": classificacao,
-            })
+            rows.append(
+                {
+                    "check": "funcs_detail",
+                    "status": "warn" if classificacao == "real_bug" else "info",
+                    "count": raw - parser,
+                    "detail": (
+                        f"{arquivo}: grep_raw={raw} grep_code={code} "
+                        f"parser={parser} class={classificacao}"
+                    ),
+                    "arquivo": arquivo,
+                    "grep_raw": raw,
+                    "grep_code": code,
+                    "parser": parser,
+                    "classificacao": classificacao,
+                }
+            )
     return rows
 
 
@@ -629,9 +659,7 @@ def doctor_diagnostics(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     # v0.9.5 (QA PERF 2026-05-18 #2): colisao de basename em diretorios
     # distintos (ex: mod1/MATA010.prw vs mod2/MATA010.prw). Schema usa
     # basename como PK; sem aviso, o segundo era silenciosamente descartado.
-    coll_row = conn.execute(
-        "SELECT valor FROM meta WHERE chave='basename_collisions'"
-    ).fetchone()
+    coll_row = conn.execute("SELECT valor FROM meta WHERE chave='basename_collisions'").fetchone()
     coll_raw = (coll_row[0] if coll_row else "") or ""
     n_coll = 0
     coll_detail = "nenhuma colisao detectada"
@@ -691,8 +719,8 @@ def grep_fts(
         # migration 001) pra evitar full table scan, então aplica LIKE pra
         # garantir case-sensitivity exata. Trigram precisa de pattern ≥3 chars;
         # menor que isso volta pro LIKE puro (sem ganho de trigram).
-        # Speedup típico em base ~2k fontes: 10-50× em buscas com 3+ chars únicos.
-        if len(pattern) >= 3:
+        # Speedup típico em base ~2k fontes: 10-50x em buscas com 3+ chars únicos.
+        if len(pattern) >= _FTS_TRIGRAM_MIN_CHARS:
             fts_pattern = '"' + pattern.replace('"', '""') + '"'
             sql = """
             SELECT fc.arquivo, fc.funcao,
@@ -707,7 +735,8 @@ def grep_fts(
             """
             try:
                 rows = conn.execute(
-                    sql, (pattern, fts_pattern, pattern, limit),
+                    sql,
+                    (pattern, fts_pattern, pattern, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 # Fallback se trigram FTS estiver indisponível (DB antigo
@@ -798,9 +827,7 @@ def _word_boundary_re(termo: str) -> re.Pattern[str]:
     return re.compile(r"\b" + re.escape(termo) + r"\b", re.IGNORECASE)
 
 
-def _impacto_fontes(
-    conn: sqlite3.Connection, campo_up: str, max_rows: int
-) -> list[dict[str, Any]]:
+def _impacto_fontes(conn: sqlite3.Connection, campo_up: str, max_rows: int) -> list[dict[str, Any]]:
     """Hits no índice de fontes (fonte_chunks.content).
 
     v0.9.5 (QA V3 #3 / QA PERF 2026-05-18 #8): aplica boundary check pos-LIKE
@@ -832,7 +859,7 @@ def _impacto_fontes(
         if m is None:
             continue  # substring FP — BA1_CODEMP, A1_CODFAT, etc.
         pos = m.start()
-        snippet = content[max(0, pos - 30): pos + 130]
+        snippet = content[max(0, pos - 30) : pos + 130]
         snip_up = snippet.upper()
         is_write = any(k in snip_up for k in _WRITE_KEYWORDS)
         out.append(
@@ -849,14 +876,11 @@ def _impacto_fontes(
     return out
 
 
-def _impacto_sx3(
-    conn: sqlite3.Connection, campo_up: str, max_rows: int
-) -> list[dict[str, Any]]:
+def _impacto_sx3(conn: sqlite3.Connection, campo_up: str, max_rows: int) -> list[dict[str, Any]]:
     """Hits em SX3: registro próprio + campos com VALID/INIT/WHEN/VLDUSER referenciando."""
     out: list[dict[str, Any]] = []
     own = conn.execute(
-        "SELECT tabela, campo, tipo, tamanho, descricao FROM campos "
-        "WHERE upper(campo) = ?",
+        "SELECT tabela, campo, tipo, tamanho, descricao FROM campos WHERE upper(campo) = ?",
         (campo_up,),
     ).fetchone()
     if own:
@@ -965,9 +989,7 @@ def _impacto_sx7_chain(
     return out
 
 
-def _impacto_sx1(
-    conn: sqlite3.Connection, campo_up: str, max_rows: int
-) -> list[dict[str, Any]]:
+def _impacto_sx1(conn: sqlite3.Connection, campo_up: str, max_rows: int) -> list[dict[str, Any]]:
     """Hits em SX1: validacao ou conteudo_padrao referenciando o campo."""
     out: list[dict[str, Any]] = []
     rows = conn.execute(
@@ -1121,9 +1143,17 @@ def gatilho_query(
 
 
 _SX_STATUS_TABLES = (
-    "tabelas", "campos", "indices", "gatilhos", "parametros",
-    "perguntas", "tabelas_genericas", "relacionamentos", "pastas",
-    "consultas", "grupos_campo",
+    "tabelas",
+    "campos",
+    "indices",
+    "gatilhos",
+    "parametros",
+    "perguntas",
+    "tabelas_genericas",
+    "relacionamentos",
+    "pastas",
+    "consultas",
+    "grupos_campo",
 )
 
 
@@ -1154,7 +1184,11 @@ def sx_status(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 _EXEC_TRIGGER_KINDS = {
-    "workflow", "wf_callback", "schedule", "job_standalone", "mail_send"
+    "workflow",
+    "wf_callback",
+    "schedule",
+    "job_standalone",
+    "mail_send",
 }  # v0.4.6 (F): wf_callback separado de workflow
 
 
@@ -1216,12 +1250,14 @@ def execution_triggers_duplicates(
     out: list[dict[str, Any]] = []
     for k, tgt, n, arqs in rows:
         arquivos_list = sorted((arqs or "").split(",")) if arqs else []
-        out.append({
-            "kind": k,
-            "target": tgt,
-            "count": int(n),
-            "arquivos": arquivos_list,
-        })
+        out.append(
+            {
+                "kind": k,
+                "target": tgt,
+                "count": int(n),
+                "arquivos": arquivos_list,
+            }
+        )
     return out
 
 
@@ -1265,23 +1301,31 @@ def execution_triggers_query(
     out: list[dict[str, Any]] = []
     for arq, fn, ln, k, tgt, meta_json, snippet in rows:
         # Lazy import pra não criar ciclo plugadvpl.query → plugadvpl.parsing.
-        from plugadvpl.parsing.triggers import parse_metadata
-        out.append({
-            "arquivo": arq,
-            "funcao": fn or "",
-            "linha": int(ln or 0),
-            "kind": k,
-            "target": tgt or "",
-            "metadata": parse_metadata(meta_json or "{}"),
-            "snippet": snippet or "",
-        })
+        out.append(
+            {
+                "arquivo": arq,
+                "funcao": fn or "",
+                "linha": int(ln or 0),
+                "kind": k,
+                "target": tgt or "",
+                "metadata": parse_metadata(meta_json or "{}"),
+                "snippet": snippet or "",
+            }
+        )
     return out
 
 
 _EXECAUTO_OP_MAP = {
-    "inc": 3, "inclusao": 3, "include": 3,
-    "alt": 4, "alteracao": 4, "alter": 4,
-    "exc": 5, "exclusao": 5, "exclude": 5, "delete": 5,
+    "inc": 3,
+    "inclusao": 3,
+    "include": 3,
+    "alt": 4,
+    "alteracao": 4,
+    "alter": 4,
+    "exc": 5,
+    "exclusao": 5,
+    "exclude": 5,
+    "delete": 5,
 }
 
 
@@ -1345,31 +1389,28 @@ def execauto_calls_query(
     sql += " ORDER BY arquivo, linha"
     rows = conn.execute(sql, params).fetchall()
     out: list[dict[str, Any]] = []
-    for (
-        arq, fn, ln, rt, mod, rtype, opc, oplbl, tjson, dyn, argc, snippet, opdyn
-    ) in rows:
-        from plugadvpl.parsing.execauto import parse_tables
-        out.append({
-            "arquivo": arq,
-            "funcao": fn or "",
-            "linha": int(ln or 0),
-            "routine": rt,
-            "module": mod,
-            "routine_type": rtype,
-            "op_code": opc,
-            "op_label": oplbl,
-            "tables_resolved": parse_tables(tjson),
-            "dynamic_call": bool(dyn),
-            "op_dynamic": bool(opdyn),
-            "arg_count": argc,
-            "snippet": snippet or "",
-        })
+    for arq, fn, ln, rt, mod, rtype, opc, oplbl, tjson, dyn, argc, snippet, opdyn in rows:
+        out.append(
+            {
+                "arquivo": arq,
+                "funcao": fn or "",
+                "linha": int(ln or 0),
+                "routine": rt,
+                "module": mod,
+                "routine_type": rtype,
+                "op_code": opc,
+                "op_label": oplbl,
+                "tables_resolved": parse_tables(tjson),
+                "dynamic_call": bool(dyn),
+                "op_dynamic": bool(opdyn),
+                "arg_count": argc,
+                "snippet": snippet or "",
+            }
+        )
     return out
 
 
-def arch_execauto_tables(
-    conn: sqlite3.Connection, arquivo: str
-) -> list[str]:
+def arch_execauto_tables(conn: sqlite3.Connection, arquivo: str) -> list[str]:
     """Tabelas inferidas via ExecAuto pra um fonte (cross-ref Feature B).
 
     Retorna lista únicos+ordenada de tables_resolved de todas as chamadas
@@ -1379,7 +1420,6 @@ def arch_execauto_tables(
         "SELECT tables_resolved_json FROM execauto_calls WHERE arquivo = ? COLLATE NOCASE",
         (arquivo,),
     ).fetchall()
-    from plugadvpl.parsing.execauto import parse_tables
     seen: set[str] = set()
     for (tjson,) in rows:
         for t in parse_tables(tjson):
@@ -1402,13 +1442,32 @@ _PDOC_COLUMNS = (
 
 def _row_to_pdoc(row: tuple[Any, ...]) -> dict[str, Any]:
     """Converte row do SELECT em dict com JSONs já parseados."""
-    from plugadvpl.parsing.protheus_doc import parse_json_dict, parse_json_list
     (
-        arq, fn, fn_id, tipo, modulo, lb_ini, lb_fim, lf,
-        summary, descr, author, since, version,
-        dep, dep_reason, lang,
-        params_json, returns_json, examples_json, history_json,
-        see_json, tables_json, todos_json, obs_json, links_json,
+        arq,
+        fn,
+        fn_id,
+        tipo,
+        modulo,
+        lb_ini,
+        lb_fim,
+        lf,
+        summary,
+        descr,
+        author,
+        since,
+        version,
+        dep,
+        dep_reason,
+        lang,
+        params_json,
+        returns_json,
+        examples_json,
+        history_json,
+        see_json,
+        tables_json,
+        todos_json,
+        obs_json,
+        links_json,
         raw_tags_json,
     ) = row
     return {
@@ -1552,9 +1611,7 @@ def protheus_doc_show(
     return _row_to_pdoc(row)
 
 
-def protheus_doc_homonyms(
-    conn: sqlite3.Connection, funcao: str
-) -> list[str]:
+def protheus_doc_homonyms(conn: sqlite3.Connection, funcao: str) -> list[str]:
     """v0.4.3 (I2): lista arquivos com Protheus.doc pra ``funcao``.
 
     Usado por `docs --show` pra avisar quando há ambiguidade. Retorna lista
@@ -1572,7 +1629,7 @@ def protheus_doc_homonyms(
     return [r[0] for r in rows]
 
 
-def render_pdoc_markdown(d: dict[str, Any]) -> str:
+def render_pdoc_markdown(d: dict[str, Any]) -> str:  # noqa: PLR0912 -- renderer multi-secao (params/returns/raises/see-also); split por secao viraria boilerplate
     """Renderiza um doc em Markdown estruturado pra modo `--show`."""
     lines: list[str] = []
     title = d.get("funcao") or d.get("funcao_id") or "(sem nome)"
@@ -1628,10 +1685,10 @@ def render_pdoc_markdown(d: dict[str, Any]) -> str:
     if d.get("history"):
         lines.append("\n### Histórico")
         for h in d["history"]:
-            lines.append(
-                f"- {h.get('date') or ''} ({h.get('user') or ''}): {h.get('desc') or ''}"
-            )
-    location = f"\n_Source: {d.get('arquivo')}:{d.get('linha_bloco_inicio')}-{d.get('linha_bloco_fim')}_"
+            lines.append(f"- {h.get('date') or ''} ({h.get('user') or ''}): {h.get('desc') or ''}")
+    location = (
+        f"\n_Source: {d.get('arquivo')}:{d.get('linha_bloco_inicio')}-{d.get('linha_bloco_fim')}_"
+    )
     lines.append(location)
     return "\n".join(lines)
 
@@ -1683,7 +1740,7 @@ def _detect_entity_type(value: str) -> str:
     return "funcao"
 
 
-def _detect_entity_type_db(
+def _detect_entity_type_db(  # noqa: PLR0911 -- decisão em cascata por categoria (file/function/table/field/...); cada return e um match curto
     conn: sqlite3.Connection, value: str
 ) -> str:
     """v0.5.1 (#2): auto-detect com lookup no índice (preferido sobre regex).
@@ -1720,9 +1777,7 @@ def _detect_entity_type_db(
     if row:
         return "funcao"
     # 3. Campo SX3 indexado
-    row = conn.execute(
-        "SELECT 1 FROM campos WHERE upper(campo) = ? LIMIT 1", (value_u,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM campos WHERE upper(campo) = ? LIMIT 1", (value_u,)).fetchone()
     if row:
         return "campo"
     # 4. Tabela referenciada em fonte (sem registro SX)
@@ -1812,7 +1867,7 @@ def _trace_hit(
     }
 
 
-def _trace_funcao(
+def _trace_funcao(  # noqa: PLR0912 -- coletor cross-universo (callers/callees/pdoc/SQL/HTTP/JOB); cada branch e um universo
     conn: sqlite3.Connection,
     funcao: str,
     *,
@@ -1839,21 +1894,24 @@ def _trace_funcao(
         f"LIMIT ?"
     )
     var_list = list(variants)
-    for arq, fn_real, ln, kind, classe in conn.execute(
-        sql, [*var_list, *var_list, max_per_edge]
-    ):
+    for arq, fn_real, ln, kind, classe in conn.execute(sql, [*var_list, *var_list, max_per_edge]):
         # v0.5.1 (#6): alvo = nome da funcao (simbolo definido), nao arquivo
         # (era redundancia: alvo == arquivo). Mantém arquivo na coluna proper.
         cdict: dict[str, Any] = {"kind": kind}
         if classe:
             cdict["classe"] = classe
-        hits.append(_trace_hit(
-            1, "defined_in", arquivo=arq, funcao=fn_real or funcao,
-            linha=int(ln or 0),
-            alvo=fn_real or funcao,
-            contexto=f"{kind}" + (f" of {classe}" if classe else ""),
-            contexto_dict=cdict,
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "defined_in",
+                arquivo=arq,
+                funcao=fn_real or funcao,
+                linha=int(ln or 0),
+                alvo=fn_real or funcao,
+                contexto=f"{kind}" + (f" of {classe}" if classe else ""),
+                contexto_dict=cdict,
+            )
+        )
 
     # U1: callers
     sql = (
@@ -1861,12 +1919,18 @@ def _trace_funcao(
         "FROM chamadas_funcao WHERE destino_norm = ? LIMIT ?"
     )
     for arq, fn, ln, tipo in conn.execute(sql, (funcao_norm, max_per_edge)):
-        hits.append(_trace_hit(
-            1, "called_by", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=f"{fn}@{arq}" if fn else arq,
-            contexto=f"call type={tipo}",
-            contexto_dict={"call_type": tipo},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "called_by",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=f"{fn}@{arq}" if fn else arq,
+                contexto=f"call type={tipo}",
+                contexto_dict={"call_type": tipo},
+            )
+        )
 
     # U1: callees (o que a função chama)
     sql = (
@@ -1875,11 +1939,16 @@ def _trace_funcao(
         "WHERE upper(funcao_origem) = upper(?) LIMIT ?"
     )
     for destino, tipo in conn.execute(sql, (funcao, max_per_edge)):
-        hits.append(_trace_hit(
-            1, "calls", funcao=funcao, alvo=destino or "",
-            contexto=f"call type={tipo}",
-            contexto_dict={"call_type": tipo},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "calls",
+                funcao=funcao,
+                alvo=destino or "",
+                contexto=f"call type={tipo}",
+                contexto_dict={"call_type": tipo},
+            )
+        )
 
     # U2: validates_field (função aparece em X3_VALID/INIT/WHEN/VLDUSER)
     # Match com palavra-completa pra evitar prefix collision.
@@ -1898,12 +1967,16 @@ def _trace_funcao(
         for slot, txt in texts.items():
             if not txt or funcao_u not in txt.upper():
                 continue
-            hits.append(_trace_hit(
-                2, "validates_field", alvo=f"{tabela}.{nome}",
-                contexto=f"X3_{slot}",
-                contexto_dict={"slot": f"X3_{slot}", "tabela": tabela, "campo": nome},
-                snippet=txt,
-            ))
+            hits.append(
+                _trace_hit(
+                    2,
+                    "validates_field",
+                    alvo=f"{tabela}.{nome}",
+                    contexto=f"X3_{slot}",
+                    contexto_dict={"slot": f"X3_{slot}", "tabela": tabela, "campo": nome},
+                    snippet=txt,
+                )
+            )
 
     # U3: via_execauto (função é rotina chamada por MsExecAuto)
     sql = (
@@ -1911,12 +1984,19 @@ def _trace_funcao(
         "FROM execauto_calls WHERE upper(routine) = upper(?) LIMIT ?"
     )
     for arq, fn, ln, mod, oplbl, snip in conn.execute(sql, (funcao, max_per_edge)):
-        hits.append(_trace_hit(
-            3, "via_execauto", arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=funcao, contexto=f"module={mod or '?'} op={oplbl or '?'}",
-            contexto_dict={"module": mod or "", "op": oplbl or ""},
-            snippet=snip,
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "via_execauto",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=funcao,
+                contexto=f"module={mod or '?'} op={oplbl or '?'}",
+                contexto_dict={"module": mod or "", "op": oplbl or ""},
+                snippet=snip,
+            )
+        )
 
     # U3: triggered_by_workflow/schedule/job/callback (função é target)
     sql = (
@@ -1931,13 +2011,19 @@ def _trace_funcao(
             "job_standalone": "triggered_by_job",
             "mail_send": "triggered_by_mail",
         }
-        hits.append(_trace_hit(
-            3, edge_map.get(kind, f"triggered_by_{kind}"),
-            arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=funcao, contexto=f"kind={kind}",
-            contexto_dict={"kind": kind},
-            snippet=snip,
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                edge_map.get(kind, f"triggered_by_{kind}"),
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=funcao,
+                contexto=f"kind={kind}",
+                contexto_dict={"kind": kind},
+                snippet=snip,
+            )
+        )
 
     # U3: documented_in (Protheus.doc da função, se houver)
     sql = (
@@ -1961,13 +2047,19 @@ def _trace_funcao(
             cdict_doc["since"] = d["since"]
         if d["deprecated"]:
             cdict_doc["deprecated"] = True
-        hits.append(_trace_hit(
-            3, "documented_in", arquivo=d["arquivo"], funcao=d["funcao"] or funcao,
-            linha=int(d["linha_funcao"] or 0), alvo=funcao,
-            contexto=" ".join(ctx_parts) or "doc",
-            contexto_dict=cdict_doc,
-            snippet=(d["summary"] or "")[:120],
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "documented_in",
+                arquivo=d["arquivo"],
+                funcao=d["funcao"] or funcao,
+                linha=int(d["linha_funcao"] or 0),
+                alvo=funcao,
+                contexto=" ".join(ctx_parts) or "doc",
+                contexto_dict=cdict_doc,
+                snippet=(d["summary"] or "")[:120],
+            )
+        )
 
     return hits
 
@@ -1983,38 +2075,47 @@ def _trace_tabela(
     tabela_u = tabela.upper()
 
     # U1: reads/writes/reclock via fonte_tabela
-    sql = (
-        "SELECT arquivo, modo FROM fonte_tabela "
-        "WHERE upper(tabela) = ? LIMIT ?"
-    )
+    sql = "SELECT arquivo, modo FROM fonte_tabela WHERE upper(tabela) = ? LIMIT ?"
     for arq, modo in conn.execute(sql, (tabela_u, max_per_edge * 3)):
         edge = {"read": "reads", "write": "writes", "reclock": "reclock"}.get(modo, "touches")
-        hits.append(_trace_hit(
-            1, edge, arquivo=arq, alvo=tabela, contexto=f"mode={modo}",
-            contexto_dict={"mode": modo},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                edge,
+                arquivo=arq,
+                alvo=tabela,
+                contexto=f"mode={modo}",
+                contexto_dict={"mode": modo},
+            )
+        )
 
     # U2: table_definition
-    sql = (
-        "SELECT codigo, nome, modo, custom FROM tabelas "
-        "WHERE upper(codigo) = ? LIMIT 1"
-    )
-    for cod, nome, modo, custom in conn.execute(sql, (tabela_u,)):
-        hits.append(_trace_hit(
-            2, "table_definition", alvo=tabela,
-            contexto=f"modo={modo or '?'} custom={int(custom or 0)}",
-            contexto_dict={"modo": modo or "", "custom": int(custom or 0)},
-            snippet=nome or "",
-        ))
+    sql = "SELECT codigo, nome, modo, custom FROM tabelas WHERE upper(codigo) = ? LIMIT 1"
+    for _cod, nome, modo, custom in conn.execute(sql, (tabela_u,)):
+        hits.append(
+            _trace_hit(
+                2,
+                "table_definition",
+                alvo=tabela,
+                contexto=f"modo={modo or '?'} custom={int(custom or 0)}",
+                contexto_dict={"modo": modo or "", "custom": int(custom or 0)},
+                snippet=nome or "",
+            )
+        )
 
     # U2: n_fields (sumário)
     sql = "SELECT COUNT(*) FROM campos WHERE upper(tabela) = ?"
     (n_fields,) = conn.execute(sql, (tabela_u,)).fetchone() or (0,)
     if n_fields:
-        hits.append(_trace_hit(
-            2, "n_fields", alvo=tabela, contexto=f"{int(n_fields)} campos SX3",
-            contexto_dict={"n_campos": int(n_fields)},
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "n_fields",
+                alvo=tabela,
+                contexto=f"{int(n_fields)} campos SX3",
+                contexto_dict={"n_campos": int(n_fields)},
+            )
+        )
 
     # U2: indexed_by (SIX)
     sql = (
@@ -2022,12 +2123,16 @@ def _trace_tabela(
         "WHERE upper(tabela) = ? ORDER BY ordem LIMIT ?"
     )
     for ord_, chave, descr, nick in conn.execute(sql, (tabela_u, max_per_edge)):
-        hits.append(_trace_hit(
-            2, "indexed_by", alvo=tabela,
-            contexto=f"ord={ord_} nick={nick or '-'}",
-            contexto_dict={"ord": ord_, "nick": nick or "", "chave": chave or ""},
-            snippet=f"chave={chave} | {descr or ''}",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "indexed_by",
+                alvo=tabela,
+                contexto=f"ord={ord_} nick={nick or '-'}",
+                contexto_dict={"ord": ord_, "nick": nick or "", "chave": chave or ""},
+                snippet=f"chave={chave} | {descr or ''}",
+            )
+        )
 
     # U2: in_relationship (SX9)
     sql = (
@@ -2036,17 +2141,22 @@ def _trace_tabela(
         "FROM relacionamentos "
         "WHERE upper(tabela_origem) = ? OR upper(tabela_destino) = ? LIMIT ?"
     )
-    for ori, dest, ident, eo, ed in conn.execute(
-        sql, (tabela_u, tabela_u, max_per_edge)
-    ):
-        hits.append(_trace_hit(
-            2, "in_relationship", alvo=f"{ori}<->{dest}",
-            contexto=f"id={ident} {eo}->{ed}",
-            contexto_dict={
-                "id": ident, "tabela_origem": ori, "tabela_destino": dest,
-                "expr_origem": eo or "", "expr_destino": ed or "",
-            },
-        ))
+    for ori, dest, ident, eo, ed in conn.execute(sql, (tabela_u, tabela_u, max_per_edge)):
+        hits.append(
+            _trace_hit(
+                2,
+                "in_relationship",
+                alvo=f"{ori}<->{dest}",
+                contexto=f"id={ident} {eo}->{ed}",
+                contexto_dict={
+                    "id": ident,
+                    "tabela_origem": ori,
+                    "tabela_destino": dest,
+                    "expr_origem": eo or "",
+                    "expr_destino": ed or "",
+                },
+            )
+        )
 
     # U2: trigger_on_table (SX7)
     sql = (
@@ -2054,12 +2164,16 @@ def _trace_tabela(
         "FROM gatilhos WHERE upper(tabela) = ? LIMIT ?"
     )
     for camp, seq, regra, dest in conn.execute(sql, (tabela_u, max_per_edge)):
-        hits.append(_trace_hit(
-            2, "trigger_on_table", alvo=f"{tabela}.{camp}",
-            contexto=f"seq={seq} -> {dest or '?'}",
-            contexto_dict={"campo_origem": camp, "seq": seq, "campo_destino": dest or ""},
-            snippet=regra or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "trigger_on_table",
+                alvo=f"{tabela}.{camp}",
+                contexto=f"seq={seq} -> {dest or '?'}",
+                contexto_dict={"campo_origem": camp, "seq": seq, "campo_destino": dest or ""},
+                snippet=regra or "",
+            )
+        )
 
     # U3: touched_via_execauto (LIKE em tables_resolved_json)
     sql = (
@@ -2068,15 +2182,20 @@ def _trace_tabela(
     )
     like_pat = f'%"{tabela_u}"%'
     for arq, fn, ln, rt, mod, tjson in conn.execute(sql, (like_pat, max_per_edge * 2)):
-        from plugadvpl.parsing.execauto import parse_tables
         if tabela_u not in [t.upper() for t in parse_tables(tjson)]:
             continue  # word boundary via JSON list
-        hits.append(_trace_hit(
-            3, "touched_via_execauto", arquivo=arq, funcao=fn or "",
-            linha=int(ln or 0), alvo=tabela,
-            contexto=f"routine={rt or '?'} module={mod or '?'}",
-            contexto_dict={"routine": rt or "", "module": mod or ""},
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "touched_via_execauto",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=tabela,
+                contexto=f"routine={rt or '?'} module={mod or '?'}",
+                contexto_dict={"routine": rt or "", "module": mod or ""},
+            )
+        )
 
     # U3: documented_in (LIKE em protheus_docs.tables_json)
     sql = (
@@ -2084,25 +2203,30 @@ def _trace_tabela(
         "FROM protheus_docs WHERE tables_json LIKE ? LIMIT ?"
     )
     for arq, fn, ln, tjson, summ in conn.execute(sql, (like_pat, max_per_edge)):
-        from plugadvpl.parsing.protheus_doc import parse_json_list
         if tabela_u not in [str(t).upper() for t in parse_json_list(tjson)]:
             continue
-        hits.append(_trace_hit(
-            3, "documented_in", arquivo=arq, funcao=fn or "",
-            linha=int(ln or 0), alvo=tabela,
-            contexto="@table",
-            contexto_dict={"tag": "@table"},
-            snippet=(summ or "")[:120],
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "documented_in",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=tabela,
+                contexto="@table",
+                contexto_dict={"tag": "@table"},
+                snippet=(summ or "")[:120],
+            )
+        )
 
     return hits
 
 
-def _trace_campo(
+def _trace_campo(  # noqa: PLR0912 -- coletor cross-universo de campo (SX3/gatilhos/relacionamentos/SXG/queries)
     conn: sqlite3.Connection,
     campo: str,
     *,
-    depth: int = 2,
+    depth: int = 2,  # noqa: ARG001 -- API publica: callers passam, reservado pra controle de recursao futura
     max_per_edge: int = 20,
 ) -> list[dict[str, Any]]:
     """Coleta arestas pra campo-alvo cross-universo. Reaproveita queries
@@ -2121,14 +2245,19 @@ def _trace_campo(
         snip_up = (snip or "").upper()
         is_write = any(k in snip_up for k in _WRITE_KEYWORDS)
         mode = "write" if is_write else "read"
-        hits.append(_trace_hit(
-            1, "references_field",
-            arquivo=arq, funcao=fn or "", linha=int(ln or 0),
-            alvo=campo,
-            contexto=mode,
-            contexto_dict={"mode": mode},
-            snippet=snip,
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "references_field",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=campo,
+                contexto=mode,
+                contexto_dict={"mode": mode},
+                snippet=snip,
+            )
+        )
 
     # U2: field_definition (SX3)
     sql = (
@@ -2144,50 +2273,63 @@ def _trace_campo(
         if br:
             ctx_parts.append(f"browse={br}")
             cdict_fd["browse"] = br
-        hits.append(_trace_hit(
-            2, "field_definition", alvo=campo,
-            contexto=" ".join(ctx_parts),
-            contexto_dict=cdict_fd,
-            snippet=descr or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "field_definition",
+                alvo=campo,
+                contexto=" ".join(ctx_parts),
+                contexto_dict=cdict_fd,
+                snippet=descr or "",
+            )
+        )
 
     # U2: trigger_origin (campo dispara gatilho)
     sql_orig = (
         "SELECT campo_origem, sequencia, campo_destino, regra, tabela "
         "FROM gatilhos WHERE upper(campo_origem) = ? LIMIT ?"
     )
-    for camp, seq, dest, regra, tab in conn.execute(sql_orig, (campo_u, max_per_edge)):
-        hits.append(_trace_hit(
-            2, "trigger_origin", alvo=f"{tab}.{dest or '?'}",
-            contexto=f"seq={seq}",
-            contexto_dict={"seq": seq, "campo_destino": dest or ""},
-            snippet=regra or "",
-        ))
+    for _camp, seq, dest, regra, tab in conn.execute(sql_orig, (campo_u, max_per_edge)):
+        hits.append(
+            _trace_hit(
+                2,
+                "trigger_origin",
+                alvo=f"{tab}.{dest or '?'}",
+                contexto=f"seq={seq}",
+                contexto_dict={"seq": seq, "campo_destino": dest or ""},
+                snippet=regra or "",
+            )
+        )
     # U2: trigger_target (campo é modificado por gatilho)
     sql_target = (
         "SELECT campo_origem, sequencia, regra, tabela "
         "FROM gatilhos WHERE upper(campo_destino) = ? LIMIT ?"
     )
     for camp, seq, regra, tab in conn.execute(sql_target, (campo_u, max_per_edge)):
-        hits.append(_trace_hit(
-            2, "trigger_target", alvo=f"{tab}.{camp}",
-            contexto=f"seq={seq}",
-            contexto_dict={"seq": seq, "campo_origem": camp},
-            snippet=regra or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "trigger_target",
+                alvo=f"{tab}.{camp}",
+                contexto=f"seq={seq}",
+                contexto_dict={"seq": seq, "campo_origem": camp},
+                snippet=regra or "",
+            )
+        )
 
     # U2: in_pergunte (SX1) — match em variavel ou conteudo_padrao
-    sql = (
-        "SELECT grupo, ordem, pergunta, variavel "
-        "FROM perguntas WHERE upper(variavel) = ? LIMIT ?"
-    )
+    sql = "SELECT grupo, ordem, pergunta, variavel FROM perguntas WHERE upper(variavel) = ? LIMIT ?"
     for grp, ord_, perg, var in conn.execute(sql, (campo_u, max_per_edge)):
-        hits.append(_trace_hit(
-            2, "in_pergunte", alvo=f"{grp}.{ord_}",
-            contexto=f"variavel={var}",
-            contexto_dict={"variavel": var, "grupo": grp, "ordem": ord_},
-            snippet=perg or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "in_pergunte",
+                alvo=f"{grp}.{ord_}",
+                contexto=f"variavel={var}",
+                contexto_dict={"variavel": var, "grupo": grp, "ordem": ord_},
+                snippet=perg or "",
+            )
+        )
 
     # U2: in_relationship (SX9 expressao)
     sql = (
@@ -2200,29 +2342,36 @@ def _trace_campo(
     for ori, dest, eo, ed in conn.execute(sql, (like_pat, like_pat, max_per_edge)):
         if campo_u not in (eo or "").upper() and campo_u not in (ed or "").upper():
             continue
-        hits.append(_trace_hit(
-            2, "in_relationship", alvo=f"{ori}<->{dest}",
-            contexto=f"{eo}->{ed}",
-            contexto_dict={
-                "tabela_origem": ori, "tabela_destino": dest,
-                "expr_origem": eo or "", "expr_destino": ed or "",
-            },
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "in_relationship",
+                alvo=f"{ori}<->{dest}",
+                contexto=f"{eo}->{ed}",
+                contexto_dict={
+                    "tabela_origem": ori,
+                    "tabela_destino": dest,
+                    "expr_origem": eo or "",
+                    "expr_destino": ed or "",
+                },
+            )
+        )
 
     # U2: in_consulta (SXB) — match em conteudo (expressão) ou alias=campo
-    sql = (
-        "SELECT alias, descricao, conteudo FROM consultas "
-        "WHERE upper(conteudo) LIKE ? LIMIT ?"
-    )
+    sql = "SELECT alias, descricao, conteudo FROM consultas WHERE upper(conteudo) LIKE ? LIMIT ?"
     for alias, descr, conteudo in conn.execute(sql, (like_pat, max_per_edge)):
         if campo_u not in (conteudo or "").upper():
             continue
-        hits.append(_trace_hit(
-            2, "in_consulta", alvo=alias,
-            contexto="F3 lookup",
-            contexto_dict={"tag": "F3", "alias": alias},
-            snippet=descr or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "in_consulta",
+                alvo=alias,
+                contexto="F3 lookup",
+                contexto_dict={"tag": "F3", "alias": alias},
+                snippet=descr or "",
+            )
+        )
 
     # U2: in_grupo_sxg
     sql = (
@@ -2234,11 +2383,16 @@ def _trace_campo(
             sql_g = "SELECT descricao FROM grupos_campo WHERE upper(grupo) = ? LIMIT 1"
             descr_row = conn.execute(sql_g, (grp.upper(),)).fetchone()
             descr = descr_row[0] if descr_row else ""
-            hits.append(_trace_hit(
-                2, "in_grupo_sxg", alvo=grp, contexto="SXG",
-                contexto_dict={"grupo": grp},
-                snippet=descr or "",
-            ))
+            hits.append(
+                _trace_hit(
+                    2,
+                    "in_grupo_sxg",
+                    alvo=grp,
+                    contexto="SXG",
+                    contexto_dict={"grupo": grp},
+                    snippet=descr or "",
+                )
+            )
 
     return hits
 
@@ -2298,19 +2452,21 @@ def metrics_query(
     sql += f" ORDER BY {sort_col} DESC, arquivo, linha_inicio"
     rows = conn.execute(sql, params).fetchall()
     out: list[dict[str, Any]] = []
-    for (arq, fn, ini, fim, loc, cc, nest, ncalls, np, hdoc) in rows:
-        out.append({
-            "arquivo": arq,
-            "funcao": fn or "",
-            "linha_inicio": int(ini or 0),
-            "linha_fim": int(fim or 0),
-            "loc": int(loc or 0),
-            "cc": int(cc or 0),
-            "nesting": int(nest or 0),
-            "n_calls_out": int(ncalls or 0),
-            "params_count": int(np or 0),
-            "has_doc": bool(hdoc),
-        })
+    for arq, fn, ini, fim, loc, cc, nest, ncalls, np, hdoc in rows:
+        out.append(
+            {
+                "arquivo": arq,
+                "funcao": fn or "",
+                "linha_inicio": int(ini or 0),
+                "linha_fim": int(fim or 0),
+                "loc": int(loc or 0),
+                "cc": int(cc or 0),
+                "nesting": int(nest or 0),
+                "n_calls_out": int(ncalls or 0),
+                "params_count": int(np or 0),
+                "has_doc": bool(hdoc),
+            }
+        )
     return out
 
 
@@ -2403,7 +2559,7 @@ def cobertura_doc_query(
     ]
 
 
-def _trace_arquivo(
+def _trace_arquivo(  # noqa: PLR0912 -- coletor cross-universo de arquivo (chunks/callers/callees/SQL/HTTP/pdoc)
     conn: sqlite3.Connection,
     arquivo: str,
     *,
@@ -2437,11 +2593,16 @@ def _trace_arquivo(
         if caps:
             cdict["capabilities"] = caps
             ctx_parts.append(f"caps={len(caps)}")
-        hits.append(_trace_hit(
-            1, "arch_summary", arquivo=arquivo, alvo=arquivo,
-            contexto=" ".join(ctx_parts) or "fonte",
-            contexto_dict=cdict,
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "arch_summary",
+                arquivo=arquivo,
+                alvo=arquivo,
+                contexto=" ".join(ctx_parts) or "fonte",
+                contexto_dict=cdict,
+            )
+        )
 
     # U1: funções definidas no fonte
     sql = (
@@ -2449,12 +2610,18 @@ def _trace_arquivo(
         "FROM fonte_chunks WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
     )
     for fn, ln, kind in conn.execute(sql, (arquivo, max_per_edge)):
-        hits.append(_trace_hit(
-            1, "defines_function", arquivo=arquivo, funcao=fn or "",
-            linha=int(ln or 0), alvo=fn or "",
-            contexto=kind or "function",
-            contexto_dict={"kind": kind or "function"},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "defines_function",
+                arquivo=arquivo,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=fn or "",
+                contexto=kind or "function",
+                contexto_dict={"kind": kind or "function"},
+            )
+        )
 
     # U1: lint findings (top severidade)
     sql = (
@@ -2465,12 +2632,18 @@ def _trace_arquivo(
         "LIMIT ?"
     )
     for regra, sev, ln, snip, _dup in conn.execute(sql, (arquivo, max_per_edge)):
-        hits.append(_trace_hit(
-            1, "lint_finding", arquivo=arquivo, linha=int(ln or 0),
-            alvo=regra, contexto=f"sev={sev}",
-            contexto_dict={"regra": regra, "severidade": sev},
-            snippet=snip or "",
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "lint_finding",
+                arquivo=arquivo,
+                linha=int(ln or 0),
+                alvo=regra,
+                contexto=f"sev={sev}",
+                contexto_dict={"regra": regra, "severidade": sev},
+                snippet=snip or "",
+            )
+        )
 
     # U3: execauto calls do fonte
     sql = (
@@ -2478,12 +2651,18 @@ def _trace_arquivo(
         "FROM execauto_calls WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
     )
     for fn, ln, rt, mod, oplbl in conn.execute(sql, (arquivo, max_per_edge)):
-        hits.append(_trace_hit(
-            3, "calls_execauto", arquivo=arquivo, funcao=fn or "",
-            linha=int(ln or 0), alvo=rt or "(dynamic)",
-            contexto=f"module={mod or '?'} op={oplbl or '?'}",
-            contexto_dict={"routine": rt or "", "module": mod or "", "op": oplbl or ""},
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "calls_execauto",
+                arquivo=arquivo,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=rt or "(dynamic)",
+                contexto=f"module={mod or '?'} op={oplbl or '?'}",
+                contexto_dict={"routine": rt or "", "module": mod or "", "op": oplbl or ""},
+            )
+        )
 
     # U3: execution_triggers do fonte
     sql = (
@@ -2491,12 +2670,18 @@ def _trace_arquivo(
         "FROM execution_triggers WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
     )
     for fn, ln, kind, target in conn.execute(sql, (arquivo, max_per_edge)):
-        hits.append(_trace_hit(
-            3, "has_trigger", arquivo=arquivo, funcao=fn or "",
-            linha=int(ln or 0), alvo=target or "",
-            contexto=f"kind={kind}",
-            contexto_dict={"kind": kind, "target": target or ""},
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "has_trigger",
+                arquivo=arquivo,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=target or "",
+                contexto=f"kind={kind}",
+                contexto_dict={"kind": kind, "target": target or ""},
+            )
+        )
 
     # U3: protheus_docs do fonte
     sql = (
@@ -2504,18 +2689,24 @@ def _trace_arquivo(
         "FROM protheus_docs WHERE arquivo = ? COLLATE NOCASE LIMIT ?"
     )
     for fn, ln, tipo_doc, author, dep, summ in conn.execute(sql, (arquivo, max_per_edge)):
-        cdict: dict[str, Any] = {"tipo": tipo_doc or ""}
+        cdict = {"tipo": tipo_doc or ""}
         if author:
             cdict["author"] = author
         if dep:
             cdict["deprecated"] = True
-        hits.append(_trace_hit(
-            3, "has_protheus_doc", arquivo=arquivo, funcao=fn or "",
-            linha=int(ln or 0), alvo=fn or "",
-            contexto=f"tipo={tipo_doc or '?'}" + (" DEPRECATED" if dep else ""),
-            contexto_dict=cdict,
-            snippet=(summ or "")[:120],
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "has_protheus_doc",
+                arquivo=arquivo,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=fn or "",
+                contexto=f"tipo={tipo_doc or '?'}" + (" DEPRECATED" if dep else ""),
+                contexto_dict=cdict,
+                snippet=(summ or "")[:120],
+            )
+        )
 
     return hits
 
@@ -2536,11 +2727,16 @@ def _trace_parametro(
         "WHERE upper(parametro) = ? GROUP BY arquivo, modo LIMIT ?"
     )
     for arq, modo, n in conn.execute(sql, (param_u, max_per_edge)):
-        hits.append(_trace_hit(
-            1, f"used_{modo}" if modo else "used", arquivo=arq, alvo=parametro,
-            contexto=f"n={int(n)} mode={modo or '?'}",
-            contexto_dict={"n_usos": int(n), "mode": modo or ""},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                f"used_{modo}" if modo else "used",
+                arquivo=arq,
+                alvo=parametro,
+                contexto=f"n={int(n)} mode={modo or '?'}",
+                contexto_dict={"n_usos": int(n), "mode": modo or ""},
+            )
+        )
 
     # U2: definição SX6
     sql = (
@@ -2557,12 +2753,16 @@ def _trace_parametro(
             cdict["default"] = cont
         if prop:
             cdict["proprietario"] = prop
-        hits.append(_trace_hit(
-            2, "param_definition", alvo=parametro,
-            contexto=" ".join(ctx_parts),
-            contexto_dict=cdict,
-            snippet=(descr or "")[:120],
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "param_definition",
+                alvo=parametro,
+                contexto=" ".join(ctx_parts),
+                contexto_dict=cdict,
+                snippet=(descr or "")[:120],
+            )
+        )
 
     # U2: SX1 que usa o MV como default (X1_DEF01 LIKE %MV%)
     sql = (
@@ -2570,12 +2770,16 @@ def _trace_parametro(
         "FROM perguntas WHERE upper(conteudo_padrao) LIKE ? LIMIT ?"
     )
     for grp, ord_, perg, var in conn.execute(sql, (f"%{param_u}%", max_per_edge)):
-        hits.append(_trace_hit(
-            2, "in_pergunte_default", alvo=f"{grp}.{ord_}",
-            contexto=f"variavel={var}",
-            contexto_dict={"grupo": grp, "ordem": ord_, "variavel": var},
-            snippet=perg or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "in_pergunte_default",
+                alvo=f"{grp}.{ord_}",
+                contexto=f"variavel={var}",
+                contexto_dict={"grupo": grp, "ordem": ord_, "variavel": var},
+                snippet=perg or "",
+            )
+        )
 
     return hits
 
@@ -2596,11 +2800,16 @@ def _trace_pergunte(
         "WHERE upper(grupo) = ? GROUP BY arquivo LIMIT ?"
     )
     for arq, n in conn.execute(sql, (grupo_u, max_per_edge)):
-        hits.append(_trace_hit(
-            1, "uses_pergunte", arquivo=arq, alvo=grupo,
-            contexto=f"n={int(n)}",
-            contexto_dict={"n_usos": int(n)},
-        ))
+        hits.append(
+            _trace_hit(
+                1,
+                "uses_pergunte",
+                arquivo=arq,
+                alvo=grupo,
+                contexto=f"n={int(n)}",
+                contexto_dict={"n_usos": int(n)},
+            )
+        )
 
     # U2: perguntas SX1 do grupo
     sql = (
@@ -2611,12 +2820,16 @@ def _trace_pergunte(
         cdict: dict[str, Any] = {"ordem": ord_, "variavel": var or "", "tipo": tp or ""}
         if val:
             cdict["validacao"] = val
-        hits.append(_trace_hit(
-            2, "pergunta_definition", alvo=f"{grupo}.{ord_}",
-            contexto=f"variavel={var or '?'} tipo={tp or '?'}",
-            contexto_dict=cdict,
-            snippet=perg or "",
-        ))
+        hits.append(
+            _trace_hit(
+                2,
+                "pergunta_definition",
+                alvo=f"{grupo}.{ord_}",
+                contexto=f"variavel={var or '?'} tipo={tp or '?'}",
+                contexto_dict=cdict,
+                snippet=perg or "",
+            )
+        )
 
     # U3: schedules que apontam pra esse pergunte (metadata.pergunte)
     sql = (
@@ -2624,19 +2837,22 @@ def _trace_pergunte(
         "FROM execution_triggers WHERE kind = 'schedule' "
         "AND metadata_json LIKE ? LIMIT ?"
     )
-    for arq, fn, ln, meta_json in conn.execute(
-        sql, (f'%"pergunte": "{grupo_u}"%', max_per_edge)
-    ):
-        from plugadvpl.parsing.triggers import parse_metadata
+    for arq, fn, ln, meta_json in conn.execute(sql, (f'%"pergunte": "{grupo_u}"%', max_per_edge)):
         meta = parse_metadata(meta_json or "{}")
         if (meta.get("pergunte") or "").upper() != grupo_u:
             continue
-        hits.append(_trace_hit(
-            3, "scheduled_with_pergunte", arquivo=arq, funcao=fn or "",
-            linha=int(ln or 0), alvo=grupo,
-            contexto=f"sched_type={meta.get('sched_type', '?')}",
-            contexto_dict={"sched_type": meta.get("sched_type", "")},
-        ))
+        hits.append(
+            _trace_hit(
+                3,
+                "scheduled_with_pergunte",
+                arquivo=arq,
+                funcao=fn or "",
+                linha=int(ln or 0),
+                alvo=grupo,
+                contexto=f"sched_type={meta.get('sched_type', '?')}",
+                contexto_dict={"sched_type": meta.get("sched_type", "")},
+            )
+        )
 
     return hits
 
