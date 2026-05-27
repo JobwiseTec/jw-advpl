@@ -105,6 +105,36 @@ class TestTqPortOverride:
         assert "8019" in combined  # porta override aparece no host display
 
 
+class TestTqHealthcheckHints:
+    """v0.14.1: quando healthcheck falha, output sugere o que verificar."""
+
+    def test_healthcheck_timeout_shows_actionable_hints(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Server com restart_cmd OK mas porta morta → output cita
+        console.log + --port + --timeout pra orientar o usuario."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        # Porta 1 = privileged, virtualmente garantido connection refused
+        add_server(Server(
+            name="deadport", host="127.0.0.1", port=1,
+            build="7.00.240223P", environments=["env_a"],
+            default_environment="env_a",
+            restart_cmd="cmd /c echo restart" if hasattr(__builtins__, "WindowsPath") or True else "echo restart",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq",
+                  "--use-server", "deadport", "--timeout", "1"]
+        )
+        assert result.exit_code == 1, result.output
+        combined = (result.stdout or "") + (result.stderr or "")
+        # Hint deve citar pelo menos console.log + uma das opcoes acionaveis
+        assert "console.log" in combined.lower(), f"sem hint sobre console.log: {combined!r}"
+        # E uma das flags pra ajustar
+        assert ("--port" in combined or "--timeout" in combined), \
+            f"sem hint sobre --port/--timeout: {combined!r}"
+
+
 class TestTqJsonOutput:
     """--format json honra schema documentado."""
 

@@ -683,7 +683,6 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ### Próximas entregas
 
 - **`plugadvpl tq` v2** — `--all-envs` + `--confirm-prod` (flag `is_prod` no `Server` dataclass) pra encadear Troca Quente em todos os envs do server com guarda contra restart acidental em PROD. v0.15.0
-- **Skill `/plugadvpl:deploy`** — orquestra `compile → tq → smoke` em prompt. Reduz fricção do flow de dev. v0.14.1
 - **`apply-patch`** (planejado) — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). Sub-plugin `plugadvpl-ops` foi descartado: fica no core junto com `tq`
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
@@ -692,6 +691,12 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.14.1 — Hints acionáveis no `tq` + skill `/plugadvpl:deploy`
+
+- **Hints estruturados quando `tq` falha** — antes só mostrava `healthcheck timeout após N tentativas`; agora lista `console.log` do AppServer, valida `--port` vs porta REST configurada, sugere bump de `--timeout`. Mesmo padrão pra `restart_cmd` exit non-zero
+- **Skill `/plugadvpl:deploy`** — orquestrador `compile → tq → smoke` num passo só. Pre-flight, encadeamento `&&` (compile com erro aborta antes do restart), tabela de troubleshoot pós-deploy
+- Bump `uvx plugadvpl@0.13.x` → `@0.14.1` em todas as 26 skills + `plugin.json` + `marketplace.json`
 
 ### v0.14.0 — Troca Quente MVP local + compile multi-env
 

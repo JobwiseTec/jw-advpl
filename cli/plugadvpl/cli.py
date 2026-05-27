@@ -3260,9 +3260,30 @@ def tq_cmd(
             "error",
         ],
         title=f"tq ({srv.name})",
-        next_steps=[],
+        next_steps=_tq_hints(result, srv, hc_port, timeout),
     )
     raise typer.Exit(code=0 if result.ok else 1)
+
+
+def _tq_hints(result: object, srv: object, hc_port: int, timeout_s: int) -> list[str]:
+    """Sugestões acionáveis quando tq falha. Vazio quando result.ok."""
+    if getattr(result, "ok", False):
+        return []
+    status = getattr(result, "healthcheck_status", "")
+    if status == "timeout":
+        return [
+            f"healthcheck timeout em {srv.host}:{hc_port} após {timeout_s}s",
+            "verifique console.log do AppServer — build pode estar demorando ou erro de boot",
+            f"--port {hc_port} aponta pra porta REST correta? (server.port={srv.port})",
+            f"build lento? aumente --timeout {timeout_s} → --timeout {timeout_s * 2}",
+        ]
+    if getattr(result, "restart_exit_code", 0) not in (0, -1):
+        return [
+            "restart_cmd falhou — rode o comando manualmente pra ver o erro completo:",
+            f"  {srv.restart_cmd}",
+            "verifique permissão de execução e PATH (cmd absoluto evita ambiguidade)",
+        ]
+    return []
 
 
 def _handle_list_servers(ctx: typer.Context) -> None:

@@ -4,6 +4,42 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-05-27
+
+### Changed — Hints acionáveis quando `tq` falha
+
+Antes, falha de healthcheck mostrava só `healthcheck timeout após 60s (12
+tentativas)` na coluna `error`. Agora o `next_steps` lista o que verificar:
+
+```
+healthcheck timeout em 127.0.0.1:8019 após 60s
+verifique console.log do AppServer — build pode estar demorando ou erro de boot
+--port 8019 aponta pra porta REST correta? (server.port=1234)
+build lento? aumente --timeout 60 → --timeout 120
+```
+
+Mesmo padrão pra `restart_cmd` que retorna exit non-zero: aponta que o
+usuário deve rodar manual + cita o cmd configurado. Reduz pingback quando
+o tq falha em ambiente novo (porta REST diferente do TCP do advpls, build
+7.00.x que demora >60s pra subir REST).
+
+### Added — Skill `/plugadvpl:deploy`
+
+Wrapper orquestrador que encadeia [`/plugadvpl:compile`](skills/compile)
+→ [`/plugadvpl:tq`](skills/tq) → smoke opcional. Sem subcomando CLI novo
+— é o agente seguindo o playbook do `compile --all-envs <fonte> && tq
+--use-server <srv>` com pre-flight, hints de erro e tabela de
+troubleshoot.
+
+Caso de uso: depois de editar `.tlpp`/`.prw`, o agente roda `/plugadvpl:deploy
+<fonte>` e tem o ciclo completo (compile com erro aborta antes do
+restart; `&&` garante isso).
+
+### Bumped
+
+- `uvx plugadvpl@0.13.x` → `uvx plugadvpl@0.14.1` nas 26 skills
+- `plugin.json` / `marketplace.json` → 0.14.1
+
 ## [0.14.0] - 2026-05-27
 
 ### Added — `plugadvpl tq` (Troca Quente MVP local)

@@ -9,7 +9,9 @@ allowed-tools: [Bash]
 
 Executa o `restart_cmd` configurado pro server (registry global) e espera o AppServer voltar via healthcheck HTTP (GET `/` retornando 200/401/404).
 
-MVP pra testes locais — não faz versionamento de RPO, edição de `.ini` ou rollback. A versão completa pra produção fica pra [issue #5](https://github.com/JoniPraia/plugadvpl/issues/5).
+MVP pra testes locais — não faz versionamento de RPO, edição de `.ini` ou rollback. Esse escopo PROD-grade foi descartado conscientemente; quem precisa de rollback escreve um `restart_cmd` que faça isso ([análise completa na issue #5](https://github.com/JoniPraia/plugadvpl/issues/5#issuecomment-4553802738)).
+
+Pra encadear `compile → tq → smoke` num passo só, use [`/plugadvpl:deploy`](../deploy/SKILL.md).
 
 ## Pré-requisito
 
@@ -39,7 +41,7 @@ plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.13.1 tq $ARGUMENTS
+uvx plugadvpl@0.14.1 tq $ARGUMENTS
 ```
 
 ## Encadeamento típico
