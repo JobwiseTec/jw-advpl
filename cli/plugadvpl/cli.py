@@ -2928,6 +2928,20 @@ def compile_callback(
             help='Comando shell pro restart (use com --set-restart-cmd). Ex: "cmd.exe /c restart.bat"',
         ),
     ] = "",
+    mark_prod: Annotated[
+        str,
+        typer.Option(
+            "--mark-prod",
+            help="Marca server como produção (tq vai exigir --confirm-prod). Use --no-prod pra desfazer",
+        ),
+    ] = "",
+    no_prod: Annotated[
+        str,
+        typer.Option(
+            "--no-prod",
+            help="Remove flag is_prod do server (desfaz --mark-prod)",
+        ),
+    ] = "",
     clear_credentials_for: Annotated[
         str,
         typer.Option(
@@ -3014,6 +3028,14 @@ def compile_callback(
         _handle_set_restart_cmd(set_restart_cmd, cmd_value)
         return
 
+    if mark_prod:
+        _handle_set_is_prod(mark_prod, True)
+        return
+
+    if no_prod:
+        _handle_set_is_prod(no_prod, False)
+        return
+
     if clear_credentials_for:
         _handle_clear_credentials(clear_credentials_for)
         return
@@ -3039,7 +3061,7 @@ def compile_callback(
         "--list-servers", "--add-server", "--remove-server",
         "--import-tds-servers", "--yes", "-y", "--probe-appserver",
         "--set-credentials", "--clear-credentials", "--explain-config",
-        "--set-restart-cmd", "--cmd",
+        "--set-restart-cmd", "--cmd", "--mark-prod", "--no-prod",
     }
     misplaced = [str(f) for f in files if str(f) in suspicious_flags]
     if misplaced:
@@ -3202,6 +3224,13 @@ def tq_cmd(
         bool,
         typer.Option("--dry-run", help="Mostra o que faria, não executa"),
     ] = False,
+    confirm_prod: Annotated[
+        bool,
+        typer.Option(
+            "--confirm-prod",
+            help="Confirma intenção de restartar AppServer marcado como PROD (via --mark-prod no compile)",
+        ),
+    ] = False,
 ) -> None:
     """Restart do AppServer + healthcheck (Troca Quente MVP local)."""
     from dataclasses import asdict
@@ -3225,6 +3254,15 @@ def tq_cmd(
         typer.secho(
             f"Server '{use_server}' sem restart_cmd. Configure:\n"
             f"  plugadvpl compile --set-restart-cmd {use_server} --cmd '<comando>'",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if srv.is_prod and not confirm_prod and not dry_run:
+        typer.secho(
+            f"Server '{use_server}' está marcado como PROD.\n"
+            f"  Pra prosseguir mesmo assim: plugadvpl tq --use-server {use_server} --confirm-prod\n"
+            f"  Pra desmarcar: plugadvpl compile --no-prod {use_server}",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(code=2)
@@ -3304,8 +3342,14 @@ def _handle_list_servers(ctx: typer.Context) -> None:
     default_name = default.name if default else ""
     rows: list[dict[str, object]] = []
     for s in servers:
+        flags = []
+        if s.name == default_name:
+            flags.append("*")
+        if s.is_prod:
+            flags.append("PROD")
+        suffix = (" " + " ".join(flags)) if flags else ""
         rows.append({
-            "name": s.name + (" *" if s.name == default_name else ""),
+            "name": s.name + suffix,
             "host": s.host,
             "port": s.port,
             "build": s.build or "(MISSING)",
@@ -3317,7 +3361,7 @@ def _handle_list_servers(ctx: typer.Context) -> None:
     _render_from_ctx(
         ctx, rows,
         columns=["name", "host", "port", "build", "envs", "default_env", "user_env", "includes_count"],
-        title=f"AppServers cadastrados (* = default)",
+        title="AppServers cadastrados (* = default, PROD = is_prod)",
         next_steps=[f"plugadvpl compile --use-server {servers[0].name} <fonte>"],
     )
 
@@ -3684,6 +3728,37 @@ def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
     typer.secho(
         f"restart_cmd setado pra '{server_name}': {cmd!r}",
         fg=typer.colors.GREEN,
+    )
+
+
+def _handle_set_is_prod(server_name: str, is_prod: bool) -> None:
+    """Marca/desmarca server como produção (v0.15)."""
+    from dataclasses import replace
+    from plugadvpl.compile_servers import (
+        ServersRegistry,
+        get_server,
+        load_registry,
+        save_registry,
+    )
+
+    srv = get_server(server_name)
+    if srv is None:
+        typer.secho(
+            f"Server '{server_name}' não cadastrado.\n"
+            f"  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    new_srv = replace(srv, is_prod=is_prod)
+    registry = load_registry()
+    new_servers = [new_srv if s.name == server_name else s for s in registry.servers]
+    save_registry(ServersRegistry(default=registry.default, servers=new_servers))
+
+    label = "PROD" if is_prod else "não-PROD"
+    typer.secho(
+        f"server '{server_name}' marcado como {label}",
+        fg=typer.colors.YELLOW if is_prod else typer.colors.GREEN,
     )
 
 

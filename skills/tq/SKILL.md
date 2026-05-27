@@ -37,11 +37,12 @@ plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.
 - `--timeout N` — timeout do healthcheck em segundos (default 60).
 - `--no-healthcheck` — só roda o `restart_cmd`, pula o loop de healthcheck.
 - `--dry-run` — mostra o que faria sem executar.
+- `--confirm-prod` — obrigatório quando o server está marcado como produção (via `plugadvpl compile --mark-prod <server>`). Evita restart acidental em PROD.
 
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.14.1 tq $ARGUMENTS
+uvx plugadvpl@0.15.0 tq $ARGUMENTS
 ```
 
 ## Encadeamento típico

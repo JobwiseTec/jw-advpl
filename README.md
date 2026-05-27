@@ -677,12 +677,11 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **50 skills** (19 knowledge + 31 slash command wrappers), 5 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`), 1 SessionStart hook
 - **Schema SQLite v15** — 15 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
 - **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1043 testes verde** (unit + integration + bench + smoke real opcional) — ~83s suite full
+- **1051 testes verde** (unit + integration + bench + smoke real opcional) — ~57s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 
 ### Próximas entregas
 
-- **`plugadvpl tq` v2** — `--all-envs` + `--confirm-prod` (flag `is_prod` no `Server` dataclass) pra encadear Troca Quente em todos os envs do server com guarda contra restart acidental em PROD. v0.15.0
 - **`apply-patch`** (planejado) — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4). Sub-plugin `plugadvpl-ops` foi descartado: fica no core junto com `tq`
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
@@ -691,6 +690,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.15.0 — `tq --confirm-prod` + `is_prod` no Server
+
+- **Guarda contra restart acidental em PROD** — server marcado via `plugadvpl compile --mark-prod <nome>` exige `--confirm-prod` no `tq`. `--no-prod` desfaz. `--list-servers` mostra marcador `PROD` ao lado do nome
+- **Campo `is_prod`** no `Server` dataclass (default `False`, backwards-compat com registry existente)
+- 7 testes integration novos (`TestTqConfirmProd` + `TestMarkProd`). Suite full: 1051 passed
+- **Issue [#5](https://github.com/JoniPraia/plugadvpl/issues/5) fechada** — escopo MVP local entregue em v0.14.0–v0.15.0; itens PROD-grade restantes (`.ini` editing, RPO versionado, rollback automático, sub-plugin `plugadvpl-ops`) descartados conscientemente
 
 ### v0.14.1 — Hints acionáveis no `tq` + skill `/plugadvpl:deploy`
 

@@ -4,6 +4,44 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-27
+
+### Added — `--confirm-prod` no `tq` + flag `is_prod` no `Server`
+
+Guarda contra restart acidental em servers de produção. Fluxo:
+
+```bash
+plugadvpl compile --mark-prod prd-cliente-x         # marca uma vez
+plugadvpl tq --use-server prd-cliente-x             # ERRO: pede --confirm-prod
+plugadvpl tq --use-server prd-cliente-x --confirm-prod   # ok
+plugadvpl compile --no-prod prd-cliente-x           # desmarca
+```
+
+- Campo novo `is_prod: bool = False` no `Server` dataclass. Default
+  preserva backwards-compat com registry existente.
+- `--dry-run` no `tq` continua funcionando sem `--confirm-prod` (preview
+  não causa side-effect, então não precisa de guarda).
+- `compile --list-servers` agora mostra marcador `PROD` ao lado do nome
+  (junto com `*` de default).
+
+Lock file pra prevenir concurrent runs foi descartado: lock local não
+prevenia concurrent de 2 máquinas, e `--confirm-prod` cobre o caso real
+(acidente, não corrida). Ver [comment de fechamento da issue #5](https://github.com/JoniPraia/plugadvpl/issues/5#issuecomment-4553802738).
+
+### Added — 7 testes integration novos
+
+- 4 em `TestTqConfirmProd`: PROD sem flag erra; `--dry-run` ignora PROD;
+  non-PROD não pede flag; `--confirm-prod` libera execução real.
+- 3 em `TestMarkProd`: `--mark-prod` seta True; `--no-prod` reseta;
+  server inexistente erra com hint.
+
+Suite full: 1051 passed (1044 → 1051).
+
+### Bumped
+
+- `uvx plugadvpl@0.14.1` → `uvx plugadvpl@0.15.0` nas 26 skills
+- `plugin.json` / `marketplace.json` → 0.15.0
+
 ## [0.14.1] - 2026-05-27
 
 ### Changed — Hints acionáveis quando `tq` falha

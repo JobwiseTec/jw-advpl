@@ -105,6 +105,125 @@ class TestTqPortOverride:
         assert "8019" in combined  # porta override aparece no host display
 
 
+class TestTqConfirmProd:
+    """v0.15: server is_prod=True exige --confirm-prod pra rodar tq de verdade."""
+
+    def _add_prod_server(self, name: str = "prd") -> None:
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name=name, host="127.0.0.1", port=1234,
+            build="7.00.240223P", environments=["env_a"],
+            default_environment="env_a",
+            restart_cmd="echo restart",
+            is_prod=True,
+        ))
+
+    def test_prod_server_without_confirm_prod_errors(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        self._add_prod_server()
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq", "--use-server", "prd"]
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "PROD" in combined
+        assert "--confirm-prod" in combined
+
+    def test_prod_server_dry_run_bypasses_confirmation(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--dry-run não precisa de --confirm-prod (ainda é só preview, não restarta)."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        self._add_prod_server()
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq",
+                  "--use-server", "prd", "--dry-run"]
+        )
+        assert result.exit_code == 0, result.output
+
+    def test_prod_server_with_confirm_prod_proceeds(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--confirm-prod libera execução real. --no-healthcheck evita
+        esperar o (inexistente) AppServer responder."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        self._add_prod_server()
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq",
+                  "--use-server", "prd", "--confirm-prod",
+                  "--no-healthcheck"]
+        )
+        # restart_cmd "echo restart" sai 0 → ok=True com healthcheck skipped
+        assert result.exit_code == 0, result.output
+
+    def test_non_prod_server_doesnt_require_confirm_prod(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Server sem is_prod (default False) não exige flag — dry-run só pra
+        garantir que passa da validação de PROD sem executar restart."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server
+        add_server(Server(
+            name="dev", host="127.0.0.1", port=1234,
+            build="7.00.240223P", environments=["env_a"],
+            default_environment="env_a",
+            restart_cmd="echo restart",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "tq",
+                  "--use-server", "dev", "--dry-run"]
+        )
+        assert result.exit_code == 0, result.output
+
+
+class TestMarkProd:
+    """v0.15: --mark-prod / --no-prod no compile altera flag is_prod no registry."""
+
+    def test_mark_prod_sets_is_prod_true(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server, get_server
+        add_server(Server(
+            name="srv", host="h", port=1, build="b",
+            environments=["e"], default_environment="e",
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile", "--mark-prod", "srv"]
+        )
+        assert result.exit_code == 0, result.output
+        assert get_server("srv").is_prod is True
+
+    def test_no_prod_resets_is_prod(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        from plugadvpl.compile_servers import Server, add_server, get_server
+        add_server(Server(
+            name="srv", host="h", port=1, build="b",
+            environments=["e"], default_environment="e",
+            is_prod=True,
+        ))
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile", "--no-prod", "srv"]
+        )
+        assert result.exit_code == 0, result.output
+        assert get_server("srv").is_prod is False
+
+    def test_mark_prod_unknown_server_errors(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "compile", "--mark-prod", "ghost"]
+        )
+        assert result.exit_code == 2
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "ghost" in combined and "não cadastrado" in combined
+
+
 class TestTqHealthcheckHints:
     """v0.14.1: quando healthcheck falha, output sugere o que verificar."""
 
