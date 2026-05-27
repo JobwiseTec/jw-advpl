@@ -1,5 +1,6 @@
 {
   "name": "plugadvpl-marketplace",
+  "description": "Marketplace do plugadvpl — plugin Claude Code + CLI para ADVPL/TLPP (TOTVS Protheus): indexa fontes em SQLite/FTS5, compila via advpls, edita .prw cp1252 sem corromper acentos, guarda credenciais no cofre do OS.",
   "owner": {
     "name": "JoniPraia"
   },
