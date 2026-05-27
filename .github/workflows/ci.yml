@@ -14,7 +14,8 @@ jobs:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v8.1.0
       - name: Validate plugin structure
-        run: python scripts/validate_plugin.py
+        working-directory: cli
+        run: uv sync && uv run python ../scripts/validate_plugin.py
 
   test-cli:
     runs-on: ${{ matrix.os }}

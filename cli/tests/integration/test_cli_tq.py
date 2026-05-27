@@ -239,7 +239,7 @@ class TestTqHealthcheckHints:
             name="deadport", host="127.0.0.1", port=1,
             build="7.00.240223P", environments=["env_a"],
             default_environment="env_a",
-            restart_cmd="cmd /c echo restart" if hasattr(__builtins__, "WindowsPath") or True else "echo restart",
+            restart_cmd="echo restart",
         ))
         result = runner.invoke(
             app, ["--root", str(tmp_path), "tq",
