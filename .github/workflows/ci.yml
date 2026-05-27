@@ -39,6 +39,7 @@ jobs:
         plugadvpl/ingest_ini.py
         plugadvpl/ingest_log.py
         plugadvpl/ingest_rest.py
+        plugadvpl/ingest_sx.py
         plugadvpl/output.py
         plugadvpl/query.py
         plugadvpl/runtime_config.py
