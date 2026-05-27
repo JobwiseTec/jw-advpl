@@ -59,6 +59,12 @@ jobs:
 
   bench:
     runs-on: ubuntu-latest
+    # Serializa pushes em gh-pages: jobs concorrentes causam race ("remote
+    # rejected: gh-pages updated after git pull"). cancel-in-progress=false
+    # garante que cada commit registra seu bench, em vez de cancelar.
+    concurrency:
+      group: bench-gh-pages
+      cancel-in-progress: false
     permissions:
       contents: write           # needed to push benchmark data to gh-pages
       pull-requests: write      # needed for comment-on-alert
