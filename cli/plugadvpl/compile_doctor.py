@@ -145,7 +145,7 @@ def _detect_advpls() -> Path | None:
         if not ext_dir.is_dir():
             continue
         for entry in ext_dir.glob("totvs.tds-vscode-*"):
-            cand = (
+            advpls_path = (
                 entry
                 / "node_modules"
                 / "@totvs"
@@ -154,8 +154,8 @@ def _detect_advpls() -> Path | None:
                 / os_subdir
                 / f"advpls{ext_suffix}"
             )
-            if cand.is_file():
-                return cand
+            if advpls_path.is_file():
+                return advpls_path
 
     return None
 

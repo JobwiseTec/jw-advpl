@@ -91,6 +91,12 @@ ignore = ["E501", "PLR0913"]  # line-length pelo formatter; PLR0913=too-many-arg
     "TC003",    # type-only imports for pathlib.Path in fixtures is fine
     "RUF059",   # unused unpacked variable in tests (`content, _enc = ...`) is fine
 ]
+"plugadvpl/cli.py" = [
+    # Entry-point com 13+ subcomandos: imports lazy reduzem o cold-start de
+    # `plugadvpl --help` (caso comum) — handlers só carregam o módulo do
+    # subcomando invocado. Sem ciclos detectados (só __main__.py importa cli).
+    "PLC0415",
+]
 
 [tool.ruff.format]
 docstring-code-format = true   # formata exemplos de código dentro de docstrings

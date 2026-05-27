@@ -19,15 +19,16 @@ Subcomandos (além de ``version``):
 Opções globais (callback ``main_callback``): ``--root``, ``--format``, ``--quiet``,
 ``--db``, ``--limit``, ``--offset``, ``--compact``, ``--no-next-steps``.
 """
+
 from __future__ import annotations
 
+import io
 import re
 import sqlite3
-import io
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar, cast
 
 import typer
 
@@ -44,6 +45,8 @@ from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
 from plugadvpl.ingest_ini import (
     DEFAULT_GLOBS as INI_DEFAULT_GLOBS,
+)
+from plugadvpl.ingest_ini import (
     discover_ini_paths,
     ingest_ini_paths,
 )
@@ -52,8 +55,8 @@ from plugadvpl.ingest_log import (
     discover_log_paths,
     ingest_log_paths,
 )
-from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
+from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
@@ -69,33 +72,33 @@ from plugadvpl.query import (
     callers as q_callers,
 )
 from plugadvpl.query import (
+    cobertura_doc_query,
     doctor_diagnostics,
     doctor_func_count_check,
     execauto_calls_query,
-    cobertura_doc_query,
     execauto_top_modulos,
-    hotspots_query,
-    metrics_query,
     execution_triggers_duplicates,
     execution_triggers_query,
     find_any,
+    gatilho_query,
+    grep_fts,
+    hotspots_query,
+    impacto_query,
+    ini_audit_query,
+    lint_query,
+    log_diagnose_query,
+    metrics_query,
+    param_query,
     protheus_doc_homonyms,
     protheus_doc_show,
     protheus_docs_orphans,
     protheus_docs_query,
     protheus_docs_top_modulos,
     render_pdoc_markdown,
-    trace_query,
-    gatilho_query,
-    grep_fts,
-    impacto_query,
-    ini_audit_query,
-    lint_query,
-    log_diagnose_query,
-    param_query,
     stale_files,
     sx_status,
     tables_query,
+    trace_query,
 )
 from plugadvpl.query import (
     status as q_status,
@@ -104,6 +107,12 @@ from plugadvpl.scan import scan_sources
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from plugadvpl.compile_servers import Server
+    from plugadvpl.runtime_config import RuntimeConfig
+    from plugadvpl.tq import TqResult
+
+_T = TypeVar("_T")
 
 
 app = typer.Typer(
@@ -190,7 +199,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main_callback(
     ctx: typer.Context,
-    version: Annotated[
+    version: Annotated[  # noqa: ARG001 -- callback eager: handler em _version_callback, parametro nao e lido aqui
         bool,
         typer.Option(
             "--version",
@@ -294,9 +303,10 @@ def _render_from_ctx(
 
 def _with_ro_db(
     ctx: typer.Context,
-    fn: Callable[[sqlite3.Connection], list[dict[str, object]]],
-) -> list[dict[str, object]]:
-    """Boilerplate: abre RO, executa ``fn(conn)``, fecha. Retorna rows."""
+    fn: Callable[[sqlite3.Connection], _T],
+) -> _T:
+    """Boilerplate: abre RO, executa ``fn(conn)``, fecha. Retorna o que ``fn``
+    retornar (genérico em ``_T`` — handler decide a forma do payload)."""
     conn = _open_ro(ctx.obj["db"])
     try:
         return fn(conn)
@@ -304,9 +314,7 @@ def _with_ro_db(
         conn.close()
 
 
-def _augment_with_caminho(
-    ctx: typer.Context, rows: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _augment_with_caminho(ctx: typer.Context, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """v0.4.6 (D): adiciona ``caminho`` (relativo) em cada row pra distinguir
     fontes homônimos. Coluna não aparece em table display (mantém layout
     enxuto) mas vai pro JSON — útil pra agente IA evitar ambiguidade
@@ -403,7 +411,7 @@ FWExecView, métodos), SQL embarcado, includes, capabilities (MVC/JOB/REST/PE/..
 
 **Antes de chamar `Read` em qualquer `.prw`/`.tlpp`/`.prx`, você DEVE rodar primeiro
 um comando do plugadvpl** (via `Bash plugadvpl ...` ou `/plugadvpl:*` se houver slash).
-Fontes Protheus têm tipicamente 1.000–10.000 linhas; lê-los inteiros queima contexto e
+Fontes Protheus têm tipicamente 1.000-10.000 linhas; lê-los inteiros queima contexto e
 produz respostas vagas. O índice te dá o resumo em ~200 tokens em vez de 10.000.
 
 Só leia o `.prw` cru depois de localizar a faixa de linhas exata via índice
@@ -439,7 +447,7 @@ quais fontes chama, parâmetros, etc"):
 7. **Só depois**, se ainda restar dúvida, ler com `Read <arquivo>` usando os ranges de linha
    identificados (ex: `linha_inicio`/`linha_fim` de uma função específica do `arch`).
 
-Sintetize o que encontrar nos passos 1–6 num parágrafo: o que faz + dependências + impacto.
+Sintetize o que encontrar nos passos 1-6 num parágrafo: o que faz + dependências + impacto.
 **NUNCA pule direto para `Read` do `.prw` inteiro.**
 
 ### Como rodar
@@ -569,13 +577,7 @@ def _write_claude_md_fragment(root: Path) -> None:
     """
     claude_md = root / "CLAUDE.md"
     body_with_version = _CLAUDE_FRAGMENT_BODY.replace("__VERSION__", __version__)
-    fragment = (
-        _CLAUDE_FRAGMENT_BEGIN
-        + "\n"
-        + body_with_version
-        + _CLAUDE_FRAGMENT_END
-        + "\n"
-    )
+    fragment = _CLAUDE_FRAGMENT_BEGIN + "\n" + body_with_version + _CLAUDE_FRAGMENT_END + "\n"
 
     if claude_md.exists():
         content = claude_md.read_text(encoding="utf-8")
@@ -745,8 +747,15 @@ def reindex(
             content = target.read_text(encoding=parsed.get("encoding", "cp1252"), errors="replace")
             findings = lint_module.lint_source(parsed, content)
             _write_parsed(
-                conn, root, target, parsed, content, findings, counters,
-                no_content=False, redact_secrets=False,
+                conn,
+                root,
+                target,
+                parsed,
+                content,
+                findings,
+                counters,
+                no_content=False,
+                redact_secrets=False,
             )
         except Exception as exc:
             counters["arquivos_failed"] += 1
@@ -964,7 +973,9 @@ def arch(
 
     rows = _with_ro_db(ctx, lambda c: q_arch(c, arquivo))
     if not rows:
-        typer.secho(f"Arquivo '{arquivo}' não encontrado no índice.", fg=typer.colors.YELLOW, err=True)
+        typer.secho(
+            f"Arquivo '{arquivo}' não encontrado no índice.", fg=typer.colors.YELLOW, err=True
+        )
         raise typer.Exit(code=1)
     _render_from_ctx(
         ctx,
@@ -1044,7 +1055,7 @@ def lint(
 
 
 @app.command(name="ini-audit")
-def ini_audit(
+def ini_audit(  # noqa: PLR0912 -- typer command com varios filtros mutuamente exclusivos (severity/role/category/file/...); split viraria boilerplate de wrappers
     ctx: typer.Context,
     paths: Annotated[
         list[str] | None,
@@ -1184,8 +1195,15 @@ def ini_audit(
         ctx,
         rows,
         columns=[
-            "arquivo", "tipo", "role", "section", "key",
-            "linha", "regra_id", "severidade", "snippet",
+            "arquivo",
+            "tipo",
+            "role",
+            "section",
+            "key",
+            "linha",
+            "regra_id",
+            "severidade",
+            "snippet",
         ],
         title="Audit INI findings",
         next_steps=(
@@ -1202,7 +1220,7 @@ def ini_audit(
 
 
 @app.command(name="log-diagnose")
-def log_diagnose(
+def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/file/since/...); cada branch e validacao independente
     ctx: typer.Context,
     paths: Annotated[
         list[str] | None,
@@ -1220,9 +1238,10 @@ def log_diagnose(
     category: Annotated[
         str | None,
         typer.Option(
-            "--category", "-c",
+            "--category",
+            "-c",
             help="Filtra categoria (database|thread_error|rpo|network|connection|service|rest_api|"
-                 "compilation|authentication|shutdown|lifecycle|application).",
+            "compilation|authentication|shutdown|lifecycle|application).",
         ),
     ] = None,
     rule: Annotated[
@@ -1238,7 +1257,7 @@ def log_diagnose(
         typer.Option(
             "--since",
             help="Janela temporal relativa ao último timestamp do log "
-                 "(30m, 24h, 7d). Cuidado: é relativo ao log, não ao wall clock.",
+            "(30m, 24h, 7d). Cuidado: é relativo ao log, não ao wall clock.",
         ),
     ] = None,
     max_findings: Annotated[
@@ -1337,7 +1356,8 @@ def log_diagnose(
         if ing_res.file_ids:
             sev_filter = [severity] if severity else None
             diag_res = log_diagnose_files(
-                conn, ing_res.file_ids,
+                conn,
+                ing_res.file_ids,
                 since=since,
                 severity_filter=sev_filter,
                 max_findings=max_findings,
@@ -1369,14 +1389,18 @@ def log_diagnose(
         ctx,
         rows,
         columns=[
-            "arquivo", "log_tipo", "linha", "timestamp", "severidade",
-            "categoria", "rule_id", "message",
+            "arquivo",
+            "log_tipo",
+            "linha",
+            "timestamp",
+            "severidade",
+            "categoria",
+            "rule_id",
+            "message",
         ],
         title="Log diagnose findings",
         next_steps=(
-            [f"plugadvpl log-diagnose --rule {rows[0]['rule_id']} --format json"]
-            if rows
-            else None
+            [f"plugadvpl log-diagnose --rule {rows[0]['rule_id']} --format json"] if rows else None
         ),
     )
 
@@ -1412,9 +1436,7 @@ def doctor(
     rows = _with_ro_db(ctx, doctor_diagnostics)
     if check_funcs:
         root: Path = ctx.obj["root"]
-        rows.extend(
-            _with_ro_db(ctx, lambda c: doctor_func_count_check(c, root, detail=detail))
-        )
+        rows.extend(_with_ro_db(ctx, lambda c: doctor_func_count_check(c, root, detail=detail)))
     _render_from_ctx(
         ctx,
         rows,
@@ -1512,9 +1534,17 @@ def ingest_sx_cmd(
             "rows": counters["per_table"].get(tabela, 0),
         }
         for tabela in (
-            "tabelas", "campos", "indices", "gatilhos", "parametros",
-            "perguntas", "tabelas_genericas", "relacionamentos", "pastas",
-            "consultas", "grupos_campo",
+            "tabelas",
+            "campos",
+            "indices",
+            "gatilhos",
+            "parametros",
+            "perguntas",
+            "tabelas_genericas",
+            "relacionamentos",
+            "pastas",
+            "consultas",
+            "grupos_campo",
         )
     ]
     summary_rows.append(
@@ -1627,7 +1657,8 @@ def ingest_protheus_cmd(
     if not endpoint:
         typer.secho(
             "--endpoint obrigatorio. Ex: --endpoint http://protheus:8181/rest",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -1637,14 +1668,16 @@ def ingest_protheus_cmd(
         typer.secho(
             "Auth obrigatoria: passe --user/--password ou defina "
             "PROTHEUS_USER/PROTHEUS_PASS (mesmas creds do compile).",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
     if modo not in ("enxuto", "completo"):
         typer.secho(
             f"--modo deve ser 'enxuto' ou 'completo' (recebido: {modo!r})",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -1661,8 +1694,10 @@ def ingest_protheus_cmd(
     if dry_run:
         try:
             manifest = client.run(
-                modo=modo, threshold=threshold,
-                base_dir=base_dir, ini_dir=ini_dir,
+                modo=modo,
+                threshold=threshold,
+                base_dir=base_dir,
+                ini_dir=ini_dir,
             )
         except ColetaDBError as exc:
             typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
@@ -1679,7 +1714,8 @@ def ingest_protheus_cmd(
             for f in manifest.files
         ]
         _render_from_ctx(
-            ctx, rows,
+            ctx,
+            rows,
             title=(
                 f"COLETADB manifest — bundle_id={manifest.bundle_id} "
                 f"modo={manifest.modo} files={len(manifest.files)}"
@@ -1689,9 +1725,12 @@ def ingest_protheus_cmd(
 
     try:
         counters = do_ingest_via_rest(
-            client, db_path,
-            modo=modo, threshold=threshold,
-            base_dir=base_dir, ini_dir=ini_dir,
+            client,
+            db_path,
+            modo=modo,
+            threshold=threshold,
+            base_dir=base_dir,
+            ini_dir=ini_dir,
         )
     except ColetaDBError as exc:
         typer.secho(f"FAIL: {exc}", fg=typer.colors.RED, err=True)
@@ -1706,9 +1745,17 @@ def ingest_protheus_cmd(
             "rows": ingest_inner.get("per_table", {}).get(tabela, 0),
         }
         for tabela in (
-            "tabelas", "campos", "indices", "gatilhos", "parametros",
-            "perguntas", "tabelas_genericas", "relacionamentos", "pastas",
-            "consultas", "grupos_campo",
+            "tabelas",
+            "campos",
+            "indices",
+            "gatilhos",
+            "parametros",
+            "perguntas",
+            "tabelas_genericas",
+            "relacionamentos",
+            "pastas",
+            "consultas",
+            "grupos_campo",
         )
     ]
     summary_rows.append(
@@ -1724,7 +1771,8 @@ def ingest_protheus_cmd(
             err=True,
         )
     _render_from_ctx(
-        ctx, summary_rows,
+        ctx,
+        summary_rows,
         title=f"Ingest REST — rows por tabela (bundle {counters['bundle_id'][:8]})",
         next_steps=[
             "plugadvpl impacto A1_COD",
@@ -1869,7 +1917,8 @@ def workflow(
     """
     if duplicates:
         dup_rows = _with_ro_db(
-            ctx, lambda c: execution_triggers_duplicates(c, kind=kind),
+            ctx,
+            lambda c: execution_triggers_duplicates(c, kind=kind),
         )
         display_dup = [
             {
@@ -1886,14 +1935,13 @@ def workflow(
             columns=["kind", "target", "count", "arquivos"],
             title=f"Workflow targets duplicados{f' (kind={kind})' if kind else ''}",
             next_steps=(
-                [f"plugadvpl workflow --target {dup_rows[0]['target']}"]
-                if dup_rows
-                else None
+                [f"plugadvpl workflow --target {dup_rows[0]['target']}"] if dup_rows else None
             ),
         )
         return
     rows = _with_ro_db(
-        ctx, lambda c: execution_triggers_query(c, kind=kind, target=target, arquivo=arquivo),
+        ctx,
+        lambda c: execution_triggers_query(c, kind=kind, target=target, arquivo=arquivo),
     )
     # Renderiza só os campos top-level; metadata fica em JSON.
     display_rows = [
@@ -1913,14 +1961,17 @@ def workflow(
         display_rows,
         columns=["arquivo", "funcao", "linha", "kind", "target", "snippet"],
         title=(
-            f"Execution triggers"
+            "Execution triggers"
             + (f" (kind={kind})" if kind else "")
             + (f" (target={target})" if target else "")
             + (f" (arquivo={arquivo})" if arquivo else "")
         ),
         next_steps=(
             # v0.4.6 (I): dedupe preservando ordem (set comprehension não garante).
-            [f"plugadvpl find {t}" for t in dict.fromkeys(r["target"] for r in rows[:3] if r["target"]).keys()]
+            [
+                f"plugadvpl find {t}"
+                for t in dict.fromkeys(r["target"] for r in rows[:3] if r["target"])
+            ]
             if rows
             else _empty_result_hints(
                 bool(kind or target or arquivo),
@@ -1984,12 +2035,16 @@ def execauto(
     Sem filtros: lista todas as chamadas. Use ``--routine MATA410`` pra ver
     quem inclui Pedido de Venda; ``--dynamic`` pra revisar calls não-resolvíveis.
     """
-    from plugadvpl.parsing.execauto import load_execauto_catalog  # lazy
     rows = _with_ro_db(
         ctx,
         lambda c: execauto_calls_query(
-            c, routine=routine, modulo=modulo, arquivo=arquivo, op=op,
-            dynamic=dynamic, op_dynamic=op_dynamic,
+            c,
+            routine=routine,
+            modulo=modulo,
+            arquivo=arquivo,
+            op=op,
+            dynamic=dynamic,
+            op_dynamic=op_dynamic,
         ),
     )
     display_rows = [
@@ -1999,7 +2054,12 @@ def execauto(
             "linha": r["linha"],
             "routine": r["routine"] or "(dynamic)",
             "module": r["module"] or "",
-            "op": r["op_label"] or (str(r["op_code"]) if r["op_code"] is not None else ("(var)" if r["op_dynamic"] else "")),
+            "op": r["op_label"]
+            or (
+                str(r["op_code"])
+                if r["op_code"] is not None
+                else ("(var)" if r["op_dynamic"] else "")
+            ),
             "tabelas": ",".join(r["tables_resolved"]),
             "snippet": (r["snippet"] or "")[:80],
         }
@@ -2011,7 +2071,7 @@ def execauto(
         display_rows,
         columns=["arquivo", "funcao", "linha", "routine", "module", "op", "tabelas", "snippet"],
         title=(
-            f"ExecAuto calls"
+            "ExecAuto calls"
             + (f" (routine={routine})" if routine else "")
             + (f" (modulo={modulo})" if modulo else "")
             + (f" (arquivo={arquivo})" if arquivo else "")
@@ -2020,15 +2080,13 @@ def execauto(
         ),
         next_steps=(
             # v0.4.6 (I): dedupe preservando ordem (set não garante).
-            [
-                f"plugadvpl arch {arq}"
-                for arq in dict.fromkeys(r["arquivo"] for r in rows[:3]).keys()
-            ]
+            [f"plugadvpl arch {arq}" for arq in dict.fromkeys(r["arquivo"] for r in rows[:3])]
             if rows
             else _empty_result_hints(
                 bool(routine or modulo or arquivo or op or dynamic is not None),
                 table_label="execauto call",
-                extra_when_filtered=_execauto_modulo_hints(ctx, modulo) + [
+                extra_when_filtered=[
+                    *_execauto_modulo_hints(ctx, modulo),
                     "  plugadvpl execauto --dynamic     # ver calls não-resolvíveis",
                 ],
             )
@@ -2036,9 +2094,7 @@ def execauto(
     )
 
 
-def _execauto_modulo_hints(
-    ctx: typer.Context, modulo_filter: str | None
-) -> list[str]:
+def _execauto_modulo_hints(ctx: typer.Context, modulo_filter: str | None) -> list[str]:
     """v0.4.6 (E): se filtro --modulo X foi usado e nao deu match, sugere
     os top-5 modulos disponiveis no indice."""
     if not modulo_filter:
@@ -2059,7 +2115,9 @@ def docs(
     ctx: typer.Context,
     modulo: Annotated[
         str | None,
-        typer.Argument(help="Módulo TOTVS pra filtrar (SIGAFAT, SIGACOM, ...). Sem valor: lista tudo."),
+        typer.Argument(
+            help="Módulo TOTVS pra filtrar (SIGAFAT, SIGACOM, ...). Sem valor: lista tudo."
+        ),
     ] = None,
     author: Annotated[
         str | None,
@@ -2087,7 +2145,9 @@ def docs(
     ] = None,
     orphans: Annotated[
         bool,
-        typer.Option("--orphans", help="Lista funções SEM Protheus.doc (cross-ref BP-007 do lint)."),
+        typer.Option(
+            "--orphans", help="Lista funções SEM Protheus.doc (cross-ref BP-007 do lint)."
+        ),
     ] = False,
 ) -> None:
     """Catálogo de Protheus.doc agregado (Universo 3 / Feature C).
@@ -2110,9 +2170,7 @@ def docs(
                 f"Use --arquivo <nome> pra escolher.",
                 err=True,
             )
-        d = _with_ro_db(
-            ctx, lambda c: protheus_doc_show(c, show, arquivo=arquivo)
-        )
+        d = _with_ro_db(ctx, lambda c: protheus_doc_show(c, show, arquivo=arquivo))
         if d is None:
             typer.echo(
                 f"Nenhum Protheus.doc encontrado pra '{show}' em '{arquivo}'.",
@@ -2123,7 +2181,7 @@ def docs(
         return
 
     if orphans:
-        rows = _with_ro_db(ctx, lambda c: protheus_docs_orphans(c))
+        rows = _with_ro_db(ctx, protheus_docs_orphans)
         _render_from_ctx(
             ctx,
             rows,
@@ -2171,18 +2229,16 @@ def docs(
             "Protheus.doc"
             + (f" (modulo={modulo})" if modulo else "")
             + (f" (author={author})" if author else "")
-            + (f" (deprecated)" if deprecated else "")
+            + (" (deprecated)" if deprecated else "")
         ),
         next_steps=(
-            [
-                f"plugadvpl docs --show {r['funcao']}"
-                for r in rows[:3] if r.get("funcao")
-            ]
+            [f"plugadvpl docs --show {r['funcao']}" for r in rows[:3] if r.get("funcao")]
             if rows
             else _empty_result_hints(
                 bool(modulo or author or funcao or arquivo or deprecated is not None or tipo),
                 table_label="Protheus.doc",
-                extra_when_filtered=_docs_modulo_hints(ctx, modulo) + [
+                extra_when_filtered=[
+                    *_docs_modulo_hints(ctx, modulo),
                     "  plugadvpl docs --orphans         # funções sem header (BP-007)",
                 ],
             )
@@ -2190,9 +2246,7 @@ def docs(
     )
 
 
-def _docs_modulo_hints(
-    ctx: typer.Context, modulo_filter: str | None
-) -> list[str]:
+def _docs_modulo_hints(ctx: typer.Context, modulo_filter: str | None) -> list[str]:
     """v0.4.6 (E): se filtro [modulo] foi usado e não deu match, sugere
     os top-5 módulos disponíveis no índice de protheus_docs."""
     if not modulo_filter:
@@ -2213,7 +2267,9 @@ def trace(
     ctx: typer.Context,
     entidade: Annotated[
         str,
-        typer.Argument(help="Entidade a rastrear: campo (A1_COD), função (MaFisRef) ou tabela (SC5)."),
+        typer.Argument(
+            help="Entidade a rastrear: campo (A1_COD), função (MaFisRef) ou tabela (SC5)."
+        ),
     ],
     tipo: Annotated[
         TraceTipo | None,
@@ -2231,14 +2287,16 @@ def trace(
     depth: Annotated[
         int,
         typer.Option(
-            "--depth", "-d",
+            "--depth",
+            "-d",
             help="Profundidade de BFS (1..3, default 2). Aplica em campo (gatilhos transitivos).",
         ),
     ] = 2,
     universo: Annotated[
         str | None,
         typer.Option(
-            "--universo", "-u",
+            "--universo",
+            "-u",
             help="Filtra universos (1=fontes, 2=SX, 3=workflow/execauto/docs). Múltiplos: '1,2'.",
         ),
     ] = None,
@@ -2276,20 +2334,21 @@ def trace(
     rows = _with_ro_db(
         ctx,
         lambda c: trace_query(
-            c, entidade, tipo=tipo_str, depth=depth,
-            universos=universos, max_per_edge=max_per_edge,
+            c,
+            entidade,
+            tipo=tipo_str,
+            depth=depth,
+            universos=universos,
+            max_per_edge=max_per_edge,
         ),
     )
     # v0.5.1 (#2): para display, usa lookup-first também (mesma classificação
     # que trace_query usou internamente).
-    if tipo_str:
-        tipo_detected = tipo_str
-    else:
-        tipo_detected = _with_ro_db(ctx, lambda c: _detect_entity_type_db(c, entidade))
+    tipo_detected = tipo_str or _with_ro_db(ctx, lambda c: _detect_entity_type_db(c, entidade))
     title_parts = [f"Trace de '{entidade}' (tipo={tipo_detected})"]
     if universos:
         title_parts.append(f"universos={','.join(map(str, universos))}")
-    if depth != 2:
+    if depth != 2:  # noqa: PLR2004 -- default semantico do trace; ver _DEFAULT_DEPTH em query.py
         title_parts.append(f"depth={depth}")
 
     _render_from_ctx(
@@ -2298,9 +2357,7 @@ def trace(
         columns=["universo", "edge", "arquivo", "funcao", "linha", "alvo", "contexto", "snippet"],
         title=" | ".join(title_parts),
         next_steps=(
-            _trace_next_steps(rows, tipo_detected)
-            if rows
-            else _trace_empty_hints(ctx, entidade)
+            _trace_next_steps(rows, tipo_detected) if rows else _trace_empty_hints(ctx, entidade)
         ),
     )
 
@@ -2313,9 +2370,7 @@ def _trace_empty_hints(ctx: typer.Context, entidade: str) -> list[str]:
     índice tem dados e sugere ``find``/``grep`` (caso typo) ou reingest
     (caso índice realmente vazio).
     """
-    n_fontes = _with_ro_db(
-        ctx, lambda c: c.execute("SELECT COUNT(*) FROM fontes").fetchone()[0]
-    )
+    n_fontes = _with_ro_db(ctx, lambda c: c.execute("SELECT COUNT(*) FROM fontes").fetchone()[0])
     if n_fontes > 0:
         return [
             f"Nenhum hit para '{entidade}' — pode ser typo. Verifique o nome:",
@@ -2328,7 +2383,7 @@ def _trace_empty_hints(ctx: typer.Context, entidade: str) -> list[str]:
     ]
 
 
-def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
+def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:  # noqa: PLR0911 -- next-step por tipo de entidade (file/function/table/...); cada return e match curto
     """v0.5.0+: sugere próximo comando baseado no tipo detectado."""
     if tipo == "campo":
         return ["  plugadvpl impacto <campo>   # análise detalhada SX (depth maior)"]
@@ -2351,8 +2406,7 @@ def _trace_next_steps(rows: list[dict[str, Any]], tipo: str) -> list[str]:
 
 
 # Import lazy do _detect_entity_type / _detect_entity_type_db (declarados em query.py).
-from plugadvpl.query import _detect_entity_type, _detect_entity_type_db  # noqa: E402
-
+from plugadvpl.query import _detect_entity_type_db  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # v0.6.0 — Universo 4 (Qualidade & Métricas) Feature B
@@ -2393,7 +2447,9 @@ def metrics(
     ] = 0,
     sort: Annotated[
         MetricsSort,
-        typer.Option("--sort", "-s", help="Ordem desc: cc|loc|nesting|calls|params.", case_sensitive=False),
+        typer.Option(
+            "--sort", "-s", help="Ordem desc: cc|loc|nesting|calls|params.", case_sensitive=False
+        ),
     ] = MetricsSort.cc,
 ) -> None:
     """Métricas por função (Universo 4 / Feature B).
@@ -2408,7 +2464,11 @@ def metrics(
     rows = _with_ro_db(
         ctx,
         lambda c: metrics_query(
-            c, arquivo=arquivo, min_cc=min_cc, min_loc=min_loc, sort=sort.value,
+            c,
+            arquivo=arquivo,
+            min_cc=min_cc,
+            min_loc=min_loc,
+            sort=sort.value,
         ),
     )
     # v0.6.0: mantém schema completo no dict (JSON consumer); columns
@@ -2430,9 +2490,19 @@ def metrics(
     _render_from_ctx(
         ctx,
         display_rows,
-        columns=["arquivo", "funcao", "linha", "loc", "cc", "nesting", "n_calls_out", "params_count", "has_doc"],
+        columns=[
+            "arquivo",
+            "funcao",
+            "linha",
+            "loc",
+            "cc",
+            "nesting",
+            "n_calls_out",
+            "params_count",
+            "has_doc",
+        ],
         title=(
-            f"Métricas"
+            "Métricas"
             + (f" (arquivo={arquivo})" if arquivo else "")
             + (f" (cc>={min_cc})" if min_cc else "")
             + (f" (loc>={min_loc})" if min_loc else "")
@@ -2462,7 +2532,9 @@ def hotspots(
     ] = True,
     tipo: Annotated[
         str | None,
-        typer.Option("--tipo", "-t", help="Filtra tipo de chamada: user_func|method|execauto|execblock."),
+        typer.Option(
+            "--tipo", "-t", help="Filtra tipo de chamada: user_func|method|execauto|execblock."
+        ),
     ] = None,
 ) -> None:
     """Top-N funções mais chamadas no projeto (Universo 4 / Feature B).
@@ -2491,9 +2563,7 @@ def hotspots(
             + (f" tipo={tipo}" if tipo else "")
         ),
         next_steps=(
-            [f"plugadvpl callers {rows[0]['destino']}    # callsites detalhados"]
-            if rows
-            else None
+            [f"plugadvpl callers {rows[0]['destino']}    # callsites detalhados"] if rows else None
         ),
     )
 
@@ -2506,6 +2576,7 @@ def _warn_hotspot_method_dedup(rows: list[dict[str, Any]]) -> None:
     n_calls combinado.
     """
     from collections import defaultdict
+
     by_method: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
         dest = r.get("destino") or ""
@@ -2513,7 +2584,7 @@ def _warn_hotspot_method_dedup(rows: list[dict[str, Any]]) -> None:
             continue
         method = dest.rsplit(":", 1)[-1].upper()
         by_method[method].append(r)
-    groups = [(m, lst) for m, lst in by_method.items() if len(lst) >= 2]
+    groups = [(m, lst) for m, lst in by_method.items() if len(lst) >= 2]  # noqa: PLR2004 -- min pra ser duplicate group
     if not groups:
         return
     for method, items in groups:
@@ -2531,7 +2602,12 @@ def cobertura_doc(
     ctx: typer.Context,
     groupby: Annotated[
         CoberturaGroupBy,
-        typer.Option("--groupby", "-g", help="Agrupar por: modulo (default) ou source_type.", case_sensitive=False),
+        typer.Option(
+            "--groupby",
+            "-g",
+            help="Agrupar por: modulo (default) ou source_type.",
+            case_sensitive=False,
+        ),
     ] = CoberturaGroupBy.modulo,
 ) -> None:
     """Cobertura de Protheus.doc agregada (Universo 4 / Feature B).
@@ -2552,8 +2628,8 @@ def cobertura_doc(
         title=f"Cobertura Protheus.doc (por {groupby.value})",
         next_steps=(
             [
-                f"plugadvpl docs --orphans            # funções sem header",
-                f"plugadvpl lint --regra BP-007       # raw findings",
+                "plugadvpl docs --orphans            # funções sem header",
+                "plugadvpl lint --regra BP-007       # raw findings",
             ]
             if rows
             else [
@@ -2596,8 +2672,13 @@ def edit_prw_check(
         ctx,
         [report.to_dict()],
         columns=[
-            "file", "extension", "expected_encoding", "detected_encoding",
-            "has_bom", "match", "non_ascii_bytes",
+            "file",
+            "extension",
+            "expected_encoding",
+            "detected_encoding",
+            "has_bom",
+            "match",
+            "non_ascii_bytes",
         ],
         title=f"edit-prw check {arquivo.name}",
     )
@@ -2672,8 +2753,10 @@ def edit_prw_save(
 
 @edit_prw_app.command("stage")
 def edit_prw_stage(
-    ctx: typer.Context,
-    arquivo: Annotated[Path, typer.Argument(help="Fonte .prw cp1252 a converter para UTF-8 antes de editar.")],
+    ctx: typer.Context,  # noqa: ARG001 -- typer commands declaram ctx por convencao mesmo quando nao consomem o estado
+    arquivo: Annotated[
+        Path, typer.Argument(help="Fonte .prw cp1252 a converter para UTF-8 antes de editar.")
+    ],
     no_backup: Annotated[
         bool,
         typer.Option("--no-backup", help="Nao criar arquivo .bak com bytes originais."),
@@ -2694,8 +2777,10 @@ def edit_prw_stage(
         typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     try:
-        src, dst, bak = convert_and_save(
-            arquivo, from_encoding="cp1252", to_encoding="utf-8",
+        _src, _dst, bak = convert_and_save(
+            arquivo,
+            from_encoding="cp1252",
+            to_encoding="utf-8",
             backup=not no_backup,
         )
     except ValueError as exc:
@@ -2712,8 +2797,11 @@ def edit_prw_stage(
 
 @edit_prw_app.command("commit")
 def edit_prw_commit(
-    ctx: typer.Context,
-    arquivo: Annotated[Path, typer.Argument(help="Fonte .prw em UTF-8 (após stage) a converter de volta para cp1252.")],
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
+    arquivo: Annotated[
+        Path,
+        typer.Argument(help="Fonte .prw em UTF-8 (após stage) a converter de volta para cp1252."),
+    ],
     no_backup: Annotated[
         bool,
         typer.Option("--no-backup", help="Nao criar arquivo .bak."),
@@ -2732,8 +2820,10 @@ def edit_prw_commit(
         typer.secho(f"Arquivo nao encontrado: {arquivo}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     try:
-        src, dst, bak = convert_and_save(
-            arquivo, from_encoding="utf-8", to_encoding="cp1252",
+        _src, _dst, bak = convert_and_save(
+            arquivo,
+            from_encoding="utf-8",
+            to_encoding="cp1252",
             backup=not no_backup,
         )
     except ValueError as exc:
@@ -2748,11 +2838,11 @@ def edit_prw_commit(
 
 @edit_prw_app.command("clean")
 def edit_prw_clean(
-    ctx: typer.Context,
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
     target: Annotated[
         Path,
         typer.Argument(help="Pasta (varre recursivamente) OU arquivo .prw específico."),
-    ] = Path("."),
+    ] = Path(),
     yes: Annotated[
         bool,
         typer.Option("--yes", "-y", help="Pula confirmação antes de remover."),
@@ -2781,8 +2871,10 @@ def edit_prw_clean(
         baks = [bak] if bak.is_file() else []
     else:
         baks = sorted(
-            p for p in target.rglob("*.bak")
-            if p.is_file() and any(
+            p
+            for p in target.rglob("*.bak")
+            if p.is_file()
+            and any(
                 p.name.lower().endswith(ext + ".bak")
                 for ext in (".prw", ".prx", ".tlpp", ".tlpp.ch", ".ch")
             )
@@ -2793,11 +2885,11 @@ def edit_prw_clean(
         return
 
     total_bytes = sum(p.stat().st_size for p in baks)
-    typer.echo(f"\n=== edit-prw clean ===")
+    typer.echo("\n=== edit-prw clean ===")
     typer.echo(f"  candidatos: {len(baks)} arquivo(s), {total_bytes:,} bytes")
     for p in baks[:20]:
         typer.echo(f"    {p}")
-    if len(baks) > 20:
+    if len(baks) > 20:  # noqa: PLR2004 -- cap de display; mostra primeiros 20 + sumario
         typer.echo(f"    ... ({len(baks) - 20} a mais)")
 
     if dry_run:
@@ -2841,7 +2933,7 @@ app.add_typer(compile_app, name="compile")
 
 
 @compile_app.callback()
-def compile_callback(
+def compile_callback(  # noqa: PLR0911, PLR0912, PLR0915 -- typer command dispatcher: --doctor / --install / --list-servers / --add-server / --remove-server / --import-tds / --probe / --set-credentials / --clear-credentials / --explain-config / --set-restart-cmd / --mark-prod / --no-prod / --all-envs ; cada um e um handler curto, mas a soma estoura limits. Split viraria 14 sub-commands typer com duplicacao de options globais
     ctx: typer.Context,
     files: Annotated[list[Path] | None, typer.Argument(help="Fontes a compilar.")] = None,
     mode: Annotated[str, typer.Option("--mode", help="auto|appre|cli")] = "auto",
@@ -2858,10 +2950,11 @@ def compile_callback(
     includes: Annotated[
         list[Path],
         typer.Option(
-            "--includes", "-I",
+            "--includes",
+            "-I",
             help="Override includes (repita: --includes A --includes B)",
         ),
-    ] = [],
+    ] = [],  # noqa: B006 -- typer Annotated nao aceita default_factory; lista vazia e safe pois nunca mutada
     init_config: Annotated[
         bool, typer.Option("--init-config", help="Gera template runtime.toml")
     ] = False,
@@ -2882,7 +2975,9 @@ def compile_callback(
     ] = False,
     list_servers_flag: Annotated[
         bool,
-        typer.Option("--list-servers", help="Lista AppServers cadastrados (~/.plugadvpl/servers.json)"),
+        typer.Option(
+            "--list-servers", help="Lista AppServers cadastrados (~/.plugadvpl/servers.json)"
+        ),
     ] = False,
     add_server_flag: Annotated[
         bool,
@@ -2894,11 +2989,15 @@ def compile_callback(
     ] = "",
     import_tds_servers: Annotated[
         bool,
-        typer.Option("--import-tds-servers", help="Importa servers do TDS-VSCode (~/.totvsls/servers.json)"),
+        typer.Option(
+            "--import-tds-servers", help="Importa servers do TDS-VSCode (~/.totvsls/servers.json)"
+        ),
     ] = False,
     use_server: Annotated[
         str,
-        typer.Option("--use-server", help="Compila usando server do registry (sobrescreve [appserver])"),
+        typer.Option(
+            "--use-server", help="Compila usando server do registry (sobrescreve [appserver])"
+        ),
     ] = "",
     probe_appserver: Annotated[
         str,
@@ -2970,7 +3069,8 @@ def compile_callback(
     yes: Annotated[
         bool,
         typer.Option(
-            "--yes", "-y",
+            "--yes",
+            "-y",
             help="Pula confirmações interativas (use com cuidado em --install-advpls)",
         ),
     ] = False,
@@ -3022,7 +3122,8 @@ def compile_callback(
         if not cmd_value:
             typer.secho(
                 "--set-restart-cmd requer --cmd '<comando>'",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
         _handle_set_restart_cmd(set_restart_cmd, cmd_value)
@@ -3054,14 +3155,36 @@ def compile_callback(
     # virarem None silenciosamente e cai em --mode auto → appre sem includes.
     # Detecta isso e erra com mensagem útil ANTES de chamar o compile.
     suspicious_flags = {
-        "--mode", "--includes", "-I", "--changed-since",
-        "--no-warnings", "--timeout", "--no-security-warning",
-        "--use-server", "--use-environment", "--all-envs", "--format", "-f",
-        "--init-config", "--force", "--doctor", "--install-advpls",
-        "--list-servers", "--add-server", "--remove-server",
-        "--import-tds-servers", "--yes", "-y", "--probe-appserver",
-        "--set-credentials", "--clear-credentials", "--explain-config",
-        "--set-restart-cmd", "--cmd", "--mark-prod", "--no-prod",
+        "--mode",
+        "--includes",
+        "-I",
+        "--changed-since",
+        "--no-warnings",
+        "--timeout",
+        "--no-security-warning",
+        "--use-server",
+        "--use-environment",
+        "--all-envs",
+        "--format",
+        "-f",
+        "--init-config",
+        "--force",
+        "--doctor",
+        "--install-advpls",
+        "--list-servers",
+        "--add-server",
+        "--remove-server",
+        "--import-tds-servers",
+        "--yes",
+        "-y",
+        "--probe-appserver",
+        "--set-credentials",
+        "--clear-credentials",
+        "--explain-config",
+        "--set-restart-cmd",
+        "--cmd",
+        "--mark-prod",
+        "--no-prod",
     }
     misplaced = [str(f) for f in files if str(f) in suspicious_flags]
     if misplaced:
@@ -3074,12 +3197,15 @@ def compile_callback(
             "\n"
             "  ❌ ERRADO: plugadvpl compile FOO.PRW --mode cli --includes <dir>\n"
             "  ✓ CERTO:  plugadvpl compile --mode cli --includes <dir> FOO.PRW",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
-    from plugadvpl.compile import CompileRequest, run as compile_run
-    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+    from plugadvpl.compile import CompileRequest
+    from plugadvpl.compile import run as compile_run
+    from plugadvpl.runtime_config import RuntimeConfigError
+    from plugadvpl.runtime_config import load as load_runtime_config
 
     try:
         runtime_cfg = load_runtime_config(root)
@@ -3092,13 +3218,15 @@ def compile_callback(
         if not use_server:
             typer.secho(
                 "--all-envs requer --use-server <nome>",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
         if use_environment:
             typer.secho(
                 "--all-envs e --use-environment são mutuamente exclusivos",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
 
@@ -3106,32 +3234,39 @@ def compile_callback(
     srv = None
     if use_server:
         from plugadvpl.compile_servers import get_server
+
         srv = get_server(use_server)
         if srv is None:
             typer.secho(
                 f"server '{use_server}' não cadastrado. Liste com: "
                 f"plugadvpl compile --list-servers",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
         if not all_envs:
             runtime_cfg = _apply_server_override(
-                runtime_cfg, srv, use_environment, requested_mode=mode,
+                runtime_cfg,
+                srv,
+                use_environment,
+                requested_mode=mode,
             )
 
     if mode == "cli" and runtime_cfg is None and not all_envs:
         typer.secho(
             f"runtime.toml required for cli mode at {root}/.plugadvpl/runtime.toml. "
             "Run: plugadvpl compile --init-config OU passe --use-server <nome>",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
     request = CompileRequest(
         files=files,
-        mode=cast(Literal["auto", "appre", "cli"], mode),
+        mode=cast("Literal['auto', 'appre', 'cli']", mode),
         no_warnings=no_warnings,
-        timeout_seconds=timeout, no_security_warning=no_security_warning,
+        timeout_seconds=timeout,
+        no_security_warning=no_security_warning,
         includes_override=includes if includes else None,
         changed_since=changed_since,
     )
@@ -3140,7 +3275,7 @@ def compile_callback(
     # por env, anotando linha com a coluna "env". Exit code = max dos envs.
     if all_envs:
         assert srv is not None
-        if len(srv.environments) < 2:
+        if len(srv.environments) < 2:  # noqa: PLR2004 -- --all-envs so faz sentido com 2+ envs; com 1 degenera pra compile unico
             typer.secho(
                 f"AVISO: server '{srv.name}' só tem {len(srv.environments)} env "
                 f"({srv.environments}) — --all-envs degenera pra compile único.",
@@ -3153,16 +3288,19 @@ def compile_callback(
         for env_name in srv.environments:
             try:
                 env_runtime_cfg = _apply_server_override(
-                    runtime_cfg, srv, env_name, requested_mode=mode,
+                    runtime_cfg,
+                    srv,
+                    env_name,
+                    requested_mode=mode,
                 )
             except typer.Exit:
                 # _apply_server_override já printou erro estruturado
                 raise
             try:
                 env_result = compile_run(request, runtime_cfg=env_runtime_cfg, root=root)
-            except KeyboardInterrupt:
+            except KeyboardInterrupt as exc:
                 typer.secho("interrupted", fg=typer.colors.YELLOW, err=True)
-                raise typer.Exit(code=130)
+                raise typer.Exit(code=130) from exc
             if mode_used_first == "?":
                 mode_used_first = str(env_result.summary.get("mode_used", "?"))
                 next_steps = list(env_result.next_steps)
@@ -3183,9 +3321,9 @@ def compile_callback(
 
     try:
         result = compile_run(request, runtime_cfg=runtime_cfg, root=root)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         typer.secho("interrupted", fg=typer.colors.YELLOW, err=True)
-        raise typer.Exit(code=130)
+        raise typer.Exit(code=130) from exc
 
     _render_from_ctx(
         ctx,
@@ -3234,6 +3372,7 @@ def tq_cmd(
 ) -> None:
     """Restart do AppServer + healthcheck (Troca Quente MVP local)."""
     from dataclasses import asdict
+
     from plugadvpl.compile_servers import get_server
     from plugadvpl.tq import run_tq
 
@@ -3244,9 +3383,9 @@ def tq_cmd(
     srv = get_server(use_server)
     if srv is None:
         typer.secho(
-            f"Server '{use_server}' não cadastrado.\n"
-            f"  Liste: plugadvpl compile --list-servers",
-            fg=typer.colors.RED, err=True,
+            f"Server '{use_server}' não cadastrado.\n  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3254,7 +3393,8 @@ def tq_cmd(
         typer.secho(
             f"Server '{use_server}' sem restart_cmd. Configure:\n"
             f"  plugadvpl compile --set-restart-cmd {use_server} --cmd '<comando>'",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3263,22 +3403,26 @@ def tq_cmd(
             f"Server '{use_server}' está marcado como PROD.\n"
             f"  Pra prosseguir mesmo assim: plugadvpl tq --use-server {use_server} --confirm-prod\n"
             f"  Pra desmarcar: plugadvpl compile --no-prod {use_server}",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
     hc_port = port_override if port_override > 0 else srv.port
 
     if dry_run:
-        rows = [{
-            "server": srv.name,
-            "host": f"{srv.host}:{hc_port}",
-            "restart_cmd": srv.restart_cmd,
-            "healthcheck": "skipped" if no_healthcheck else f"GET / (timeout {timeout}s)",
-            "dry_run": True,
-        }]
+        rows = [
+            {
+                "server": srv.name,
+                "host": f"{srv.host}:{hc_port}",
+                "restart_cmd": srv.restart_cmd,
+                "healthcheck": "skipped" if no_healthcheck else f"GET / (timeout {timeout}s)",
+                "dry_run": True,
+            }
+        ]
         _render_from_ctx(
-            ctx, rows,
+            ctx,
+            rows,
             columns=["server", "host", "restart_cmd", "healthcheck", "dry_run"],
             title=f"tq --dry-run ({srv.name})",
             next_steps=[f"plugadvpl tq --use-server {srv.name}  # roda de verdade"],
@@ -3286,15 +3430,23 @@ def tq_cmd(
         raise typer.Exit(code=0)
 
     result = run_tq(
-        srv, timeout_s=timeout, no_healthcheck=no_healthcheck,
+        srv,
+        timeout_s=timeout,
+        no_healthcheck=no_healthcheck,
         port_override=port_override,
     )
     rows = [asdict(result)]
     _render_from_ctx(
-        ctx, rows,
+        ctx,
+        rows,
         columns=[
-            "ok", "server_name", "restart_exit_code", "restart_duration_ms",
-            "healthcheck_status", "healthcheck_attempts", "total_duration_ms",
+            "ok",
+            "server_name",
+            "restart_exit_code",
+            "restart_duration_ms",
+            "healthcheck_status",
+            "healthcheck_attempts",
+            "total_duration_ms",
             "error",
         ],
         title=f"tq ({srv.name})",
@@ -3303,19 +3455,18 @@ def tq_cmd(
     raise typer.Exit(code=0 if result.ok else 1)
 
 
-def _tq_hints(result: object, srv: object, hc_port: int, timeout_s: int) -> list[str]:
+def _tq_hints(result: TqResult, srv: Server, hc_port: int, timeout_s: int) -> list[str]:
     """Sugestões acionáveis quando tq falha. Vazio quando result.ok."""
-    if getattr(result, "ok", False):
+    if result.ok:
         return []
-    status = getattr(result, "healthcheck_status", "")
-    if status == "timeout":
+    if result.healthcheck_status == "timeout":
         return [
             f"healthcheck timeout em {srv.host}:{hc_port} após {timeout_s}s",
             "verifique console.log do AppServer — build pode estar demorando ou erro de boot",
             f"--port {hc_port} aponta pra porta REST correta? (server.port={srv.port})",
             f"build lento? aumente --timeout {timeout_s} → --timeout {timeout_s * 2}",
         ]
-    if getattr(result, "restart_exit_code", 0) not in (0, -1):
+    if result.restart_exit_code not in (0, -1):
         return [
             "restart_cmd falhou — rode o comando manualmente pra ver o erro completo:",
             f"  {srv.restart_cmd}",
@@ -3326,7 +3477,7 @@ def _tq_hints(result: object, srv: object, hc_port: int, timeout_s: int) -> list
 
 def _handle_list_servers(ctx: typer.Context) -> None:
     """Lista servers cadastrados em ~/.plugadvpl/servers.json."""
-    from plugadvpl.compile_servers import list_servers, registry_path, default_server
+    from plugadvpl.compile_servers import default_server, list_servers, registry_path
 
     servers = list_servers()
     if not servers:
@@ -3348,19 +3499,31 @@ def _handle_list_servers(ctx: typer.Context) -> None:
         if s.is_prod:
             flags.append("PROD")
         suffix = (" " + " ".join(flags)) if flags else ""
-        rows.append({
-            "name": s.name + suffix,
-            "host": s.host,
-            "port": s.port,
-            "build": s.build or "(MISSING)",
-            "envs": ",".join(s.environments) or "(none)",
-            "default_env": s.default_environment,
-            "user_env": s.user_env,
-            "includes_count": len(s.includes),
-        })
+        rows.append(
+            {
+                "name": s.name + suffix,
+                "host": s.host,
+                "port": s.port,
+                "build": s.build or "(MISSING)",
+                "envs": ",".join(s.environments) or "(none)",
+                "default_env": s.default_environment,
+                "user_env": s.user_env,
+                "includes_count": len(s.includes),
+            }
+        )
     _render_from_ctx(
-        ctx, rows,
-        columns=["name", "host", "port", "build", "envs", "default_env", "user_env", "includes_count"],
+        ctx,
+        rows,
+        columns=[
+            "name",
+            "host",
+            "port",
+            "build",
+            "envs",
+            "default_env",
+            "user_env",
+            "includes_count",
+        ],
         title="AppServers cadastrados (* = default, PROD = is_prod)",
         next_steps=[f"plugadvpl compile --use-server {servers[0].name} <fonte>"],
     )
@@ -3381,38 +3544,41 @@ def _handle_add_server() -> None:
     port = typer.prompt("Port", type=int, default=1234)
     secure = typer.confirm("HTTPS/TLS?", default=False)
     build = typer.prompt("Build (ex: 7.00.240223P)").strip()
-    envs_raw = typer.prompt(
-        "Environments (separados por vírgula, ex: 'P2510,TEST,PROD')"
-    ).strip()
+    envs_raw = typer.prompt("Environments (separados por vírgula, ex: 'P2510,TEST,PROD')").strip()
     envs = [e.strip() for e in envs_raw.split(",") if e.strip()]
     if not envs:
         typer.secho("Pelo menos 1 environment é obrigatório.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
-    default_env = typer.prompt(
-        "Default environment", default=envs[0]
-    ).strip()
+    default_env = typer.prompt("Default environment", default=envs[0]).strip()
     if default_env not in envs:
         typer.secho(
             f"'{default_env}' não está na lista {envs}",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
-    user_env = typer.prompt(
-        "Nome da env var de USUÁRIO", default="PROTHEUS_USER"
-    ).strip()
+    user_env = typer.prompt("Nome da env var de USUÁRIO", default="PROTHEUS_USER").strip()
     password_env = typer.prompt(
         "Nome da env var de SENHA (NUNCA valor literal!)",
         default="PROTHEUS_PASS",
     ).strip()
     notes = typer.prompt("Notas (opcional)", default="").strip()
     make_default = typer.confirm(
-        "Marcar como server DEFAULT do registry?", default=False,
+        "Marcar como server DEFAULT do registry?",
+        default=False,
     )
 
     server = Server(
-        name=name, host=host, port=port, build=build, environments=envs,
-        default_environment=default_env, user_env=user_env,
-        password_env=password_env, secure=secure, notes=notes,
+        name=name,
+        host=host,
+        port=port,
+        build=build,
+        environments=envs,
+        default_environment=default_env,
+        user_env=user_env,
+        password_env=password_env,
+        secure=secure,
+        notes=notes,
     )
     add_server(server, make_default=make_default)
     typer.secho(
@@ -3429,7 +3595,8 @@ def _handle_add_server() -> None:
 
 def _handle_remove_server(name: str) -> None:
     """Remove server do registry."""
-    from plugadvpl.compile_servers import remove_server, registry_path
+    from plugadvpl.compile_servers import registry_path, remove_server
+
     if remove_server(name):
         typer.secho(f"✓ Removido: '{name}' de {registry_path()}", fg=typer.colors.GREEN)
     else:
@@ -3450,7 +3617,8 @@ def _handle_import_tds_servers(yes: bool) -> None:
         typer.secho(
             f"TDS-VSCode servers.json não encontrado em {path}.\n"
             f"Você usa TDS-VSCode? Se sim, cadastre ao menos 1 server lá primeiro.",
-            fg=typer.colors.YELLOW, err=True,
+            fg=typer.colors.YELLOW,
+            err=True,
         )
         raise typer.Exit(code=1)
 
@@ -3504,7 +3672,8 @@ def _handle_probe_appserver(target_str: str) -> None:
             f"  Use UM de:\n"
             f"    plugadvpl compile --probe-appserver 127.0.0.1:1234   (network)\n"
             f"    plugadvpl compile --probe-appserver D:/TOTVS/protheus  (log)\n",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
     _probe_via_log(target)
@@ -3515,29 +3684,30 @@ def _probe_via_network(host: str, port: int) -> None:
     from plugadvpl.compile_doctor import _detect_advpls
     from plugadvpl.compile_probe import probe_appserver_network
 
-    typer.echo(f"\n=== probe-appserver (modo network) ===")
+    typer.echo("\n=== probe-appserver (modo network) ===")
     typer.echo(f"  alvo: {host}:{port}\n")
 
-    typer.echo(f"  [1/3] Localizando binário advpls...")
+    typer.echo("  [1/3] Localizando binário advpls...")
     binary = _detect_advpls()
     if binary is None:
         typer.secho(
             "        ✗ advpls não encontrado.\n"
             "        Instale com: plugadvpl compile --install-advpls",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
     typer.echo(f"        ✓ {binary}\n")
 
-    typer.echo(f"  [2/3] Gerando INI [validate] em tempdir e invocando advpls cli...")
-    typer.echo(f"        (mesmo mecanismo que o TDS-VSCode usa via LSP)")
+    typer.echo("  [2/3] Gerando INI [validate] em tempdir e invocando advpls cli...")
+    typer.echo("        (mesmo mecanismo que o TDS-VSCode usa via LSP)")
     result = probe_appserver_network(host, port, binary)
 
     if not result.build:
-        typer.secho(f"        ✗ Probe falhou.\n", fg=typer.colors.RED)
+        typer.secho("        ✗ Probe falhou.\n", fg=typer.colors.RED)
         typer.secho(f"  Erro: {result.error}", fg=typer.colors.RED, err=True)
         if result.raw_output:
-            typer.echo(f"\n  Output parcial do advpls (primeiros 1KB):")
+            typer.echo("\n  Output parcial do advpls (primeiros 1KB):")
             for line in result.raw_output.splitlines()[:15]:
                 typer.echo(f"    | {line}")
         typer.echo(
@@ -3552,8 +3722,8 @@ def _probe_via_network(host: str, port: int) -> None:
         )
         raise typer.Exit(code=1)
 
-    typer.echo(f"        ✓ AppServer respondeu\n")
-    typer.echo(f"  [3/3] Parseando resposta...")
+    typer.echo("        ✓ AppServer respondeu\n")
+    typer.echo("  [3/3] Parseando resposta...")
     typer.secho(f"        ✓ build:  {result.build}", fg=typer.colors.GREEN)
     if result.secure is not None:
         secure_label = "SSL/TLS habilitado" if result.secure else "TCP plano"
@@ -3578,10 +3748,10 @@ def _probe_via_log(target: Path) -> None:
     """Log probe parseia ``protheus.log`` (v0.8.11 — fallback offline)."""
     from plugadvpl.compile_probe import probe_appserver_log
 
-    typer.echo(f"\n=== probe-appserver (modo log) ===")
+    typer.echo("\n=== probe-appserver (modo log) ===")
     typer.echo(f"  alvo: {target}\n")
 
-    typer.echo(f"  [1/2] Procurando protheus.log...")
+    typer.echo("  [1/2] Procurando protheus.log...")
     result = probe_appserver_log(target)
     if result is None:
         typer.secho(
@@ -3598,7 +3768,8 @@ def _probe_via_log(target: Path) -> None:
             f"\n"
             f"  Ou tente o modo network (mais robusto):\n"
             f"    plugadvpl compile --probe-appserver <host>:<port>",
-            fg=typer.colors.YELLOW, err=True,
+            fg=typer.colors.YELLOW,
+            err=True,
         )
         raise typer.Exit(code=1)
     typer.echo(f"        ✓ {result.log_path}\n")
@@ -3606,15 +3777,15 @@ def _probe_via_log(target: Path) -> None:
     typer.echo(f"  [2/2] Parseando primeiras {result.lines_scanned} linhas...")
     if not result.build:
         typer.secho(
-            f"        ✗ Linha 'TOTVS - Build X - Date' não encontrada.\n"
-            f"\n"
-            f"  Possíveis causas:\n"
-            f"    • AppServer nunca foi iniciado (log vazio de boot)\n"
-            f"    • Log foi truncado (linha de boot ficou fora das primeiras 5000)\n"
-            f"    • Versão muito antiga do Protheus com formato diferente\n"
-            f"\n"
-            f"  Alternativa: tente o modo network:\n"
-            f"    plugadvpl compile --probe-appserver <host>:<port>",
+            "        ✗ Linha 'TOTVS - Build X - Date' não encontrada.\n"
+            "\n"
+            "  Possíveis causas:\n"
+            "    • AppServer nunca foi iniciado (log vazio de boot)\n"
+            "    • Log foi truncado (linha de boot ficou fora das primeiras 5000)\n"
+            "    • Versão muito antiga do Protheus com formato diferente\n"
+            "\n"
+            "  Alternativa: tente o modo network:\n"
+            "    plugadvpl compile --probe-appserver <host>:<port>",
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(code=1)
@@ -3648,7 +3819,8 @@ def _handle_set_credentials(server_name: str) -> None:
             f"Server '{server_name}' não cadastrado.\n"
             f"  Liste: plugadvpl compile --list-servers\n"
             f"  Cadastre: plugadvpl compile --add-server",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3661,11 +3833,12 @@ def _handle_set_credentials(server_name: str) -> None:
             "  Use env vars como fallback:\n"
             f"    export {srv.user_env}=<usuário>\n"
             f"    export {srv.password_env}=<senha>",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
-    typer.echo(f"\n=== Salvar credenciais no cofre do OS ===")
+    typer.echo("\n=== Salvar credenciais no cofre do OS ===")
     typer.echo(f"  Server: {server_name} ({srv.host}:{srv.port})")
     typer.echo(f"  Cofre service: {KEYRING_SERVICE}")
     typer.echo(f"  Cofre key (user): {server_name}:user")
@@ -3703,6 +3876,7 @@ def _handle_set_credentials(server_name: str) -> None:
 def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
     """Grava o restart_cmd no server do registry global (v0.14)."""
     from dataclasses import replace
+
     from plugadvpl.compile_servers import (
         ServersRegistry,
         get_server,
@@ -3716,7 +3890,8 @@ def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
             f"Server '{server_name}' não cadastrado.\n"
             f"  Liste: plugadvpl compile --list-servers\n"
             f"  Cadastre: plugadvpl compile --add-server",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3734,6 +3909,7 @@ def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
 def _handle_set_is_prod(server_name: str, is_prod: bool) -> None:
     """Marca/desmarca server como produção (v0.15)."""
     from dataclasses import replace
+
     from plugadvpl.compile_servers import (
         ServersRegistry,
         get_server,
@@ -3744,9 +3920,9 @@ def _handle_set_is_prod(server_name: str, is_prod: bool) -> None:
     srv = get_server(server_name)
     if srv is None:
         typer.secho(
-            f"Server '{server_name}' não cadastrado.\n"
-            f"  Liste: plugadvpl compile --list-servers",
-            fg=typer.colors.RED, err=True,
+            f"Server '{server_name}' não cadastrado.\n  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3789,7 +3965,10 @@ def _handle_clear_credentials(server_name: str) -> None:
 
 
 def _handle_explain_config(
-    ctx: typer.Context, root: Path, use_server: str, use_environment: str,
+    ctx: typer.Context,
+    root: Path,
+    use_server: str,
+    use_environment: str,  # noqa: ARG001 -- reservado pra explicar override de env (v0.10+); call sites passam, handler ainda nao consome
 ) -> None:
     """Mostra de onde vem cada campo da config resolvida (v0.9.0).
 
@@ -3797,8 +3976,9 @@ def _handle_explain_config(
     Saída JSON-friendly (consumível por agente IA) com format=json.
     """
     from plugadvpl.compile_servers import default_server, get_server
-    from plugadvpl.credentials import resolve_credentials, keyring_available
-    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+    from plugadvpl.credentials import keyring_available, resolve_credentials
+    from plugadvpl.runtime_config import RuntimeConfigError
+    from plugadvpl.runtime_config import load as load_runtime_config
 
     out: dict[str, object] = {
         "resolution_order": [
@@ -3857,15 +4037,19 @@ def _handle_explain_config(
     if server is not None:
         s_dict = fields["server"]
         assert isinstance(s_dict, dict)
-        s_dict.update({
-            "host": server.host, "port": server.port, "build": server.build,
-            "environments": server.environments,
-            "default_environment": server.default_environment,
-            "user_env": server.user_env,
-            "password_env": server.password_env,
-            "includes_count": len(server.includes),
-            "secure": server.secure,
-        })
+        s_dict.update(
+            {
+                "host": server.host,
+                "port": server.port,
+                "build": server.build,
+                "environments": server.environments,
+                "default_environment": server.default_environment,
+                "user_env": server.user_env,
+                "password_env": server.password_env,
+                "includes_count": len(server.includes),
+                "secure": server.secure,
+            }
+        )
         # Credenciais
         creds = resolve_credentials(server.name, server.user_env, server.password_env)
         out["credentials"] = creds.to_safe_dict()
@@ -3878,6 +4062,7 @@ def _handle_explain_config(
 
     # Output respeita --format json/md/table (passado em obj["format"])
     from plugadvpl.output import render
+
     render(
         rows=[out],
         format=ctx.obj["format"],
@@ -3886,12 +4071,12 @@ def _handle_explain_config(
     )
 
 
-def _apply_server_override(
-    runtime_cfg: object,  # RuntimeConfig | None
-    server: object,  # Server
+def _apply_server_override(  # noqa: PLR0912, PLR0915 -- merge de override (server registry + flags) com varias regras de precedencia; cada branch e uma fonte de config
+    runtime_cfg: RuntimeConfig | None,
+    server: Server,
     env_override: str = "",
     requested_mode: str = "auto",
-) -> object:
+) -> RuntimeConfig | None:
     """Constrói runtime_cfg com [appserver] vindo do registry global.
 
     Se runtime_cfg=None, cria um do zero usando defaults (modo "compile sem
@@ -3936,7 +4121,8 @@ def _apply_server_override(
             f"\nERRO: server '{server.name}' está incompleto. Faltam: {', '.join(missing)}\n"
             f"  Rode `plugadvpl compile --add-server` pra recadastrar OU edite\n"
             f"  ~/.plugadvpl/servers.json manualmente preenchendo esses campos.",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3959,11 +4145,15 @@ def _apply_server_override(
         if not creds.password:
             missing_parts.append("password")
         kr_hint = (
-            f"    plugadvpl compile --set-credentials {server.name}\n"
-            f"    # prompt seguro (senha NÃO ecoada), salva no cofre do OS\n"
-        ) if creds.keyring_available else (
-            f"    # keyring backend não disponível neste sistema —\n"
-            f"    # use env vars (próxima opção)\n"
+            (
+                f"    plugadvpl compile --set-credentials {server.name}\n"
+                f"    # prompt seguro (senha NÃO ecoada), salva no cofre do OS\n"
+            )
+            if creds.keyring_available
+            else (
+                "    # keyring backend não disponível neste sistema —\n"
+                "    # use env vars (próxima opção)\n"
+            )
         )
         typer.secho(
             f"\nERRO: server '{server.name}' sem credencial ({', '.join(missing_parts)}).\n"
@@ -3972,12 +4162,13 @@ def _apply_server_override(
             f"{kr_hint}"
             f"\n"
             f"  Opção B — env vars (uso pontual, CI/CD):\n"
-            f"    $env:{server.user_env} = \"<usuário>\"     # PowerShell\n"
-            f"    $env:{server.password_env} = \"<senha>\"\n"
+            f'    $env:{server.user_env} = "<usuário>"     # PowerShell\n'
+            f'    $env:{server.password_env} = "<senha>"\n'
             f"    # OU:\n"
             f"    export {server.user_env}=<usuário>      # bash/zsh\n"
             f"    export {server.password_env}=<senha>",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -3985,6 +4176,7 @@ def _apply_server_override(
     # ler como se fossem env. Mutação é só pro processo CLI (não vaza pra shell).
     # Em mode=appre creds podem estar vazias — não injeta nada nesse caso.
     import os as _os
+
     if creds.user and creds.user_source == "keyring":
         _os.environ[server.user_env] = creds.user
     if creds.password and creds.password_source == "keyring":
@@ -3994,27 +4186,34 @@ def _apply_server_override(
     if env not in server.environments:
         typer.secho(
             f"Environment '{env}' não está em {server.environments}",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
     new_appserver = AppserverConfig(
-        host=server.host, port=server.port, secure=server.secure,
-        build=server.build, environment=env,
+        host=server.host,
+        port=server.port,
+        secure=server.secure,
+        build=server.build,
+        environment=env,
     )
     new_auth = AuthConfig(
-        user_env=server.user_env, password_env=server.password_env,
+        user_env=server.user_env,
+        password_env=server.password_env,
         aut_file=None,
     )
 
     if runtime_cfg is None:
         # Sem runtime.toml: tds_ls/compile/logging vêm de defaults sensatos
         from plugadvpl.compile_doctor import _detect_advpls
+
         binary = _detect_advpls()
         if binary is None:
             typer.secho(
                 "advpls não detectado. Rode: plugadvpl compile --install-advpls",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
         tds_ls = TdsLsConfig(binary=binary.resolve(), binary_is_symlink=False)
@@ -4022,15 +4221,21 @@ def _apply_server_override(
         # buildVersion/includes) quando o server tem essa info.
         includes_from_server = tuple(Path(p) for p in server.includes)
         compile_cfg = CompileConfig(
-            recompile=True, includes=includes_from_server, mode="cli",
-            timeout_seconds=120, include_warnings=True,
+            recompile=True,
+            includes=includes_from_server,
+            mode="cli",
+            timeout_seconds=120,
+            include_warnings=True,
         )
         logging_cfg = LoggingConfig(log_to_file="", show_console_output=True)
         warn_remote = server.host not in {"127.0.0.1", "localhost", "::1"}
         reachable = _tcp_ping(server.host, server.port)
         return RuntimeConfig(
-            tds_ls=tds_ls, appserver=new_appserver, auth=new_auth,
-            compile=compile_cfg, logging=logging_cfg,
+            tds_ls=tds_ls,
+            appserver=new_appserver,
+            auth=new_auth,
+            compile=compile_cfg,
+            logging=logging_cfg,
             warn_remote_host=warn_remote,
             appserver_reachable=reachable,
             source_path=Path("<--use-server>"),
@@ -4052,7 +4257,7 @@ def _apply_server_override(
     )
 
 
-def _handle_install_advpls(yes: bool) -> None:
+def _handle_install_advpls(yes: bool) -> None:  # noqa: PLR0912, PLR0915 -- handler interativo do --install-advpls (detecta TDS, decide copy vs download, confirma cada acao); fluxo conversacional natural
     """Install/replace advpls em ~/.plugadvpl/advpls/. Interativo.
 
     Sempre explica o que vai fazer ANTES + pede confirmação (unless --yes).
@@ -4070,13 +4275,11 @@ def _handle_install_advpls(yes: bool) -> None:
 
     # 1. Estado atual
     target = installed_binary_path()
-    typer.echo(f"\n=== plugadvpl install-advpls ===")
+    typer.echo("\n=== plugadvpl install-advpls ===")
     typer.echo(f"Pasta interna: {install_dir()}")
     if is_installed():
         size_mb = target.stat().st_size // (1024 * 1024)
-        typer.echo(
-            f"Status: JÁ INSTALADO em {target} ({size_mb} MB)"
-        )
+        typer.echo(f"Status: JÁ INSTALADO em {target} ({size_mb} MB)")
         if not yes and not typer.confirm(
             "Já existe. Quer SUBSTITUIR (vai sobrescrever)?",
             default=False,
@@ -4097,12 +4300,13 @@ def _handle_install_advpls(yes: bool) -> None:
             "ERROR: --yes requer escolha não-interativa, mas --install-advpls "
             "sempre pergunta a fonte. Rode sem --yes ou contribua flag "
             "--install-source={copy|download} no plugin.",
-            fg=typer.colors.RED, err=True,
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
     choice = typer.prompt("Escolha 1/2/3", type=int)
-    if choice == 3:
+    if choice == 3:  # noqa: PLR2004 -- ID de opcao no prompt interativo (1/2/3)
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
     if choice not in (1, 2):
@@ -4119,7 +4323,8 @@ def _handle_install_advpls(yes: bool) -> None:
         if not src_path.is_file():
             typer.secho(
                 f"Arquivo não existe: {src_path}",
-                fg=typer.colors.RED, err=True,
+                fg=typer.colors.RED,
+                err=True,
             )
             raise typer.Exit(code=2)
         plan = plan_copy(src_path)
@@ -4166,7 +4371,8 @@ def _handle_install_advpls(yes: bool) -> None:
 def _handle_doctor(ctx: typer.Context, root: Path) -> None:
     """Pre-flight check do ambiente compile. Saída JSON estruturada pra agente."""
     from plugadvpl.compile_doctor import run_doctor
-    from plugadvpl.runtime_config import RuntimeConfigError, load as load_runtime_config
+    from plugadvpl.runtime_config import RuntimeConfigError
+    from plugadvpl.runtime_config import load as load_runtime_config
 
     try:
         runtime_cfg = load_runtime_config(root)
@@ -4185,7 +4391,7 @@ def _handle_doctor(ctx: typer.Context, root: Path) -> None:
 
 
 def _handle_init_config(root: Path, force: bool) -> None:
-    from plugadvpl.runtime_config import render_template, init_gitignore_entry
+    from plugadvpl.runtime_config import init_gitignore_entry, render_template
 
     cfg_dir = root / ".plugadvpl"
     cfg_dir.mkdir(exist_ok=True)
@@ -4193,7 +4399,8 @@ def _handle_init_config(root: Path, force: bool) -> None:
     if target.exists() and not force:
         typer.secho(
             f"{target} already exists. Use --force to overwrite.",
-            fg=typer.colors.YELLOW, err=True,
+            fg=typer.colors.YELLOW,
+            err=True,
         )
         raise typer.Exit(code=1)
     target.write_text(render_template(), encoding="utf-8")
@@ -4209,8 +4416,19 @@ def _handle_init_config(root: Path, force: bool) -> None:
 
 
 _GLOBAL_FLAGS = {
-    "--root", "-r", "--db", "--format", "-f", "--limit", "--offset",
-    "--compact", "--quiet", "-q", "--no-next-steps", "--version", "-V",
+    "--root",
+    "-r",
+    "--db",
+    "--format",
+    "-f",
+    "--limit",
+    "--offset",
+    "--compact",
+    "--quiet",
+    "-q",
+    "--no-next-steps",
+    "--version",
+    "-V",
 }
 
 # v0.3.22 (#18 do QA round 2): flags scoped a subcomando especifico.
@@ -4219,16 +4437,26 @@ _GLOBAL_FLAGS = {
 # sem dica. Detectamos e sugerimos posicao correta.
 _SUBCOMMAND_FLAGS = {
     # ingest
-    "--workers", "-w", "--no-content", "--redact-secrets",
-    "--incremental", "--no-incremental",
+    "--workers",
+    "-w",
+    "--no-content",
+    "--redact-secrets",
+    "--incremental",
+    "--no-incremental",
     # status
     "--check-stale",
     # lint
-    "--severity", "--rule", "--cross-file",
+    "--severity",
+    "--rule",
+    "--cross-file",
     # gatilho/impacto
     "--depth",
     # tables
-    "--mode", "-m", "--read", "--write", "--reclock",
+    "--mode",
+    "-m",
+    "--read",
+    "--write",
+    "--reclock",
 }
 
 
@@ -4239,11 +4467,11 @@ def main() -> None:
     # UnicodeEncodeError quando o Rich renderiza help ou output. errors='replace'
     # garante que mesmo se algo escapar, vira '?' em vez de tombar.
     if sys.platform == "win32":
+        import contextlib
+
         for stream in (sys.stdout, sys.stderr):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except (AttributeError, ValueError, io.UnsupportedOperation):
-                pass
+            with contextlib.suppress(AttributeError, ValueError, io.UnsupportedOperation):
+                stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
     # v0.3.15 (#2 do QA report): hint quando usuário põe flag global APÓS
     # subcomando. Click reporta "No such option: --limit" sem dica de que a
@@ -4295,8 +4523,12 @@ def _detect_misplaced_flag(
                 # Pode ser flag global no escopo certo (antes do subcmd) que
                 # aceita valor. Pula o próximo token se a flag tipicamente o exige.
                 if tok in _GLOBAL_FLAGS and tok not in {
-                    "--compact", "--quiet", "-q", "--no-next-steps",
-                    "--version", "-V",
+                    "--compact",
+                    "--quiet",
+                    "-q",
+                    "--no-next-steps",
+                    "--version",
+                    "-V",
                 }:
                     skip_next = True
                 # v0.3.22: flag de subcomando aparecendo antes — registramos
@@ -4304,10 +4536,17 @@ def _detect_misplaced_flag(
                 elif tok in _SUBCOMMAND_FLAGS and pre_subcmd_misplaced is None:
                     pre_subcmd_misplaced = (tok, "")
                     # Pula valor da flag (heuristica: a maioria aceita valor).
-                    if tok not in {"--no-content", "--redact-secrets",
-                                    "--incremental", "--no-incremental",
-                                    "--check-stale", "--cross-file",
-                                    "--read", "--write", "--reclock"}:
+                    if tok not in {
+                        "--no-content",
+                        "--redact-secrets",
+                        "--incremental",
+                        "--no-incremental",
+                        "--check-stale",
+                        "--cross-file",
+                        "--read",
+                        "--write",
+                        "--reclock",
+                    }:
                         skip_next = True
                 continue
             subcmd = tok

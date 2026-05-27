@@ -24,6 +24,7 @@ jobs:
     env:
       LINT_FILES: >-
         plugadvpl/__main__.py
+        plugadvpl/cli.py
         plugadvpl/coletadb_client.py
         plugadvpl/compile.py
         plugadvpl/compile_doctor.py
