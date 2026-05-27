@@ -30,6 +30,9 @@ jobs:
         plugadvpl/db.py
         plugadvpl/edit_prw.py
         plugadvpl/ingest.py
+        plugadvpl/ingest_ini.py
+        plugadvpl/ingest_log.py
+        plugadvpl/ingest_rest.py
         plugadvpl/output.py
         plugadvpl/runtime_config.py
         plugadvpl/scan.py

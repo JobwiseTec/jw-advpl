@@ -11,14 +11,19 @@ Esse design e dramaticamente mais simples que a versao especulativa que tinha
 adapter JSON->DB proprio. O servidor entrega CSV no mesmo formato do
 Configurador, entao o ``ingest_sx`` consome direto sem normalize_* duplicado.
 """
+
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from plugadvpl import __version__ as _cli_version
 from plugadvpl.db import (
@@ -40,17 +45,36 @@ if TYPE_CHECKING:
 #   - 3 SX extras LGPD/dominios + RECORD_COUNTS (v0.12.0, migration 013)
 #   - SCHEDULES + JOBS (v0.13.0, migration 014, Universo 6 Workflow)
 #   - 6 MPMENU (v0.13.0, migration 015, Universo 8 Menus)
-_MVP_TABLES: frozenset[str] = frozenset({
-    "SIX", "SX1", "SX2", "SX3", "SX5",
-    "SX6", "SX7", "SX9", "SXA", "SXB", "SXG",
-    # v0.12.0 — extras (migration 013)
-    "XXA", "XAL", "XAM", "RECORD_COUNTS",
-    # v0.13.0 — Universo 6 Workflow (migration 014)
-    "SCHEDULES", "JOBS",
-    # v0.13.0 — Universo 8 Menus (migration 015)
-    "MPMENU_MENU", "MPMENU_FUNCTION", "MPMENU_ITEM",
-    "MPMENU_I18N", "MPMENU_KEY_WORDS", "MPMENU_RW",
-})
+_MVP_TABLES: frozenset[str] = frozenset(
+    {
+        "SIX",
+        "SX1",
+        "SX2",
+        "SX3",
+        "SX5",
+        "SX6",
+        "SX7",
+        "SX9",
+        "SXA",
+        "SXB",
+        "SXG",
+        # v0.12.0 — extras (migration 013)
+        "XXA",
+        "XAL",
+        "XAM",
+        "RECORD_COUNTS",
+        # v0.13.0 — Universo 6 Workflow (migration 014)
+        "SCHEDULES",
+        "JOBS",
+        # v0.13.0 — Universo 8 Menus (migration 015)
+        "MPMENU_MENU",
+        "MPMENU_FUNCTION",
+        "MPMENU_ITEM",
+        "MPMENU_I18N",
+        "MPMENU_KEY_WORDS",
+        "MPMENU_RW",
+    }
+)
 
 
 def _iso_now() -> str:
@@ -100,15 +124,15 @@ def ingest_via_rest(
     Raises:
         :class:`ColetaDBError` se /run/file falhar.
     """
-    from plugadvpl.coletadb_client import Manifest as _Manifest  # noqa: F401
-
     start_time = time.time()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Fase 1: run -> manifest
     manifest: Manifest = client.run(
-        modo=modo, threshold=threshold,
-        base_dir=base_dir, ini_dir=ini_dir,
+        modo=modo,
+        threshold=threshold,
+        base_dir=base_dir,
+        ini_dir=ini_dir,
     )
 
     counters: dict[str, Any] = {
@@ -133,10 +157,12 @@ def ingest_via_rest(
                 continue
             local_path = tmp_root / f.name.lower()  # ingest_sx procura case-insensitive
             written = client.download_file(
-                f, local_path,
+                f,
+                local_path,
                 progress_callback=(
                     (lambda w, t, _n=f.name: progress_callback(_n, w, t))
-                    if progress_callback is not None else None
+                    if progress_callback is not None
+                    else None
                 ),
             )
             counters["files_downloaded"] += 1
@@ -168,8 +194,6 @@ def ingest_via_rest(
         counters["duration_ms"] = int((time.time() - start_time) * 1000)
         return counters
     finally:
-        # Cleanup do tmp local
-        try:
+        # Cleanup do tmp local — best-effort, ignora qualquer falha
+        with contextlib.suppress(Exception):
             shutil.rmtree(tmp_root, ignore_errors=True)
-        except Exception:  # pragma: no cover - cleanup best-effort
-            pass

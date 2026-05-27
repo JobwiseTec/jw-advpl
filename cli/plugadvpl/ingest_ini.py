@@ -24,13 +24,17 @@ Exemplo:
 >>> result.skipped  # já estava em cache
 0
 """
+
 from __future__ import annotations
 
 import hashlib
 import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 from plugadvpl.parsing.ini import (
     ParsedIni,
@@ -42,8 +46,9 @@ from plugadvpl.parsing.ini import (
 @dataclass(slots=True)
 class IngestResult:
     """Resultado consolidado de uma chamada de ingest."""
+
     ingested: int = 0
-    skipped: int = 0           # cache hit (hash + mtime bateram)
+    skipped: int = 0  # cache hit (hash + mtime bateram)
     errors: list[tuple[Path, str]] = field(default_factory=list)
     file_ids: list[int] = field(default_factory=list)
 
@@ -129,9 +134,7 @@ def _upsert_file_row(
     return file_id
 
 
-def _insert_sections_and_keys(
-    conn: sqlite3.Connection, file_id: int, parsed: ParsedIni
-) -> None:
+def _insert_sections_and_keys(conn: sqlite3.Connection, file_id: int, parsed: ParsedIni) -> None:
     """Grava sections + keys em batch. Retorna mapa name_norm -> section_id
     pra resolver FK das keys."""
     sec_id_by_norm: dict[str, int] = {}
@@ -253,7 +256,7 @@ def ingest_ini_paths(
         except sqlite3.DatabaseError as exc:
             result.errors.append((p, f"db_error:{exc}"))
             continue
-        except Exception as exc:  # noqa: BLE001 — last-resort guard pra não derrubar batch
+        except Exception as exc:
             result.errors.append((p, f"unexpected:{type(exc).__name__}:{exc}"))
             continue
 

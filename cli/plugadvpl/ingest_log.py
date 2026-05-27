@@ -18,21 +18,24 @@ Estratégia:
 OBS: ``log_findings`` é limpo aqui mas só repopulado em ``log_diagnose.py``
 (separa concern — ingest = dados crus; diagnose = derivado).
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 from plugadvpl.parsing.log import (
     ParsedLog,
     is_protheus_log_filename,
     parse_log_file,
 )
-
 
 # Safety caps por evento na hora de gravar (proteção contra log corrompido com
 # linha gigante, não como truncamento esperado). 32KB cobre THREAD ERROR + call
@@ -44,6 +47,7 @@ _BODY_MAX_CHARS = 32_000
 @dataclass(slots=True)
 class LogIngestResult:
     """Sumário de uma chamada de ingest de logs."""
+
     ingested: int = 0
     skipped: int = 0
     errors: list[tuple[Path, str]] = field(default_factory=list)
@@ -64,9 +68,7 @@ DEFAULT_LOG_GLOBS: tuple[str, ...] = (
 )
 
 
-def discover_log_paths(
-    root: Path, globs: Iterable[str] = DEFAULT_LOG_GLOBS
-) -> list[Path]:
+def discover_log_paths(root: Path, globs: Iterable[str] = DEFAULT_LOG_GLOBS) -> list[Path]:
     """Encontra logs Protheus em ``root`` (recursivo)."""
     found: set[Path] = set()
     for pattern in globs:
@@ -80,8 +82,8 @@ def _hash_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _ts_iso(value) -> str:  # noqa: ANN001 — datetime | None
-    return value.isoformat() if value is not None else ""
+def _ts_iso(value: object) -> str:
+    return value.isoformat() if value is not None else ""  # type: ignore[attr-defined]
 
 
 def _delete_dependents(conn: sqlite3.Connection, file_id: int) -> None:
@@ -111,14 +113,25 @@ def _upsert_file_row(
     extra_json = json.dumps(md.extra, ensure_ascii=False) if md.extra else "{}"
 
     values = (
-        caminho, arquivo, parsed.tipo,
-        hash_, size_bytes, mtime_ns, parsed.encoding,
+        caminho,
+        arquivo,
+        parsed.tipo,
+        hash_,
+        size_bytes,
+        mtime_ns,
+        parsed.encoding,
         len(parsed.events),
-        _ts_iso(parsed.first_ts), _ts_iso(parsed.last_ts),
-        md.environment, md.appserver, md.build, md.rpo_version,
+        _ts_iso(parsed.first_ts),
+        _ts_iso(parsed.last_ts),
+        md.environment,
+        md.appserver,
+        md.build,
+        md.rpo_version,
         extra_json,
-        metrics.memory_total_mb, metrics.memory_used_mb,
-        metrics.memory_free_mb, metrics.start_time_s,
+        metrics.memory_total_mb,
+        metrics.memory_used_mb,
+        metrics.memory_free_mb,
+        metrics.start_time_s,
     )
 
     if row is None:
@@ -155,9 +168,7 @@ def _upsert_file_row(
     return file_id
 
 
-def _insert_events(
-    conn: sqlite3.Connection, file_id: int, parsed: ParsedLog
-) -> None:
+def _insert_events(conn: sqlite3.Connection, file_id: int, parsed: ParsedLog) -> None:
     """Grava log_events em batch."""
     if not parsed.events:
         return
@@ -251,7 +262,7 @@ def ingest_log_paths(
         except sqlite3.DatabaseError as exc:
             result.errors.append((p, f"db_error:{exc}"))
             continue
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             result.errors.append((p, f"unexpected:{type(exc).__name__}:{exc}"))
             continue
 
