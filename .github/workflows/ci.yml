@@ -16,6 +16,34 @@ jobs:
       - name: Validate plugin structure
         working-directory: cli
         run: uv sync && uv run python ../scripts/validate_plugin.py
+      - name: Hook smoke (session-start.mjs)
+        run: |
+          set -e
+          # Empty dir: hook deve sair silencioso (exit 0, sem output)
+          mkdir -p /tmp/hook-smoke-empty
+          cd /tmp/hook-smoke-empty
+          out_empty=$(node "$GITHUB_WORKSPACE/hooks/session-start.mjs")
+          if [ -n "$out_empty" ]; then
+            echo "FAIL: hook em dir vazio nao deveria emitir output: $out_empty"
+            exit 1
+          fi
+          # Dir com .prw: hook deve sair 0 + emitir JSON com hookSpecificOutput
+          mkdir -p /tmp/hook-smoke-advpl
+          cd /tmp/hook-smoke-advpl
+          touch test.prw
+          out_advpl=$(node "$GITHUB_WORKSPACE/hooks/session-start.mjs")
+          if ! echo "$out_advpl" | grep -q "hookSpecificOutput"; then
+            echo "FAIL: hook em dir com .prw nao emitiu hookSpecificOutput: $out_advpl"
+            exit 1
+          fi
+          echo "Hook smoke OK"
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: claude plugin validate (schema oficial Anthropic)
+        # Roda o validador upstream — schema, duplicate names, path traversal,
+        # version mismatches contra plugin.json. Complementa validate_plugin.py
+        # (que checa convencoes especificas do plugadvpl).
+        run: claude plugin validate .
 
   lint-code:
     # Escopo incremental: roda em arquivos limpos. Conforme legado for sendo

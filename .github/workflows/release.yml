@@ -32,9 +32,32 @@ jobs:
         with:
           packages-dir: cli/dist/
 
-  github-release:
+  verify-pypi:
+    # Confere que o release que acabou de subir e funcional do PyPI publico.
+    # Pega bugs classicos: build incompleto, deps faltando no wheel, console_script
+    # nao registrado, etc. Falha aqui = release foi pra publico quebrado e
+    # precisa de yank manual (raro com nosso flow OIDC, mas seguro ter o gate).
     runs-on: ubuntu-latest
     needs: publish-pypi
+    steps:
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Aguarda propagacao do PyPI
+        # PyPI CDN leva 30-60s pra propagar release novo pra todos os mirrors.
+        # uvx busca direto do PyPI mas pode pegar mirror desatualizado.
+        run: sleep 60
+      - name: Extrai version do tag
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Smoke uvx contra PyPI publicado
+        run: |
+          set -e
+          echo "Smoke version pinada em PyPI: plugadvpl@${{ steps.ver.outputs.version }}"
+          uvx --refresh "plugadvpl@${{ steps.ver.outputs.version }}" version
+          uvx --refresh "plugadvpl@${{ steps.ver.outputs.version }}" --help
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [publish-pypi, verify-pypi]
     steps:
       - uses: actions/checkout@v4
       - name: Download dist artifact from publish-pypi

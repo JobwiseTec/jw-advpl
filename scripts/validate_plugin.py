@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -125,6 +127,37 @@ def check_marketplace_json() -> list[str]:
                 f"marketplace.json plugins[0].version={mp_version!r} != "
                 f"plugin.json version={plugin_version!r}"
             )
+
+    # source.url deve ser HTTPS e responder 200. SSH/HTTP quebra install pra
+    # users sem SSH key (lição aprendida em commit pre-v0.10).
+    for i, plug in enumerate(plugins):
+        source = plug.get("source")
+        if isinstance(source, dict) and source.get("source") == "url":
+            url = source.get("url", "")
+            if not url.startswith("https://"):
+                errors.append(
+                    f"marketplace.json plugins[{i}].source.url={url!r} — "
+                    f"deve ser HTTPS (HTTP/SSH quebra install pra users sem auth)"
+                )
+                continue
+            # HEAD request — timeout curto pra não bloquear CI quando GitHub
+            # estiver lento. Erro de rede vira warning, não erro (CI flaky-resilient).
+            try:
+                req = urllib.request.Request(url, method="HEAD")
+                with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+                    if resp.status >= 400:
+                        errors.append(
+                            f"marketplace.json plugins[{i}].source.url={url!r} "
+                            f"retornou HTTP {resp.status}"
+                        )
+            except urllib.error.URLError as exc:
+                # Não-fatal: registra warning no stderr e segue. Pode ser GitHub
+                # rate limit, rede indisponível no runner, etc.
+                print(
+                    f"  WARN: source.url {url!r} unreachable ({exc}) — "
+                    f"skipping reachability check",
+                    file=sys.stderr,
+                )
     return errors
 
 
