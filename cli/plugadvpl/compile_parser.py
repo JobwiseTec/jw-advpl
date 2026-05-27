@@ -8,6 +8,7 @@ Estratégia:
 - Normaliza Diagnostic.arquivo via Path.resolve() vs requested_files.
 - Aplica redact_patterns.json em Diagnostic.raw antes de devolver.
 """
+
 from __future__ import annotations
 
 import functools
@@ -20,7 +21,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Diagnostic:
-    severidade: str          # error | warning | info | unknown
+    severidade: str  # error | warning | info | unknown
     arquivo: str
     linha: int
     coluna: int
@@ -65,8 +66,8 @@ def _load_patterns() -> list[dict[str, object]]:
     ``raw.index(p)`` durante o sort — é O(n²) e retorna índice da posição
     corrente, não original, quebrando o tie-break.
     """
-    text = ir.files("plugadvpl").joinpath("lookups/compile_patterns.json").read_text(
-        encoding="utf-8"
+    text = (
+        ir.files("plugadvpl").joinpath("lookups/compile_patterns.json").read_text(encoding="utf-8")
     )
     raw = json.loads(text)
     indexed = list(enumerate(raw))
@@ -76,8 +77,8 @@ def _load_patterns() -> list[dict[str, object]]:
 
 @functools.lru_cache(maxsize=1)
 def _load_redact_patterns() -> list[tuple[re.Pattern[str], str]]:
-    text = ir.files("plugadvpl").joinpath("lookups/redact_patterns.json").read_text(
-        encoding="utf-8"
+    text = (
+        ir.files("plugadvpl").joinpath("lookups/redact_patterns.json").read_text(encoding="utf-8")
     )
     out: list[tuple[re.Pattern[str], str]] = []
     for entry in json.loads(text):
@@ -98,9 +99,7 @@ def _classify_severity(raw_value: str, fixed: str | None) -> str:
     return _PT_SEVERIDADE_MAP.get(low, low)
 
 
-def _normalize_arquivo(
-    arquivo_raw: str, requested_resolved: dict[Path, Path]
-) -> tuple[str, bool]:
+def _normalize_arquivo(arquivo_raw: str, requested_resolved: dict[Path, Path]) -> tuple[str, bool]:
     """Tenta casar arquivo_raw com requested. Retorna (nome_final, is_unmatched)."""
     if not arquivo_raw:
         return "", False
@@ -119,7 +118,7 @@ def _normalize_arquivo(
 def parse_diagnostics(
     stdout: str,
     stderr: str,
-    mode: str,
+    mode: str,  # noqa: ARG001 -- mantido na assinatura: callers passam, e fica reservado pra switch de parser por modo no futuro
     requested_files: list[Path],
     force_arquivo: Path | None = None,
 ) -> tuple[list[Diagnostic], list[Diagnostic]]:
@@ -178,9 +177,7 @@ def parse_diagnostics(
             sev_raw = groups.get(str(sev_group_name), "") if sev_group_name else ""
             sev_raw = sev_raw or ""
             fixed = entry.get("severidade_fixed")
-            severidade = _classify_severity(
-                sev_raw, fixed if isinstance(fixed, str) else None
-            )
+            severidade = _classify_severity(sev_raw, fixed if isinstance(fixed, str) else None)
             arquivo_raw = groups.get("arquivo", "") or ""
             linha = int(groups.get("linha") or 0)
             coluna = int(groups.get("coluna") or 0)
@@ -191,9 +188,7 @@ def parse_diagnostics(
                 arquivo_final = str(force_arquivo)
                 is_unmatched = False
             else:
-                arquivo_final, is_unmatched = _normalize_arquivo(
-                    arquivo_raw, requested_resolved
-                )
+                arquivo_final, is_unmatched = _normalize_arquivo(arquivo_raw, requested_resolved)
 
             diag = Diagnostic(
                 severidade=severidade,

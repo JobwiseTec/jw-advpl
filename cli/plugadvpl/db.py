@@ -1,4 +1,5 @@
 """Banco de dados SQLite — abertura, PRAGMAs, migrations, network share detection."""
+
 from __future__ import annotations
 
 import contextlib
@@ -21,9 +22,15 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "funcoes_nativas.json": (
         "funcoes_nativas",
         [
-            "nome", "categoria", "assinatura", "params_count",
-            "requer_unlock", "requer_close_area", "deprecated",
-            "alternativa", "descricao",
+            "nome",
+            "categoria",
+            "assinatura",
+            "params_count",
+            "requer_unlock",
+            "requer_close_area",
+            "deprecated",
+            "alternativa",
+            "descricao",
         ],
     ),
     "funcoes_restritas.json": (
@@ -33,8 +40,15 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "lint_rules.json": (
         "lint_rules",
         [
-            "regra_id", "titulo", "severidade", "categoria", "descricao",
-            "fix_guidance", "detection_kind", "status", "impl_function",
+            "regra_id",
+            "titulo",
+            "severidade",
+            "categoria",
+            "descricao",
+            "fix_guidance",
+            "detection_kind",
+            "status",
+            "impl_function",
         ],
     ),
     "sql_macros.json": (
@@ -53,31 +67,56 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "ini_rules.json": (
         "ini_rules",
         [
-            "regra_id", "section_glob", "key_name", "expected",
-            "severidade", "detection_kind", "descricao", "fix_guidance",
-            "applies_to_tipo", "applies_to_role", "status",
+            "regra_id",
+            "section_glob",
+            "key_name",
+            "expected",
+            "severidade",
+            "detection_kind",
+            "descricao",
+            "fix_guidance",
+            "applies_to_tipo",
+            "applies_to_role",
+            "status",
         ],
     ),
     "ini_roles.json": (
         "ini_roles",
         [
-            "role_id", "tipo_ini", "descricao", "detection_kind",
-            "detection_pattern", "prioridade",
+            "role_id",
+            "tipo_ini",
+            "descricao",
+            "detection_kind",
+            "detection_pattern",
+            "prioridade",
         ],
     ),
     # v0.12.0 (migration 012): monitor de log Protheus.
     "log_rules.json": (
         "log_rules",
         [
-            "rule_id", "category", "severidade", "pattern", "message_template",
-            "case_insensitive", "multiline", "descricao", "priority", "status",
+            "rule_id",
+            "category",
+            "severidade",
+            "pattern",
+            "message_template",
+            "case_insensitive",
+            "multiline",
+            "descricao",
+            "priority",
+            "status",
         ],
     ),
     "log_tips.json": (
         "log_tips",
         [
-            "tip_id", "category", "pattern", "tip_text", "tdn_url",
-            "case_insensitive", "priority",
+            "tip_id",
+            "category",
+            "pattern",
+            "tip_text",
+            "tdn_url",
+            "case_insensitive",
+            "priority",
         ],
     ),
     "log_categories.json": (
@@ -170,9 +209,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
     # Bootstrap: a primeira migration cria _migrations. Tente ler — se falhar,
     # é DB virgem e aplicamos 001 sempre.
     try:
-        applied: set[str] = {
-            row[0] for row in conn.execute("SELECT filename FROM _migrations")
-        }
+        applied: set[str] = {row[0] for row in conn.execute("SELECT filename FROM _migrations")}
     except sqlite3.OperationalError:
         applied = set()
 
@@ -208,9 +245,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def init_meta(
-    conn: sqlite3.Connection, *, project_root: str, cli_version: str
-) -> None:
+def init_meta(conn: sqlite3.Connection, *, project_root: str, cli_version: str) -> None:
     """Grava as linhas obrigatórias em ``meta`` (idempotente via UPSERT).
 
     Linhas escritas:
@@ -234,9 +269,7 @@ def init_meta(
 
 def get_meta(conn: sqlite3.Connection, chave: str) -> str | None:
     """Retorna ``meta.valor`` para ``chave``, ou ``None`` se ausente."""
-    row = conn.execute(
-        "SELECT valor FROM meta WHERE chave=?", (chave,)
-    ).fetchone()
+    row = conn.execute("SELECT valor FROM meta WHERE chave=?", (chave,)).fetchone()
     if row is None:
         return None
     valor: str = row[0]
@@ -253,9 +286,7 @@ def set_meta(conn: sqlite3.Connection, chave: str, valor: str) -> None:
     conn.commit()
 
 
-def seed_lookups(
-    conn: sqlite3.Connection, lookup_dir: Path | None = None
-) -> dict[str, int]:
+def seed_lookups(conn: sqlite3.Connection, lookup_dir: Path | None = None) -> dict[str, int]:
     """Carrega os 6 JSONs de ``lookups/`` e popula as tabelas ``WITHOUT ROWID``.
 
     Idempotente — usa ``INSERT ... ON CONFLICT(<PK>) DO UPDATE`` (UPSERT). As

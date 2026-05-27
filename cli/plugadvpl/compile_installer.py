@@ -11,6 +11,7 @@ Estrutura final em ``~/.plugadvpl/advpls/bin/<os>/advpls[.exe]``:
 ``_detect_advpls()`` em ``compile_doctor.py`` checa esse path com prioridade
 alta, depois de env var e antes da extensão tds-vscode.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,7 +23,10 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _MARKETPLACE_VSIX_URL = (
     "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/"
@@ -140,8 +144,9 @@ def execute_copy(
     ``progress`` opcional: callback recebendo strings de status.
     """
     if plan.action != "copy":
-        return InstallResult(ok=False, binary_path=None, bytes_written=0,
-                             error="execute_copy requer action='copy'")
+        return InstallResult(
+            ok=False, binary_path=None, bytes_written=0, error="execute_copy requer action='copy'"
+        )
     source_dir = Path(plan.source)
     target_dir = plan.target_binary.parent
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -164,12 +169,16 @@ def execute_copy(
 
     if not plan.target_binary.is_file():
         return InstallResult(
-            ok=False, binary_path=None, bytes_written=written,
+            ok=False,
+            binary_path=None,
+            bytes_written=written,
             error=f"binário {plan.target_binary.name} não chegou ao destino — "
-                  f"verifique se {source_dir} continha {plan.target_binary.name}",
+            f"verifique se {source_dir} continha {plan.target_binary.name}",
         )
     return InstallResult(
-        ok=True, binary_path=plan.target_binary, bytes_written=written,
+        ok=True,
+        binary_path=plan.target_binary,
+        bytes_written=written,
     )
 
 
@@ -183,8 +192,12 @@ def execute_download(
     descarta o resto.
     """
     if plan.action != "download":
-        return InstallResult(ok=False, binary_path=None, bytes_written=0,
-                             error="execute_download requer action='download'")
+        return InstallResult(
+            ok=False,
+            binary_path=None,
+            bytes_written=0,
+            error="execute_download requer action='download'",
+        )
 
     target = plan.target_binary
     target_dir = target.parent
@@ -200,12 +213,16 @@ def execute_download(
             urllib.request.urlretrieve(plan.source, str(vsix_path))
         except urllib.error.URLError as exc:
             return InstallResult(
-                ok=False, binary_path=None, bytes_written=0,
+                ok=False,
+                binary_path=None,
+                bytes_written=0,
                 error=f"falha de rede ao baixar .vsix: {exc}",
             )
 
         if progress:
-            progress(f"extraindo binário advpls do .vsix ({vsix_path.stat().st_size // 1024 // 1024} MB)")
+            progress(
+                f"extraindo binário advpls do .vsix ({vsix_path.stat().st_size // 1024 // 1024} MB)"
+            )
 
         # Extrai apenas a subpasta bin/<os>/ — descarta o resto pra economizar espaço
         prefix = f"{_VSIX_ADVPLS_REL}/{_os_subdir()}/"
@@ -214,22 +231,26 @@ def execute_download(
                 members = [m for m in zf.namelist() if m.startswith(prefix)]
                 if not members:
                     return InstallResult(
-                        ok=False, binary_path=None, bytes_written=0,
+                        ok=False,
+                        binary_path=None,
+                        bytes_written=0,
                         error=f"vsix não contém {prefix} — formato mudou? "
-                              f"Reporte bug em https://github.com/JoniPraia/plugadvpl",
+                        f"Reporte bug em https://github.com/JoniPraia/plugadvpl",
                     )
                 for member in members:
                     # member ex: extension/node_modules/.../bin/windows/advpls.exe
-                    rel = member[len(prefix):]
+                    rel = member[len(prefix) :]
                     if not rel:  # entry da pasta vazia
                         continue
                     dst = target_dir / rel
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    with zf.open(member) as src, open(dst, "wb") as out:
+                    with zf.open(member) as src, dst.open("wb") as out:
                         shutil.copyfileobj(src, out)
         except zipfile.BadZipFile as exc:
             return InstallResult(
-                ok=False, binary_path=None, bytes_written=0,
+                ok=False,
+                binary_path=None,
+                bytes_written=0,
                 error=f".vsix baixado está corrompido: {exc}",
             )
 
@@ -239,12 +260,11 @@ def execute_download(
 
     if not target.is_file():
         return InstallResult(
-            ok=False, binary_path=None, bytes_written=0,
+            ok=False,
+            binary_path=None,
+            bytes_written=0,
             error=f"extração OK mas binário {target.name} não encontrado em {target_dir}",
         )
 
-    written = sum(
-        f.stat().st_size
-        for f in target_dir.iterdir() if f.is_file()
-    )
+    written = sum(f.stat().st_size for f in target_dir.iterdir() if f.is_file())
     return InstallResult(ok=True, binary_path=target, bytes_written=written)

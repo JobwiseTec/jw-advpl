@@ -18,12 +18,17 @@ Estratégia de detecção:
     3. Decode UTF-8 strict ok + tem byte ≥ 0x80 → utf-8
     4. Fallback cp1252
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 UTF8_BOM = b"\xef\xbb\xbf"
+_ASCII_HIGH_BIT = 0x80  # primeiro byte non-ASCII; usado pra heurística cp1252 vs utf-8
 
 _PRW_EXTS = (".prw", ".prx")
 _TLPP_EXTS = (".tlpp", ".tlpp.ch", ".ch")
@@ -92,8 +97,8 @@ def detect_encoding(raw: bytes) -> tuple[str, bool, int]:
     4. Fallback → cp1252
     """
     has_bom = raw.startswith(UTF8_BOM)
-    payload = raw[len(UTF8_BOM):] if has_bom else raw
-    non_ascii = sum(1 for b in payload if b >= 0x80)
+    payload = raw[len(UTF8_BOM) :] if has_bom else raw
+    non_ascii = sum(1 for b in payload if b >= _ASCII_HIGH_BIT)
 
     if has_bom:
         return "utf-8", True, non_ascii
@@ -130,7 +135,7 @@ def read_as_utf8(path: Path) -> str:
     """
     raw = path.read_bytes()
     detected, has_bom, _ = detect_encoding(raw)
-    payload = raw[len(UTF8_BOM):] if has_bom else raw
+    payload = raw[len(UTF8_BOM) :] if has_bom else raw
     if detected == "utf-8":
         return payload.decode("utf-8", errors="replace")
     return payload.decode("cp1252", errors="replace")
@@ -160,7 +165,7 @@ def convert_and_save(
     """
     raw = path.read_bytes()
     has_bom = raw.startswith(UTF8_BOM)
-    payload = raw[len(UTF8_BOM):] if has_bom else raw
+    payload = raw[len(UTF8_BOM) :] if has_bom else raw
 
     src = from_encoding or detect_encoding(raw)[0]
     dst = to_encoding or expected_encoding_for(path)

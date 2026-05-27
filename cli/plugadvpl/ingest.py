@@ -12,6 +12,7 @@ Estratégia de upsert por arquivo:
 FTS5 é rebuildado uma vez ao final (mais barato do que insert-by-insert
 para batch grande).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -35,19 +36,25 @@ from plugadvpl.db import (
     set_meta,
 )
 from plugadvpl.parsing import lint as lint_module
-from plugadvpl.parsing.parser import _PE_NAME_RE, parse_source
 from plugadvpl.parsing.execauto import (
     extract_execauto_calls,
+)
+from plugadvpl.parsing.execauto import (
     serialize_tables as serialize_execauto_tables,
 )
 from plugadvpl.parsing.metrics import extract_function_metrics
+from plugadvpl.parsing.parser import parse_source
 from plugadvpl.parsing.protheus_doc import (
     extract_protheus_docs,
     infer_module,
+)
+from plugadvpl.parsing.protheus_doc import (
     serialize_json as serialize_pdoc_json,
 )
 from plugadvpl.parsing.triggers import (
     extract_execution_triggers,
+)
+from plugadvpl.parsing.triggers import (
     serialize_metadata as serialize_trigger_metadata,
 )
 from plugadvpl.scan import scan_sources_full
@@ -141,7 +148,9 @@ def _normalize_destino(destino: str) -> str:
     return norm
 
 
-def _parse_worker(args: tuple[Path, bool]) -> tuple[Path, dict[str, Any] | None, str | None, list[dict[str, Any]] | None, str | None]:
+def _parse_worker(
+    args: tuple[Path, bool],
+) -> tuple[Path, dict[str, Any] | None, str | None, list[dict[str, Any]] | None, str | None]:
     """Worker do ProcessPool: parse + lint do arquivo. Retorna tupla pickle-safe.
 
     Não toca SQLite. Em caso de erro, retorna (fp, None, None, None, msg).
@@ -151,9 +160,7 @@ def _parse_worker(args: tuple[Path, bool]) -> tuple[Path, dict[str, Any] | None,
     fp, _redact_flag = args
     try:
         parsed = parse_source(fp)
-        content = fp.read_text(
-            encoding=parsed.get("encoding", "cp1252"), errors="replace"
-        )
+        content = fp.read_text(encoding=parsed.get("encoding", "cp1252"), errors="replace")
         findings = lint_module.lint_source(parsed, content)
         return (fp, parsed, content, findings, None)
     except Exception as exc:  # worker boundary — qualquer falha vira registro de erro
@@ -182,14 +189,12 @@ def _delete_dependents(conn: sqlite3.Connection, arquivo: str) -> None:
         "defines",
         "lint_findings",
         "execution_triggers",  # v0.4.0 — Universo 3 Feature A
-        "execauto_calls",      # v0.4.1 — Universo 3 Feature B
-        "protheus_docs",       # v0.4.2 — Universo 3 Feature C
-        "fonte_metrics",       # v0.6.0 — Universo 4 Feature B
+        "execauto_calls",  # v0.4.1 — Universo 3 Feature B
+        "protheus_docs",  # v0.4.2 — Universo 3 Feature C
+        "fonte_metrics",  # v0.6.0 — Universo 4 Feature B
     ):
         conn.execute(f"DELETE FROM {table} WHERE arquivo=?", (arquivo,))
-    conn.execute(
-        "DELETE FROM chamadas_funcao WHERE arquivo_origem=?", (arquivo,)
-    )
+    conn.execute("DELETE FROM chamadas_funcao WHERE arquivo_origem=?", (arquivo,))
 
 
 def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dependentes
@@ -233,9 +238,7 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
     # Listas de funcoes/user_funcs/pontos_entrada (nomes simples).
     funcoes_list = parsed.get("funcoes", []) or []
     funcoes_nomes = sorted({f["nome"] for f in funcoes_list if f.get("nome")})
-    user_funcs = sorted(
-        {f["nome"] for f in funcoes_list if f.get("kind") == "user_function"}
-    )
+    user_funcs = sorted({f["nome"] for f in funcoes_list if f.get("kind") == "user_function"})
 
     # v0.3.16: pontos_entrada agora vem do parser (combina regex de nome +
     # PARAMIXB body scan, fix #6/#10 do QA report). Antes era recomputado
@@ -244,12 +247,8 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
 
     # Calls auxiliares para fontes.calls_u / calls_execblock
     chamadas_list = parsed.get("chamadas", []) or []
-    calls_u = sorted(
-        {c["destino"] for c in chamadas_list if c.get("tipo") == "user_func"}
-    )
-    calls_execblock = sorted(
-        {c["destino"] for c in chamadas_list if c.get("tipo") == "execblock"}
-    )
+    calls_u = sorted({c["destino"] for c in chamadas_list if c.get("tipo") == "user_func"})
+    calls_execblock = sorted({c["destino"] for c in chamadas_list if c.get("tipo") == "execblock"})
 
     # UPSERT na tabela fontes (REPLACE atômico via INSERT OR REPLACE).
     conn.execute(
@@ -372,13 +371,21 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
             mets = extract_function_metrics(body)
             params_count = _count_signature_params(assin or "")
             loc = max(0, int(fim_c or 0) - int(ini_c or 0) + 1)
-            metric_rows.append((
-                chunk_id, arq_c, fn_c, ini_c, fim_c,
-                loc, mets["cc"], mets["nesting"],
-                0,  # n_calls_out — UPDATE no fim
-                params_count,
-                0,  # has_doc — UPDATE no fim
-            ))
+            metric_rows.append(
+                (
+                    chunk_id,
+                    arq_c,
+                    fn_c,
+                    ini_c,
+                    fim_c,
+                    loc,
+                    mets["cc"],
+                    mets["nesting"],
+                    0,  # n_calls_out — UPDATE no fim
+                    params_count,
+                    0,  # has_doc — UPDATE no fim
+                )
+            )
         conn.executemany(
             """
             INSERT OR REPLACE INTO fonte_metrics (
@@ -661,15 +668,17 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
         for t in triggers:
             linha = int(t.get("linha", 0))
             funcao = _resolve_funcao_origem(linha)
-            trigger_rows.append((
-                arquivo,
-                funcao,
-                linha,
-                t.get("kind", ""),
-                t.get("target", "") or "",
-                serialize_trigger_metadata(t.get("metadata", {})),
-                (t.get("snippet", "") or "")[:500],
-            ))
+            trigger_rows.append(
+                (
+                    arquivo,
+                    funcao,
+                    linha,
+                    t.get("kind", ""),
+                    t.get("target", "") or "",
+                    serialize_trigger_metadata(t.get("metadata", {})),
+                    (t.get("snippet", "") or "")[:500],
+                )
+            )
         conn.executemany(
             """
             INSERT INTO execution_triggers (
@@ -687,21 +696,23 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
         for c in execauto:
             linha = int(c.get("linha", 0))
             funcao = _resolve_funcao_origem(linha)
-            execauto_rows.append((
-                arquivo,
-                funcao,
-                linha,
-                c.get("routine"),
-                c.get("module"),
-                c.get("routine_type"),
-                c.get("op_code"),
-                c.get("op_label"),
-                serialize_execauto_tables(c.get("tables_resolved", []) or []),
-                1 if c.get("dynamic_call") else 0,
-                c.get("arg_count"),
-                (c.get("snippet", "") or "")[:500],
-                1 if c.get("op_dynamic") else 0,  # v0.4.6 (C)
-            ))
+            execauto_rows.append(
+                (
+                    arquivo,
+                    funcao,
+                    linha,
+                    c.get("routine"),
+                    c.get("module"),
+                    c.get("routine_type"),
+                    c.get("op_code"),
+                    c.get("op_label"),
+                    serialize_execauto_tables(c.get("tables_resolved", []) or []),
+                    1 if c.get("dynamic_call") else 0,
+                    c.get("arg_count"),
+                    (c.get("snippet", "") or "")[:500],
+                    1 if c.get("op_dynamic") else 0,  # v0.4.6 (C)
+                )
+            )
         conn.executemany(
             """
             INSERT INTO execauto_calls (
@@ -720,34 +731,36 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
     if pdocs:
         pdoc_rows: list[tuple[Any, ...]] = []
         for d in pdocs:
-            pdoc_rows.append((
-                arquivo,
-                d.get("funcao"),
-                d.get("funcao_id"),
-                d.get("tipo"),
-                d.get("module_inferido"),
-                int(d.get("linha_bloco_inicio") or 0),
-                int(d.get("linha_bloco_fim") or 0),
-                d.get("linha_funcao"),
-                d.get("summary"),
-                d.get("description"),
-                d.get("author"),
-                d.get("since"),
-                d.get("version"),
-                1 if d.get("deprecated") else 0,
-                d.get("deprecated_reason"),
-                d.get("language"),
-                serialize_pdoc_json(d.get("params")),
-                serialize_pdoc_json(d.get("returns")),
-                serialize_pdoc_json(d.get("examples")),
-                serialize_pdoc_json(d.get("history")),
-                serialize_pdoc_json(d.get("see")),
-                serialize_pdoc_json(d.get("tables")),
-                serialize_pdoc_json(d.get("todos")),
-                serialize_pdoc_json(d.get("obs")),
-                serialize_pdoc_json(d.get("links")),
-                serialize_pdoc_json(d.get("raw_tags")),
-            ))
+            pdoc_rows.append(
+                (
+                    arquivo,
+                    d.get("funcao"),
+                    d.get("funcao_id"),
+                    d.get("tipo"),
+                    d.get("module_inferido"),
+                    int(d.get("linha_bloco_inicio") or 0),
+                    int(d.get("linha_bloco_fim") or 0),
+                    d.get("linha_funcao"),
+                    d.get("summary"),
+                    d.get("description"),
+                    d.get("author"),
+                    d.get("since"),
+                    d.get("version"),
+                    1 if d.get("deprecated") else 0,
+                    d.get("deprecated_reason"),
+                    d.get("language"),
+                    serialize_pdoc_json(d.get("params")),
+                    serialize_pdoc_json(d.get("returns")),
+                    serialize_pdoc_json(d.get("examples")),
+                    serialize_pdoc_json(d.get("history")),
+                    serialize_pdoc_json(d.get("see")),
+                    serialize_pdoc_json(d.get("tables")),
+                    serialize_pdoc_json(d.get("todos")),
+                    serialize_pdoc_json(d.get("obs")),
+                    serialize_pdoc_json(d.get("links")),
+                    serialize_pdoc_json(d.get("raw_tags")),
+                )
+            )
         conn.executemany(
             """
             INSERT INTO protheus_docs (
@@ -808,13 +821,18 @@ def _ingest_serial(
     for i, fp in enumerate(files, 1):
         try:
             parsed = parse_source(fp)
-            content = fp.read_text(
-                encoding=parsed.get("encoding", "cp1252"), errors="replace"
-            )
+            content = fp.read_text(encoding=parsed.get("encoding", "cp1252"), errors="replace")
             findings = lint_module.lint_source(parsed, content)
             _write_parsed(
-                conn, root, fp, parsed, content, findings,
-                counters, no_content, redact_secrets,
+                conn,
+                root,
+                fp,
+                parsed,
+                content,
+                findings,
+                counters,
+                no_content,
+                redact_secrets,
             )
         except Exception as exc:  # engolimos para continuar batch
             counters["arquivos_failed"] += 1
@@ -858,8 +876,15 @@ def _ingest_parallel(
                 continue
             try:
                 _write_parsed(
-                    conn, root, fp, parsed, content, findings,
-                    counters, no_content, redact_secrets,
+                    conn,
+                    root,
+                    fp,
+                    parsed,
+                    content,
+                    findings,
+                    counters,
+                    no_content,
+                    redact_secrets,
                 )
             except Exception as exc:  # writer-side falha = registro contável
                 counters["arquivos_failed"] += 1
@@ -939,10 +964,7 @@ def ingest(
                 conn,
                 "basename_collisions",
                 json.dumps(
-                    {
-                        k: [str(p) for p in v]
-                        for k, v in scan_result.collisions.items()
-                    },
+                    {k: [str(p) for p in v] for k, v in scan_result.collisions.items()},
                     ensure_ascii=False,
                 ),
             )
@@ -979,36 +1001,41 @@ def ingest(
             "params": 0,
             "lint_findings": 0,
             "execution_triggers": 0,  # v0.4.0
-            "execauto_calls": 0,      # v0.4.1
-            "protheus_docs": 0,       # v0.4.2
+            "execauto_calls": 0,  # v0.4.1
+            "protheus_docs": 0,  # v0.4.2
             "duration_ms": 0,
             # v0.3.13: caller (CLI) usa esses campos pra detectar a pegadinha do
             # `--incremental` após `uv tool upgrade` — quando lookup_bundle muda
             # mas os arquivos pulados não foram re-avaliados contra as regras novas.
             "lookup_hash_changed": (
-                previous_lookup_hash is not None
-                and previous_lookup_hash != current_lookup_hash
+                previous_lookup_hash is not None and previous_lookup_hash != current_lookup_hash
             ),
             "previous_lookup_hash": previous_lookup_hash,
         }
 
         if effective_workers <= 1 or len(files_to_parse) < _PARALLEL_MIN_FILES:
             _ingest_serial(
-                conn, files_to_parse, root, counters, no_content, redact_secrets,
+                conn,
+                files_to_parse,
+                root,
+                counters,
+                no_content,
+                redact_secrets,
             )
         else:
             _ingest_parallel(
-                conn, files_to_parse, root, counters, effective_workers,
-                no_content, redact_secrets,
+                conn,
+                files_to_parse,
+                root,
+                counters,
+                effective_workers,
+                no_content,
+                redact_secrets,
             )
 
         # FTS5 rebuild — uma única vez ao final, mais barato do que insert-by-insert.
-        conn.execute(
-            "INSERT INTO fonte_chunks_fts(fonte_chunks_fts) VALUES('rebuild')"
-        )
-        conn.execute(
-            "INSERT INTO fonte_chunks_fts_tri(fonte_chunks_fts_tri) VALUES('rebuild')"
-        )
+        conn.execute("INSERT INTO fonte_chunks_fts(fonte_chunks_fts) VALUES('rebuild')")
+        conn.execute("INSERT INTO fonte_chunks_fts_tri(fonte_chunks_fts_tri) VALUES('rebuild')")
         conn.commit()
 
         # Update meta totals — refletem o estado final do DB.
