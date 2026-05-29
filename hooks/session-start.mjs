@@ -9,7 +9,14 @@ import { execFileSync } from 'node:child_process';
 
 const VALID_EXTS = new Set(['.prw', '.tlpp', '.prx', '.apw']);
 const MAX_DEPTH = 2;
-const SKIP_DIRS = new Set(['.plugadvpl', '.git', 'node_modules', '.venv', '.ruff_cache', '__pycache__', '.benchmarks']);
+// Skip auxiliary dirs: fontes nelas são fixtures/docs/exemplos, não projeto real.
+// Em projetos Protheus o código fica no root, em pastas de cliente (ex: customizado/,
+// ABCFAT/, XYZ/), ou em src/. Disparar o setup do plugin por causa de uma fixture
+// em tests/ ou um exemplo em docs/ é só ruído.
+const SKIP_DIRS = new Set([
+  '.plugadvpl', '.git', 'node_modules', '.venv', '.ruff_cache', '__pycache__', '.benchmarks',
+  'docs', 'tests', 'fixtures', 'examples', 'samples', 'gaps', 'marketing',
+]);
 const ADDITIONAL_CONTEXT_LIMIT = 9500; // Claude Code limit ~10k chars; leave headroom
 const FILE_SCAN_LIMIT = 100;            // short-circuit: enough evidence it's ADVPL
 
