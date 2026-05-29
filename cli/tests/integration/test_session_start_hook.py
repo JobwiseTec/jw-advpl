@@ -22,16 +22,18 @@ def _node_available() -> bool:
 
 
 def _run_hook(project_dir: Path) -> dict:
-    """Roda o hook com CLAUDE_PROJECT_DIR=project_dir e retorna output JSON (ou {})."""
+    """Roda o hook com CLAUDE_PROJECT_DIR=project_dir e retorna output JSON (ou {}).
+
+    Herda os.environ ao invés de zerar — Windows precisa de SYSTEMROOT,
+    USERPROFILE, APPDATA, etc. pra node inicializar.
+    """
+    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(project_dir)}
     result = subprocess.run(  # noqa: S603 — testing internal hook with known args
         ["node", str(HOOK_PATH)],
         capture_output=True,
         text=True,
         timeout=10,
-        env={
-            "CLAUDE_PROJECT_DIR": str(project_dir),
-            "PATH": os.environ.get("PATH", ""),
-        },
+        env=env,
         check=False,
     )
     if not result.stdout.strip():

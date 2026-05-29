@@ -414,8 +414,14 @@ def lint_query(
     )
     rows = conn.execute(sql, params).fetchall()
     cols = [
-        "arquivo", "funcao", "linha", "regra_id", "severidade",
-        "snippet", "sugestao_fix", "sonar_rules",
+        "arquivo",
+        "funcao",
+        "linha",
+        "regra_id",
+        "severidade",
+        "snippet",
+        "sugestao_fix",
+        "sonar_rules",
     ]
     out: list[dict[str, Any]] = []
     for r in rows:
