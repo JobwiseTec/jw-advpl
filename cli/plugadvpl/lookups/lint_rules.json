@@ -105,7 +105,10 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_bp008_shadowed_reserved",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA2024",
+      "~CA2025"
+    ]
   },
   {
     "regra_id": "SEC-001",
@@ -117,7 +120,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_sec001_rpcsetenv_in_restful",
-    "sonar_rules": []
+    "sonar_rules": [
+      "BG1000"
+    ]
   },
   {
     "regra_id": "SEC-002",
@@ -141,7 +146,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_sec003_pii_in_logs",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA1004"
+    ]
   },
   {
     "regra_id": "SEC-004",
@@ -153,7 +160,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_sec004_hardcoded_creds",
-    "sonar_rules": []
+    "sonar_rules": [
+      "CA2052"
+    ]
   },
   {
     "regra_id": "SEC-005",
@@ -165,7 +174,12 @@
     "detection_kind": "lookup",
     "status": "active",
     "impl_function": "_check_sec005_restricted_function_call",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA2017",
+      "~CA2019",
+      "~CA2022",
+      "~CA2023"
+    ]
   },
   {
     "regra_id": "PERF-001",
@@ -177,7 +191,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_perf001_select_star",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CS1000"
+    ]
   },
   {
     "regra_id": "PERF-002",
@@ -249,7 +265,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_mod001_conout_instead_fwlogmsg",
-    "sonar_rules": []
+    "sonar_rules": [
+      "CA1004"
+    ]
   },
   {
     "regra_id": "MOD-002",
@@ -285,7 +303,11 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_mod004_legacy_cadastro",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA1006",
+      "~CA2020",
+      "~BG1100"
+    ]
   },
   {
     "regra_id": "SX-001",
@@ -369,7 +391,10 @@
     "detection_kind": "cross-file",
     "status": "active",
     "impl_function": "_check_sx007_restricted_func_in_x3_valid",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA2022",
+      "~CA2023"
+    ]
   },
   {
     "regra_id": "SX-008",
@@ -465,7 +490,9 @@
     "detection_kind": "regex",
     "status": "active",
     "impl_function": "_check_enc001_prw_utf8",
-    "sonar_rules": []
+    "sonar_rules": [
+      "~CA0000"
+    ]
   },
   {
     "regra_id": "XF-001",

@@ -158,6 +158,46 @@ def test_all_rules_have_required_fields(catalog: dict) -> None:
         )
 
 
+def test_strong_sonar_mappings_present(catalog: dict) -> None:
+    """Mapeamentos fortes (ID Sonar oficial puro, sem ~) congelados — alterar exige justificativa.
+
+    Os 3 mapeamentos abaixo são equivalências exatas confirmadas contra o catálogo
+    oficial TOTVS em ``sonar-rules.engpro.totvs.com.br`` (espelhado em
+    ``totvs/engpro-advpl-tlpp-skills/skills/advpl-tlpp/references/sonarqube-rules-reference.md``).
+    Se algum sair daqui, atualize a tabela junto.
+    """
+    strong = {
+        "SEC-001": "BG1000",
+        "SEC-004": "CA2052",
+        "MOD-001": "CA1004",
+    }
+    for rid, expected_sonar in strong.items():
+        rule = catalog.get(rid)
+        assert rule is not None, f"regra {rid} sumiu do catálogo"
+        sonar = rule.get("sonar_rules") or []
+        assert expected_sonar in sonar, (
+            f"regra {rid} deveria ter mapeamento forte para '{expected_sonar}' "
+            f"em sonar_rules; encontrou {sonar}"
+        )
+
+
+def test_sonar_rules_format_valid(catalog: dict) -> None:
+    """sonar_rules deve ser lista de strings; cada string é um ID Sonar oficial
+    (regex ``~?[A-Z]+[0-9]+(-[0-9]+)?``) — ID puro ou com prefixo ``~`` (adjacente)."""
+    sonar_id_re = re.compile(r"^~?[A-Z]+[0-9]+(-[0-9]+)?$")
+    drifts = []
+    for rid, rule in catalog.items():
+        sonar = rule.get("sonar_rules")
+        assert sonar is not None, f"regra {rid} sem campo sonar_rules"
+        assert isinstance(sonar, list), (
+            f"regra {rid}: sonar_rules tipo={type(sonar).__name__}, esperado list"
+        )
+        for sid in sonar:
+            if not isinstance(sid, str) or not sonar_id_re.match(sid):
+                drifts.append(f"{rid}: sonar_rules contém '{sid}' (formato inválido)")
+    assert not drifts, "Sonar IDs com formato inválido:\n  - " + "\n  - ".join(drifts)
+
+
 def test_all_check_functions_registered_in_orchestrator(impl: dict) -> None:
     """F6 (audit v0.3.10): toda `_check_*` função deve aparecer em `lint_source()`.
 
