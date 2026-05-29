@@ -55,6 +55,22 @@ def detect_cursor(project_root: Path) -> CursorTarget:
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 _DESC_RE = re.compile(r"^description:\s*(.+?)\s*$", re.MULTILINE)
+_SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
+_UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
+
+
+def _transform_body(body: str, version: str) -> str:
+    """Aplica as 2 substituições da §3.3 do spec, NESTA ORDEM:
+
+    3a) `/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@<ver> <X>` ``
+    3b) `uvx plugadvpl@<qualquer>` → `uvx plugadvpl@<ver>`
+
+    Ordem importa: 3a primeiro emite uvx correto; 3b depois normaliza
+    qualquer ocorrência pré-existente (ex: `uvx plugadvpl@0.15.0`).
+    """
+    body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
+    body = _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
+    return body
 
 
 def _parse_skill_md(skill_md_text: str) -> tuple[str, str]:
@@ -104,4 +120,4 @@ def render_skill_rule(
         f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
 
-    return frontmatter + markers + body
+    return frontmatter + markers + _transform_body(body, version)

@@ -107,3 +107,33 @@ class TestRenderSkillRule:
         )
         result = render_skill_rule(skill, version="0.16.2", globs=[])
         assert "description: Visao arquitetural de um arquivo ADVPL/TLPP" in result
+
+    def test_substitutes_slash_to_uvx(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\n"
+            "# `/plugadvpl:arch`\n"
+            "\n"
+            "Use `/plugadvpl:arch <arq>` antes de Read.\n",
+            encoding="utf-8",
+        )
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "`Bash: uvx plugadvpl@0.16.2 arch`" in result
+        assert "/plugadvpl:arch" not in result  # substituiu todas as ocorrências
+
+    def test_normalizes_old_uvx_version(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\n"
+            "```bash\nuvx plugadvpl@0.15.0 --format md arch $arquivo\n```\n",
+            encoding="utf-8",
+        )
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "uvx plugadvpl@0.16.2" in result
+        assert "uvx plugadvpl@0.15.0" not in result
