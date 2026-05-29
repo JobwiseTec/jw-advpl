@@ -218,6 +218,75 @@ class TestInit:
         assert content.count("<!-- BEGIN plugadvpl -->") == 1
 
 
+class TestInitCursorRules:
+    """v0.16.2 — init detecta Cursor e gera .cursor/rules/*.mdc."""
+
+    def test_skips_cursor_when_no_signals(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sem ~/.cursor/, sem .cursor/ no projeto, sem cursor no PATH → no-op."""
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".cursor").exists()
+        assert "Cursor rules" not in result.stdout
+
+    def test_installs_locals_when_project_has_cursor_dir(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`.cursor/` existe no projeto → init cria 52 locais."""
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
+        assert len(rules) == 52
+        assert "Cursor rules" in result.stdout
+
+    def test_no_cursor_flag_skips_everything(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`init --no-cursor` → zero efeito mesmo com sinais presentes."""
+        fake_home = synthetic_project.parent / "fake_home"
+        (fake_home / ".cursor" / "rules").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        (synthetic_project / ".cursor").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "init", "--no-cursor"]
+        )
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".cursor" / "rules").exists()
+        assert not (fake_home / ".cursor" / "rules" / "plugadvpl.mdc").exists()
+        assert "Cursor rules" not in result.stdout
+
+    def test_quiet_suppresses_cursor_message(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "--quiet", "init"]
+        )
+        assert result.exit_code == 0
+        assert "Cursor rules" not in result.stdout
+        # Verifica que rules foram criadas mesmo em quiet
+        rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
+        assert len(rules) == 52
+
+
 class TestIngest:
     def test_ingest_after_init(
         self, synthetic_project: Path, runner: CliRunner

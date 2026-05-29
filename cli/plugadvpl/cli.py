@@ -511,12 +511,26 @@ mostra `utf-8`, edição via PowerShell/script externo, arquivo ASCII puro sem a
 
 
 @app.command()
-def init(ctx: typer.Context) -> None:
+def init(
+    ctx: typer.Context,
+    no_cursor: Annotated[
+        bool,
+        typer.Option(
+            "--no-cursor",
+            help="Não instala Cursor rules mesmo se Cursor for detectado (~/.cursor/ ou .cursor/ no projeto).",
+        ),
+    ] = False,
+) -> None:
     """Cria ``./.plugadvpl/index.db``, escreve fragment em ``CLAUDE.md`` + ``AGENTS.md`` e atualiza ``.gitignore``.
 
     v0.16.1: além de ``CLAUDE.md`` (Claude Code), grava ``AGENTS.md`` com o mesmo
     fragment pra atender Cursor, GitHub Copilot, Codex e outros agentes que seguem
     o padrão ``AGENTS.md``. Conteúdo idêntico, só o nome do arquivo varia.
+
+    v0.16.2: se Cursor detectado (via ``~/.cursor/`` ou ``.cursor/`` no projeto),
+    também gera ``~/.cursor/rules/plugadvpl.mdc`` (global) + 52
+    ``.cursor/rules/plugadvpl-<skill>.mdc`` (locais). Use ``--no-cursor`` pra
+    desabilitar.
     """
     root: Path = ctx.obj["root"]
     db_path: Path = ctx.obj["db"]
@@ -538,6 +552,23 @@ def init(ctx: typer.Context) -> None:
         typer.echo(f"OK  DB criado em {db_path}")
         typer.echo("OK  CLAUDE.md + AGENTS.md atualizados (fragment plugadvpl, idênticos)")
         typer.echo("OK  .plugadvpl/ adicionado ao .gitignore")
+
+    if not no_cursor:
+        from plugadvpl.cursor_rules import install_cursor_rules
+        cursor_result = install_cursor_rules(root, __version__)
+        if not ctx.obj["quiet"]:
+            if cursor_result.installed_global or cursor_result.installed_local_count:
+                typer.echo(f"OK  Cursor rules: {cursor_result.summary()}")
+            for warn in cursor_result.errors:
+                typer.secho(
+                    f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True
+                )
+            for skipped in cursor_result.skipped_due_to_user_files:
+                typer.secho(
+                    f"⚠  Cursor rules: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
 
 
 def _check_fragment_staleness(root: Path) -> str | None:
