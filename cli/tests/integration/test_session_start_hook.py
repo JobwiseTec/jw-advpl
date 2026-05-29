@@ -28,11 +28,14 @@ def _run_hook(project_dir: Path) -> dict:
     USERPROFILE, APPDATA, etc. pra node inicializar.
     """
     env = {**os.environ, "CLAUDE_PROJECT_DIR": str(project_dir)}
+    # timeout=30 — Windows CI flaky com 10s: o hook faz 3 execFileSync
+    # (checkUv/checkUvx/checkPlugadvpl) cada um com timeout=3s, total ~9s só
+    # nos checks; + scan de diretório acaba estourando 10s em CI lento.
     result = subprocess.run(  # noqa: S603 — testing internal hook with known args
         ["node", str(HOOK_PATH)],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=30,
         env=env,
         check=False,
     )
