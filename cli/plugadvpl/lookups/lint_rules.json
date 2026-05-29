@@ -8,7 +8,8 @@
     "fix_guidance": "Pareie `RecLock` com `MsUnlock` em todos os caminhos (sucesso e erro). Em fluxos com risco, use `Begin Transaction`/`End Transaction` (rollback automático faz unlock).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp001_reclock_unbalanced"
+    "impl_function": "_check_bp001_reclock_unbalanced",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-002",
@@ -19,7 +20,8 @@
     "fix_guidance": "Pareie `Begin Transaction` com `End Transaction`. Use `DisarmTransaction()` antes do `Break` em `Recover` para evitar deadlock. Em fluxo MVC, prefira `oModel:CommitData()` (que já encapsula transação atomicamente) em vez de `Begin/End Transaction` manual.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp002_transaction_unbalanced"
+    "impl_function": "_check_bp002_transaction_unbalanced",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-002b",
@@ -30,7 +32,8 @@
     "fix_guidance": "Substitua `Private` por `Local` quando possível. Manter `Private` SO quando há necessidade explícita: (a) compartilhar com função chamada que espera Private, (b) variáveis `MV_PAR*` injetadas por `Pergunte`, (c) state runtime de `MsExecAuto` (`lMsErroAuto`/`lMsHelpAuto`).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp002b_private_when_local"
+    "impl_function": "_check_bp002b_private_when_local",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-003",
@@ -41,7 +44,8 @@
     "fix_guidance": "Declare `Private lMsErroAuto := .F.` antes da chamada. Logo após `MsExecAuto(...)`, faça `If lMsErroAuto; MostraErro() ...; Return .F.; EndIf` ou capture via `GetAutoGRLog()`.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp003_msexecauto_no_check"
+    "impl_function": "_check_bp003_msexecauto_no_check",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-004",
@@ -52,7 +56,8 @@
     "fix_guidance": "Use `MV_PAR01..MV_PARxx` após o `Pergunte`, OU remova a chamada se não for necessária. Para fluxos novos, prefira `ParamBox()` (Code Analysis aprova; SX1 está deprecated). Em Pergunte aninhado, salve/restaure o estado das MV_PAR.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp004_pergunte_no_check"
+    "impl_function": "_check_bp004_pergunte_no_check",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-005",
@@ -63,7 +68,8 @@
     "fix_guidance": "Refatore: agrupe params relacionados em objeto/array, divida em funções menores com responsabilidades específicas, ou use named params via JSON.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp005_too_many_params"
+    "impl_function": "_check_bp005_too_many_params",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-006",
@@ -74,7 +80,8 @@
     "fix_guidance": "Use APENAS Framework (RecLock+MsUnlock) dentro de fluxo ERP Protheus. APIs raw (dbAppend etc.) só fora de ambiente Protheus (utilitários offline, scripts de migração).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp006_mixed_reclock_rawapi"
+    "impl_function": "_check_bp006_mixed_reclock_rawapi",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-007",
@@ -85,7 +92,8 @@
     "fix_guidance": "Adicione bloco `/*/{Protheus.doc} <NOME>` ... `/*/` antes da função, com pelo menos `@type function`, `@author`, `@since`. Bloco minimo (so opening + closing) ja satisfaz o detector — encoraja documentacao incremental.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp007_no_protheus_doc"
+    "impl_function": "_check_bp007_no_protheus_doc",
+    "sonar_rules": []
   },
   {
     "regra_id": "BP-008",
@@ -96,7 +104,8 @@
     "fix_guidance": "Renomeie a variável local pra algo distinto (prefixo cliente, ex: `cMinhaFilial`). NUNCA crie Local/Private/Public/Static com o mesmo nome de uma reservada framework — não há motivo legítimo de override em código custom.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_bp008_shadowed_reserved"
+    "impl_function": "_check_bp008_shadowed_reserved",
+    "sonar_rules": []
   },
   {
     "regra_id": "SEC-001",
@@ -107,7 +116,8 @@
     "fix_guidance": "Remova `RpcSetEnv`/`RpcClearEnv` do endpoint REST. Configure `PrepareIn=99,01` + `Security=1` no `[HTTPURI]` do appserver.ini. Cliente passa empresa/filial no header `TenantId`. Veja `[[advpl-webservice]]`.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_sec001_rpcsetenv_in_restful"
+    "impl_function": "_check_sec001_rpcsetenv_in_restful",
+    "sonar_rules": []
   },
   {
     "regra_id": "SEC-002",
@@ -118,7 +128,8 @@
     "fix_guidance": "Adicione prefixo de 2-3 letras do cliente (`XYZ`, `ABC`, etc.) ao nome. Para PEs, mantenha o nome fixo TOTVS — exceção justificada.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_sec002_user_function_no_prefix"
+    "impl_function": "_check_sec002_user_function_no_prefix",
+    "sonar_rules": []
   },
   {
     "regra_id": "SEC-003",
@@ -129,7 +140,8 @@
     "fix_guidance": "Mascarar antes de logar (`Transform(cCpf,'@R 999.999.999-99')` + ofuscar trecho, ex: `123.***.***-01`). Para senha/token, NUNCA logue — log estruturado de transação sem dado pessoal. `FwLogMsg` permite category específica desabilitável em produção (ex: ativar log PII só em sandbox).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_sec003_pii_in_logs"
+    "impl_function": "_check_sec003_pii_in_logs",
+    "sonar_rules": []
   },
   {
     "regra_id": "SEC-004",
@@ -140,7 +152,8 @@
     "fix_guidance": "Mova credenciais para `MV_*` em SX6 (encrypted via `EncryptPwd`) e leia via `SuperGetMV(\"MV_XYZUSR\")` em runtime. SMTP: use `MV_RELAUSR`/`MV_RELAPSW` que existem exatamente pra isso. Em JOB sem SX6 acessível: variável de ambiente. NUNCA commitar credencial — fica no git history para sempre, mesmo após delete.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_sec004_hardcoded_creds"
+    "impl_function": "_check_sec004_hardcoded_creds",
+    "sonar_rules": []
   },
   {
     "regra_id": "SEC-005",
@@ -151,7 +164,8 @@
     "fix_guidance": "Substitua por equivalente público documentado em TDN. Quando o catálogo `funcoes_restritas` tem `alternativa` cadastrada, a sugestão do lint cita ela. Use `/plugadvpl:find function <nome>` para checar se uma função é restrita.",
     "detection_kind": "lookup",
     "status": "active",
-    "impl_function": "_check_sec005_restricted_function_call"
+    "impl_function": "_check_sec005_restricted_function_call",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-001",
@@ -162,7 +176,8 @@
     "fix_guidance": "Liste explicitamente as colunas necessárias: `SELECT F2_DOC, F2_SERIE, F2_EMISSAO FROM ...`. Combine com `TCSetField` para tipagem pós-query.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_perf001_select_star"
+    "impl_function": "_check_perf001_select_star",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-002",
@@ -173,7 +188,8 @@
     "fix_guidance": "Adicione `<alias>.%notDel%` no `WHERE` para CADA tabela ADVPL no `FROM`/`JOIN`. Ex: `AND SA1.%notDel%` + `AND SD1.%notDel%`.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_perf002_no_notdel"
+    "impl_function": "_check_perf002_no_notdel",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-003",
@@ -184,7 +200,8 @@
     "fix_guidance": "Adicione `WHERE <alias>.<TBL>_FILIAL = %xfilial:<TBL>%` para cada tabela filializada. Ex: `WHERE SA1.A1_FILIAL = %xfilial:SA1%`. Tabelas com `X2_MODO='C'` (compartilhada) não precisam — `xFilial` retorna vazio nesses casos.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_perf003_no_xfilial"
+    "impl_function": "_check_perf003_no_xfilial",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-004",
@@ -195,7 +212,8 @@
     "fix_guidance": "Opções pra O(n): (1) acumule em array com `aAdd` + `FwArrayJoin()` (R26+) ou `Array2String()`/`ArrTokStr()`/`CenArr2Str()` (legacy) no final. (2) `FCreate('buffer.bin')` + `FWrite()` por iteração + `FRead` no final pra strings muito grandes. (3) StringBuilder class custom (~240x faster em benchmarks NG Informática).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_perf004_string_concat_in_loop"
+    "impl_function": "_check_perf004_string_concat_in_loop",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-005",
@@ -206,7 +224,8 @@
     "fix_guidance": "Substitua `If RecCount() > 0` (ou `LastRec() > 0`) por `If !Eof()` ou `If !<alias>->(Eof())`. Em SQL embarcado, use `SELECT COUNT(*) FROM ... LIMIT 1` ou subquery `WHERE EXISTS (...)`.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_perf005_reccount_for_existence"
+    "impl_function": "_check_perf005_reccount_for_existence",
+    "sonar_rules": []
   },
   {
     "regra_id": "PERF-006",
@@ -217,7 +236,8 @@
     "fix_guidance": "(1) Adicione índice custom no SIX (`INDICE >= 21`); (2) refatore query pra usar coluna já indexada — `/plugadvpl:tables <T>` mostra índices existentes; (3) pre-filtre via `DbSeek` na chave indexada antes do `TCQuery` se o filtro WHERE for restrição extra.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_perf006_where_orderby_no_index"
+    "impl_function": "_check_perf006_where_orderby_no_index",
+    "sonar_rules": []
   },
   {
     "regra_id": "MOD-001",
@@ -228,7 +248,8 @@
     "fix_guidance": "Substitua `ConOut(\"INFO: msg\")` por `FwLogMsg(\"INFO\", \"TX-001\", \"ABCFAT\", \"REL\", \"Step1\", \"OK\")`. Para debug rápido em desenvolvimento, ConOut ainda é OK.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_mod001_conout_instead_fwlogmsg"
+    "impl_function": "_check_mod001_conout_instead_fwlogmsg",
+    "sonar_rules": []
   },
   {
     "regra_id": "MOD-002",
@@ -239,7 +260,8 @@
     "fix_guidance": "Use `Local` (95% dos casos) ou `Static` (constante por fonte). `Private` só para padrões legados específicos (`MV_PAR*` injetadas por `Pergunte`).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_mod002_public_declaration"
+    "impl_function": "_check_mod002_public_declaration",
+    "sonar_rules": []
   },
   {
     "regra_id": "MOD-003",
@@ -250,7 +272,8 @@
     "fix_guidance": "Refatore o grupo para `Class T<Nome>` com `Data` (state que era Static var) + `Method` (operações que eram Static Functions). Em TLPP, use `class` com modificadores `public`/`private`/`protected`. OOP melhora encapsulamento, facilita testabilidade isolada (instâncias) e elimina dependência implícita de state Static. Ver skill `[[advpl-refactoring]]` padrão 4.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_mod003_static_funcs_to_class"
+    "impl_function": "_check_mod003_static_funcs_to_class",
+    "sonar_rules": []
   },
   {
     "regra_id": "MOD-004",
@@ -261,7 +284,8 @@
     "fix_guidance": "Refatore para padrão MVC: `MenuDef()` + `ModelDef()` + `ViewDef()` + `FWMBrowse`. AxCadastro vira Modelo 1 MVC (FWMBrowse + AddFields). Modelo2 vira AddFields master + AddGrid detail. Modelo3 vira AddFields cabeçalho + AddGrid itens + SetRelation. MsNewGetDados vira AddGrid em ViewDef (ou FWFormBrowse + AddGrid pra MVC standalone). Veja `[[advpl-mvc]]` e `[[advpl-refactoring]]` padrão 4. Sugestão de fix por função inclui hint de migração específico.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_mod004_legacy_cadastro"
+    "impl_function": "_check_mod004_legacy_cadastro",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-001",
@@ -272,7 +296,8 @@
     "fix_guidance": "Crie a User Function referenciada nos fontes ou ajuste o `X3_VALID` para função existente. Requer `/plugadvpl:ingest` (fontes) + `/plugadvpl:ingest-sx` (dicionário) antes.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx001_x3_valid_unknown_func"
+    "impl_function": "_check_sx001_x3_valid_unknown_func",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-002",
@@ -283,7 +308,8 @@
     "fix_guidance": "Apague o gatilho ou crie o campo destino na SX3. Verifique também typos no `X7_CDOMIN`.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx002_x7_destino_inexistente"
+    "impl_function": "_check_sx002_x7_destino_inexistente",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-003",
@@ -294,7 +320,8 @@
     "fix_guidance": "Remova o parâmetro do SX6 (script com `PutMV` revertendo) ou use onde foi planejado. Se intencional para uso externo, documente em `X6_DESCRIC`.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx003_mv_param_unused_in_fontes"
+    "impl_function": "_check_sx003_mv_param_unused_in_fontes",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-004",
@@ -305,7 +332,8 @@
     "fix_guidance": "Remova o grupo do SX1 ou implemente o uso. Se intencional para uso futuro, marque com X1_DESCR explicativo.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx004_pergunta_unused_in_fontes"
+    "impl_function": "_check_sx004_pergunta_unused_in_fontes",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-005",
@@ -316,7 +344,8 @@
     "fix_guidance": "Considere remover do SX3 (script de delete) ou implementar uso pendente. Se intencional para futura customização, documente.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx005_campo_usado_zero_refs"
+    "impl_function": "_check_sx005_campo_usado_zero_refs",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-006",
@@ -327,7 +356,8 @@
     "fix_guidance": "Substitua por `ExistCpo(<alias>, <chave>, <ordem>)` ou `Posicione()` com cache. Se precisa de SQL complexo, mova para User Function que cacheia resultado em `Static`.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx006_perf_sql_in_x3_valid"
+    "impl_function": "_check_sx006_perf_sql_in_x3_valid",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-007",
@@ -338,7 +368,8 @@
     "fix_guidance": "Substitua por equivalente público documentado em TDN. Veja `/plugadvpl:find function <nome>` para confirmar se é restrita.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx007_restricted_func_in_x3_valid"
+    "impl_function": "_check_sx007_restricted_func_in_x3_valid",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-008",
@@ -349,7 +380,8 @@
     "fix_guidance": "Remova `xFilial` do `X3_VALID` (tabela é compartilhada, valor de filial não importa) OU mude `X2_MODO` para `E` (Exclusiva) se a tabela realmente filia.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx008_xfilial_in_modo_c"
+    "impl_function": "_check_sx008_xfilial_in_modo_c",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-009",
@@ -360,7 +392,8 @@
     "fix_guidance": "Inicialize com valor sensato (ex: `\"01\"` para campo de filial, `Date()` para data atual, `cFilAnt` para filial). Se realmente não há default, documente em `X3_DESCRIC`.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx009_obrigat_with_empty_init"
+    "impl_function": "_check_sx009_obrigat_with_empty_init",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-010",
@@ -371,7 +404,8 @@
     "fix_guidance": "Marque `X7_SEEK='S'` e configure `X7_ALIAS`/`X7_ORDEM`/`X7_CHAVE`. Ou troque `X7_TIPO` para `S` (Secundário) se não precisa de SEEK.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx010_pesquisar_sem_seek"
+    "impl_function": "_check_sx010_pesquisar_sem_seek",
+    "sonar_rules": []
   },
   {
     "regra_id": "SX-011",
@@ -382,7 +416,8 @@
     "fix_guidance": "Crie a consulta na SXB (4 tipos de registro: 1/2/3/4) ou remova o `X3_F3`. Verifique typo no alias.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_sx011_x3_f3_consulta_inexistente"
+    "impl_function": "_check_sx011_x3_f3_consulta_inexistente",
+    "sonar_rules": []
   },
   {
     "regra_id": "WS-001",
@@ -393,7 +428,8 @@
     "fix_guidance": "Sintaxe canônica: `WSMETHOD GET listar WSSERVICE MeuSrv`. Para evitar colisão, sempre dê um subname único entre o verbo e WSSERVICE quando houver mais de um método com o mesmo verbo no mesmo serviço.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_ws001_wsmethod_orphan"
+    "impl_function": "_check_ws001_wsmethod_orphan",
+    "sonar_rules": []
   },
   {
     "regra_id": "WS-002",
@@ -404,7 +440,8 @@
     "fix_guidance": "Aplique `cBody := DecodeUtf8(cBody)` antes de `oJson:FromJson(cBody)`. Use `JsonObject():New()` (NÃO `FwJsonDeserialize`, descontinuada pela TOTVS).",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_ws002_getcontent_no_decode"
+    "impl_function": "_check_ws002_getcontent_no_decode",
+    "sonar_rules": []
   },
   {
     "regra_id": "WS-003",
@@ -415,7 +452,8 @@
     "fix_guidance": "Padrão idiomático: `::SetResponse( EncodeUtf8( FwJsonSerialize(oResp, .F., .F., .T.) ) )`. Em respostas só-ASCII, regra gera ruído — supressão local aceitável via comentário.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_ws003_setresponse_no_encode"
+    "impl_function": "_check_ws003_setresponse_no_encode",
+    "sonar_rules": []
   },
   {
     "regra_id": "ENC-001",
@@ -426,7 +464,8 @@
     "fix_guidance": "Converta para CP1252: `plugadvpl edit-prw save <arquivo>` (default `--to cp1252` para extensão `.prw`). Comando faz backup `.bak` antes de gravar.",
     "detection_kind": "regex",
     "status": "active",
-    "impl_function": "_check_enc001_prw_utf8"
+    "impl_function": "_check_enc001_prw_utf8",
+    "sonar_rules": []
   },
   {
     "regra_id": "XF-001",
@@ -437,6 +476,7 @@
     "fix_guidance": "Chame `RpcSetEnv(cEmp, cFil, ...)` ou `PREPARE ENVIRONMENT EMPRESA cEmp FILIAL cFil` antes da busca. Alternativa moderna: use `FwxFilial('XX')` passando a filial explicitamente sem depender de `cFilAnt`.",
     "detection_kind": "cross-file",
     "status": "active",
-    "impl_function": "_check_xf001_xfilial_exclusiva_rest"
+    "impl_function": "_check_xf001_xfilial_exclusiva_rest",
+    "sonar_rules": []
   }
 ]

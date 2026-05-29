@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "15"
+SCHEMA_VERSION = "16"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -49,6 +49,7 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
             "detection_kind",
             "status",
             "impl_function",
+            "sonar_rules",
         ],
     ),
     "sql_macros.json": (
