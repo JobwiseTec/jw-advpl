@@ -67,6 +67,12 @@ packages = ["plugadvpl"]
 # "Duplicate filename in local headers").
 # v0.16.2: force-include necessário pra skills/ porque vive FORA do package
 # (em repo root, não em plugadvpl/). Sem duplicação.
+#
+# Nota: requer build do checkout (não wheel-from-sdist), porque ../skills só
+# existe no monorepo. CI faz `uv build --sdist` e `uv build --wheel`
+# separadamente em release.yml — cada um construido direto da fonte. Sem isso,
+# `uv build` chained (sdist → wheel-from-sdist) falha porque ../skills não
+# existe dentro do sdist extraido.
 force-include = { "../skills" = "plugadvpl/skills" }
 
 [tool.ruff]

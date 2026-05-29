@@ -570,6 +570,38 @@ def init(
                 )
 
 
+_CURSOR_RULE_MARKER_RE = re.compile(
+    r"<!--\s*plugadvpl-rule-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
+)
+
+
+def _check_cursor_rules_staleness(root: Path) -> str | None:
+    """Verifica Cursor rules (global ~/.cursor + locais <project>/.cursor)."""
+    cursor_files: list[Path] = []
+    try:
+        home_global = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
+        if home_global.exists():
+            cursor_files.append(home_global)
+    except RuntimeError:
+        pass
+    local_rules_dir = root / ".cursor" / "rules"
+    if local_rules_dir.exists():
+        cursor_files.extend(sorted(local_rules_dir.glob("plugadvpl-*.mdc")))
+
+    for cf in cursor_files:
+        try:
+            content = cf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = _CURSOR_RULE_MARKER_RE.search(content)
+        if m is None:
+            continue  # arquivo sem marker — não é nosso, skip
+        rule_version = m.group(1)
+        if rule_version != __version__:
+            return f"{cf.name} foi gerado por plugadvpl {rule_version}"
+    return None
+
+
 def _check_fragment_staleness(root: Path) -> str | None:
     """Retorna mensagem descritiva se algum fragment plugadvpl está desatualizado.
 
@@ -603,31 +635,7 @@ def _check_fragment_staleness(root: Path) -> str | None:
             return f"{filename} foi gerado por plugadvpl {fragment_version}"
 
     # 2. Cursor rules (rule-version)
-    cursor_files: list[Path] = []
-    try:
-        home_global = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
-        if home_global.exists():
-            cursor_files.append(home_global)
-    except RuntimeError:
-        pass
-    local_rules_dir = root / ".cursor" / "rules"
-    if local_rules_dir.exists():
-        cursor_files.extend(sorted(local_rules_dir.glob("plugadvpl-*.mdc")))
-
-    rule_marker_re = re.compile(r"<!--\s*plugadvpl-rule-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->")
-    for cf in cursor_files:
-        try:
-            content = cf.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        m = rule_marker_re.search(content)
-        if m is None:
-            continue  # arquivo sem marker — não é nosso, skip
-        rule_version = m.group(1)
-        if rule_version != __version__:
-            return f"{cf.name} foi gerado por plugadvpl {rule_version}"
-
-    return None
+    return _check_cursor_rules_staleness(root)
 
 
 def _write_agent_fragment(root: Path, filename: str) -> None:

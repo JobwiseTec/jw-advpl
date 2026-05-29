@@ -19,8 +19,15 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v8.1.0
-      - name: Build wheel
-        run: cd cli && uv build
+      - name: Build wheel + sdist (both from source, not chained)
+        # uv build sem flag faz sdist → wheel-from-sdist, mas wheel-from-sdist
+        # quebra aqui porque o wheel target tem force-include = "../skills"
+        # que so existe no monorepo, nao dentro do sdist extraido. Solucao:
+        # construir cada artefato direto da fonte, em passos separados.
+        run: |
+          cd cli
+          uv build --sdist
+          uv build --wheel
       - name: Upload wheel + sdist as artifact (for github-release job)
         uses: actions/upload-artifact@v4
         with:
