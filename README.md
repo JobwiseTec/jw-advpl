@@ -732,6 +732,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.16.0 — Interop com Sonar TOTVS oficial + hook startup limpo
+
+- **`sonar_rules` em cada lint finding** — saída JSON/table/MD ganha o ID Sonar oficial TOTVS (`BG1000`, `CA1004`, …) via LEFT JOIN com `lint_rules`. Quem já roda Sonar reconhece pelo ID oficial; quem não roda continua com nosso `regra_id`. Ver [Interop com Sonar TOTVS](#interop-com-sonar-totvs)
+- **10 regras mapeadas hoje** — 3 fortes (SEC-001→`BG1000`, SEC-004→`CA2052`, MOD-001→`CA1004`) + 7 adjacentes (prefixo `~`). 30 seguem `[]` porque são especificidades nossas sem cobertura no Sonar oficial
+- **Schema v16 (migration 016)** — `ALTER TABLE lint_rules ADD COLUMN sonar_rules TEXT DEFAULT '[]'`. Não-destrutiva; `seed_lookups()` repopula no próximo ingest. `SCHEMA_VERSION 15→16`
+- **Fix: SessionStart hook silencia em pastas auxiliares** — `docs/`, `tests/`, `fixtures/`, `examples/`, `samples/`, `gaps/`, `marketing/` adicionados ao `SKIP_DIRS`. Antes flagava meta-repos e repos Protheus com samples como "Projeto ADVPL detectado"
+- 8 testes novos (TDD) — 4 unit + 5 integration (subprocess `node hooks/session-start.mjs`). Suite full: 1060 passed
+
 ### v0.15.0 — Guarda contra restart acidental em PROD
 
 - **`plugadvpl tq --confirm-prod`** — server marcado como produção (via `plugadvpl compile --mark-prod <nome>`) exige a flag explícita; `--no-prod` desfaz. `--dry-run` continua dispensando a guarda (preview não causa side-effect)

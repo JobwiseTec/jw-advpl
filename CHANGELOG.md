@@ -4,6 +4,68 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-29
+
+### Added — Interop com Sonar TOTVS oficial (`sonar_rules` em `lint`)
+
+Cada lint finding agora carrega o ID Sonar oficial TOTVS (`BG1000`, `CA1004`, …) quando há equivalência no catálogo `sonar-rules.engpro.totvs.com.br` (referenciado pelas skills oficiais [`totvs/engpro-advpl-tlpp-skills`](https://github.com/totvs/engpro-advpl-tlpp-skills)). Quem já roda Sonar no CI reconhece o finding pelo ID oficial; quem não roda continua usando nosso `regra_id` interno.
+
+```bash
+plugadvpl lint --regra SEC-001 -f json
+# [
+#   {
+#     "arquivo": "WSReg.tlpp",
+#     "regra_id": "SEC-001",
+#     "sonar_rules": ["BG1000"]
+#   }
+# ]
+```
+
+**Convenção:** ID puro = equivalência forte; prefixo `~` = adjacente/parcial; `[]` = regra exclusiva nossa, sem equivalente Sonar oficial.
+
+**10 regras mapeadas hoje** (de 40 totais):
+
+- **Fortes:** SEC-001→`BG1000`, SEC-004→`CA2052`, MOD-001→`CA1004`
+- **Adjacentes:** ENC-001→`~CA0000`; BP-008→`~CA2024`,`~CA2025`; SEC-003→`~CA1004`; SEC-005→`~CA2017`,`~CA2019`,`~CA2022`,`~CA2023`; MOD-004→`~CA1006`,`~CA2020`,`~BG1100`; PERF-001→`~CS1000`; SX-007→`~CA2022`,`~CA2023`
+
+As 30 restantes seguem `[]` (cross-file SX, encoding cp1252, prefixo cliente, MVC, etc — especificidades nossas sem cobertura no Sonar oficial). Catálogo completo em [`cli/plugadvpl/lookups/lint_rules.json`](cli/plugadvpl/lookups/lint_rules.json).
+
+100% offline, sem dependência do Sonar instalado. Mapeamento é só ponte de nomenclatura.
+
+### Added — Schema v16 (migration 016)
+
+`ALTER TABLE lint_rules ADD COLUMN sonar_rules TEXT DEFAULT '[]'`. Não-destrutivo em SQLite — registros antigos recebem o default. `seed_lookups()` re-popula a coluna no próximo ingest a partir do JSON.
+
+`SCHEMA_VERSION` bumpou de `"15"` para `"16"`. Quem tem índice v15 vai reingerir transparente no primeiro `plugadvpl ingest` da v0.16.0 (migration roda automática).
+
+### Added — `query.lint_query()` faz LEFT JOIN com `lint_rules`
+
+Saída JSON/table/MD ganha a coluna `sonar_rules` automaticamente (renderer usa as chaves do dict). LEFT JOIN é defensivo: finding cuja regra sumiu do catálogo vira `[]` em vez de quebrar.
+
+### Fixed — SessionStart hook não flagga mais fixtures como projeto ADVPL
+
+Hook estava emitindo "Projeto ADVPL detectado" toda vez que o repo tinha `.prw`/`.tlpp` em pastas convencionalmente não-projeto: `docs/`, `tests/`, `fixtures/`, `examples/`, `samples/`, `gaps/`, `marketing/`. Em meta-repos (tipo o próprio plugadvpl) e em repos Protheus com `docs/` contendo samples, o ruído era constante.
+
+Adicionado ao `SKIP_DIRS` do `hooks/session-start.mjs`. Em projetos reais o código fica no root, em pasta de cliente (`customizado/`, `ABCFAT/`, `XYZ/`) ou em `src/` — nenhuma dessas convenções auxiliares.
+
+### Added — 8 testes novos (TDD)
+
+- 2 em `TestLintQuery` (`test_lint_query_exposes_sonar_rules_when_populated`, `test_lint_query_returns_empty_list_when_sonar_rules_unset`).
+- 2 em `test_lint_catalog_consistency` (`test_strong_sonar_mappings_present` congela os 3 fortes; `test_sonar_rules_format_valid` valida regex `~?[A-Z]+[0-9]+(-[0-9]+)?`).
+- 5 em `tests/integration/test_session_start_hook.py` cobrindo auxiliary dirs vs projeto real, via subprocess `node hooks/session-start.mjs`.
+
+Suite full: 1060 passed.
+
+### Fixed — CI ruff format + env Windows no hook test
+
+- `ruff format` quebrou a tupla `cols=[…]` em `query.py` em 8 linhas (uma por item) — padrão do projeto.
+- `_run_hook` em integration tests passava `env={CLAUDE_PROJECT_DIR, PATH}` apenas. Windows precisa de `SYSTEMROOT`/`USERPROFILE`/`APPDATA` pra node inicializar. Sem essas, `node` retorna stdout vazio silenciosamente. Agora herda `os.environ` inteiro.
+
+### Bumped
+
+- `uvx plugadvpl@0.15.0` → `uvx plugadvpl@0.16.0` nas 26 skills.
+- `plugin.json` / `marketplace.json` → 0.16.0.
+
 ## [0.15.0] - 2026-05-27
 
 ### Added — `--confirm-prod` no `tq` + flag `is_prod` no `Server`
