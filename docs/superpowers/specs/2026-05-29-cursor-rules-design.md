@@ -95,12 +95,14 @@ Gera conteúdo de uma rule por skill. Pipeline puro:
 
 2. **Extrai body** (tudo após o `---` de fechamento do frontmatter).
 
-3. **Transformar body** com 2 substituições:
+3. **Transformar body** com 2 substituições, **nesta ordem**:
 
-   | De | Para |
-   |---|---|
-   | `/plugadvpl:<X>` | `` `Bash: uvx plugadvpl@<ver> <X>` `` |
-   | `uvx plugadvpl@<qualquer-versão>` | `uvx plugadvpl@<ver>` |
+   | Passo | De | Para |
+   |---|---|---|
+   | 3a | `/plugadvpl:<X>` | `` `Bash: uvx plugadvpl@<ver> <X>` `` |
+   | 3b | `uvx plugadvpl@<qualquer-versão>` | `uvx plugadvpl@<ver>` |
+
+   Ordem importa: 3a primeiro porque emite `uvx plugadvpl@<ver>` correto. 3b depois normaliza qualquer ocorrência pré-existente de versão antiga (ex: `uvx plugadvpl@0.15.0` literal em exemplo).
 
    Resto intocado (cabeçalhos, exemplos, tabelas, blocos de código).
 
@@ -141,9 +143,9 @@ class InstallResult:
 **Algoritmo:**
 1. `target = detect_cursor(project_root)`
 2. Se `target.install_global`: chama `_write_rule(global_path, render_global_rule(ver))`, captura erros.
-3. Se `target.install_local`: itera lista das 26 skills embarcadas, pra cada uma:
-   - Resolve caminho via `importlib.resources.files("plugadvpl")` (ou similar — definido no plano)
-   - `_write_rule(local_path, render_skill_rule(...))`, captura erros
+3. Se `target.install_local`: itera **`_SKILL_GLOBS.keys()`** (a constante da §5 dobra como lista canônica de skills — adicionar nova skill = 1 entrada nessa constante), pra cada nome:
+   - Resolve caminho do `SKILL.md` via `importlib.resources.files("plugadvpl") / "skills" / nome / "SKILL.md"`
+   - `_write_rule(local_path, render_skill_rule(skill_md, ver, _SKILL_GLOBS[nome]))`, captura erros
 4. Retorna `InstallResult` com tudo agregado.
 
 ### 3.5 `_write_rule(target_path: Path, content: str) → WriteOutcome`
@@ -385,7 +387,7 @@ Considerar entregue quando:
 4. ✅ Rule sem marker (user file) é preservada com warning, init continua.
 5. ✅ `init --no-cursor` é zero-op pra Cursor.
 6. ✅ Erro de permissão não quebra init — exit code 0, warning informativo.
-7. ✅ Suite full: 1063 → ~1088 testes (+25), zero regressão.
+7. ✅ Suite full: 1063 → ~1090 testes (+27 = 15 unit + 10 integration + 2 staleness), zero regressão.
 8. ✅ Smoke manual no Cursor real: abrir projeto Protheus pós-init, verificar que rule global injeta convenções e rule `plugadvpl-arch.mdc` aparece quando user abre `.prw`.
 
 ---
