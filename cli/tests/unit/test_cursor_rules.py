@@ -208,3 +208,27 @@ class TestRenderGlobalRule:
             if in_fm:
                 frontmatter.append(line)
         assert not any(line.startswith("globs:") for line in frontmatter)
+
+
+class TestSkillGlobs:
+    def test_has_52_skills(self) -> None:
+        from plugadvpl.cursor_rules import _SKILL_GLOBS
+        assert len(_SKILL_GLOBS) == 52
+
+    def test_matches_actual_skill_dirs(self) -> None:
+        """_SKILL_GLOBS deve bater com as skills embarcadas em skills/."""
+        from plugadvpl.cursor_rules import _SKILL_GLOBS
+        # Skills bundled no plugin (paths relativos ao repo root no dev tree)
+        skills_dir = Path(__file__).resolve().parents[3] / "skills"
+        if not skills_dir.exists():
+            pytest.skip("dev tree only — skills/ não acessível neste contexto")
+        actual = {p.name for p in skills_dir.iterdir() if (p / "SKILL.md").exists()}
+        catalogued = set(_SKILL_GLOBS.keys())
+        missing_in_constant = actual - catalogued
+        extras_in_constant = catalogued - actual
+        assert not missing_in_constant, (
+            f"Skills sem entrada em _SKILL_GLOBS: {missing_in_constant}"
+        )
+        assert not extras_in_constant, (
+            f"_SKILL_GLOBS tem entries inexistentes: {extras_in_constant}"
+        )

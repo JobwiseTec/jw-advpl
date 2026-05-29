@@ -165,6 +165,72 @@ cru — economiza ~16x tokens.
 """
 
 
+# Mapping skill → globs (spec §5). Skills sem entrada NÃO geram rule local.
+# Adicionar nova skill = 1 entrada nessa constante.
+_PRW = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.apw"]
+_PRW_CSV = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.csv"]
+
+_SKILL_GLOBS: dict[str, list[str]] = {
+    # Skills com escopo ADVPL/TLPP source
+    "arch": _PRW,
+    "find": _PRW,
+    "callers": _PRW,
+    "callees": _PRW,
+    "lint": _PRW,
+    "grep": _PRW,
+    "compile": _PRW,
+    "tq": _PRW,
+    "edit-prw": _PRW,
+    "deploy": _PRW,
+    "hotspots": _PRW,
+    "metrics": _PRW,
+    "cobertura-doc": _PRW,
+    "plugadvpl-index-usage": _PRW,
+    # Skills de conhecimento ADVPL/TLPP (reference/training)
+    "advpl-advanced": _PRW,
+    "advpl-code-review": _PRW,
+    "advpl-debugging": _PRW,
+    "advpl-dicionario-sx": _PRW,
+    "advpl-dicionario-sx-validacoes": _PRW,
+    "advpl-embedded-sql": _PRW,
+    "advpl-encoding": _PRW,
+    "advpl-fundamentals": _PRW,
+    "advpl-jobs-rpc": _PRW,
+    "advpl-matxfis": _PRW,
+    "advpl-mvc": _PRW,
+    "advpl-mvc-avancado": _PRW,
+    "advpl-pontos-entrada": _PRW,
+    "advpl-refactoring": _PRW,
+    "advpl-tlpp": _PRW,
+    "advpl-tlpp-named-params": _PRW,
+    "advpl-web": _PRW,
+    "advpl-webservice": _PRW,
+    # Skills com escopo de dicionário SX (inclui CSV exportado)
+    "tables": _PRW_CSV,
+    "param": _PRW_CSV,
+    "impacto": _PRW_CSV,
+    "gatilho": _PRW_CSV,
+    "ingest-sx": _PRW_CSV,
+    "sx-status": _PRW_CSV,
+    # Skills com escopo específico
+    "ini-audit": ["**/*.ini"],
+    "log-diagnose": ["**/*.log"],
+    # Meta-skills — sem escopo (alwaysApply: false sem globs)
+    "init": [],
+    "ingest": [],
+    "status": [],
+    "doctor": [],
+    "reindex": [],
+    "help": [],
+    "workflow": [],
+    "execauto": [],
+    "docs": [],
+    "trace": [],
+    "setup": [],
+    "ingest-protheus": [],
+}
+
+
 def render_global_rule(version: str) -> str:
     """Gera conteúdo MDC pra ``~/.cursor/rules/plugadvpl.mdc`` (rule global).
 
