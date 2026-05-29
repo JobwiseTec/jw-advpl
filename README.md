@@ -221,7 +221,7 @@ winget install astral-sh.uv                              # Windows
 #    (caminho varia entre CLI nativo e extensão VSCode)
 
 # 3. Abra o seu projeto Protheus e rode:
-/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore
+/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore (+ Cursor rules se detectado)
 /plugadvpl:ingest    # parser paralelo, ~30–60s para 2.000 fontes
 ```
 
@@ -731,6 +731,15 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.16.2 — Cursor Rules nativos no `init`
+
+- **`plugadvpl init` agora detecta Cursor instalado** e gera `~/.cursor/rules/plugadvpl.mdc` (global, convenções ADVPL) + 52 `.cursor/rules/plugadvpl-<X>.mdc` (locais, uma por skill com `globs` específico)
+- Single source: rules geradas em runtime a partir das `SKILL.md` embarcadas — `/plugadvpl:X` slash vira `` `Bash: uvx plugadvpl@0.16.2 X` `` no Cursor
+- Idempotente via marker `<!-- plugadvpl-rule-version: X.Y.Z -->`; preserva rules com nome conflitante do user (warning)
+- Flag `--no-cursor` desabilita; falha de I/O nunca quebra init (Cursor é secundário)
+- `plugadvpl status` detecta rule desatualizada (global ou local)
+- 34 testes novos (TDD). Suite full: 1097 passed
 
 ### v0.16.1 — Suporte multi-agente via `AGENTS.md` gêmeo
 

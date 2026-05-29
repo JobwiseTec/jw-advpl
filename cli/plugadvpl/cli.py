@@ -555,14 +555,13 @@ def init(
 
     if not no_cursor:
         from plugadvpl.cursor_rules import install_cursor_rules
+
         cursor_result = install_cursor_rules(root, __version__)
         if not ctx.obj["quiet"]:
             if cursor_result.installed_global or cursor_result.installed_local_count:
                 typer.echo(f"OK  Cursor rules: {cursor_result.summary()}")
             for warn in cursor_result.errors:
-                typer.secho(
-                    f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True
-                )
+                typer.secho(f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True)
             for skipped in cursor_result.skipped_due_to_user_files:
                 typer.secho(
                     f"⚠  Cursor rules: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
@@ -615,9 +614,7 @@ def _check_fragment_staleness(root: Path) -> str | None:
     if local_rules_dir.exists():
         cursor_files.extend(sorted(local_rules_dir.glob("plugadvpl-*.mdc")))
 
-    rule_marker_re = re.compile(
-        r"<!--\s*plugadvpl-rule-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
-    )
+    rule_marker_re = re.compile(r"<!--\s*plugadvpl-rule-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->")
     for cf in cursor_files:
         try:
             content = cf.read_text(encoding="utf-8", errors="replace")

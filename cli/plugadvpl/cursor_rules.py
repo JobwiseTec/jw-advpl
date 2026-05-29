@@ -7,6 +7,7 @@ ADVPL/TLPP, comandos do plugadvpl, encoding cp1252, tabela de decisão, etc.
 Single source: skills/<X>/SKILL.md embarcadas geram .mdc em runtime via
 2 substituições de string. Falha aqui NUNCA quebra o init.
 """
+
 from __future__ import annotations
 
 import enum
@@ -21,8 +22,8 @@ from pathlib import Path
 class CursorTarget:
     """Decisão do detect_cursor: o que instalar e onde."""
 
-    install_global: bool   # ~/.cursor/rules/plugadvpl.mdc
-    install_local: bool    # <project>/.cursor/rules/plugadvpl-*.mdc
+    install_global: bool  # ~/.cursor/rules/plugadvpl.mdc
+    install_local: bool  # <project>/.cursor/rules/plugadvpl-*.mdc
 
 
 def detect_cursor(project_root: Path) -> CursorTarget:
@@ -89,9 +90,7 @@ def _parse_skill_md(skill_md_text: str) -> tuple[str, str]:
     return (description, body)
 
 
-def render_skill_rule(
-    skill_md_path: Path, version: str, globs: list[str]
-) -> str:
+def render_skill_rule(skill_md_path: Path, version: str, globs: list[str]) -> str:
     """Gera conteúdo MDC pra `.cursor/rules/plugadvpl-<nome>.mdc`.
 
     Pipeline:
@@ -118,8 +117,7 @@ def render_skill_rule(
     frontmatter = "---\n" + "\n".join(frontmatter_lines) + "\n---\n"
 
     markers = (
-        f"<!-- plugadvpl-rule-version: {version} -->\n"
-        f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
+        f"<!-- plugadvpl-rule-version: {version} -->\n<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
 
     return frontmatter + markers + _transform_body(body, version)
@@ -239,12 +237,7 @@ def render_global_rule(version: str) -> str:
     Sempre injetado em qualquer arquivo aberto (``alwaysApply: true``).
     Sem ``globs`` — vale pra qualquer arquivo do workspace.
     """
-    frontmatter = (
-        "---\n"
-        f"description: {_GLOBAL_DESCRIPTION}\n"
-        "alwaysApply: true\n"
-        "---\n"
-    )
+    frontmatter = f"---\ndescription: {_GLOBAL_DESCRIPTION}\nalwaysApply: true\n---\n"
     markers = f"<!-- plugadvpl-rule-version: {version} -->\n\n"
     body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
     return frontmatter + markers + body
@@ -256,10 +249,10 @@ _MARKER_PREFIX = "<!-- plugadvpl-rule-version:"
 class WriteOutcome(enum.Enum):
     """Resultado de tentar escrever uma rule individual."""
 
-    WRITTEN = "written"                     # arquivo novo, escrito OK
-    OVERWRITTEN = "overwritten"             # tinha marker, sobrescrevemos
-    SKIPPED_USER_FILE = "skipped_user_file" # tinha conteúdo sem marker — preservamos
-    ERROR = "error"                         # falha de I/O
+    WRITTEN = "written"  # arquivo novo, escrito OK
+    OVERWRITTEN = "overwritten"  # tinha marker, sobrescrevemos
+    SKIPPED_USER_FILE = "skipped_user_file"  # tinha conteúdo sem marker — preservamos
+    ERROR = "error"  # falha de I/O
 
 
 def _write_rule(target_path: Path, content: str) -> WriteOutcome:
@@ -300,6 +293,7 @@ def _skills_root() -> Path:
         pass
     # Fallback dev tree: <repo>/cli/plugadvpl/__init__.py → <repo>/skills/
     import plugadvpl
+
     pkg_init = Path(plugadvpl.__file__).resolve()
     return pkg_init.parents[2] / "skills"
 
@@ -309,7 +303,7 @@ class InstallResult:
     """Resumo do install_cursor_rules — quanto foi instalado + warnings."""
 
     installed_global: bool
-    installed_local_count: int               # 0..52
+    installed_local_count: int  # 0..52
     skipped_due_to_user_files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -354,9 +348,7 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
             elif outcome == WriteOutcome.SKIPPED_USER_FILE:
                 skipped.append("plugadvpl.mdc (global)")
             elif outcome == WriteOutcome.ERROR:
-                errors.append(
-                    f"falha ao escrever {global_path}: permission/IO denied"
-                )
+                errors.append(f"falha ao escrever {global_path}: permission/IO denied")
         except Exception as e:  # noqa: BLE001
             errors.append(f"global rule erro: {e!r}")
 
@@ -376,9 +368,7 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
             try:
                 skill_md_path = skills_root / skill_name / "SKILL.md"
                 if not skill_md_path.exists():
-                    errors.append(
-                        f"skill {skill_name}: SKILL.md ausente no wheel"
-                    )
+                    errors.append(f"skill {skill_name}: SKILL.md ausente no wheel")
                     continue
                 content = render_skill_rule(skill_md_path, version, globs)
                 target_path = local_dir / f"plugadvpl-{skill_name}.mdc"
@@ -388,9 +378,7 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
                 elif outcome == WriteOutcome.SKIPPED_USER_FILE:
                     skipped.append(f"plugadvpl-{skill_name}.mdc")
                 elif outcome == WriteOutcome.ERROR:
-                    errors.append(
-                        f"falha ao escrever {target_path}: permission/IO denied"
-                    )
+                    errors.append(f"falha ao escrever {target_path}: permission/IO denied")
             except Exception as e:  # noqa: BLE001
                 errors.append(f"skill {skill_name}: {e!r}")
 

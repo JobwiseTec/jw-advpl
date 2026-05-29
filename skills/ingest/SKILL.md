@@ -27,7 +27,7 @@ Quando `paths` for omitido, indexa o diretorio do projeto atual.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.16.1 ingest $ARGUMENTS
+uvx plugadvpl@0.16.2 ingest $ARGUMENTS
 ```
 
 ## Exemplos

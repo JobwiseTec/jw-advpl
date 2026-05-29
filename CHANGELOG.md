@@ -4,6 +4,67 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-05-29
+
+### Added — Cursor Rules nativos no `plugadvpl init`
+
+`plugadvpl init` agora detecta Cursor instalado (via `~/.cursor/` no home ou `.cursor/` no projeto) e gera:
+
+- **1 rule global** em `~/.cursor/rules/plugadvpl.mdc` (`alwaysApply: true`) — convenções ADVPL/TLPP, encoding cp1252, tabela de decisão, comandos `uvx`.
+- **52 rules locais** em `.cursor/rules/plugadvpl-<skill>.mdc` — uma por skill embarcada, com `globs` específico por contexto (ex: `plugadvpl-arch.mdc` aplica em `**/*.prw,**/*.tlpp,**/*.prx,**/*.apw`; `plugadvpl-ini-audit.mdc` em `**/*.ini`).
+
+Single source: as 52 rules são geradas em runtime a partir das `skills/<X>/SKILL.md` embarcadas no wheel (mesma fonte que Claude Code consome). 2 substituições simples: `/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@0.16.2 <X>` `` e normalização de versão antiga.
+
+Marker `<!-- plugadvpl-rule-version: X.Y.Z -->` controla idempotência: regen sobrescreve só arquivos nossos (com marker); arquivos do usuário com nome conflitante são preservados com warning. `plugadvpl status` detecta rules desatualizadas igual ao fragment do CLAUDE.md.
+
+**Flag:** `plugadvpl init --no-cursor` desabilita mesmo com sinais presentes (CI/usuários que não querem).
+
+**Garantia:** falha de I/O em rules nunca quebra `init` — Cursor é secundário (silent fail + warning informativo). Exit code do init nunca muda por causa disso.
+
+Predecessor: v0.16.1 entregou AGENTS.md gêmeo (Codex). v0.16.2 completa Fase 1 do multi-agente focando em Cursor com integração nativa via formato MDC.
+
+### Added — `plugadvpl.cursor_rules` módulo
+
+Novo módulo isolado (~400 linhas) com:
+- `CursorTarget` + `InstallResult` dataclasses
+- `detect_cursor()` — política conservadora
+- `render_global_rule()` + `render_skill_rule()` — geradores puros
+- `_SKILL_GLOBS` — mapping canônico (52 entradas; dobra como source-of-truth da lista de skills)
+- `install_cursor_rules()` — orquestrador top-level
+- `_write_rule()` + `WriteOutcome` enum — política de marker
+
+Stdlib only (sem deps novas).
+
+### Changed — `_check_fragment_staleness()` cobre Cursor rules
+
+`plugadvpl status` agora detecta fragment desatualizado em:
+- `CLAUDE.md` (já cobria)
+- `AGENTS.md` (v0.16.1)
+- `~/.cursor/rules/plugadvpl.mdc` (novo)
+- `<project>/.cursor/rules/plugadvpl-*.mdc` (novo)
+
+### Changed — wheel inclui `skills/` via `force-include`
+
+`cli/pyproject.toml` ganha `force-include = { "../skills" = "plugadvpl/skills" }` no target wheel. Skills vivem em repo root (fora do package); sem isso, install_cursor_rules() em wheel instalado não acharia SKILL.md de nenhuma skill.
+
+### Added — 34 testes novos (TDD)
+
+- 8 unit em `TestRenderSkillRule` (parse frontmatter, substituições, frontmatter MDC, markers, fallback)
+- 2 unit em `TestRenderGlobalRule` (`alwaysApply: true`, sem globs)
+- 6 unit em `TestDetectCursor` (sinais + cross-platform + RuntimeError)
+- 3 unit em `TestWriteRule` (WRITTEN/OVERWRITTEN/SKIPPED_USER_FILE)
+- 2 unit em `TestInstallCursorRules` (smoke end-to-end + no-op)
+- 2 unit em `TestSkillGlobs` (52 entradas + paridade com skills/)
+- 9 integration em `TestInitCursorRules` (init real com mocks)
+- 2 integration em `TestStatus` (stale global + stale local)
+
+Suite full: 1063 → 1097 passed.
+
+### Bumped
+
+- `uvx plugadvpl@0.16.1` → `uvx plugadvpl@0.16.2` nas skills que usam o CLI.
+- `plugin.json` / `marketplace.json` → 0.16.2.
+
 ## [0.16.1] - 2026-05-29
 
 ### Added — Suporte multi-agente via `AGENTS.md` gêmeo
