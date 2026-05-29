@@ -12,7 +12,8 @@ from __future__ import annotations
 import enum
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from importlib import resources as ir
 from pathlib import Path
 
 
@@ -281,3 +282,112 @@ def _write_rule(target_path: Path, content: str) -> WriteOutcome:
         return WriteOutcome.SKIPPED_USER_FILE
     except OSError:
         return WriteOutcome.ERROR
+
+
+def _skills_root() -> Path:
+    """Localiza skills/ tanto em dev tree quanto em wheel.
+
+    Tenta importlib.resources primeiro; se a skill embarcada não existir
+    (caso: dev tree onde skills/ não é packaged), cai pro repo root
+    relativo ao __init__.py do plugadvpl.
+    """
+    try:
+        test = ir.files("plugadvpl") / "skills"
+        with ir.as_file(test) as resolved:
+            if (resolved / "arch" / "SKILL.md").exists():
+                return resolved
+    except (FileNotFoundError, OSError, ModuleNotFoundError):
+        pass
+    # Fallback dev tree: <repo>/cli/plugadvpl/__init__.py → <repo>/skills/
+    import plugadvpl
+    pkg_init = Path(plugadvpl.__file__).resolve()
+    return pkg_init.parents[2] / "skills"
+
+
+@dataclass(frozen=True)
+class InstallResult:
+    """Resumo do install_cursor_rules — quanto foi instalado + warnings."""
+
+    installed_global: bool
+    installed_local_count: int               # 0..52
+    skipped_due_to_user_files: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        """String curta pra `init` printar."""
+        parts = []
+        if self.installed_global:
+            parts.append("1 global")
+        if self.installed_local_count:
+            parts.append(f"{self.installed_local_count} locais")
+        return " + ".join(parts) + " instaladas" if parts else "nada instalado"
+
+
+def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
+    """Orquestra detect + render + write pras rules Cursor.
+
+    Spec §3.4. NUNCA propaga exception — top-level try captura tudo, init
+    nunca quebra por causa do Cursor.
+    """
+    skipped: list[str] = []
+    errors: list[str] = []
+    installed_global = False
+    installed_local_count = 0
+
+    try:
+        target = detect_cursor(project_root)
+    except Exception as e:  # noqa: BLE001 — defensivo total
+        errors.append(f"detect_cursor falhou: {e!r}")
+        return InstallResult(
+            installed_global=False,
+            installed_local_count=0,
+            skipped_due_to_user_files=[],
+            errors=errors,
+        )
+
+    if target.install_global:
+        try:
+            global_path = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
+            outcome = _write_rule(global_path, render_global_rule(version))
+            if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+                installed_global = True
+            elif outcome == WriteOutcome.SKIPPED_USER_FILE:
+                skipped.append("plugadvpl.mdc (global)")
+            elif outcome == WriteOutcome.ERROR:
+                errors.append(
+                    f"falha ao escrever {global_path}: permission/IO denied"
+                )
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"global rule erro: {e!r}")
+
+    if target.install_local:
+        local_dir = project_root / ".cursor" / "rules"
+        skills_root = _skills_root()
+        for skill_name, globs in _SKILL_GLOBS.items():
+            try:
+                skill_md_path = skills_root / skill_name / "SKILL.md"
+                if not skill_md_path.exists():
+                    errors.append(
+                        f"skill {skill_name}: SKILL.md ausente no wheel"
+                    )
+                    continue
+                content = render_skill_rule(skill_md_path, version, globs)
+                target_path = local_dir / f"plugadvpl-{skill_name}.mdc"
+                outcome = _write_rule(target_path, content)
+                if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+                    installed_local_count += 1
+                elif outcome == WriteOutcome.SKIPPED_USER_FILE:
+                    skipped.append(f"plugadvpl-{skill_name}.mdc")
+                elif outcome == WriteOutcome.ERROR:
+                    errors.append(
+                        f"falha ao escrever {target_path}: permission/IO denied"
+                    )
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"skill {skill_name}: {e!r}")
+
+    return InstallResult(
+        installed_global=installed_global,
+        installed_local_count=installed_local_count,
+        skipped_due_to_user_files=skipped,
+        errors=errors,
+    )

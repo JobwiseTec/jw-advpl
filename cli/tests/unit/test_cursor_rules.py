@@ -260,3 +260,43 @@ class TestWriteRule:
         assert outcome == WriteOutcome.SKIPPED_USER_FILE
         # Preserva arquivo do user
         assert target.read_text(encoding="utf-8") == "my own rule, no marker"
+
+
+class TestInstallCursorRules:
+    def test_installs_global_and_locals_when_both_signals(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sinais completos → instala global + 52 locais. Smoke-end-to-end."""
+        from plugadvpl.cursor_rules import install_cursor_rules
+        fake_home = tmp_path / "home"
+        (fake_home / ".cursor" / "rules").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        (project / ".cursor").mkdir(parents=True)
+
+        result = install_cursor_rules(project, version="0.16.2")
+
+        assert result.installed_global is True
+        assert result.installed_local_count == 52
+        assert not result.errors
+        # Smoke: arquivos foram criados
+        assert (fake_home / ".cursor" / "rules" / "plugadvpl.mdc").exists()
+        local_rules = list((project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
+        assert len(local_rules) == 52
+
+    def test_no_op_when_no_signals(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from plugadvpl.cursor_rules import install_cursor_rules
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        project.mkdir()
+        result = install_cursor_rules(project, version="0.16.2")
+        assert result.installed_global is False
+        assert result.installed_local_count == 0
+        assert not (fake_home / ".cursor" / "rules").exists()  # não criou
+        assert not (project / ".cursor").exists()
