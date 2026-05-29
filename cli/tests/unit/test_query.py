@@ -246,6 +246,43 @@ class TestLintQuery:
         rows = lint_query(conn, arquivo="FATA050.prw")
         assert all(r["arquivo"] == "FATA050.prw" for r in rows)
 
+    def test_lint_query_exposes_sonar_rules_when_populated(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """Finding deve trazer sonar_rules como lista parseada da regra correspondente."""
+        import json
+        _, conn = db_with_three_sources
+        conn.execute(
+            "UPDATE lint_rules SET sonar_rules = ? WHERE regra_id = ?",
+            (json.dumps(["BG1000"]), "BP-001"),
+        )
+        conn.execute(
+            "INSERT INTO lint_findings "
+            "(arquivo, funcao, linha, regra_id, severidade, snippet, sugestao_fix) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("FAKE.prw", "FakeFn", 1, "BP-001", "critical", "snip", "fix"),
+        )
+        conn.commit()
+        rows = lint_query(conn, regra_id="BP-001")
+        finding = next(r for r in rows if r["arquivo"] == "FAKE.prw")
+        assert finding["sonar_rules"] == ["BG1000"]
+
+    def test_lint_query_returns_empty_list_when_sonar_rules_unset(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """Regra sem mapeamento Sonar deve aparecer como sonar_rules=[], não None nem ''."""
+        _, conn = db_with_three_sources
+        conn.execute(
+            "INSERT INTO lint_findings "
+            "(arquivo, funcao, linha, regra_id, severidade, snippet, sugestao_fix) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("FAKE2.prw", "FakeFn", 1, "BP-002", "critical", "snip", "fix"),
+        )
+        conn.commit()
+        rows = lint_query(conn, regra_id="BP-002")
+        finding = next(r for r in rows if r["arquivo"] == "FAKE2.prw")
+        assert finding["sonar_rules"] == []
+
 
 class TestStatus:
     def test_status_has_versions(

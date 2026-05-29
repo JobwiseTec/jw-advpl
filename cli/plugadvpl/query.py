@@ -396,23 +396,41 @@ def lint_query(
     where: list[str] = []
     params: list[Any] = []
     if arquivo:
-        where.append("arquivo = ? COLLATE NOCASE")
+        where.append("f.arquivo = ? COLLATE NOCASE")
         params.append(arquivo)
     if severity:
-        where.append("severidade = ?")
+        where.append("f.severidade = ?")
         params.append(severity)
     if regra_id:
-        where.append("regra_id = ?")
+        where.append("f.regra_id = ?")
         params.append(regra_id)
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
     sql = (
-        "SELECT arquivo, funcao, linha, regra_id, severidade, snippet, sugestao_fix "
-        f"FROM lint_findings {where_clause} "
-        "ORDER BY arquivo, linha"
+        "SELECT f.arquivo, f.funcao, f.linha, f.regra_id, f.severidade, "
+        "       f.snippet, f.sugestao_fix, r.sonar_rules "
+        "FROM lint_findings f LEFT JOIN lint_rules r ON r.regra_id = f.regra_id "
+        f"{where_clause} "
+        "ORDER BY f.arquivo, f.linha"
     )
     rows = conn.execute(sql, params).fetchall()
-    cols = ["arquivo", "funcao", "linha", "regra_id", "severidade", "snippet", "sugestao_fix"]
-    return [dict(zip(cols, r, strict=True)) for r in rows]
+    cols = [
+        "arquivo", "funcao", "linha", "regra_id", "severidade",
+        "snippet", "sugestao_fix", "sonar_rules",
+    ]
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        d = dict(zip(cols, r, strict=True))
+        # sonar_rules é TEXT JSON na DB; LEFT JOIN pode retornar None se a regra sumiu.
+        raw = d["sonar_rules"]
+        if not raw:
+            d["sonar_rules"] = []
+        else:
+            try:
+                d["sonar_rules"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                d["sonar_rules"] = []
+        out.append(d)
+    return out
 
 
 def status(
