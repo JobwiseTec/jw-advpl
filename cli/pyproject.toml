@@ -63,9 +63,11 @@ version-file = "plugadvpl/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["plugadvpl"]
 # Hatchling inclui automaticamente todos arquivos non-Python dentro do package
-# (migrations/*.sql, lookups/*.json). NÃO usar force-include aqui — ele
-# duplicaria os arquivos no wheel (gerando "Duplicate filename in local headers"
-# rejeitado pelo PyPI).
+# (migrations/*.sql, lookups/*.json). NÃO usar force-include pra esses (causa
+# "Duplicate filename in local headers").
+# v0.16.2: force-include necessário pra skills/ porque vive FORA do package
+# (em repo root, não em plugadvpl/). Sem duplicação.
+force-include = { "../skills" = "plugadvpl/skills" }
 
 [tool.ruff]
 line-length = 100

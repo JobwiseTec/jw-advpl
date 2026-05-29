@@ -362,7 +362,16 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
 
     if target.install_local:
         local_dir = project_root / ".cursor" / "rules"
-        skills_root = _skills_root()
+        try:
+            skills_root = _skills_root()
+        except Exception as e:  # noqa: BLE001 — defensivo total
+            errors.append(f"_skills_root falhou: {e!r}")
+            return InstallResult(
+                installed_global=installed_global,
+                installed_local_count=installed_local_count,
+                skipped_due_to_user_files=skipped,
+                errors=errors,
+            )
         for skill_name, globs in _SKILL_GLOBS.items():
             try:
                 skill_md_path = skills_root / skill_name / "SKILL.md"
