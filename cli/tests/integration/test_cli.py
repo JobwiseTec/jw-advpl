@@ -678,6 +678,46 @@ class TestStatus:
         assert result.exit_code == 0
         assert "ingest --incremental" not in result.stderr
 
+    def test_detects_stale_cursor_global_rule(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rule global com marker old → status reporta arquivo + versão antiga."""
+        fake_home = indexed_project.parent / "fake_home_status"
+        rules_dir = fake_home / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "plugadvpl.mdc").write_text(
+            "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
+        )
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        # Mensagem inclui o nome do arquivo e a versão antiga
+        combined = (result.stderr or "") + result.stdout
+        assert "plugadvpl.mdc" in combined
+        assert "0.15.0" in combined
+
+    def test_detects_stale_cursor_local_rule(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rule local com marker old → status reporta."""
+        fake_home = indexed_project.parent / "fake_home_status2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        rules_dir = indexed_project / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "plugadvpl-arch.mdc").write_text(
+            "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
+        )
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "plugadvpl-arch.mdc" in combined
+        assert "0.15.0" in combined
+
     def test_status_warning_suppressed_by_quiet(
         self, indexed_project: Path, runner: CliRunner
     ) -> None:

@@ -572,22 +572,17 @@ def init(
 
 
 def _check_fragment_staleness(root: Path) -> str | None:
-    """Retorna mensagem descritiva se o fragment plugadvpl está desatualizado.
+    """Retorna mensagem descritiva se algum fragment plugadvpl está desatualizado.
 
-    v0.3.23 (#1 do QA round 3). Lê CLAUDE.md, localiza a região BEGIN/END
-    plugadvpl, extrai o marker `<!-- plugadvpl-fragment-version: X.Y.Z -->`,
-    e compara com `__version__`.
+    v0.3.23: marker `<!-- plugadvpl-fragment-version: X.Y.Z -->` em CLAUDE.md.
+    v0.16.1: estende pra AGENTS.md.
+    v0.16.2: estende pra Cursor rules (global em ~/.cursor/rules/plugadvpl.mdc
+    e locais em <project>/.cursor/rules/plugadvpl-*.mdc).
 
-    v0.16.1: checa CLAUDE.md E AGENTS.md (escritos juntos pelo init). Reporta
-    o primeiro arquivo com fragment desatualizado encontrado. Se um dos dois
-    está atualizado e o outro ausente, considera atualizado (init foi rodado
-    em versão antiga que só escrevia CLAUDE.md — caller decide se quer re-init).
-
-    Retornos:
-      - ``None``: fragment atualizado OU sem fragment (caso fresh sem init ainda).
-      - ``"foi gerado por v X.Y.Z"``: marker presente mas != runtime.
-      - ``"é de versão pré-v0.3.23 (sem versionamento)"``: marker ausente.
+    Reporta o primeiro arquivo desatualizado encontrado. None se todos OK ou
+    se nenhum dos arquivos existe (caso fresh sem init ainda).
     """
+    # 1. CLAUDE.md + AGENTS.md (fragment-version)
     for filename in ("CLAUDE.md", "AGENTS.md"):
         target = root / filename
         if not target.exists():
@@ -597,8 +592,7 @@ def _check_fragment_staleness(root: Path) -> str | None:
         except OSError:
             continue
         if _CLAUDE_FRAGMENT_BEGIN not in content or _CLAUDE_FRAGMENT_END not in content:
-            continue  # sem fragment neste arquivo
-        # Janela do fragment.
+            continue
         start = content.index(_CLAUDE_FRAGMENT_BEGIN)
         end = content.index(_CLAUDE_FRAGMENT_END) + len(_CLAUDE_FRAGMENT_END)
         fragment = content[start:end]
@@ -608,6 +602,34 @@ def _check_fragment_staleness(root: Path) -> str | None:
         fragment_version = m.group(1)
         if fragment_version != __version__:
             return f"{filename} foi gerado por plugadvpl {fragment_version}"
+
+    # 2. Cursor rules (rule-version)
+    cursor_files: list[Path] = []
+    try:
+        home_global = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
+        if home_global.exists():
+            cursor_files.append(home_global)
+    except RuntimeError:
+        pass
+    local_rules_dir = root / ".cursor" / "rules"
+    if local_rules_dir.exists():
+        cursor_files.extend(sorted(local_rules_dir.glob("plugadvpl-*.mdc")))
+
+    rule_marker_re = re.compile(
+        r"<!--\s*plugadvpl-rule-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
+    )
+    for cf in cursor_files:
+        try:
+            content = cf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = rule_marker_re.search(content)
+        if m is None:
+            continue  # arquivo sem marker — não é nosso, skip
+        rule_version = m.group(1)
+        if rule_version != __version__:
+            return f"{cf.name} foi gerado por plugadvpl {rule_version}"
+
     return None
 
 
