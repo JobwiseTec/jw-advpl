@@ -177,6 +177,46 @@ class TestInit:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert ".plugadvpl/" in gi.read_text(encoding="utf-8")
 
+    def test_init_creates_agents_md_for_multi_agent(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        """v0.16.1 — init escreve AGENTS.md gêmeo do CLAUDE.md.
+
+        AGENTS.md é o padrão usado por Cursor, GitHub Copilot, Codex e outros
+        agentes que não consomem CLAUDE.md. Conteúdo idêntico — apenas o nome
+        muda pra atender cada plataforma.
+        """
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        agents_md = synthetic_project / "AGENTS.md"
+        assert agents_md.exists()
+        content = agents_md.read_text(encoding="utf-8")
+        assert "<!-- BEGIN plugadvpl -->" in content
+        assert "<!-- END plugadvpl -->" in content
+
+    def test_init_agents_md_fragment_mirrors_claude_md(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        """Fragment de plugadvpl em CLAUDE.md e AGENTS.md devem ser idênticos."""
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        claude = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
+        agents = (synthetic_project / "AGENTS.md").read_text(encoding="utf-8")
+        # Extrai a janela BEGIN..END de cada arquivo e compara.
+        def _fragment(text: str) -> str:
+            start = text.index("<!-- BEGIN plugadvpl -->")
+            end = text.index("<!-- END plugadvpl -->") + len("<!-- END plugadvpl -->")
+            return text[start:end]
+        assert _fragment(claude) == _fragment(agents)
+
+    def test_init_agents_md_is_idempotent(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        """Segundo init não duplica fragment no AGENTS.md."""
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / "AGENTS.md").read_text(encoding="utf-8")
+        assert content.count("<!-- BEGIN plugadvpl -->") == 1
+
 
 class TestIngest:
     def test_ingest_after_init(

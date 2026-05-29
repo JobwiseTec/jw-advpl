@@ -512,7 +512,12 @@ mostra `utf-8`, edição via PowerShell/script externo, arquivo ASCII puro sem a
 
 @app.command()
 def init(ctx: typer.Context) -> None:
-    """Cria ``./.plugadvpl/index.db``, escreve fragment em ``CLAUDE.md`` e atualiza ``.gitignore``."""
+    """Cria ``./.plugadvpl/index.db``, escreve fragment em ``CLAUDE.md`` + ``AGENTS.md`` e atualiza ``.gitignore``.
+
+    v0.16.1: além de ``CLAUDE.md`` (Claude Code), grava ``AGENTS.md`` com o mesmo
+    fragment pra atender Cursor, GitHub Copilot, Codex e outros agentes que seguem
+    o padrão ``AGENTS.md``. Conteúdo idêntico, só o nome do arquivo varia.
+    """
     root: Path = ctx.obj["root"]
     db_path: Path = ctx.obj["db"]
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -525,62 +530,72 @@ def init(ctx: typer.Context) -> None:
     finally:
         close_db(conn)
 
-    _write_claude_md_fragment(root)
+    _write_agent_fragment(root, "CLAUDE.md")
+    _write_agent_fragment(root, "AGENTS.md")
     _add_to_gitignore(root, ".plugadvpl/")
 
     if not ctx.obj["quiet"]:
         typer.echo(f"OK  DB criado em {db_path}")
-        typer.echo("OK  CLAUDE.md atualizado (fragment plugadvpl)")
+        typer.echo("OK  CLAUDE.md + AGENTS.md atualizados (fragment plugadvpl, idênticos)")
         typer.echo("OK  .plugadvpl/ adicionado ao .gitignore")
 
 
 def _check_fragment_staleness(root: Path) -> str | None:
-    """Retorna mensagem descritiva se o fragment CLAUDE.md está desatualizado.
+    """Retorna mensagem descritiva se o fragment plugadvpl está desatualizado.
 
     v0.3.23 (#1 do QA round 3). Lê CLAUDE.md, localiza a região BEGIN/END
     plugadvpl, extrai o marker `<!-- plugadvpl-fragment-version: X.Y.Z -->`,
     e compara com `__version__`.
 
+    v0.16.1: checa CLAUDE.md E AGENTS.md (escritos juntos pelo init). Reporta
+    o primeiro arquivo com fragment desatualizado encontrado. Se um dos dois
+    está atualizado e o outro ausente, considera atualizado (init foi rodado
+    em versão antiga que só escrevia CLAUDE.md — caller decide se quer re-init).
+
     Retornos:
-      - ``None``: fragment atualizado OU CLAUDE.md sem fragment (caso fresh
-        sem init ainda — não polui status).
+      - ``None``: fragment atualizado OU sem fragment (caso fresh sem init ainda).
       - ``"foi gerado por v X.Y.Z"``: marker presente mas != runtime.
       - ``"é de versão pré-v0.3.23 (sem versionamento)"``: marker ausente.
     """
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
-        return None
-    try:
-        content = claude_md.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    if _CLAUDE_FRAGMENT_BEGIN not in content or _CLAUDE_FRAGMENT_END not in content:
-        return None  # sem fragment — usuário não rodou init aqui ainda.
-    # Janela do fragment.
-    start = content.index(_CLAUDE_FRAGMENT_BEGIN)
-    end = content.index(_CLAUDE_FRAGMENT_END) + len(_CLAUDE_FRAGMENT_END)
-    fragment = content[start:end]
-    m = _CLAUDE_FRAGMENT_VERSION_MARKER_RE.search(fragment)
-    if m is None:
-        return "é de versão pré-v0.3.23 (sem marker de versionamento)"
-    fragment_version = m.group(1)
-    if fragment_version != __version__:
-        return f"foi gerado por plugadvpl {fragment_version}"
+    for filename in ("CLAUDE.md", "AGENTS.md"):
+        target = root / filename
+        if not target.exists():
+            continue
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if _CLAUDE_FRAGMENT_BEGIN not in content or _CLAUDE_FRAGMENT_END not in content:
+            continue  # sem fragment neste arquivo
+        # Janela do fragment.
+        start = content.index(_CLAUDE_FRAGMENT_BEGIN)
+        end = content.index(_CLAUDE_FRAGMENT_END) + len(_CLAUDE_FRAGMENT_END)
+        fragment = content[start:end]
+        m = _CLAUDE_FRAGMENT_VERSION_MARKER_RE.search(fragment)
+        if m is None:
+            return f"{filename} é de versão pré-v0.3.23 (sem marker de versionamento)"
+        fragment_version = m.group(1)
+        if fragment_version != __version__:
+            return f"{filename} foi gerado por plugadvpl {fragment_version}"
     return None
 
 
-def _write_claude_md_fragment(root: Path) -> None:
-    """Escreve/atualiza idempotentemente a região ``BEGIN/END plugadvpl`` em CLAUDE.md.
+def _write_agent_fragment(root: Path, filename: str) -> None:
+    """Escreve/atualiza idempotentemente a região ``BEGIN/END plugadvpl`` em ``filename``.
 
     v0.3.23: substitui `__VERSION__` no body por `__version__` real do binario
     pra que o `status` consiga detectar fragment desatualizado depois.
+
+    v0.16.1: parametrizado pra suportar múltiplos agentes — Claude Code lê
+    ``CLAUDE.md``; Cursor/GitHub Copilot/Codex leem ``AGENTS.md``. Conteúdo do
+    fragment é idêntico, só o arquivo destino muda.
     """
-    claude_md = root / "CLAUDE.md"
+    target = root / filename
     body_with_version = _CLAUDE_FRAGMENT_BODY.replace("__VERSION__", __version__)
     fragment = _CLAUDE_FRAGMENT_BEGIN + "\n" + body_with_version + _CLAUDE_FRAGMENT_END + "\n"
 
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
+    if target.exists():
+        content = target.read_text(encoding="utf-8")
         if _CLAUDE_FRAGMENT_BEGIN in content and _CLAUDE_FRAGMENT_END in content:
             content = re.sub(
                 re.escape(_CLAUDE_FRAGMENT_BEGIN) + r".*?" + re.escape(_CLAUDE_FRAGMENT_END),
@@ -591,9 +606,9 @@ def _write_claude_md_fragment(root: Path) -> None:
         else:
             sep = "" if content.endswith("\n") else "\n"
             content = content + sep + "\n" + fragment
-        claude_md.write_text(content, encoding="utf-8")
+        target.write_text(content, encoding="utf-8")
     else:
-        claude_md.write_text(fragment, encoding="utf-8")
+        target.write_text(fragment, encoding="utf-8")
 
 
 def _add_to_gitignore(root: Path, line: str) -> None:

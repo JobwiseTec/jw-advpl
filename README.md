@@ -221,7 +221,7 @@ winget install astral-sh.uv                              # Windows
 #    (caminho varia entre CLI nativo e extensão VSCode)
 
 # 3. Abra o seu projeto Protheus e rode:
-/plugadvpl:init      # cria .plugadvpl/index.db, fragment CLAUDE.md, .gitignore
+/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore
 /plugadvpl:ingest    # parser paralelo, ~30–60s para 2.000 fontes
 ```
 
@@ -731,6 +731,12 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.16.1 — Suporte multi-agente via `AGENTS.md` gêmeo
+
+- **`plugadvpl init` agora grava `CLAUDE.md` E `AGENTS.md`** — mesmo fragment, dois arquivos. `CLAUDE.md` segue como antes (Claude Code); `AGENTS.md` ativa Cursor, GitHub Copilot, Codex e outros agentes que seguem esse padrão
+- **`plugadvpl status` detecta fragment desatualizado em qualquer um dos dois** — antes só olhava `CLAUDE.md`
+- 3 testes integration novos cobrindo paridade do conteúdo e idempotência. Suite: 1063 passed
 
 ### v0.16.0 — Interop com Sonar TOTVS oficial + hook startup limpo
 

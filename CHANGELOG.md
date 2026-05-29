@@ -4,6 +4,33 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-05-29
+
+### Added — Suporte multi-agente via `AGENTS.md` gêmeo
+
+`plugadvpl init` agora grava **dois** arquivos de instruções na raiz do projeto: `CLAUDE.md` (para Claude Code) e `AGENTS.md` (para Cursor, GitHub Copilot, Codex e outros agentes que seguem o padrão `AGENTS.md`). Conteúdo idêntico — ambos ganham a mesma região `<!-- BEGIN plugadvpl --> ... <!-- END plugadvpl -->` versionada via marker `<!-- plugadvpl-fragment-version: X.Y.Z -->`.
+
+Sem isso, Cursor/Copilot/Codex não tinham forma nativa de descobrir as convenções do plugadvpl (índice SQLite, tabela de decisão de comandos, encoding cp1252, etc) e o claim "funciona em qualquer agente" era só na CLI — não nas instruções globais.
+
+Mantém retrocompatibilidade: projetos que já tinham só `CLAUDE.md` ganham o `AGENTS.md` no próximo `plugadvpl init`. Idempotente — segundo `init` não duplica fragment.
+
+### Changed — `_check_fragment_staleness()` cobre ambos arquivos
+
+`plugadvpl status` agora detecta fragment desatualizado em `CLAUDE.md` **ou** `AGENTS.md` (antes só olhava `CLAUDE.md`). Reporta o primeiro arquivo com fragment desatualizado encontrado.
+
+### Added — 3 testes novos (TDD)
+
+- `test_init_creates_agents_md_for_multi_agent` — AGENTS.md existe + tem markers.
+- `test_init_agents_md_fragment_mirrors_claude_md` — fragment em CLAUDE.md == fragment em AGENTS.md.
+- `test_init_agents_md_is_idempotent` — segundo init não duplica.
+
+Suite full: 1063 passed (1060 → 1063).
+
+### Bumped
+
+- `uvx plugadvpl@0.16.0` → `uvx plugadvpl@0.16.1` nas 26 skills.
+- `plugin.json` / `marketplace.json` → 0.16.1.
+
 ## [0.16.0] - 2026-05-29
 
 ### Added — Interop com Sonar TOTVS oficial (`sonar_rules` em `lint`)
