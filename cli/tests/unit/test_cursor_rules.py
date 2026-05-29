@@ -186,3 +186,25 @@ class TestRenderSkillRule:
         target.write_text("# Body only, no frontmatter\n", encoding="utf-8")
         result = render_skill_rule(target, version="0.16.2", globs=[])
         assert "description: plugadvpl skill: grep" in result
+
+
+class TestRenderGlobalRule:
+    def test_always_apply_true(self) -> None:
+        from plugadvpl.cursor_rules import render_global_rule
+        result = render_global_rule(version="0.16.2")
+        assert "alwaysApply: true" in result
+
+    def test_no_globs_field(self) -> None:
+        from plugadvpl.cursor_rules import render_global_rule
+        result = render_global_rule(version="0.16.2")
+        # Frontmatter não deve ter linha globs:
+        lines = result.split("\n")
+        frontmatter = []
+        in_fm = False
+        for line in lines:
+            if line == "---":
+                in_fm = not in_fm
+                continue
+            if in_fm:
+                frontmatter.append(line)
+        assert not any(line.startswith("globs:") for line in frontmatter)

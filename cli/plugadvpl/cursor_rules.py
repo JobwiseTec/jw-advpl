@@ -121,3 +121,62 @@ def render_skill_rule(
     )
 
     return frontmatter + markers + _transform_body(body, version)
+
+
+_GLOBAL_DESCRIPTION = (
+    "Convenções TOTVS Protheus (ADVPL/TLPP) + plugadvpl — "
+    "índice local, encoding cp1252, comandos uvx, tabela de decisão"
+)
+
+_GLOBAL_BODY_TEMPLATE = """# plugadvpl — convenções ADVPL/TLPP (rule global)
+
+Este projeto/workspace pode conter código TOTVS Protheus em **AdvPL** (`.prw`, `.prx`,
+`.apw`) e **TLPP** (`.tlpp`). Se houver `.plugadvpl/index.db` no root do projeto, use
+o índice via comandos `uvx plugadvpl@__VERSION__ <subcomando>` ANTES de ler `.prw`/`.tlpp`
+cru — economiza ~16x tokens.
+
+## Tabela de decisão — qual comando rodar antes de Read
+
+| Pergunta | Comando |
+|---|---|
+| "explique o fonte X" / "o que faz Y" | `Bash: uvx plugadvpl@__VERSION__ arch <arq>` |
+| "onde está a função X?" | `Bash: uvx plugadvpl@__VERSION__ find <nome>` |
+| "quem chama X?" | `Bash: uvx plugadvpl@__VERSION__ callers <funcao>` |
+| "o que X chama?" | `Bash: uvx plugadvpl@__VERSION__ callees <funcao>` |
+| "quem mexe na tabela SA1?" | `Bash: uvx plugadvpl@__VERSION__ tables SA1` |
+| "onde MV_LOCALIZA é usado?" | `Bash: uvx plugadvpl@__VERSION__ param MV_LOCALIZA` |
+| "achar 'RecLock' nos fontes" | `Bash: uvx plugadvpl@__VERSION__ grep RecLock` |
+| "tem problemas no fonte X?" | `Bash: uvx plugadvpl@__VERSION__ lint <arq>` |
+
+## Encoding — CRÍTICO
+
+- `.prw`/`.prx` são **cp1252**. Read/Write/Edit comuns são UTF-8 — bytes acentuados viram `�`.
+- Antes de editar `.prw`: `Bash: uvx plugadvpl@__VERSION__ edit-prw stage <arq>` (converte pra UTF-8 com backup).
+- Depois de editar: `Bash: uvx plugadvpl@__VERSION__ edit-prw commit <arq>` (volta pra cp1252).
+- `.tlpp` é UTF-8 nativo — sem stage/commit.
+
+## Workflow padrão pra "explique o programa X"
+
+1. `Bash: uvx plugadvpl@__VERSION__ find X` — descobre arquivo
+2. `Bash: uvx plugadvpl@__VERSION__ arch <arq>` — visão arquitetural
+3. `Bash: uvx plugadvpl@__VERSION__ callees X` — o que X chama
+4. `Bash: uvx plugadvpl@__VERSION__ callers X` — quem chama X
+5. Só depois, se necessário, Read do arquivo com offset/limit do `arch`
+"""
+
+
+def render_global_rule(version: str) -> str:
+    """Gera conteúdo MDC pra ``~/.cursor/rules/plugadvpl.mdc`` (rule global).
+
+    Sempre injetado em qualquer arquivo aberto (``alwaysApply: true``).
+    Sem ``globs`` — vale pra qualquer arquivo do workspace.
+    """
+    frontmatter = (
+        "---\n"
+        f"description: {_GLOBAL_DESCRIPTION}\n"
+        "alwaysApply: true\n"
+        "---\n"
+    )
+    markers = f"<!-- plugadvpl-rule-version: {version} -->\n\n"
+    body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
+    return frontmatter + markers + body
