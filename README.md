@@ -18,6 +18,7 @@
 - **Economia de tokens.** Um `.prw` médio tem 1.000 a 10.000 linhas. Abrir cru custa de 5k a 50k tokens. Com plugadvpl, a mesma pergunta é respondida via metadados estruturados — **~16× menos contexto** em projetos reais.
 - **Parser provado em campo.** O extrator de funções, tabelas, SQL embarcado e call graph foi portado de um parser interno do autor, validado em aproximadamente **2.000 fontes ADVPL**. Não é um experimento de fim de semana.
 - **MIT, sem telemetria, 100% local.** Índice SQLite mora em `.plugadvpl/index.db` dentro do seu repo. Nenhum dado sai da máquina. Funciona offline.
+- **Interop Sonar TOTVS oficial.** Cada finding de `lint` carrega o ID Sonar oficial (`BG1000`, `CA1004`, …) quando há equivalência no catálogo `sonar-rules.engpro.totvs.com.br`. Quem já roda Sonar no CI reconhece o finding pelo ID oficial; quem não roda continua com o `regra_id` interno. Ver [Interop com Sonar TOTVS](#interop-com-sonar-totvs).
 
 ---
 
@@ -385,6 +386,46 @@ Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info convers
 | Hash dinâmico | Manifest emite `hash`+`hash_algo`+`hash_partial` (algumas builds Protheus não têm `Sha2_256`). Cliente escolhe `hashlib.new(algo)` (sha256/sha1/md5) e respeita partial-hash pra arquivos > 64KB onde `MemoRead` trunca. Mantém compat com campo `sha256` legado |
 
 Reference impl do servidor: [`docs/reference-impl/coletadb.tlpp`](docs/reference-impl/coletadb.tlpp) (MIT, ~1900 linhas). Reference completa dos subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
+
+---
+
+## Interop com Sonar TOTVS
+
+Se você ou seu cliente já roda **SonarQube** com o catálogo oficial TOTVS publicado em [`sonar-rules.engpro.totvs.com.br`](https://sonar-rules.engpro.totvs.com.br) (referenciado pelas skills do repositório oficial [`totvs/engpro-advpl-tlpp-skills`](https://github.com/totvs/engpro-advpl-tlpp-skills)), nosso `lint` fala a mesma língua: cada finding traz o **ID Sonar oficial** junto com nosso `regra_id` interno.
+
+**Convenção:**
+
+- ID puro (ex: `BG1000`) — **equivalência forte**, mesma regra/descrição que o Sonar oficial.
+- Prefixo `~` (ex: `~CA1004`) — **adjacente/parcial**, nossa regra cobre um subconjunto ou variação da Sonar.
+- Lista vazia `[]` — **regra exclusiva nossa**, sem equivalente Sonar oficial (a maioria, e é argumento de venda: cobrimos coisas que nem o Sonar TOTVS cobre).
+
+**Mapeamentos fortes hoje:**
+
+| Nossa regra | Sonar oficial | O que detecta |
+|---|---|---|
+| `SEC-001` | `BG1000` | `RpcSetEnv`/`RpcSetType` dentro de WSRESTFUL |
+| `SEC-004` | `CA2052` | Credenciais hardcoded no fonte |
+| `MOD-001` | `CA1004` | `ConOut`/`OutErr`/`?` em vez de `FwLogMsg` |
+
+**Adjacentes (`~`):** `BP-008`, `SEC-003`, `SEC-005`, `MOD-004`, `PERF-001`, `SX-007`, `ENC-001` — cobrem famílias parciais (`CA2017`-`CA2025`, `CS1000`, `CA0000`, `BG1100`, etc).
+
+**Como aparece no output:**
+
+```bash
+plugadvpl lint --regra SEC-001 -f json
+# [
+#   {
+#     "arquivo": "WSReg.tlpp",
+#     "regra_id": "SEC-001",
+#     "severidade": "critical",
+#     "sonar_rules": ["BG1000"]
+#   }
+# ]
+```
+
+Sem mapeamento, `sonar_rules` vem como `[]` — não quebra parsers downstream. O catálogo completo de mapeamentos vive em [`cli/plugadvpl/lookups/lint_rules.json`](cli/plugadvpl/lookups/lint_rules.json) (chave `sonar_rules` em cada regra).
+
+> 100% offline, **sem dependência** do Sonar instalado. O mapeamento é só uma ponte de nomenclatura — você roda nosso `lint` sozinho ou em conjunto com o Sonar TOTVS sem nenhum conflito.
 
 ---
 
