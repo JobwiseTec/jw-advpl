@@ -56,7 +56,11 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 _DESC_RE = re.compile(r"^description:\s*(.+?)\s*$", re.MULTILINE)
 _SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
 _UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
-_MARKER_PREFIX = "<!-- plugadvpl-"  # mais geral — pega rule-version E instructions-version
+
+# Marker prefixes — narrow por agente, NÃO widened. Manter específico evita
+# falso-positivo (ex: body com `<!-- plugadvpl-skill: arch -->` mas sem version).
+RULE_MARKER_PREFIX = "<!-- plugadvpl-rule-version:"           # Cursor
+INSTRUCTIONS_MARKER_PREFIX = "<!-- plugadvpl-instructions-version:"  # Copilot
 
 def _parse_skill_md(skill_md_text: str) -> tuple[str, str]: ...
 def _transform_body(body: str, version: str) -> str: ...
@@ -68,12 +72,24 @@ class WriteOutcome(enum.Enum):
     SKIPPED_USER_FILE = "skipped_user_file"
     ERROR = "error"
 
-def _write_managed_file(target_path: Path, content: str, marker_substring: str = _MARKER_PREFIX) -> WriteOutcome:
-    """Mesmo policy do _write_rule, mas marker substring é parameter (default cobre ambos)."""
+def _write_managed_file(
+    target_path: Path, content: str, marker_substring: str
+) -> WriteOutcome:
+    """Mesmo policy do legacy _write_rule, mas marker_substring é parameter
+    OBRIGATÓRIO (sem default — caller passa RULE_MARKER_PREFIX ou
+    INSTRUCTIONS_MARKER_PREFIX). Mantém narrowness, sem widening acidental.
+    """
     ...
 ```
 
-**Atenção:** `_MARKER_PREFIX` agora é mais amplo (`<!-- plugadvpl-`) pra detectar nossos arquivos tanto com `rule-version` (Cursor) quanto `instructions-version` (Copilot). O policy é o mesmo: arquivo com nosso marker → sobrescreve; sem → preserva.
+**Decisão crítica de policy:** **NÃO** unificar markers num prefixo amplo (`<!-- plugadvpl-`) — manteria falso-positivo onde `<!-- plugadvpl-skill: arch -->` no body seria detectado como "nosso arquivo". Mantemos 2 prefixos **distintos por agente** e `_write_managed_file` recebe o prefixo correto via parâmetro obrigatório. Cursor usa `RULE_MARKER_PREFIX`, Copilot usa `INSTRUCTIONS_MARKER_PREFIX`.
+
+**Refactor de `_write_rule` (Cursor side):** A função é movida de `cursor_rules.py` pra `_skill_catalog.py` E renomeada pra `_write_managed_file`. Pra **não quebrar `TestWriteRule` (3 tests)** que importam `_write_rule` de `plugadvpl.cursor_rules`, fazemos 1 das 2 opções (decisão do plano de execução):
+
+- **Opção A (recomendada):** Atualizar os 3 testes pra importar `_write_managed_file` de `plugadvpl._skill_catalog` e passar `marker_substring=RULE_MARKER_PREFIX` explicito. Mais explícito sobre o policy widening evitado.
+- **Opção B:** Re-exportar em `cursor_rules.py`: `_write_rule = lambda target, content: _write_managed_file(target, content, RULE_MARKER_PREFIX)`. Zero mudança nos testes existentes. Wrapper cosmético.
+
+Plan de execução escolhe — Opção A é mais limpa e documentativa.
 
 ### 3.2 `cli/plugadvpl/cursor_rules.py` — refactor mínimo
 
@@ -117,14 +133,20 @@ o índice via `uvx plugadvpl@__VERSION__ <subcomando>` ANTES de ler `.prw`/`.tlp
 cru — economiza ~16x tokens.
 
 ## Tabela de decisão
-[~30 linhas — mesma da rule global Cursor, mas formato Markdown puro]
+[~30 linhas — adaptar do `_GLOBAL_BODY_TEMPLATE` do cursor_rules.py,
+ mantendo formato Markdown puro sem `Bash:` prefix (Copilot interpreta texto direto)]
 
 ## Encoding cp1252 — CRÍTICO
-[~15 linhas]
+[~15 linhas — copiar direto do Cursor template]
 
 ## Workflow padrão
-[~15 linhas]
+[~15 linhas — copiar direto do Cursor template]
 """
+# Nota pro implementer: este template é placeholder com seções marcadas — copiar
+# o conteúdo equivalente de cursor_rules._GLOBAL_BODY_TEMPLATE adaptando 2 coisas:
+# (1) remover prefixo "Bash: " dos comandos (Copilot não usa) — vira só
+#     "uvx plugadvpl@__VERSION__ arch"; (2) garantir ≤ 80 linhas pra respeitar
+# o soft limit de "2 páginas" do Copilot docs.
 
 
 def render_global_instructions(version: str) -> str:
@@ -223,6 +245,8 @@ if copilot_dir.exists():
 inst_marker_re = re.compile(
     r"<!--\s*plugadvpl-instructions-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
 )
+# Nota: regex narrow específica do prefixo Copilot — não confunde com
+# rule-version (Cursor) que tem seu próprio loop na seção 2 da função.
 for cf in copilot_files:
     try:
         content = cf.read_text(encoding="utf-8", errors="replace")
@@ -390,3 +414,7 @@ Exit code do `init` permanece 0 mesmo com falha total de Copilot.
 ## 10. Histórico
 
 - 2026-05-29: design inicial. Brainstorm aprovou: multi-file scope, refactor `_skill_catalog`, detection via `.github/`, marker `-instructions-version`. Sucessor da Fase 1 (v0.16.2 Cursor).
+- 2026-05-29: spec-reviewer encontrou 2 issues críticos aplicados:
+  - **Marker widening evitado**: NÃO unificar prefixos. Mantemos `RULE_MARKER_PREFIX` e `INSTRUCTIONS_MARKER_PREFIX` distintos; `_write_managed_file` recebe `marker_substring` como param obrigatório (sem default).
+  - **Rename break documentado**: `_write_rule` → `_write_managed_file` quebra 3 testes existentes (TestWriteRule). Plan de execução escolhe Opção A (atualizar testes) ou Opção B (alias re-export). Opção A é recomendada.
+  - Nota advisory: `_GLOBAL_BODY_TEMPLATE` é placeholder; implementer adapta do Cursor template removendo prefixo `Bash:` e respeitando ≤80 linhas.
