@@ -89,3 +89,21 @@ class TestDetectCursor:
         project.mkdir()
         result = detect_cursor(project)
         assert result == CursorTarget(install_global=False, install_local=False)
+
+
+class TestRenderSkillRule:
+    def test_extracts_description_from_frontmatter(self, tmp_path: Path) -> None:
+        """Parse YAML frontmatter → captura description pro frontmatter MDC."""
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\n"
+            "description: Visao arquitetural de um arquivo ADVPL/TLPP\n"
+            "arguments: [arquivo]\n"
+            "---\n"
+            "\n"
+            "# Body\n",
+            encoding="utf-8",
+        )
+        result = render_skill_rule(skill, version="0.16.2", globs=[])
+        assert "description: Visao arquitetural de um arquivo ADVPL/TLPP" in result

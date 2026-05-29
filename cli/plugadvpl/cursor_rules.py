@@ -9,6 +9,7 @@ Single source: skills/<X>/SKILL.md embarcadas geram .mdc em runtime via
 """
 from __future__ import annotations
 
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,3 +51,57 @@ def detect_cursor(project_root: Path) -> CursorTarget:
         install_local = True
 
     return CursorTarget(install_global=install_global, install_local=install_local)
+
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
+_DESC_RE = re.compile(r"^description:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _parse_skill_md(skill_md_text: str) -> tuple[str, str]:
+    """Extrai (description, body) de uma SKILL.md.
+
+    Retorna fallback `("", body inteiro)` se não houver frontmatter parseável.
+    """
+    m = _FRONTMATTER_RE.match(skill_md_text)
+    if m is None:
+        return ("", skill_md_text)
+    frontmatter, body = m.group(1), m.group(2)
+    desc_match = _DESC_RE.search(frontmatter)
+    description = desc_match.group(1) if desc_match else ""
+    return (description, body)
+
+
+def render_skill_rule(
+    skill_md_path: Path, version: str, globs: list[str]
+) -> str:
+    """Gera conteúdo MDC pra `.cursor/rules/plugadvpl-<nome>.mdc`.
+
+    Pipeline:
+    1. Parse YAML frontmatter da SKILL.md (extrai `description`).
+    2. Extrai body.
+    3. Substitui `/plugadvpl:<X>` → `Bash: uvx plugadvpl@<ver> <X>`.
+    4. Normaliza `uvx plugadvpl@<qualquer-ver>` → `uvx plugadvpl@<ver>`.
+    5. Monta MDC com frontmatter (description + globs + alwaysApply=false) +
+       markers de versão e skill.
+
+    Edge case: SKILL.md sem/malformed frontmatter → description fallback.
+    """
+    skill_name = skill_md_path.parent.name
+    raw = skill_md_path.read_text(encoding="utf-8")
+    description, body = _parse_skill_md(raw)
+    if not description:
+        description = f"plugadvpl skill: {skill_name}"
+
+    # Frontmatter MDC (linha globs omitida se vazia).
+    frontmatter_lines = [f"description: {description}"]
+    if globs:
+        frontmatter_lines.append(f"globs: {', '.join(globs)}")
+    frontmatter_lines.append("alwaysApply: false")
+    frontmatter = "---\n" + "\n".join(frontmatter_lines) + "\n---\n"
+
+    markers = (
+        f"<!-- plugadvpl-rule-version: {version} -->\n"
+        f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
+    )
+
+    return frontmatter + markers + body
