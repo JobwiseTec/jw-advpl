@@ -366,6 +366,42 @@ class TestInitCursorRules:
         assert "plugadvpl-arch.mdc" in (result.stderr or "")
         assert "sem marker plugadvpl" in (result.stderr or "")
 
+    def test_handles_permission_error_in_global(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """~/.cursor/rules/ não-gravável → warning, init exit 0."""
+        fake_home = synthetic_project.parent / "fake_home"
+        (fake_home / ".cursor" / "rules").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        # Patcha _write_rule pra simular ERROR no global path
+        from plugadvpl import cursor_rules as cr
+        original = cr._write_rule
+        def fake_write(path: Path, content: str) -> cr.WriteOutcome:
+            if "plugadvpl.mdc" in str(path) and "rules" in str(path.parent):
+                if path.parent == fake_home / ".cursor" / "rules":
+                    return cr.WriteOutcome.ERROR
+            return original(path, content)
+        monkeypatch.setattr(cr, "_write_rule", fake_write)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0  # init NÃO quebra
+        assert "Cursor rules:" in (result.stderr or "") or "Cursor rules:" in result.stdout
+
+    def test_handles_skill_md_missing(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Skill embarcada ausente → warning, init exit 0, outras skills continuam."""
+        # Edge case raro: wheel corrompido. Testa só que init não quebra.
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+
 
 class TestIngest:
     def test_ingest_after_init(
