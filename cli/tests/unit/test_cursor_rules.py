@@ -232,3 +232,31 @@ class TestSkillGlobs:
         assert not extras_in_constant, (
             f"_SKILL_GLOBS tem entries inexistentes: {extras_in_constant}"
         )
+
+
+class TestWriteRule:
+    def test_writes_when_not_exists(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
+        target = tmp_path / "plugadvpl-arch.mdc"
+        outcome = _write_rule(target, "content with <!-- plugadvpl-rule-version: 0.16.2 -->")
+        assert outcome == WriteOutcome.WRITTEN
+        assert target.read_text(encoding="utf-8").startswith("content")
+
+    def test_overwrites_when_marker_present(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
+        target = tmp_path / "plugadvpl-arch.mdc"
+        target.write_text(
+            "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
+        )
+        outcome = _write_rule(target, "new <!-- plugadvpl-rule-version: 0.16.2 -->")
+        assert outcome == WriteOutcome.OVERWRITTEN
+        assert "new" in target.read_text(encoding="utf-8")
+
+    def test_skips_when_user_file_without_marker(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
+        target = tmp_path / "plugadvpl-meu.mdc"
+        target.write_text("my own rule, no marker", encoding="utf-8")
+        outcome = _write_rule(target, "new content with marker")
+        assert outcome == WriteOutcome.SKIPPED_USER_FILE
+        # Preserva arquivo do user
+        assert target.read_text(encoding="utf-8") == "my own rule, no marker"

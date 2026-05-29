@@ -9,6 +9,7 @@ Single source: skills/<X>/SKILL.md embarcadas geram .mdc em runtime via
 """
 from __future__ import annotations
 
+import enum
 import re
 import shutil
 from dataclasses import dataclass
@@ -246,3 +247,37 @@ def render_global_rule(version: str) -> str:
     markers = f"<!-- plugadvpl-rule-version: {version} -->\n\n"
     body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
     return frontmatter + markers + body
+
+
+_MARKER_PREFIX = "<!-- plugadvpl-rule-version:"
+
+
+class WriteOutcome(enum.Enum):
+    """Resultado de tentar escrever uma rule individual."""
+
+    WRITTEN = "written"                     # arquivo novo, escrito OK
+    OVERWRITTEN = "overwritten"             # tinha marker, sobrescrevemos
+    SKIPPED_USER_FILE = "skipped_user_file" # tinha conteúdo sem marker — preservamos
+    ERROR = "error"                         # falha de I/O
+
+
+def _write_rule(target_path: Path, content: str) -> WriteOutcome:
+    """Escreve ou skipa um arquivo .mdc seguindo a política de marker (spec §6.1).
+
+    - Não existe → escreve (WRITTEN).
+    - Existe + tem marker plugadvpl-rule-version → sobrescreve (OVERWRITTEN).
+    - Existe + sem marker → skipa (SKIPPED_USER_FILE), preserva arquivo.
+    - PermissionError/OSError → ERROR (caller decide se acumula warning).
+    """
+    try:
+        if not target_path.exists():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(content, encoding="utf-8")
+            return WriteOutcome.WRITTEN
+        existing = target_path.read_text(encoding="utf-8", errors="replace")
+        if _MARKER_PREFIX in existing:
+            target_path.write_text(content, encoding="utf-8")
+            return WriteOutcome.OVERWRITTEN
+        return WriteOutcome.SKIPPED_USER_FILE
+    except OSError:
+        return WriteOutcome.ERROR
