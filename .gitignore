@@ -37,4 +37,5 @@ gaps
 .plugadvpl/runtime.toml
 
 marketing
-roadmap-vs-engpro-totvs.md
+# Draft local pode aparecer no root; docs/roadmap-vs-engpro-totvs.md é versionado.
+/roadmap-vs-engpro-totvs.md
