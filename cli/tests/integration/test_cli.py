@@ -146,6 +146,24 @@ class TestHelp:
 
 
 class TestInit:
+    @pytest.fixture(autouse=True)
+    def _isolate_cursor_home(
+        self, tmp_path_factory: pytest.TempPathFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Isola Path.home pra cada teste do TestInit (v0.16.2+).
+
+        Sem isso, init() chama install_cursor_rules() que detecta ~/.cursor/
+        real do dev rodando localmente — escreveria rules em ~/.cursor/rules/
+        do dev (side-effect, não falha de teste, mas poluente). Aponta
+        Path.home pra tmp diretório limpo e neutraliza shutil.which.
+        """
+        fake_home = tmp_path_factory.mktemp("isolated_home_init")
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr(
+            "plugadvpl.cursor_rules.shutil.which", lambda _: None
+        )
+
     def test_init_creates_db_and_claude_md(
         self, synthetic_project: Path, runner: CliRunner
     ) -> None:
