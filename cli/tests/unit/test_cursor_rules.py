@@ -137,3 +137,52 @@ class TestRenderSkillRule:
         result = render_skill_rule(target, version="0.16.2", globs=[])
         assert "uvx plugadvpl@0.16.2" in result
         assert "uvx plugadvpl@0.15.0" not in result
+
+    def test_includes_globs_when_provided(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_rule(
+            target, version="0.16.2", globs=["**/*.prw", "**/*.tlpp"]
+        )
+        assert "globs: **/*.prw, **/*.tlpp" in result
+
+    def test_omits_globs_when_empty(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "init"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "globs:" not in result
+        assert "alwaysApply: false" in result
+
+    def test_includes_version_marker(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "<!-- plugadvpl-rule-version: 0.16.2 -->" in result
+
+    def test_includes_skill_marker(self, tmp_path: Path) -> None:
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "callers"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "<!-- plugadvpl-skill: callers -->" in result
+
+    def test_falls_back_when_no_frontmatter(self, tmp_path: Path) -> None:
+        """SKILL.md sem frontmatter → description fallback usa nome da skill."""
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "grep"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("# Body only, no frontmatter\n", encoding="utf-8")
+        result = render_skill_rule(target, version="0.16.2", globs=[])
+        assert "description: plugadvpl skill: grep" in result
