@@ -304,6 +304,68 @@ class TestInitCursorRules:
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
         assert len(rules) == 52
 
+    def test_idempotent_does_not_duplicate(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dois inits seguidos → mesmo conteúdo, sem duplicar."""
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
+        assert len(rules) == 52
+        # Conteúdo da rule deve ter marker da versão atual (não duplicado)
+        arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
+        assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
+
+    def test_overwrites_rule_with_old_marker(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rule com marker `0.15.0` → init sobrescreve pra versão atual."""
+        from plugadvpl import __version__
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        rules_dir = synthetic_project / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        # Plant rule fingida com marker antigo
+        stale = rules_dir / "plugadvpl-arch.mdc"
+        stale.write_text(
+            "stale content <!-- plugadvpl-rule-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        new_content = stale.read_text(encoding="utf-8")
+        assert "stale content" not in new_content  # foi sobrescrita
+        assert f"<!-- plugadvpl-rule-version: {__version__} -->" in new_content
+
+    def test_preserves_user_rule_without_marker(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rule plugadvpl-meu.mdc sem marker (user file) → preserva + warning."""
+        fake_home = synthetic_project.parent / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        rules_dir = synthetic_project / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        # Usuário criou rule com nome conflitante — sem marker
+        user_rule = rules_dir / "plugadvpl-arch.mdc"
+        user_rule.write_text("my own rule, no marker here", encoding="utf-8")
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        # Preserva o conteúdo original
+        assert user_rule.read_text(encoding="utf-8") == "my own rule, no marker here"
+        # Warning sai em stderr
+        assert "plugadvpl-arch.mdc" in (result.stderr or "")
+        assert "sem marker plugadvpl" in (result.stderr or "")
+
 
 class TestIngest:
     def test_ingest_after_init(
