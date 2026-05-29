@@ -35,3 +35,6 @@ cli/plugadvpl/_version.py
 
 gaps
 .plugadvpl/runtime.toml
+
+marketing
+roadmap-vs-engpro-totvs.md
