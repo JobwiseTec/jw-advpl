@@ -10,12 +10,19 @@ Single source: skills/<X>/SKILL.md embarcadas geram .mdc em runtime via
 
 from __future__ import annotations
 
-import enum
-import re
 import shutil
 from dataclasses import dataclass, field
-from importlib import resources as ir
 from pathlib import Path
+
+from plugadvpl._skill_catalog import (
+    RULE_MARKER_PREFIX,
+    WriteOutcome,
+    _parse_skill_md,
+    _skills_root,
+    _SKILL_GLOBS,
+    _transform_body,
+    _write_managed_file,
+)
 
 
 @dataclass(frozen=True)
@@ -54,40 +61,6 @@ def detect_cursor(project_root: Path) -> CursorTarget:
         install_local = True
 
     return CursorTarget(install_global=install_global, install_local=install_local)
-
-
-_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
-_DESC_RE = re.compile(r"^description:\s*(.+?)\s*$", re.MULTILINE)
-_SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
-_UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
-
-
-def _transform_body(body: str, version: str) -> str:
-    """Aplica as 2 substituições da §3.3 do spec, NESTA ORDEM:
-
-    3a) `/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@<ver> <X>` ``
-    3b) `uvx plugadvpl@<qualquer>` → `uvx plugadvpl@<ver>`
-
-    Ordem importa: 3a primeiro emite uvx correto; 3b depois normaliza
-    qualquer ocorrência pré-existente (ex: `uvx plugadvpl@0.15.0`).
-    """
-    body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
-    body = _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
-    return body
-
-
-def _parse_skill_md(skill_md_text: str) -> tuple[str, str]:
-    """Extrai (description, body) de uma SKILL.md.
-
-    Retorna fallback `("", body inteiro)` se não houver frontmatter parseável.
-    """
-    m = _FRONTMATTER_RE.match(skill_md_text)
-    if m is None:
-        return ("", skill_md_text)
-    frontmatter, body = m.group(1), m.group(2)
-    desc_match = _DESC_RE.search(frontmatter)
-    description = desc_match.group(1) if desc_match else ""
-    return (description, body)
 
 
 def render_skill_rule(skill_md_path: Path, version: str, globs: list[str]) -> str:
@@ -165,72 +138,6 @@ cru — economiza ~16x tokens.
 """
 
 
-# Mapping skill → globs (spec §5). Skills sem entrada NÃO geram rule local.
-# Adicionar nova skill = 1 entrada nessa constante.
-_PRW = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.apw"]
-_PRW_CSV = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.csv"]
-
-_SKILL_GLOBS: dict[str, list[str]] = {
-    # Skills com escopo ADVPL/TLPP source
-    "arch": _PRW,
-    "find": _PRW,
-    "callers": _PRW,
-    "callees": _PRW,
-    "lint": _PRW,
-    "grep": _PRW,
-    "compile": _PRW,
-    "tq": _PRW,
-    "edit-prw": _PRW,
-    "deploy": _PRW,
-    "hotspots": _PRW,
-    "metrics": _PRW,
-    "cobertura-doc": _PRW,
-    "plugadvpl-index-usage": _PRW,
-    # Skills de conhecimento ADVPL/TLPP (reference/training)
-    "advpl-advanced": _PRW,
-    "advpl-code-review": _PRW,
-    "advpl-debugging": _PRW,
-    "advpl-dicionario-sx": _PRW,
-    "advpl-dicionario-sx-validacoes": _PRW,
-    "advpl-embedded-sql": _PRW,
-    "advpl-encoding": _PRW,
-    "advpl-fundamentals": _PRW,
-    "advpl-jobs-rpc": _PRW,
-    "advpl-matxfis": _PRW,
-    "advpl-mvc": _PRW,
-    "advpl-mvc-avancado": _PRW,
-    "advpl-pontos-entrada": _PRW,
-    "advpl-refactoring": _PRW,
-    "advpl-tlpp": _PRW,
-    "advpl-tlpp-named-params": _PRW,
-    "advpl-web": _PRW,
-    "advpl-webservice": _PRW,
-    # Skills com escopo de dicionário SX (inclui CSV exportado)
-    "tables": _PRW_CSV,
-    "param": _PRW_CSV,
-    "impacto": _PRW_CSV,
-    "gatilho": _PRW_CSV,
-    "ingest-sx": _PRW_CSV,
-    "sx-status": _PRW_CSV,
-    # Skills com escopo específico
-    "ini-audit": ["**/*.ini"],
-    "log-diagnose": ["**/*.log"],
-    # Meta-skills — sem escopo (alwaysApply: false sem globs)
-    "init": [],
-    "ingest": [],
-    "status": [],
-    "doctor": [],
-    "reindex": [],
-    "help": [],
-    "workflow": [],
-    "execauto": [],
-    "docs": [],
-    "trace": [],
-    "setup": [],
-    "ingest-protheus": [],
-}
-
-
 def render_global_rule(version: str) -> str:
     """Gera conteúdo MDC pra ``~/.cursor/rules/plugadvpl.mdc`` (rule global).
 
@@ -241,61 +148,6 @@ def render_global_rule(version: str) -> str:
     markers = f"<!-- plugadvpl-rule-version: {version} -->\n\n"
     body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
     return frontmatter + markers + body
-
-
-_MARKER_PREFIX = "<!-- plugadvpl-rule-version:"
-
-
-class WriteOutcome(enum.Enum):
-    """Resultado de tentar escrever uma rule individual."""
-
-    WRITTEN = "written"  # arquivo novo, escrito OK
-    OVERWRITTEN = "overwritten"  # tinha marker, sobrescrevemos
-    SKIPPED_USER_FILE = "skipped_user_file"  # tinha conteúdo sem marker — preservamos
-    ERROR = "error"  # falha de I/O
-
-
-def _write_rule(target_path: Path, content: str) -> WriteOutcome:
-    """Escreve ou skipa um arquivo .mdc seguindo a política de marker (spec §6.1).
-
-    - Não existe → escreve (WRITTEN).
-    - Existe + tem marker plugadvpl-rule-version → sobrescreve (OVERWRITTEN).
-    - Existe + sem marker → skipa (SKIPPED_USER_FILE), preserva arquivo.
-    - PermissionError/OSError → ERROR (caller decide se acumula warning).
-    """
-    try:
-        if not target_path.exists():
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(content, encoding="utf-8")
-            return WriteOutcome.WRITTEN
-        existing = target_path.read_text(encoding="utf-8", errors="replace")
-        if _MARKER_PREFIX in existing:
-            target_path.write_text(content, encoding="utf-8")
-            return WriteOutcome.OVERWRITTEN
-        return WriteOutcome.SKIPPED_USER_FILE
-    except OSError:
-        return WriteOutcome.ERROR
-
-
-def _skills_root() -> Path:
-    """Localiza skills/ tanto em dev tree quanto em wheel.
-
-    Tenta importlib.resources primeiro; se a skill embarcada não existir
-    (caso: dev tree onde skills/ não é packaged), cai pro repo root
-    relativo ao __init__.py do plugadvpl.
-    """
-    try:
-        test = ir.files("plugadvpl") / "skills"
-        with ir.as_file(test) as resolved:
-            if (resolved / "arch" / "SKILL.md").exists():
-                return resolved
-    except (FileNotFoundError, OSError, ModuleNotFoundError):
-        pass
-    # Fallback dev tree: <repo>/cli/plugadvpl/__init__.py → <repo>/skills/
-    import plugadvpl
-
-    pkg_init = Path(plugadvpl.__file__).resolve()
-    return pkg_init.parents[2] / "skills"
 
 
 @dataclass(frozen=True)
@@ -342,7 +194,9 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
     if target.install_global:
         try:
             global_path = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
-            outcome = _write_rule(global_path, render_global_rule(version))
+            outcome = _write_managed_file(
+                global_path, render_global_rule(version), RULE_MARKER_PREFIX
+            )
             if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
                 installed_global = True
             elif outcome == WriteOutcome.SKIPPED_USER_FILE:
@@ -372,7 +226,7 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
                     continue
                 content = render_skill_rule(skill_md_path, version, globs)
                 target_path = local_dir / f"plugadvpl-{skill_name}.mdc"
-                outcome = _write_rule(target_path, content)
+                outcome = _write_managed_file(target_path, content, RULE_MARKER_PREFIX)
                 if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
                     installed_local_count += 1
                 elif outcome == WriteOutcome.SKIPPED_USER_FILE:

@@ -375,15 +375,15 @@ class TestInitCursorRules:
         (fake_home / ".cursor" / "rules").mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
-        # Patcha _write_rule pra simular ERROR no global path
+        # Patcha _write_managed_file pra simular ERROR no global path
         from plugadvpl import cursor_rules as cr
-        original = cr._write_rule
-        def fake_write(path: Path, content: str) -> cr.WriteOutcome:
+        original = cr._write_managed_file
+        def fake_write(path: Path, content: str, marker: str) -> cr.WriteOutcome:
             if "plugadvpl.mdc" in str(path) and "rules" in str(path.parent):
                 if path.parent == fake_home / ".cursor" / "rules":
                     return cr.WriteOutcome.ERROR
-            return original(path, content)
-        monkeypatch.setattr(cr, "_write_rule", fake_write)
+            return original(path, content, marker)
+        monkeypatch.setattr(cr, "_write_managed_file", fake_write)
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0  # init NÃO quebra
         assert "Cursor rules:" in (result.stderr or "") or "Cursor rules:" in result.stdout

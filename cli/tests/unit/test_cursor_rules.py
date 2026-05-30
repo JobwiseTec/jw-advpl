@@ -210,58 +210,6 @@ class TestRenderGlobalRule:
         assert not any(line.startswith("globs:") for line in frontmatter)
 
 
-class TestSkillGlobs:
-    def test_has_52_skills(self) -> None:
-        from plugadvpl.cursor_rules import _SKILL_GLOBS
-        assert len(_SKILL_GLOBS) == 52
-
-    def test_matches_actual_skill_dirs(self) -> None:
-        """_SKILL_GLOBS deve bater com as skills embarcadas em skills/."""
-        from plugadvpl.cursor_rules import _SKILL_GLOBS
-        # Skills bundled no plugin (paths relativos ao repo root no dev tree)
-        skills_dir = Path(__file__).resolve().parents[3] / "skills"
-        if not skills_dir.exists():
-            pytest.skip("dev tree only — skills/ não acessível neste contexto")
-        actual = {p.name for p in skills_dir.iterdir() if (p / "SKILL.md").exists()}
-        catalogued = set(_SKILL_GLOBS.keys())
-        missing_in_constant = actual - catalogued
-        extras_in_constant = catalogued - actual
-        assert not missing_in_constant, (
-            f"Skills sem entrada em _SKILL_GLOBS: {missing_in_constant}"
-        )
-        assert not extras_in_constant, (
-            f"_SKILL_GLOBS tem entries inexistentes: {extras_in_constant}"
-        )
-
-
-class TestWriteRule:
-    def test_writes_when_not_exists(self, tmp_path: Path) -> None:
-        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
-        target = tmp_path / "plugadvpl-arch.mdc"
-        outcome = _write_rule(target, "content with <!-- plugadvpl-rule-version: 0.16.2 -->")
-        assert outcome == WriteOutcome.WRITTEN
-        assert target.read_text(encoding="utf-8").startswith("content")
-
-    def test_overwrites_when_marker_present(self, tmp_path: Path) -> None:
-        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
-        target = tmp_path / "plugadvpl-arch.mdc"
-        target.write_text(
-            "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
-        )
-        outcome = _write_rule(target, "new <!-- plugadvpl-rule-version: 0.16.2 -->")
-        assert outcome == WriteOutcome.OVERWRITTEN
-        assert "new" in target.read_text(encoding="utf-8")
-
-    def test_skips_when_user_file_without_marker(self, tmp_path: Path) -> None:
-        from plugadvpl.cursor_rules import _write_rule, WriteOutcome
-        target = tmp_path / "plugadvpl-meu.mdc"
-        target.write_text("my own rule, no marker", encoding="utf-8")
-        outcome = _write_rule(target, "new content with marker")
-        assert outcome == WriteOutcome.SKIPPED_USER_FILE
-        # Preserva arquivo do user
-        assert target.read_text(encoding="utf-8") == "my own rule, no marker"
-
-
 class TestInstallCursorRules:
     def test_installs_global_and_locals_when_both_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
