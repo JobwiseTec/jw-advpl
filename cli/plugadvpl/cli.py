@@ -567,65 +567,82 @@ def init(
         typer.echo("OK  CLAUDE.md + AGENTS.md atualizados (fragment plugadvpl, idênticos)")
         typer.echo("OK  .plugadvpl/ adicionado ao .gitignore")
 
+    quiet = ctx.obj["quiet"]
     if not no_cursor:
-        from plugadvpl.cursor_rules import install_cursor_rules
-
-        cursor_result = install_cursor_rules(root, __version__)
-        if not ctx.obj["quiet"]:
-            if cursor_result.installed_global or cursor_result.installed_local_count:
-                typer.echo(f"OK  Cursor rules: {cursor_result.summary()}")
-            for warn in cursor_result.errors:
-                typer.secho(f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True)
-            for skipped in cursor_result.skipped_due_to_user_files:
-                typer.secho(
-                    f"⚠  Cursor rules: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
-
+        _install_cursor_for_init(root, quiet)
     if not no_copilot:
-        from plugadvpl.copilot_instructions import install_copilot_instructions
-
-        copilot_result = install_copilot_instructions(root, __version__)
-        if not ctx.obj["quiet"]:
-            if copilot_result.installed_global or copilot_result.installed_local_count:
-                typer.echo(f"OK  Copilot instructions: {copilot_result.summary()}")
-            for warn in copilot_result.errors:
-                typer.secho(
-                    f"⚠  Copilot instructions: {warn}",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
-            for skipped in copilot_result.skipped_due_to_user_files:
-                typer.secho(
-                    f"⚠  Copilot instructions: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
-
+        _install_copilot_for_init(root, quiet)
     if not no_gemini:
-        from plugadvpl.gemini_skills import install_gemini_skills
+        _install_gemini_for_init(root, quiet)
 
-        gemini_result = install_gemini_skills(root, __version__)
-        if not ctx.obj["quiet"]:
-            if (
-                gemini_result.installed_global_home
-                or gemini_result.installed_project_md
-                or gemini_result.installed_skills_count
-            ):
-                typer.echo(f"OK  Gemini skills: {gemini_result.summary()}")
-            for warn in gemini_result.errors:
-                typer.secho(
-                    f"⚠  Gemini skills: {warn}",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
-            for skipped in gemini_result.skipped_due_to_user_files:
-                typer.secho(
-                    f"⚠  Gemini skills: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
-                    fg=typer.colors.YELLOW,
-                    err=True,
-                )
+
+def _install_cursor_for_init(root: Path, quiet: bool) -> None:
+    """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
+    from plugadvpl.cursor_rules import install_cursor_rules
+
+    cursor_result = install_cursor_rules(root, __version__)
+    if quiet:
+        return
+    if cursor_result.installed_global or cursor_result.installed_local_count:
+        typer.echo(f"OK  Cursor rules: {cursor_result.summary()}")
+    for warn in cursor_result.errors:
+        typer.secho(f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True)
+    for skipped in cursor_result.skipped_due_to_user_files:
+        typer.secho(
+            f"⚠  Cursor rules: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
+def _install_copilot_for_init(root: Path, quiet: bool) -> None:
+    """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
+    from plugadvpl.copilot_instructions import install_copilot_instructions
+
+    copilot_result = install_copilot_instructions(root, __version__)
+    if quiet:
+        return
+    if copilot_result.installed_global or copilot_result.installed_local_count:
+        typer.echo(f"OK  Copilot instructions: {copilot_result.summary()}")
+    for warn in copilot_result.errors:
+        typer.secho(
+            f"⚠  Copilot instructions: {warn}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    for skipped in copilot_result.skipped_due_to_user_files:
+        typer.secho(
+            f"⚠  Copilot instructions: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
+def _install_gemini_for_init(root: Path, quiet: bool) -> None:
+    """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
+    from plugadvpl.gemini_skills import install_gemini_skills
+
+    gemini_result = install_gemini_skills(root, __version__)
+    if quiet:
+        return
+    if (
+        gemini_result.installed_global_home
+        or gemini_result.installed_project_md
+        or gemini_result.installed_skills_count
+    ):
+        typer.echo(f"OK  Gemini skills: {gemini_result.summary()}")
+    for warn in gemini_result.errors:
+        typer.secho(
+            f"⚠  Gemini skills: {warn}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    for skipped in gemini_result.skipped_due_to_user_files:
+        typer.secho(
+            f"⚠  Gemini skills: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
 
 _CURSOR_RULE_MARKER_RE = re.compile(
