@@ -177,3 +177,49 @@ class TestRenderSkillForGemini:
         result = render_skill_for_gemini(target, version="0.16.4")
         assert "`Bash: uvx plugadvpl@0.16.4 arch`" in result
         assert "/plugadvpl:arch" not in result
+
+
+class TestInstallGeminiSkills:
+    def test_installs_all_three_layers_when_signals_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """~/.gemini/ + .gemini/ projeto → home + project MD + 52 skills."""
+        from plugadvpl.gemini_skills import install_gemini_skills
+        fake_home = tmp_path / "home"
+        (fake_home / ".gemini").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        (project / ".gemini").mkdir(parents=True)
+
+        result = install_gemini_skills(project, version="0.16.4")
+
+        assert result.installed_global_home is True
+        assert result.installed_project_md is True
+        assert result.installed_skills_count == 52
+        assert not result.errors
+        # Files exist
+        assert (fake_home / ".gemini" / "GEMINI.md").exists()
+        assert (project / "GEMINI.md").exists()
+        skill_files = list(
+            (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        assert len(skill_files) == 52
+
+    def test_no_op_without_signals(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from plugadvpl.gemini_skills import install_gemini_skills
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        project.mkdir()
+        result = install_gemini_skills(project, version="0.16.4")
+        assert result.installed_global_home is False
+        assert result.installed_project_md is False
+        assert result.installed_skills_count == 0
+        assert not (fake_home / ".gemini" / "GEMINI.md").exists()
+        assert not (project / "GEMINI.md").exists()
+        assert not (project / ".gemini").exists()

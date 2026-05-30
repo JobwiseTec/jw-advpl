@@ -16,10 +16,18 @@ Spec: docs/superpowers/specs/2026-05-30-gemini-skills-design.md
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from plugadvpl._skill_catalog import _parse_skill_md, _transform_body
+from plugadvpl._skill_catalog import (
+    GEMINI_MARKER_PREFIX,
+    _parse_skill_md,
+    _SKILL_GLOBS,
+    _skills_root,
+    _transform_body,
+    _write_managed_file,
+    WriteOutcome,
+)
 
 
 @dataclass(frozen=True)
@@ -144,3 +152,170 @@ def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
         f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
     return frontmatter + markers + _transform_body(body, version)
+
+
+@dataclass(frozen=True)
+class InstallResult:
+    """Resumo do install_gemini_skills."""
+
+    installed_global_home: bool                                    # ~/.gemini/GEMINI.md
+    installed_project_md: bool                                     # <project>/GEMINI.md
+    installed_skills_count: int                                    # 0..52
+    skipped_due_to_user_files: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        parts = []
+        if self.installed_global_home:
+            parts.append("1 home")
+        if self.installed_project_md:
+            parts.append("1 projeto")
+        if self.installed_skills_count:
+            parts.append(f"{self.installed_skills_count} skills")
+        return (" + ".join(parts) + " instaladas") if parts else "nada instalado"
+
+
+def _install_gemini_global_home(version: str) -> tuple[bool, list[str], list[str]]:
+    """Helper: install ~/.gemini/GEMINI.md.
+
+    Returns (installed_bool, skipped_list, errors_list).
+    """
+    skipped: list[str] = []
+    errors: list[str] = []
+    try:
+        global_path = Path.home() / ".gemini" / "GEMINI.md"
+        outcome = _write_managed_file(
+            global_path,
+            render_global_gemini_md(version),
+            GEMINI_MARKER_PREFIX,
+        )
+        if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+            return (True, skipped, errors)
+        if outcome == WriteOutcome.SKIPPED_USER_FILE:
+            skipped.append("~/.gemini/GEMINI.md (home)")
+        elif outcome == WriteOutcome.ERROR:
+            errors.append(f"falha ao escrever {global_path}: permission/IO denied")
+        return (False, skipped, errors)
+    except Exception as e:  # noqa: BLE001 — defensivo total
+        errors.append(f"global home erro: {e!r}")
+        return (False, skipped, errors)
+
+
+def _install_gemini_project_md(
+    project_root: Path, version: str
+) -> tuple[bool, list[str], list[str]]:
+    """Helper: install <project>/GEMINI.md (4º gêmeo)."""
+    skipped: list[str] = []
+    errors: list[str] = []
+    try:
+        target = project_root / "GEMINI.md"
+        outcome = _write_managed_file(
+            target,
+            render_global_gemini_md(version),
+            GEMINI_MARKER_PREFIX,
+        )
+        if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+            return (True, skipped, errors)
+        if outcome == WriteOutcome.SKIPPED_USER_FILE:
+            skipped.append("GEMINI.md (projeto)")
+        elif outcome == WriteOutcome.ERROR:
+            errors.append(f"falha ao escrever {target}: permission/IO denied")
+        return (False, skipped, errors)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"project MD erro: {e!r}")
+        return (False, skipped, errors)
+
+
+def _install_one_gemini_skill(
+    skill_name: str,
+    skills_root: Path,
+    target_dir: Path,
+    version: str,
+) -> tuple[bool, list[str], list[str]]:
+    """Helper: install <project>/.gemini/skills/plugadvpl-<X>/SKILL.md.
+
+    Note: cria directory por skill (Gemini espera diretório, não arquivo flat).
+    """
+    skipped: list[str] = []
+    errors: list[str] = []
+    try:
+        skill_md_path = skills_root / skill_name / "SKILL.md"
+        if not skill_md_path.exists():
+            errors.append(f"skill {skill_name}: SKILL.md ausente")
+            return (False, skipped, errors)
+        content = render_skill_for_gemini(skill_md_path, version)
+        target_path = target_dir / f"plugadvpl-{skill_name}" / "SKILL.md"
+        outcome = _write_managed_file(target_path, content, GEMINI_MARKER_PREFIX)
+        if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+            return (True, skipped, errors)
+        if outcome == WriteOutcome.SKIPPED_USER_FILE:
+            skipped.append(f"plugadvpl-{skill_name}/SKILL.md")
+        elif outcome == WriteOutcome.ERROR:
+            errors.append(f"falha ao escrever {target_path}: permission/IO denied")
+        return (False, skipped, errors)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"skill {skill_name}: {e!r}")
+        return (False, skipped, errors)
+
+
+def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
+    """Orquestra detect + render + write pras GEMINI.md + skills Gemini.
+
+    Spec §3.5 da Fase 3. NUNCA propaga exception — try/except em cada bloco
+    + helpers (_install_gemini_global_home, _install_gemini_project_md,
+    _install_one_gemini_skill) pra manter PLR0912 ≤12.
+    """
+    skipped: list[str] = []
+    errors: list[str] = []
+    installed_global_home = False
+    installed_project_md = False
+    installed_skills_count = 0
+
+    try:
+        target = detect_gemini(project_root)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"detect_gemini falhou: {e!r}")
+        return InstallResult(False, False, 0, [], errors)
+
+    if target.install_global:
+        ok, skp, err = _install_gemini_global_home(version)
+        installed_global_home = ok
+        skipped.extend(skp)
+        errors.extend(err)
+
+    if target.install_project:
+        ok, skp, err = _install_gemini_project_md(project_root, version)
+        installed_project_md = ok
+        skipped.extend(skp)
+        errors.extend(err)
+
+        # Install skills locais
+        skills_target_dir = project_root / ".gemini" / "skills"
+        try:
+            skills_root = _skills_root()
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"_skills_root falhou: {e!r}")
+            return InstallResult(
+                installed_global_home,
+                installed_project_md,
+                installed_skills_count,
+                skipped,
+                errors,
+            )
+
+        for skill_name in _SKILL_GLOBS:  # iter keys
+            ok, skp, err = _install_one_gemini_skill(
+                skill_name, skills_root, skills_target_dir, version
+            )
+            if ok:
+                installed_skills_count += 1
+            skipped.extend(skp)
+            errors.extend(err)
+
+    return InstallResult(
+        installed_global_home=installed_global_home,
+        installed_project_md=installed_project_md,
+        installed_skills_count=installed_skills_count,
+        skipped_due_to_user_files=skipped,
+        errors=errors,
+    )
