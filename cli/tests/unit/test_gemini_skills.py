@@ -243,3 +243,54 @@ class TestInstallGeminiSkills:
         assert not (fake_home / ".gemini" / "GEMINI.md").exists()
         assert not (project / "GEMINI.md").exists()
         assert not (project / ".gemini").exists()
+
+    def test_installs_to_agents_skills_when_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """v0.16.5 — `.agents/skills/` no projeto → instala lá também (paralelo a .gemini/skills/)."""
+        from plugadvpl.gemini_skills import install_gemini_skills
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        (project / ".gemini").mkdir(parents=True)
+        (project / ".agents" / "skills").mkdir(parents=True)
+
+        result = install_gemini_skills(project, version="0.16.5")
+
+        # Instala em ambos
+        gemini_files = list(
+            (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        agents_files = list(
+            (project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        assert len(gemini_files) == 52
+        assert len(agents_files) == 52
+        assert result.installed_skills_count == 52
+        assert result.installed_agents_skills_count == 52
+
+    def test_no_install_to_agents_skills_when_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """v0.16.5 — `.agents/skills/` NÃO existe → NÃO cria a pasta."""
+        from plugadvpl.gemini_skills import install_gemini_skills
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        project = tmp_path / "project"
+        (project / ".gemini").mkdir(parents=True)
+        # Sem .agents/ no projeto
+
+        result = install_gemini_skills(project, version="0.16.5")
+
+        # .gemini/skills instala normal
+        gemini_files = list(
+            (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        assert len(gemini_files) == 52
+        # .agents/ NÃO foi criado
+        assert not (project / ".agents").exists()
+        assert result.installed_agents_skills_count == 0

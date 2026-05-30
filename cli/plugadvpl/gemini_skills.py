@@ -155,7 +155,8 @@ class InstallResult:
 
     installed_global_home: bool  # ~/.gemini/GEMINI.md
     installed_project_md: bool  # <project>/GEMINI.md
-    installed_skills_count: int  # 0..52
+    installed_skills_count: int  # 0..52 (.gemini/skills/)
+    installed_agents_skills_count: int = 0  # 0..52 (.agents/skills/ — v0.16.5+ cross-agent)
     skipped_due_to_user_files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -166,7 +167,9 @@ class InstallResult:
         if self.installed_project_md:
             parts.append("1 projeto")
         if self.installed_skills_count:
-            parts.append(f"{self.installed_skills_count} skills")
+            parts.append(f"{self.installed_skills_count} skills (.gemini/)")
+        if self.installed_agents_skills_count:
+            parts.append(f"{self.installed_agents_skills_count} skills (.agents/)")
         return (" + ".join(parts) + " instaladas") if parts else "nada instalado"
 
 
@@ -256,8 +259,9 @@ def _install_one_gemini_skill(
 def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
     """Orquestra detect + render + write pras GEMINI.md + skills Gemini.
 
-    Spec §3.5 da Fase 3. NUNCA propaga exception — try/except em cada bloco
-    + helpers (_install_gemini_global_home, _install_gemini_project_md,
+    Spec §3.5 da Fase 3 + v0.16.5 §3.6 (.agents/skills/ cross-agent). NUNCA
+    propaga exception — try/except em cada bloco + helpers
+    (_install_gemini_global_home, _install_gemini_project_md,
     _install_one_gemini_skill) pra manter PLR0912 ≤12.
     """
     skipped: list[str] = []
@@ -265,12 +269,13 @@ def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
     installed_global_home = False
     installed_project_md = False
     installed_skills_count = 0
+    installed_agents_skills_count = 0
 
     try:
         target = detect_gemini(project_root)
     except Exception as e:  # noqa: BLE001
         errors.append(f"detect_gemini falhou: {e!r}")
-        return InstallResult(False, False, 0, [], errors)
+        return InstallResult(False, False, 0, 0, [], errors)
 
     if target.install_global:
         ok, skp, err = _install_gemini_global_home(version)
@@ -294,6 +299,7 @@ def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
                 installed_global_home,
                 installed_project_md,
                 installed_skills_count,
+                installed_agents_skills_count,
                 skipped,
                 errors,
             )
@@ -307,10 +313,26 @@ def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
             skipped.extend(skp)
             errors.extend(err)
 
+        # v0.16.5 — Se .agents/skills/ existe no projeto, instalar lá também
+        # (cross-agent standard emergente — Codex, Roo, etc., tem precedência
+        # maior que .gemini/skills/. Instalar em ambos cobre interop multi-tool
+        # sem breaking change).
+        agents_skills_dir = project_root / ".agents" / "skills"
+        if agents_skills_dir.exists():
+            for skill_name in _SKILL_GLOBS:
+                ok, skp, err = _install_one_gemini_skill(
+                    skill_name, skills_root, agents_skills_dir, version
+                )
+                if ok:
+                    installed_agents_skills_count += 1
+                skipped.extend(skp)
+                errors.extend(err)
+
     return InstallResult(
         installed_global_home=installed_global_home,
         installed_project_md=installed_project_md,
         installed_skills_count=installed_skills_count,
+        installed_agents_skills_count=installed_agents_skills_count,
         skipped_due_to_user_files=skipped,
         errors=errors,
     )
