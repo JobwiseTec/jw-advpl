@@ -167,6 +167,11 @@ class TestInit:
         monkeypatch.setattr(
             "plugadvpl.gemini_skills.shutil.which", lambda _: None
         )
+        # v0.16.5 — também mockar codex_config pra TestInit não acidentalmente
+        # disparar install se dev tiver `codex` no PATH.
+        monkeypatch.setattr(
+            "plugadvpl.codex_config.shutil.which", lambda _: None
+        )
 
     def test_init_creates_db_and_claude_md(
         self, synthetic_project: Path, runner: CliRunner
@@ -716,6 +721,103 @@ class TestInitGeminiSkills:
         assert user_file.read_text(encoding="utf-8") == "my own skill, no marker"
         assert "plugadvpl-arch/SKILL.md" in (result.stderr or "")
         assert "sem marker plugadvpl" in (result.stderr or "")
+
+
+class TestInitCodexConfig:
+    """v0.16.5 — init grava .codex/config.toml quando Codex detectado."""
+
+    def test_no_op_without_codex_signal(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_codex1"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".codex").exists()
+        assert "Codex:" not in result.stdout
+
+    def test_installs_when_project_has_codex_dir(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_codex2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        (synthetic_project / ".codex").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert (synthetic_project / ".codex" / "config.toml").exists()
+        assert "Codex:" in result.stdout
+
+    def test_no_codex_flag_skips(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_codex3"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        (synthetic_project / ".codex").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "init", "--no-codex"]
+        )
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".codex" / "config.toml").exists()
+
+    def test_idempotent(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_codex4"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        (synthetic_project / ".codex").mkdir()
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / ".codex" / "config.toml").read_text(encoding="utf-8")
+        # Marker aparece UMA vez
+        assert content.count("plugadvpl-codex-version:") == 1
+
+    def test_preserves_user_file_without_marker(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_codex5"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        codex_dir = synthetic_project / ".codex"
+        codex_dir.mkdir()
+        user_config = codex_dir / "config.toml"
+        user_config.write_text("# my own config, no marker", encoding="utf-8")
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        # Preserva
+        assert user_config.read_text(encoding="utf-8") == "# my own config, no marker"
 
 
 class TestIngest:

@@ -534,6 +534,13 @@ def init(
             help="Não instala Gemini skills mesmo se Gemini for detectado (~/.gemini/, gemini no PATH, ou .gemini/ no projeto).",
         ),
     ] = False,
+    no_codex: Annotated[
+        bool,
+        typer.Option(
+            "--no-codex",
+            help="Não instala .codex/config.toml mesmo se Codex for detectado (.codex/ no projeto ou codex no PATH).",
+        ),
+    ] = False,
 ) -> None:
     """Cria ``./.plugadvpl/index.db``, escreve fragments em ``CLAUDE.md`` + ``AGENTS.md``, atualiza ``.gitignore``, e (se detectado) gera Cursor rules + Copilot instructions + Gemini skills.
 
@@ -545,6 +552,8 @@ def init(
     v0.16.4: Gemini skills em ``~/.gemini/GEMINI.md`` + ``<project>/GEMINI.md`` +
     ``.gemini/skills/plugadvpl-*/SKILL.md`` quando Gemini é detectado.
     Use ``--no-gemini`` pra desabilitar.
+    v0.16.5: ``.codex/config.toml`` mínimo quando Codex CLI é detectado
+    (``.codex/`` no projeto ou ``codex`` no PATH). Use ``--no-codex`` pra desabilitar.
     """
     root: Path = ctx.obj["root"]
     db_path: Path = ctx.obj["db"]
@@ -574,6 +583,8 @@ def init(
         _install_copilot_for_init(root, quiet)
     if not no_gemini:
         _install_gemini_for_init(root, quiet)
+    if not no_codex:
+        _install_codex_for_init(root, quiet)
 
 
 def _install_cursor_for_init(root: Path, quiet: bool) -> None:
@@ -640,6 +651,29 @@ def _install_gemini_for_init(root: Path, quiet: bool) -> None:
     for skipped in gemini_result.skipped_due_to_user_files:
         typer.secho(
             f"⚠  Gemini skills: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
+def _install_codex_for_init(root: Path, quiet: bool) -> None:
+    """Helper extraido de init() pra manter PLR0912 baixo com Codex (v0.16.5)."""
+    from plugadvpl.codex_config import install_codex_config
+
+    codex_result = install_codex_config(root, __version__)
+    if quiet:
+        return
+    if codex_result.installed:
+        typer.echo(f"OK  Codex: {codex_result.summary()}")
+    if codex_result.error:
+        typer.secho(
+            f"⚠  Codex: {codex_result.error}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    if codex_result.skipped_due_to_user_file:
+        typer.secho(
+            "⚠  Codex: .codex/config.toml já existe sem marker plugadvpl — não sobrescrevi",
             fg=typer.colors.YELLOW,
             err=True,
         )
