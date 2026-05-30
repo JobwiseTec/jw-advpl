@@ -23,6 +23,7 @@ from pathlib import Path
 
 RULE_MARKER_PREFIX = "<!-- plugadvpl-rule-version:"
 INSTRUCTIONS_MARKER_PREFIX = "<!-- plugadvpl-instructions-version:"
+GEMINI_MARKER_PREFIX = "<!-- plugadvpl-gemini-version:"
 
 # ---------------------------------------------------------------------------
 # Skill catalog (spec §5)
