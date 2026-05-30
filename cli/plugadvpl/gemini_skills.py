@@ -19,6 +19,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from plugadvpl._skill_catalog import _parse_skill_md, _transform_body
+
 
 @dataclass(frozen=True)
 class GeminiTarget:
@@ -108,3 +110,37 @@ def render_global_gemini_md(version: str) -> str:
     markers = f"<!-- plugadvpl-gemini-version: {version} -->\n\n"
     body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
     return markers + body
+
+
+def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
+    """Gera `.gemini/skills/plugadvpl-<X>/SKILL.md`.
+
+    Frontmatter Gemini é mais simples que Cursor/Copilot: só `name` +
+    `description`. Sem `applyTo`/`globs`/`alwaysApply` (Gemini usa JIT
+    scan + skill activation por descrição).
+
+    Pipeline:
+    1. Parse SKILL.md original (extrai description)
+    2. _transform_body (slash→uvx + normalize)
+    3. Frontmatter Gemini: name=plugadvpl-<X>, description=<da SKILL.md>
+    4. Markers gemini-version + skill
+
+    Edge case: SKILL.md sem frontmatter → description fallback usa skill_name.
+    """
+    skill_name = skill_md_path.parent.name
+    raw = skill_md_path.read_text(encoding="utf-8")
+    description, body = _parse_skill_md(raw)
+    if not description:
+        description = f"plugadvpl skill: {skill_name}"
+
+    frontmatter = (
+        "---\n"
+        f"name: plugadvpl-{skill_name}\n"
+        f"description: {description}\n"
+        "---\n"
+    )
+    markers = (
+        f"<!-- plugadvpl-gemini-version: {version} -->\n"
+        f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
+    )
+    return frontmatter + markers + _transform_body(body, version)
