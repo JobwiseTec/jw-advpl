@@ -91,7 +91,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # windows-2025 pinned: windows-latest migrara silenciosamente
+        # de windows-2022 -> windows-2025-vs2026 em 15 jun 2026.
+        # Pinar adopta o futuro runner ja, valida hoje em vez de no dia D.
+        os: [ubuntu-latest, windows-2025, macos-latest]
         python: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
