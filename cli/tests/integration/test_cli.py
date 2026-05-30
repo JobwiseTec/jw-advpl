@@ -403,6 +403,91 @@ class TestInitCursorRules:
         assert result.exit_code == 0
 
 
+class TestInitCopilotInstructions:
+    """v0.16.3 — init detecta .github/ e gera Copilot instructions."""
+
+    def test_skips_copilot_when_no_github(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sem `.github/` no projeto → no-op pra Copilot."""
+        fake_home = synthetic_project.parent / "fake_home_copilot"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".github").exists()
+        assert "Copilot instructions" not in result.stdout
+
+    def test_installs_when_project_has_github(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`.github/` no projeto → 1 global + 52 specifics."""
+        fake_home = synthetic_project.parent / "fake_home_copilot2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".github").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        # Global
+        assert (
+            synthetic_project / ".github" / "copilot-instructions.md"
+        ).exists()
+        # Locals
+        instructions = list(
+            (synthetic_project / ".github" / "instructions").glob(
+                "plugadvpl-*.instructions.md"
+            )
+        )
+        assert len(instructions) == 52
+        assert "Copilot instructions" in result.stdout
+
+    def test_no_copilot_flag_skips(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`--no-copilot` desabilita mesmo com .github/ presente."""
+        fake_home = synthetic_project.parent / "fake_home_copilot3"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".github").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "init", "--no-copilot"]
+        )
+        assert result.exit_code == 0
+        assert not (
+            synthetic_project / ".github" / "copilot-instructions.md"
+        ).exists()
+        assert not (synthetic_project / ".github" / "instructions").exists()
+        assert "Copilot instructions" not in result.stdout
+
+    def test_quiet_suppresses_copilot_message(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_copilot4"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".github").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "--quiet", "init"]
+        )
+        assert result.exit_code == 0
+        assert "Copilot instructions" not in result.stdout
+        # Rules ainda criadas
+        instructions = list(
+            (synthetic_project / ".github" / "instructions").glob(
+                "plugadvpl-*.instructions.md"
+            )
+        )
+        assert len(instructions) == 52
+
+
 class TestIngest:
     def test_ingest_after_init(
         self, synthetic_project: Path, runner: CliRunner
