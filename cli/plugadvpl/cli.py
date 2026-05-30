@@ -628,6 +628,43 @@ def _check_cursor_rules_staleness(root: Path) -> str | None:
     return None
 
 
+def _check_copilot_instructions_staleness(root: Path) -> str | None:
+    """Detecta Copilot instructions desatualizadas.
+
+    Cobre `.github/copilot-instructions.md` (global) e
+    `.github/instructions/plugadvpl-*.instructions.md` (locais).
+    Retorna mensagem do primeiro arquivo desatualizado, ou None.
+
+    Marker é `<!-- plugadvpl-instructions-version: X.Y.Z -->` —
+    distinto do Cursor `rule-version`, evita falso-positivo cross-agent.
+    """
+    copilot_files: list[Path] = []
+    copilot_global = root / ".github" / "copilot-instructions.md"
+    if copilot_global.exists():
+        copilot_files.append(copilot_global)
+    copilot_dir = root / ".github" / "instructions"
+    if copilot_dir.exists():
+        copilot_files.extend(
+            sorted(copilot_dir.glob("plugadvpl-*.instructions.md"))
+        )
+
+    inst_marker_re = re.compile(
+        r"<!--\s*plugadvpl-instructions-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
+    )
+    for cf in copilot_files:
+        try:
+            content = cf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = inst_marker_re.search(content)
+        if m is None:
+            continue
+        inst_version = m.group(1)
+        if inst_version != __version__:
+            return f"{cf.name} foi gerado por plugadvpl {inst_version}"
+    return None
+
+
 def _check_fragment_staleness(root: Path) -> str | None:
     """Retorna mensagem descritiva se algum fragment plugadvpl está desatualizado.
 
@@ -635,6 +672,9 @@ def _check_fragment_staleness(root: Path) -> str | None:
     v0.16.1: estende pra AGENTS.md.
     v0.16.2: estende pra Cursor rules (global em ~/.cursor/rules/plugadvpl.mdc
     e locais em <project>/.cursor/rules/plugadvpl-*.mdc).
+    v0.16.3: estende pra Copilot instructions
+    (`.github/copilot-instructions.md` global e
+    `.github/instructions/plugadvpl-*.instructions.md` locais).
 
     Reporta o primeiro arquivo desatualizado encontrado. None se todos OK ou
     se nenhum dos arquivos existe (caso fresh sem init ainda).
@@ -661,7 +701,12 @@ def _check_fragment_staleness(root: Path) -> str | None:
             return f"{filename} foi gerado por plugadvpl {fragment_version}"
 
     # 2. Cursor rules (rule-version)
-    return _check_cursor_rules_staleness(root)
+    cursor_msg = _check_cursor_rules_staleness(root)
+    if cursor_msg is not None:
+        return cursor_msg
+
+    # 3. Copilot instructions (instructions-version)
+    return _check_copilot_instructions_staleness(root)
 
 
 def _write_agent_fragment(root: Path, filename: str) -> None:

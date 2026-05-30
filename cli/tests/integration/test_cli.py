@@ -886,6 +886,47 @@ class TestStatus:
         assert result.exit_code == 0
         assert "0.0.1-old" not in result.stderr
 
+    def test_detects_stale_copilot_global(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`.github/copilot-instructions.md` com marker old → status reporta."""
+        fake_home = indexed_project.parent / "fake_home_copilot_status1"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        gh_dir = indexed_project / ".github"
+        gh_dir.mkdir(parents=True, exist_ok=True)
+        (gh_dir / "copilot-instructions.md").write_text(
+            "stale <!-- plugadvpl-instructions-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "copilot-instructions.md" in combined
+        assert "0.15.0" in combined
+
+    def test_detects_stale_copilot_local(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = indexed_project.parent / "fake_home_copilot_status2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        instructions_dir = indexed_project / ".github" / "instructions"
+        instructions_dir.mkdir(parents=True)
+        (instructions_dir / "plugadvpl-arch.instructions.md").write_text(
+            "stale <!-- plugadvpl-instructions-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "plugadvpl-arch.instructions.md" in combined
+        assert "0.15.0" in combined
+
 
 class TestDoctor:
     def test_doctor_returns_diagnostics(
