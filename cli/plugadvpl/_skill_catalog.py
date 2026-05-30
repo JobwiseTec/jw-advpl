@@ -97,9 +97,18 @@ _SKILL_GLOBS: dict[str, list[str]] = {
 # transversal. Cursor deve sempre injetá-las (alwaysApply: true) em vez
 # de relegar pra "Manual only" mode (que exige @plugadvpl-init explícito).
 _CURSOR_META_ALWAYS_APPLY: set[str] = {
-    "init", "ingest", "status", "doctor", "help",
-    "workflow", "trace", "setup", "ingest-protheus",
-    "reindex", "execauto", "docs",
+    "init",
+    "ingest",
+    "status",
+    "doctor",
+    "help",
+    "workflow",
+    "trace",
+    "setup",
+    "ingest-protheus",
+    "reindex",
+    "execauto",
+    "docs",
 }
 
 # ---------------------------------------------------------------------------

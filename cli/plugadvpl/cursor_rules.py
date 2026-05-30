@@ -15,12 +15,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from plugadvpl._skill_catalog import (
+    _CURSOR_META_ALWAYS_APPLY,
+    _SKILL_GLOBS,
     RULE_MARKER_PREFIX,
     WriteOutcome,
-    _CURSOR_META_ALWAYS_APPLY,
     _parse_skill_md,
     _skills_root,
-    _SKILL_GLOBS,
     _transform_body,
     _write_managed_file,
 )
@@ -166,13 +166,19 @@ class InstallResult:
     errors: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
-        """String curta pra `init` printar."""
+        """String curta pra `init` printar.
+
+        v0.16.5: rotula 'global' como '(experimental)' — Cursor docs oficial
+        não confirma que ~/.cursor/rules/ é lido (User Rules globais são
+        UI-only, Cursor Settings → Rules). Mantemos por compat futura
+        mas sinalizamos a incerteza pro user.
+        """
         parts = []
         if self.installed_global:
-            parts.append("1 global")
+            parts.append("1 global (experimental)")
         if self.installed_local_count:
             parts.append(f"{self.installed_local_count} locais")
-        return " + ".join(parts) + " instaladas" if parts else "nada instalado"
+        return (" + ".join(parts) + " instaladas") if parts else "nada instalado"
 
 
 def install_cursor_rules(project_root: Path, version: str) -> InstallResult:

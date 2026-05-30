@@ -272,6 +272,21 @@ class TestRenderGlobalRule:
         assert not any(line.startswith("globs:") for line in frontmatter)
 
 
+class TestCursorInstallResultSummary:
+    def test_global_marked_experimental(self) -> None:
+        """v0.16.5 — global mark com '(experimental)' pra sinalizar incerteza
+        docs Cursor sobre ~/.cursor/rules/."""
+        from plugadvpl.cursor_rules import InstallResult
+        r = InstallResult(
+            installed_global=True,
+            installed_local_count=52,
+            skipped_due_to_user_files=[],
+            errors=[],
+        )
+        assert "global (experimental)" in r.summary()
+        assert "52 locais" in r.summary()
+
+
 class TestInstallCursorRules:
     def test_installs_global_and_locals_when_both_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
