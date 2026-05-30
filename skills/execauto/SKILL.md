@@ -1,5 +1,5 @@
 ---
-description: Lista chamadas MsExecAuto resolvidas (rotina canônica + módulo + tabelas inferidas via catálogo TOTVS) — Universo 3 Feature B, v0.4.1+
+description: Lista chamadas MsExecAuto ADVPL resolvidas (rotina canônica + módulo + tabelas Protheus inferidas via catálogo TOTVS) — Universo 3 Feature B, v0.4.1+
 disable-model-invocation: true
 arguments: [filtros]
 allowed-tools: [Bash]

@@ -1,5 +1,5 @@
 ---
-description: Lista usos de uma tabela ERP (leitura/escrita/reclock) no projeto
+description: Lista usos de uma tabela ERP Protheus (leitura/escrita/reclock) em fontes ADVPL indexados
 disable-model-invocation: true
 arguments: [tabela]
 allowed-tools: [Bash]

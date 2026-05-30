@@ -1,5 +1,5 @@
 ---
-description: Pesquisa texto/identificador/FTS no conteudo dos fontes indexados
+description: Pesquisa texto/identificador/FTS no conteudo dos fontes ADVPL/.prw indexados pelo plugadvpl (Protheus)
 disable-model-invocation: true
 arguments: [pattern]
 allowed-tools: [Bash]

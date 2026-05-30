@@ -1,5 +1,5 @@
 ---
-description: Encadeia compile → tq → smoke num único flow guiado. Use quando o usuário pede "deploya esse fonte", "compila e restarta", ou termina edit-prw e quer ver o efeito no AppServer.
+description: Encadeia compile → tq → smoke num único flow guiado para fontes ADVPL/.prw no Protheus. Use quando o usuário pede "deploya esse fonte", "compila e restarta", ou termina edit-prw e quer ver o efeito no AppServer.
 disable-model-invocation: true
 arguments: [fonte ou opções]
 allowed-tools: [Bash]

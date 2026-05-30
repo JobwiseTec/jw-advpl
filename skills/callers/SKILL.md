@@ -1,5 +1,5 @@
 ---
-description: Lista quem chama uma funcao/metodo (call graph reverso)
+description: Lista quem chama uma funcao/metodo ADVPL/TLPP (call graph reverso no indice plugadvpl/Protheus)
 disable-model-invocation: true
 arguments: [funcao]
 allowed-tools: [Bash]

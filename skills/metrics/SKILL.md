@@ -1,5 +1,5 @@
 ---
-description: Métricas por função (complexidade ciclomática McCabe + LOC + nesting + fan-out + params) — Universo 4 Feature B, v0.6.0+
+description: Métricas por função ADVPL/TLPP (complexidade ciclomática McCabe + LOC + nesting + fan-out + params) para fontes Protheus — Universo 4 Feature B, v0.6.0+
 disable-model-invocation: true
 arguments: [arquivo|filtros]
 allowed-tools: [Bash]

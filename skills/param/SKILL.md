@@ -1,5 +1,5 @@
 ---
-description: Lista usos de um parametro MV_ (GetMv/PutMv/SuperGetMv) no projeto
+description: Lista usos de um parametro MV_ do Protheus (GetMv/PutMv/SuperGetMv) em fontes ADVPL indexados
 disable-model-invocation: true
 arguments: [mv]
 allowed-tools: [Bash]

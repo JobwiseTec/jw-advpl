@@ -1,5 +1,5 @@
 ---
-description: Lista execution_triggers indexados — workflow/schedule/job_standalone/mail_send (Universo 3 Rastreabilidade, v0.4.0+)
+description: Lista execution_triggers ADVPL indexados no Protheus — workflow/schedule/job_standalone/mail_send (Universo 3 Rastreabilidade, v0.4.0+)
 disable-model-invocation: true
 arguments: [filtros]
 allowed-tools: [Bash]

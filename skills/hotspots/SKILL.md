@@ -1,5 +1,5 @@
 ---
-description: Top-N funções mais chamadas no projeto — refactor priority por fan-IN (Universo 4 Feature B, v0.6.0+)
+description: Top-N funções ADVPL/TLPP mais chamadas no projeto Protheus — refactor priority por fan-IN (Universo 4 Feature B, v0.6.0+)
 disable-model-invocation: true
 arguments: [filtros]
 allowed-tools: [Bash]

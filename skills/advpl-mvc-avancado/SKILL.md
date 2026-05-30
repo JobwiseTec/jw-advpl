@@ -1,5 +1,5 @@
 ---
-description: MVC avançado via PE (Pontos de Entrada) — adicionar grids customizadas em telas MVC padrão (CNTA300/MATA070/MATA440/MATA460/FINA040 via *STRU), AddTrigger em cascata, validações preservando original (bLinePost), SetErrorMessage estruturado, FWSaveRows/FWRestRows para navegação segura, integração MATXFIS dentro de gatilhos MVC, controle de comportamento por status. Use quando customizar MVC TOTVS padrão sem alterar fonte original.
+description: MVC avançado ADVPL/Protheus via PE (Pontos de Entrada) — adicionar grids customizadas em telas MVC padrão (CNTA300/MATA070/MATA440/MATA460/FINA040 via *STRU), AddTrigger em cascata, validações preservando original (bLinePost), SetErrorMessage estruturado, FWSaveRows/FWRestRows para navegação segura, integração MATXFIS dentro de gatilhos MVC, controle de comportamento por status. Use quando customizar MVC TOTVS padrão sem alterar fonte original.
 ---
 
 # advpl-mvc-avancado — Customização MVC avançada via PE

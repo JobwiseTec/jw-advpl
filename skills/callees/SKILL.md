@@ -1,5 +1,5 @@
 ---
-description: Lista o que uma funcao/metodo chama (call graph direto)
+description: Lista o que uma funcao/metodo ADVPL/TLPP chama (call graph direto no indice plugadvpl/Protheus)
 disable-model-invocation: true
 arguments: [funcao]
 allowed-tools: [Bash]
