@@ -11,16 +11,16 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Bump versions
         run: python scripts/bump_marketplace_version.py ${{ github.event.inputs.version }}
-      - uses: peter-evans/create-pull-request@v6
+      - uses: peter-evans/create-pull-request@v7
         with:
           title: "Release v${{ github.event.inputs.version }}"
           branch: "release/v${{ github.event.inputs.version }}"

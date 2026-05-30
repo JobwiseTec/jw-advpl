@@ -15,7 +15,7 @@ jobs:
       name: testpypi
       url: https://test.pypi.org/project/plugadvpl/
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v8.1.0
