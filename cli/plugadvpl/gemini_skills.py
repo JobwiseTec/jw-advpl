@@ -21,13 +21,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from plugadvpl._skill_catalog import (
-    GEMINI_MARKER_PREFIX,
-    _parse_skill_md,
     _SKILL_GLOBS,
+    GEMINI_MARKER_PREFIX,
+    WriteOutcome,
+    _parse_skill_md,
     _skills_root,
     _transform_body,
     _write_managed_file,
-    WriteOutcome,
 )
 
 
@@ -194,7 +194,7 @@ def _install_gemini_global_home(version: str) -> tuple[bool, list[str], list[str
         elif outcome == WriteOutcome.ERROR:
             errors.append(f"falha ao escrever {global_path}: permission/IO denied")
         return (False, skipped, errors)
-    except Exception as e:  # noqa: BLE001 — defensivo total
+    except Exception as e:
         errors.append(f"global home erro: {e!r}")
         return (False, skipped, errors)
 
@@ -219,7 +219,7 @@ def _install_gemini_project_md(
         elif outcome == WriteOutcome.ERROR:
             errors.append(f"falha ao escrever {target}: permission/IO denied")
         return (False, skipped, errors)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"project MD erro: {e!r}")
         return (False, skipped, errors)
 
@@ -251,7 +251,7 @@ def _install_one_gemini_skill(
         elif outcome == WriteOutcome.ERROR:
             errors.append(f"falha ao escrever {target_path}: permission/IO denied")
         return (False, skipped, errors)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"skill {skill_name}: {e!r}")
         return (False, skipped, errors)
 
@@ -273,7 +273,7 @@ def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
 
     try:
         target = detect_gemini(project_root)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"detect_gemini falhou: {e!r}")
         return InstallResult(False, False, 0, 0, [], errors)
 
@@ -293,7 +293,7 @@ def install_gemini_skills(project_root: Path, version: str) -> InstallResult:
         skills_target_dir = project_root / ".gemini" / "skills"
         try:
             skills_root = _skills_root()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             errors.append(f"_skills_root falhou: {e!r}")
             return InstallResult(
                 installed_global_home,

@@ -13,17 +13,20 @@ Spec: docs/superpowers/specs/2026-05-29-copilot-instructions-design.md
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from plugadvpl._skill_catalog import (
+    _SKILL_GLOBS,
     INSTRUCTIONS_MARKER_PREFIX,
     WriteOutcome,
-    _SKILL_GLOBS,
     _parse_skill_md,
     _skills_root,
     _transform_body,
     _write_managed_file,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -167,7 +170,7 @@ def _install_global_instructions(
         elif outcome == WriteOutcome.ERROR:
             errors.append(f"falha ao escrever {global_path}: permission/IO denied")
         return (False, skipped, errors)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"global instructions erro: {e!r}")
         return (False, skipped, errors)
 
@@ -200,7 +203,7 @@ def _install_one_skill(
         elif outcome == WriteOutcome.ERROR:
             errors.append(f"falha ao escrever {target_path}: permission/IO denied")
         return (False, skipped, errors)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"skill {skill_name}: {e!r}")
         return (False, skipped, errors)
 
@@ -219,7 +222,7 @@ def install_copilot_instructions(project_root: Path, version: str) -> InstallRes
 
     try:
         target = detect_copilot(project_root)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"detect_copilot falhou: {e!r}")
         return InstallResult(False, 0, [], errors)
 
@@ -233,7 +236,7 @@ def install_copilot_instructions(project_root: Path, version: str) -> InstallRes
         instructions_dir = project_root / ".github" / "instructions"
         try:
             skills_root = _skills_root()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             errors.append(f"_skills_root falhou: {e!r}")
             return InstallResult(installed_global, installed_local_count, skipped, errors)
 

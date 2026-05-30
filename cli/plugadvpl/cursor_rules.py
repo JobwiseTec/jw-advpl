@@ -181,6 +181,51 @@ class InstallResult:
         return (" + ".join(parts) + " instaladas") if parts else "nada instalado"
 
 
+def _install_global_rule(version: str, skipped: list[str], errors: list[str]) -> bool:
+    """Escreve ~/.cursor/rules/plugadvpl.mdc. NUNCA propaga exception."""
+    try:
+        global_path = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
+        outcome = _write_managed_file(global_path, render_global_rule(version), RULE_MARKER_PREFIX)
+        if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+            return True
+        if outcome == WriteOutcome.SKIPPED_USER_FILE:
+            skipped.append("plugadvpl.mdc (global)")
+        elif outcome == WriteOutcome.ERROR:
+            errors.append(f"falha ao escrever {global_path}: permission/IO denied")
+    except Exception as e:
+        errors.append(f"global rule erro: {e!r}")
+    return False
+
+
+def _install_one_local_rule(
+    skill_name: str,
+    globs: list[str],
+    skills_root: Path,
+    local_dir: Path,
+    version: str,
+    skipped: list[str],
+    errors: list[str],
+) -> bool:
+    """Escreve uma rule local `.cursor/rules/plugadvpl-<X>.mdc`."""
+    try:
+        skill_md_path = skills_root / skill_name / "SKILL.md"
+        if not skill_md_path.exists():
+            errors.append(f"skill {skill_name}: SKILL.md ausente no wheel")
+            return False
+        content = render_skill_rule(skill_md_path, version, globs)
+        target_path = local_dir / f"plugadvpl-{skill_name}.mdc"
+        outcome = _write_managed_file(target_path, content, RULE_MARKER_PREFIX)
+        if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+            return True
+        if outcome == WriteOutcome.SKIPPED_USER_FILE:
+            skipped.append(f"plugadvpl-{skill_name}.mdc")
+        elif outcome == WriteOutcome.ERROR:
+            errors.append(f"falha ao escrever {target_path}: permission/IO denied")
+    except Exception as e:
+        errors.append(f"skill {skill_name}: {e!r}")
+    return False
+
+
 def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
     """Orquestra detect + render + write pras rules Cursor.
 
@@ -194,7 +239,7 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
 
     try:
         target = detect_cursor(project_root)
-    except Exception as e:  # noqa: BLE001 — defensivo total
+    except Exception as e:
         errors.append(f"detect_cursor falhou: {e!r}")
         return InstallResult(
             installed_global=False,
@@ -204,25 +249,13 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
         )
 
     if target.install_global:
-        try:
-            global_path = Path.home() / ".cursor" / "rules" / "plugadvpl.mdc"
-            outcome = _write_managed_file(
-                global_path, render_global_rule(version), RULE_MARKER_PREFIX
-            )
-            if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
-                installed_global = True
-            elif outcome == WriteOutcome.SKIPPED_USER_FILE:
-                skipped.append("plugadvpl.mdc (global)")
-            elif outcome == WriteOutcome.ERROR:
-                errors.append(f"falha ao escrever {global_path}: permission/IO denied")
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"global rule erro: {e!r}")
+        installed_global = _install_global_rule(version, skipped, errors)
 
     if target.install_local:
         local_dir = project_root / ".cursor" / "rules"
         try:
             skills_root = _skills_root()
-        except Exception as e:  # noqa: BLE001 — defensivo total
+        except Exception as e:
             errors.append(f"_skills_root falhou: {e!r}")
             return InstallResult(
                 installed_global=installed_global,
@@ -231,22 +264,10 @@ def install_cursor_rules(project_root: Path, version: str) -> InstallResult:
                 errors=errors,
             )
         for skill_name, globs in _SKILL_GLOBS.items():
-            try:
-                skill_md_path = skills_root / skill_name / "SKILL.md"
-                if not skill_md_path.exists():
-                    errors.append(f"skill {skill_name}: SKILL.md ausente no wheel")
-                    continue
-                content = render_skill_rule(skill_md_path, version, globs)
-                target_path = local_dir / f"plugadvpl-{skill_name}.mdc"
-                outcome = _write_managed_file(target_path, content, RULE_MARKER_PREFIX)
-                if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
-                    installed_local_count += 1
-                elif outcome == WriteOutcome.SKIPPED_USER_FILE:
-                    skipped.append(f"plugadvpl-{skill_name}.mdc")
-                elif outcome == WriteOutcome.ERROR:
-                    errors.append(f"falha ao escrever {target_path}: permission/IO denied")
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"skill {skill_name}: {e!r}")
+            if _install_one_local_rule(
+                skill_name, globs, skills_root, local_dir, version, skipped, errors
+            ):
+                installed_local_count += 1
 
     return InstallResult(
         installed_global=installed_global,

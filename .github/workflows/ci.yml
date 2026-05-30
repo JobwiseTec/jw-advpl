@@ -48,11 +48,17 @@ jobs:
   lint-code:
     # Escopo incremental: roda em arquivos limpos. Conforme legado for sendo
     # corrigido, adicionar arquivos aqui. Roadmap: issue #17.
+    # v0.17.0 — expansão: +8 arquivos (multi-agente + doc-writer + _version
+    # + _skill_catalog). 22 → 30 dos 31 .py em plugadvpl/ (sem __init__.py).
     runs-on: ubuntu-latest
     env:
       LINT_FILES: >-
         plugadvpl/__main__.py
+        plugadvpl/_skill_catalog.py
+        plugadvpl/_version.py
+        plugadvpl/agent_doctor.py
         plugadvpl/cli.py
+        plugadvpl/codex_config.py
         plugadvpl/coletadb_client.py
         plugadvpl/compile.py
         plugadvpl/compile_doctor.py
@@ -60,9 +66,13 @@ jobs:
         plugadvpl/compile_parser.py
         plugadvpl/compile_probe.py
         plugadvpl/compile_servers.py
+        plugadvpl/copilot_instructions.py
         plugadvpl/credentials.py
+        plugadvpl/cursor_rules.py
         plugadvpl/db.py
+        plugadvpl/doc_writer.py
         plugadvpl/edit_prw.py
+        plugadvpl/gemini_skills.py
         plugadvpl/ingest.py
         plugadvpl/ingest_ini.py
         plugadvpl/ingest_log.py

@@ -163,8 +163,7 @@ def _transform_body(body: str, version: str, style: Literal["cursor", "plain"] =
         body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
     else:  # plain
         body = _SLASH_RE.sub(rf"uvx plugadvpl@{version} \1", body)
-    body = _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
-    return body
+    return _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +185,8 @@ def _skills_root() -> Path:
                 return resolved
     except (FileNotFoundError, OSError, ModuleNotFoundError):
         pass
-    # Fallback dev tree
-    import plugadvpl
+    # Fallback dev tree — import lazy intencional pra evitar circular import
+    import plugadvpl  # noqa: PLC0415
 
     pkg_init = Path(plugadvpl.__file__).resolve()
     return pkg_init.parents[2] / "skills"
