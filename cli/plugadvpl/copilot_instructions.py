@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from plugadvpl._skill_catalog import _parse_skill_md, _transform_body
+
 
 @dataclass(frozen=True)
 class CopilotTarget:
@@ -82,3 +84,41 @@ def render_global_instructions(version: str) -> str:
     markers = f"<!-- plugadvpl-instructions-version: {version} -->\n\n"
     body = _GLOBAL_BODY_TEMPLATE.replace("__VERSION__", version)
     return markers + body
+
+
+def render_skill_instructions(
+    skill_md_path: Path, version: str, globs: list[str]
+) -> str:
+    """Gera `.github/instructions/plugadvpl-<skill>.instructions.md`.
+
+    Pipeline (similar a render_skill_rule do Cursor):
+    1. Parse SKILL.md frontmatter (description)
+    2. Body extraction
+    3. _transform_body (slash→uvx + version normalize)
+    4. Monta frontmatter Copilot:
+       - applyTo (STRING com globs joined por vírgula; '**/*' se vazio)
+       - description
+    5. Markers de versão + skill
+
+    Edge case: SKILL.md sem frontmatter → description fallback usa skill_name.
+    """
+    skill_name = skill_md_path.parent.name
+    raw = skill_md_path.read_text(encoding="utf-8")
+    description, body = _parse_skill_md(raw)
+    if not description:
+        description = f"plugadvpl skill: {skill_name}"
+
+    # applyTo é STRING única no Copilot (Cursor usa array)
+    apply_to = ",".join(globs) if globs else "**/*"
+
+    frontmatter = (
+        "---\n"
+        f'applyTo: "{apply_to}"\n'
+        f"description: {description}\n"
+        "---\n"
+    )
+    markers = (
+        f"<!-- plugadvpl-instructions-version: {version} -->\n"
+        f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
+    )
+    return frontmatter + markers + _transform_body(body, version)

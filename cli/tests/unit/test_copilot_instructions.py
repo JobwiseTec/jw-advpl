@@ -43,3 +43,63 @@ class TestRenderGlobalInstructions:
         result = render_global_instructions(version="0.16.3")
         assert "uvx plugadvpl@0.16.3" in result
         assert "__VERSION__" not in result
+
+
+class TestRenderSkillInstructions:
+    def test_includes_apply_to_as_string(self, tmp_path: Path) -> None:
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_instructions(
+            target, version="0.16.3", globs=["**/*.prw", "**/*.tlpp"]
+        )
+        # Copilot espera applyTo como string única (com vírgulas), não array YAML
+        assert 'applyTo: "**/*.prw,**/*.tlpp"' in result
+
+    def test_empty_globs_uses_wildcard(self, tmp_path: Path) -> None:
+        """Meta-skills (globs=[]) → applyTo: '**/*' (aplica sempre)."""
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "init"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_instructions(target, version="0.16.3", globs=[])
+        assert 'applyTo: "**/*"' in result
+
+    def test_includes_description_from_skill_frontmatter(self, tmp_path: Path) -> None:
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: Visao arquitetural\n---\nBody\n", encoding="utf-8"
+        )
+        result = render_skill_instructions(target, version="0.16.3", globs=[])
+        assert "description: Visao arquitetural" in result
+
+    def test_includes_version_and_skill_markers(self, tmp_path: Path) -> None:
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "callers"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_instructions(target, version="0.16.3", globs=[])
+        assert "<!-- plugadvpl-instructions-version: 0.16.3 -->" in result
+        assert "<!-- plugadvpl-skill: callers -->" in result
+
+    def test_transforms_body_substitutions(self, tmp_path: Path) -> None:
+        """Body deve passar pelas mesmas substituições do Cursor."""
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\n"
+            "Use `/plugadvpl:arch` antes de Read.\n",
+            encoding="utf-8",
+        )
+        result = render_skill_instructions(target, version="0.16.3", globs=[])
+        assert "`Bash: uvx plugadvpl@0.16.3 arch`" in result
+        assert "/plugadvpl:arch" not in result
