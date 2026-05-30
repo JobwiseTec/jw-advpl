@@ -48,14 +48,14 @@ jobs:
   lint-code:
     # Escopo incremental: roda em arquivos limpos. Conforme legado for sendo
     # corrigido, adicionar arquivos aqui. Roadmap: issue #17.
-    # v0.17.0 — expansão: +8 arquivos (multi-agente + doc-writer + _version
-    # + _skill_catalog). 22 → 30 dos 31 .py em plugadvpl/ (sem __init__.py).
+    # v0.17.0 — expansão: +7 arquivos (multi-agente + doc-writer + _skill_catalog).
+    # 22 → 29 dos 31 .py em plugadvpl/ (sem __init__.py e sem _version.py
+    # gerado por setuptools-scm — regenerado a cada build, lint dele é volátil).
     runs-on: ubuntu-latest
     env:
       LINT_FILES: >-
         plugadvpl/__main__.py
         plugadvpl/_skill_catalog.py
-        plugadvpl/_version.py
         plugadvpl/agent_doctor.py
         plugadvpl/cli.py
         plugadvpl/codex_config.py
