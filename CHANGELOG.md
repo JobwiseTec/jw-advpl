@@ -4,6 +4,72 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.5] - 2026-05-30
+
+### Fixed — `_transform_body` agora respeita formato por agente (CRÍTICO)
+
+Antes da v0.16.5, `_transform_body` em `_skill_catalog.py` substituía `/plugadvpl:<X>` por `` `Bash: uvx plugadvpl@<ver> <X>` `` (sintaxe MDC Cursor-específica) em **todos** os agentes. Copilot e Gemini interpretavam isso como string literal, não como sugestão de comando — perdiam ~50% do valor das 52 skills.
+
+Agora `_transform_body` aceita param `style: Literal["cursor", "plain"]`:
+- `style="cursor"` (Cursor opt-in) — emite `` `Bash: uvx ...` `` (MDC syntax)
+- `style="plain"` (default; Copilot/Gemini) — emite `uvx plugadvpl@<ver> <X>` (texto puro)
+
+Todos callers atualizados: `cursor_rules.render_skill_rule` passa `style="cursor"`; `copilot_instructions.render_skill_instructions` e `gemini_skills.render_skill_for_gemini` passam `style="plain"`.
+
+### Added — `plugadvpl doctor --check-agents` valida 5 agentes
+
+Novo subcomando que valida formato dos arquivos gerados pra todos 5 agentes (Claude, Codex/AGENTS.md, Cursor, Copilot, Gemini) **sem precisar instalar os agentes**. Nenhum agente externo tem CLI oficial de validação — preenchemos o gap.
+
+Checks:
+- CLAUDE.md e AGENTS.md: fragment markers + version
+- Cursor: `.cursor/rules/plugadvpl-*.mdc` frontmatter parseável, `globs` é STRING (não array YAML), version
+- Copilot: `.github/instructions/plugadvpl-*.instructions.md` `applyTo` é STRING (não array), version
+- Gemini: `.gemini/skills/plugadvpl-*/SKILL.md` frontmatter `name`+`description`, version
+- Keywords: 52 SKILL.md descriptions têm "ADVPL"/"Protheus"/"TLPP"/".prw"/"SX"
+
+Output prefixed com `OK`/`--`/`FAIL`/`WARN` (plain ASCII pra compat console Windows). Exit code 1 se algum check fail.
+
+### Added — Cursor meta-skills com `alwaysApply: true`
+
+12 meta-skills transversais (init, ingest, status, doctor, help, workflow, trace, setup, ingest-protheus, reindex, execauto, docs) viravam "Manual only" no Cursor (precisavam `@plugadvpl-init` explícito). Agora ganham `alwaysApply: true` automaticamente quando não têm `globs`.
+
+### Added — Gemini `.agents/skills/` cross-agent install
+
+Quando projeto tem `.agents/skills/` (cross-agent standard emergente, precedência maior que `.gemini/skills/`), Gemini install duplica nas duas pastas. `InstallResult` ganha campo `installed_agents_skills_count` separado.
+
+### Added — Codex `.codex/config.toml` mínimo
+
+Codex CLI usa `.codex/config.toml` per-project. Quando detectado (`.codex/` no projeto OU `codex` no PATH), `init` gera template mínimo com defaults comentados + marker `# plugadvpl-codex-version: X.Y.Z`. Flag `--no-codex` desabilita.
+
+Codex já lê AGENTS.md (gerado pelo init via fragment writer). Este config é opt-in pra customizações futuras.
+
+### Audited — 52 SKILL.md descriptions com keywords ADVPL/Protheus (52/52 pass)
+
+Gemini ativa skills via matching semântico da `description`. Descrições genéricas sem keywords (find, lint, callers, grep, etc.) impediam JIT activation. Auditadas e editadas 11 SKILL.md pra incluir pelo menos 1 keyword de: ADVPL, Protheus, TLPP, .prw, SX. **Threshold accept era ≥40/52; chegamos a 52/52 (100%)**.
+
+### Changed — Cursor global rule rotulada como "(experimental)"
+
+`OK Cursor rules: 1 global (experimental) + 52 locais instaladas`. Cursor docs oficial não confirma que `~/.cursor/rules/` é lido (User Rules globais são UI-only via Settings → Rules). Mantemos o código por compat futura mas sinalizamos a incerteza.
+
+### Added — 28 testes novos
+
+- 3 em TestTransformBody (`_skill_catalog`)
+- 4 em test_cursor_rules (style + meta_always_apply + experimental + cursor style assertion)
+- 1 em test_copilot_instructions (plain style)
+- 3 em test_gemini_skills (plain style + 2 .agents/skills/)
+- 6 em test_codex_config (3 detect + 2 render + 1 install no-op)
+- 9 em test_agent_doctor
+- 5 em TestInitCodexConfig
+- 3 em TestDoctorCheckAgents
+- 1 em TestInitMultiAgent
+
+Suite full: 1157 → 1186 passed.
+
+### Bumped
+
+- `uvx plugadvpl@0.16.4` → `uvx plugadvpl@0.16.5` nas 26 skills.
+- `plugin.json` / `marketplace.json` → 0.16.5.
+
 ## [0.16.4] - 2026-05-30
 
 ### Added — Gemini CLI native skills no `plugadvpl init` (Fase 3 multi-agente)

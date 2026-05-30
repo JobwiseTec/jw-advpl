@@ -37,7 +37,7 @@ Cobre prefixos comuns de ambiente: `dev_appserver.ini`, `prd-dbaccess.ini`, `app
 ## Execução
 
 ```bash
-uvx plugadvpl@0.16.4 --format md ini-audit $ARGUMENTS
+uvx plugadvpl@0.16.5 --format md ini-audit $ARGUMENTS
 ```
 
 > **Para agente IA:** prefira `--format md` ou `--format json` — o default `table` trunca colunas em terminais estreitos. Flags `--format`/`--quiet`/`--limit` são GLOBAIS e vêm ANTES do subcomando.

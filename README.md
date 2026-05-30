@@ -22,6 +22,40 @@
 
 ---
 
+## Cobertura multi-agente
+
+`plugadvpl init` gera contexto nativo pra **5 agentes IA** + 1 extra:
+
+| Agente | Arquivo(s) gerado(s) | Detecção |
+|---|---|---|
+| **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
+| **Codex** + AGENTS.md ecosystem | `AGENTS.md` (gêmeo idêntico) | sempre |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 52 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 52 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 52 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **+ Codex CLI** (extra) | `.codex/config.toml` mínimo | `.codex/` ou `codex` no PATH |
+
+Sinais de detection são **INDEPENDENTES** — sinal global (`~/.cursor/`, `~/.gemini/`) NÃO ativa install no projeto. Cada agente tem sua flag `--no-<agent>` pra desabilitar mesmo com sinal presente.
+
+### Validação pós-init
+
+Como nenhum agente externo tem CLI oficial de validação (não existe `cursor validate-rules`, `gh copilot diagnose`, etc.), use o validador embutido:
+
+```bash
+plugadvpl doctor --check-agents
+```
+
+Checa formato dos arquivos gerados pra todos 5 agentes (frontmatter parseável, `globs`/`applyTo` como STRING não array YAML, version markers, keywords ADVPL/Protheus nas descriptions). Exit code 1 se algum check falhar.
+
+Para validação end-to-end real (precisa do agente instalado):
+- **Cursor**: abrir projeto, abrir `.prw`, ver painel de contexto do Chat (régua no rodapé) mostrar rules carregadas
+- **Copilot (VSCode)**: Menu "..." no Chat → "Show Agent Debug Logs" mostra contexto injetado
+- **Copilot (GitHub.com)**: PR no repo onde `.github/copilot-instructions.md` foi gerado — code review deve mencionar ADVPL/cp1252
+- **Gemini CLI**: `gemini` → `/memory show` (lista GEMINI.md concatenado) + `/skills list` (lista plugadvpl-*)
+- **Claude Code**: `/plugadvpl:arch <arq>` funciona via slash command + fragment do CLAUDE.md sempre injetado
+
+---
+
 ## Demonstração
 
 **Cenário sem plugin** — pergunta: "explique a função `FATA050`":
@@ -731,6 +765,17 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.16.5 — Multi-agente post-research improvements
+
+- **CRITICAL FIX**: `_transform_body` agora respeita formato por agente. Antes v0.16.5, Copilot e Gemini recebiam sintaxe Cursor-específica (`` `Bash: uvx ...` ``) e interpretavam como string literal — perdiam ~50% do valor das 52 skills. Agora `_transform_body` aceita `style: Literal["cursor", "plain"]` com default "plain" (Cursor opt-in)
+- **`plugadvpl doctor --check-agents`**: comando novo valida formato dos arquivos gerados pra todos 5 agentes sem precisar instalar Cursor/Copilot/Gemini (nenhum tem CLI oficial de validação)
+- **Cursor**: 12 meta-skills transversais ganham `alwaysApply: true` (antes ficavam "Manual only" — exigiam `@plugadvpl-init` explícito)
+- **Cursor**: global rule rotulada como `(experimental)` no summary (docs Cursor não confirma que `~/.cursor/rules/` é lido)
+- **Gemini**: detecta e instala em `.agents/skills/` (cross-agent standard emergente) quando existe — em paralelo com `.gemini/skills/`
+- **Codex**: `.codex/config.toml` mínimo gerado quando detectado (`.codex/` ou `codex` no PATH); flag `--no-codex`
+- **52/52 SKILL.md descriptions auditadas** pra incluir keywords ADVPL/Protheus/.prw/TLPP/SX (Gemini JIT activation). Threshold era ≥40/52
+- 28 testes novos. Suite: 1157 → 1186 passed
 
 ### v0.16.4 — Gemini CLI native skills no `init` (Fase 3 multi-agente)
 
