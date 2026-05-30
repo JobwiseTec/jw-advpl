@@ -17,6 +17,7 @@ from pathlib import Path
 from plugadvpl._skill_catalog import (
     RULE_MARKER_PREFIX,
     WriteOutcome,
+    _CURSOR_META_ALWAYS_APPLY,
     _parse_skill_md,
     _skills_root,
     _SKILL_GLOBS,
@@ -82,11 +83,16 @@ def render_skill_rule(skill_md_path: Path, version: str, globs: list[str]) -> st
     if not description:
         description = f"plugadvpl skill: {skill_name}"
 
+    # v0.16.5 — Meta-skills sem globs ganham alwaysApply: true pra evitar
+    # virar "Manual only" no Cursor. Demais (mesmo sem globs) ficam false.
+    is_meta_always = skill_name in _CURSOR_META_ALWAYS_APPLY and not globs
+    always_apply = "true" if is_meta_always else "false"
+
     # Frontmatter MDC (linha globs omitida se vazia).
     frontmatter_lines = [f"description: {description}"]
     if globs:
         frontmatter_lines.append(f"globs: {', '.join(globs)}")
-    frontmatter_lines.append("alwaysApply: false")
+    frontmatter_lines.append(f"alwaysApply: {always_apply}")
     frontmatter = "---\n" + "\n".join(frontmatter_lines) + "\n---\n"
 
     markers = (

@@ -93,6 +93,15 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "ingest-protheus": [],
 }
 
+# v0.16.5 — Meta-skills sem glob específico mas que carregam contexto
+# transversal. Cursor deve sempre injetá-las (alwaysApply: true) em vez
+# de relegar pra "Manual only" mode (que exige @plugadvpl-init explícito).
+_CURSOR_META_ALWAYS_APPLY: set[str] = {
+    "init", "ingest", "status", "doctor", "help",
+    "workflow", "trace", "setup", "ingest-protheus",
+    "reindex", "execauto", "docs",
+}
+
 # ---------------------------------------------------------------------------
 # Frontmatter / body parsing
 # ---------------------------------------------------------------------------

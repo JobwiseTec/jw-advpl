@@ -151,7 +151,11 @@ class TestRenderSkillRule:
 
     def test_omits_globs_when_empty(self, tmp_path: Path) -> None:
         from plugadvpl.cursor_rules import render_skill_rule
-        skill_dir = tmp_path / "init"
+        # v0.16.5 — usa nome NÃO-meta pra preservar semântica do teste
+        # (verifica que globs vazios omitem a linha; alwaysApply: false default).
+        # Meta-skills (init, ingest, etc.) agora ganham alwaysApply: true —
+        # vide test_meta_skill_has_always_apply_true.
+        skill_dir = tmp_path / "some-non-meta-skill"
         skill_dir.mkdir()
         target = skill_dir / "SKILL.md"
         target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
@@ -209,6 +213,41 @@ class TestRenderSkillRule:
         )
         # Strict assertion: literal Bash: prefix must appear
         assert "`Bash: uvx plugadvpl@0.16.5 arch`" in result
+
+    def test_meta_skill_has_always_apply_true(self, tmp_path: Path) -> None:
+        """v0.16.5 — Meta-skills (init, ingest, etc.) ganham alwaysApply: true."""
+        from plugadvpl.cursor_rules import render_skill_rule
+        # Skill 'init' está em _CURSOR_META_ALWAYS_APPLY
+        skill_dir = tmp_path / "init"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        # globs vazio (init é meta sem escopo)
+        result = render_skill_rule(target, version="0.16.5", globs=[])
+        assert "alwaysApply: true" in result
+        # E NÃO tem `globs:` (não tem escopo)
+        # Pode ter dentro do body comments, mas no frontmatter NÃO
+        lines = result.split("\n")
+        in_fm = False
+        fm_lines = []
+        for line in lines:
+            if line == "---":
+                in_fm = not in_fm
+                continue
+            if in_fm:
+                fm_lines.append(line)
+        assert not any(line.startswith("globs:") for line in fm_lines)
+
+    def test_non_meta_skill_without_globs_has_always_apply_false(self, tmp_path: Path) -> None:
+        """v0.16.5 — Non-meta skill sem globs mantém alwaysApply: false (Manual only)."""
+        from plugadvpl.cursor_rules import render_skill_rule
+        # Skill name fictícia que NÃO está em _CURSOR_META_ALWAYS_APPLY
+        skill_dir = tmp_path / "experimental-feature"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text("---\ndescription: X\n---\nBody\n", encoding="utf-8")
+        result = render_skill_rule(target, version="0.16.5", globs=[])
+        assert "alwaysApply: false" in result
 
 
 class TestRenderGlobalRule:
