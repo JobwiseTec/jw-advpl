@@ -2954,6 +2954,139 @@ def cobertura_doc(
 
 
 # ---------------------------------------------------------------------------
+# doc-writer (v0.17.0): gera bloco Protheus.doc pra função
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="doc-writer")
+def doc_writer_cmd(
+    ctx: typer.Context,
+    funcao: Annotated[
+        str,
+        typer.Argument(help="Nome da função/método/classe ADVPL/TLPP."),
+    ],
+    tipo: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            "-t",
+            help=(
+                "Valor de @type: function (default), user_function, method, "
+                "class, property. Convenção TOTVS."
+            ),
+        ),
+    ] = "function",
+    summary: Annotated[
+        str | None,
+        typer.Option(
+            "--summary",
+            "-s",
+            help="Descrição curta (aparece logo abaixo do header).",
+        ),
+    ] = None,
+    author: Annotated[
+        str | None,
+        typer.Option("--author", "-a", help="@author"),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="@since (ex: '2026-05-30' ou '12.1.2210')."),
+    ] = None,
+    version: Annotated[
+        str | None,
+        typer.Option("--version", help="@version"),
+    ] = None,
+    deprecated: Annotated[
+        str | None,
+        typer.Option(
+            "--deprecated",
+            help=(
+                "Motivo da depreciação. Vazio (sem valor) marca como deprecated "
+                "sem reason; ausente = não deprecated."
+            ),
+        ),
+    ] = None,
+    params: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            "-p",
+            help=(
+                "Param spec: 'nome,tipo,desc' (repetível). Use [nome] pra "
+                "marcar opcional, ex: '[nIdx],numeric,indice opcional'."
+            ),
+        ),
+    ] = None,
+    returns: Annotated[
+        str | None,
+        typer.Option(
+            "--return",
+            "-r",
+            help="Return spec: 'tipo,desc' (ex: 'logical,True se sucesso').",
+        ),
+    ] = None,
+    examples: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--example",
+            "-e",
+            help="Exemplo de uso (repetível). Aceita multi-linha via \\n.",
+        ),
+    ] = None,
+) -> None:
+    """Gera bloco ``/*/{Protheus.doc} ... /*/`` pra função ADVPL/TLPP.
+
+    Imprime no stdout pronto pra colar antes da declaração da função.
+    Padrão oficial TOTVS, roundtrip-compatible com ``plugadvpl docs``.
+
+    Exemplos:
+
+    .. code-block:: bash
+
+        # Mínimo
+        plugadvpl doc-writer MinhaFunc
+
+        # Completo
+        plugadvpl doc-writer CalcICMS --type user_function \\
+            --author "Joao Silva" --since 2026-05 \\
+            --summary "Calcula ICMS conforme TES informada." \\
+            -p "cTES,character,codigo TES" \\
+            -p "[nValor],numeric,valor base (opcional)" \\
+            --return "numeric,valor do ICMS calculado" \\
+            --example "nIcms := U_CalcICMS('501', 1000)"
+
+    Para depois aplicar no fonte: redirecione e edite manualmente, ou
+    use ``plugadvpl edit-prw stage`` antes de manipular .prw cp1252.
+    """
+    from plugadvpl.doc_writer import (
+        generate_protheus_doc,
+        spec_from_cli_args,
+        spec_to_dict,
+    )
+
+    spec = spec_from_cli_args(
+        funcao=funcao,
+        tipo=tipo,
+        summary=summary,
+        author=author,
+        since=since,
+        version=version,
+        deprecated=deprecated,
+        params=params,
+        returns=returns,
+        examples=examples,
+    )
+
+    fmt = ctx.obj.get("format", "table") if ctx.obj else "table"
+    if fmt == "json":
+        import json
+
+        typer.echo(json.dumps(spec_to_dict(spec), ensure_ascii=False, indent=2))
+    else:
+        typer.echo(generate_protheus_doc(spec))
+
+
+# ---------------------------------------------------------------------------
 # edit-prw (v0.7.0 Fase 0 #5): converte CP1252 <-> UTF-8
 # ---------------------------------------------------------------------------
 

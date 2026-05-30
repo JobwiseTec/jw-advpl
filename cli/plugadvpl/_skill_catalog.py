@@ -88,6 +88,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "workflow": [],
     "execauto": [],
     "docs": [],
+    "doc-writer": [],
     "trace": [],
     "setup": [],
     "ingest-protheus": [],
@@ -109,6 +110,7 @@ _CURSOR_META_ALWAYS_APPLY: set[str] = {
     "reindex",
     "execauto",
     "docs",
+    "doc-writer",
 }
 
 # ---------------------------------------------------------------------------

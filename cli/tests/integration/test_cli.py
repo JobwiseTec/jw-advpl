@@ -275,7 +275,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 52
+        assert len(rules) == 53
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -311,7 +311,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 52
+        assert len(rules) == 53
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -326,7 +326,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 52
+        assert len(rules) == 53
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
@@ -451,7 +451,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 52
+        assert len(instructions) == 53
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -494,7 +494,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 52
+        assert len(instructions) == 53
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -512,7 +512,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 52
+        assert len(instructions) == 53
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -583,7 +583,7 @@ class TestInitGeminiSkills:
         self, synthetic_project: Path, runner: CliRunner,
         monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """`.gemini/` no projeto → project MD + 52 skills."""
+        """`.gemini/` no projeto → project MD + 53 skills."""
         fake_home = synthetic_project.parent / "fake_home_gemini2"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -598,7 +598,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 52
+        assert len(skill_files) == 53
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -656,7 +656,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 52
+        assert len(skill_files) == 53
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -675,7 +675,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 52
+        assert len(skill_files) == 53
         arch_content = (
             synthetic_project
             / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
@@ -917,17 +917,91 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 52
+        assert len(cursor_files) == 53
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 52
+        assert len(copilot_files) == 53
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 52
+        assert len(gemini_files) == 53
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
+
+
+class TestDocWriter:
+    """v0.17.0 — plugadvpl doc-writer <funcao> gera bloco Protheus.doc."""
+
+    def test_minimal_invocation_emits_block(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "doc-writer", "MyFunc"]
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "/*/{Protheus.doc} MyFunc" in result.stdout
+        assert "@type function" in result.stdout
+        # Bloco fecha
+        assert result.stdout.rstrip().endswith("/*/")
+
+    def test_full_metadata_via_flags(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(synthetic_project), "doc-writer", "CalcICMS",
+                "--type", "user_function",
+                "--author", "Joao Silva",
+                "--summary", "Calcula ICMS conforme TES.",
+                "--since", "2026-05",
+                "-p", "cTES,character,codigo TES",
+                "-p", "[nValor],numeric,valor base opcional",
+                "--return", "numeric,valor do ICMS",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        out = result.stdout
+        assert "@type user_function" in out
+        assert "@author Joao Silva" in out
+        assert "@since 2026-05" in out
+        assert "Calcula ICMS conforme TES." in out
+        assert "@param cTES, character, codigo TES" in out
+        assert "@param [nValor], numeric, valor base opcional" in out
+        assert "@return numeric, valor do ICMS" in out
+
+    def test_json_format(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        """--format json emite spec_to_dict() ao invés do bloco markdown."""
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(synthetic_project), "--format", "json",
+                "doc-writer", "X", "--author", "Joao",
+                "-p", "n,numeric,idx",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["funcao"] == "X"
+        assert payload["author"] == "Joao"
+        assert len(payload["params"]) == 1
+        assert payload["params"][0]["name"] == "n"
+
+    def test_deprecated_with_reason(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(synthetic_project), "doc-writer", "OldFunc",
+                "--deprecated", "Use NovaFunc no lugar",
+            ],
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "@deprecated Use NovaFunc no lugar" in result.stdout
 
 
 class TestIngest:
