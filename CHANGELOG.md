@@ -4,6 +4,77 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-05-29
+
+### Added — Copilot Instructions nativos no `plugadvpl init` (Fase 2 multi-agente)
+
+`plugadvpl init` agora detecta `.github/` no projeto e gera:
+
+- **1 arquivo global** em `.github/copilot-instructions.md` (markdown plano, repo-wide) — convenções ADVPL/TLPP, encoding cp1252, tabela de decisão, comandos `uvx`. Respeita soft limit de ~2 páginas documentado pelo Copilot.
+- **52 arquivos específicos** em `.github/instructions/plugadvpl-<skill>.instructions.md` — uma por skill com frontmatter `applyTo` glob específico por contexto (string única, não array YAML como em Cursor MDC).
+
+Single source: as 52 instructions são geradas em runtime a partir das `skills/<X>/SKILL.md` embarcadas no wheel (mesma fonte que Claude Code e Cursor consomem). Substituições idênticas (`/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@0.16.3 <X>` ``).
+
+Marker `<!-- plugadvpl-instructions-version: X.Y.Z -->` controla idempotência. **Distinto do Cursor (`plugadvpl-rule-version`)** — evita falso-positivo entre os 2 agentes. `plugadvpl status` detecta instructions desatualizadas.
+
+**Flag:** `plugadvpl init --no-copilot` desabilita mesmo com `.github/` presente.
+
+**Garantia:** falha de I/O em Copilot nunca quebra `init` — mesmo guarantee da Fase 1 Cursor.
+
+Predecessor: v0.16.2 entregou Cursor Rules nativos (Fase 1). v0.16.3 completa Fase 2 cobrindo GitHub Copilot via mecanismo oficial `.github/copilot-instructions.md` + `.github/instructions/`.
+
+### Changed — refactor `_skill_catalog.py` compartilhado (DRY multi-agente)
+
+Helpers neutros movidos de `cli/plugadvpl/cursor_rules.py` pra novo `cli/plugadvpl/_skill_catalog.py`:
+
+- `_SKILL_GLOBS` dict (52 skills + globs) — source-of-truth da lista canônica de skills
+- `_parse_skill_md(text)` — parse YAML frontmatter
+- `_transform_body(body, version)` — substituições slash→uvx + version normalize
+- `_skills_root()` — dev tree vs wheel fallback
+- `WriteOutcome` enum
+- `_write_managed_file(target, content, marker_substring)` — renomeado de `_write_rule`; agora aceita `marker_substring` como param obrigatório (sem default — caller passa `RULE_MARKER_PREFIX` ou `INSTRUCTIONS_MARKER_PREFIX`)
+- `RULE_MARKER_PREFIX` e `INSTRUCTIONS_MARKER_PREFIX` — **distintos** por agente pra evitar falso-positivo
+
+`cursor_rules.py` importa do `_skill_catalog`. Comportamento Cursor 100% preservado.
+
+### Changed — `_check_fragment_staleness()` cobre Copilot instructions
+
+`plugadvpl status` agora detecta versão desatualizada em:
+- `CLAUDE.md` (já cobria)
+- `AGENTS.md` (v0.16.1)
+- `~/.cursor/rules/plugadvpl.mdc` + `<project>/.cursor/rules/plugadvpl-*.mdc` (v0.16.2)
+- **`.github/copilot-instructions.md`** + **`.github/instructions/plugadvpl-*.instructions.md`** (v0.16.3 — novo)
+
+Helper `_check_copilot_instructions_staleness` paralelo ao `_check_cursor_rules_staleness` (mantém PLR0912 ≤12).
+
+### Added — `plugadvpl.copilot_instructions` módulo
+
+Novo módulo isolado (~280 linhas) com:
+- `CopilotTarget` + `InstallResult` dataclasses
+- `detect_copilot()` — `.github/` no projeto
+- `render_global_instructions()` — markdown plano com marker
+- `render_skill_instructions()` — frontmatter Copilot (`applyTo` string, `description`)
+- `install_copilot_instructions()` — orquestrador top-level com same NEVER-propagate guarantee
+- Helpers `_install_global_instructions` + `_install_one_skill` extraídos pra manter complexidade abaixo de PLR0912
+
+Reusa `_skill_catalog` (DRY).
+
+### Added — testes novos (TDD)
+
+- 10 unit em `test_skill_catalog.py` (movidos + 1 novo `test_distinct_marker_does_not_match_other_agent`)
+- 12 unit em `test_copilot_instructions.py` (detect/render/install)
+- 7 integration em `TestInitCopilotInstructions` (init real com mocks)
+- 2 integration em `TestStatus` (stale global + local)
+
+Refactor: 3 tests removidos de `test_cursor_rules.py::TestWriteRule` (cobertura migrou pra `test_skill_catalog.py`).
+
+Suite full: 1097 → 1123 passed.
+
+### Bumped
+
+- `uvx plugadvpl@0.16.2` → `uvx plugadvpl@0.16.3` nas 26 skills operacionais.
+- `plugin.json` / `marketplace.json` → 0.16.3.
+
 ## [0.16.2] - 2026-05-29
 
 ### Added — Cursor Rules nativos no `plugadvpl init`

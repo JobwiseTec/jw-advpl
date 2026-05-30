@@ -221,7 +221,7 @@ winget install astral-sh.uv                              # Windows
 #    (caminho varia entre CLI nativo e extensão VSCode)
 
 # 3. Abra o seu projeto Protheus e rode:
-/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore (+ Cursor rules se detectado)
+/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore (+ Cursor rules + Copilot instructions se detectados)
 /plugadvpl:ingest    # parser paralelo, ~30–60s para 2.000 fontes
 ```
 
@@ -731,6 +731,15 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.16.3 — Copilot Instructions nativos no `init` (Fase 2 multi-agente)
+
+- **`plugadvpl init` agora detecta `.github/`** e gera `.github/copilot-instructions.md` (global, ≤2 pgs) + 52 `.github/instructions/plugadvpl-<X>.instructions.md` (specifics com `applyTo` glob)
+- Refactor `_skill_catalog.py` compartilhado (DRY entre Cursor + Copilot); `_SKILL_GLOBS`, parse helpers, `_write_managed_file` neutros
+- Markers **distintos por agente** (`plugadvpl-rule-version` Cursor vs `plugadvpl-instructions-version` Copilot) — sem falso-positivo cross-agent
+- Flag `--no-copilot`; falha nunca quebra init (mesma guarantee Fase 1)
+- `plugadvpl status` detecta Copilot stale (global ou local)
+- 26 testes novos (TDD). Suite full: 1123 passed
 
 ### v0.16.2 — Cursor Rules nativos no `init`
 

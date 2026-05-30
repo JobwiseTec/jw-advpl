@@ -9,6 +9,7 @@ Fonte canônica de:
 - `RULE_MARKER_PREFIX` (Cursor) e `INSTRUCTIONS_MARKER_PREFIX` (Copilot) — DISTINTOS
   pra evitar falso-positivo entre os 2 agentes
 """
+
 from __future__ import annotations
 
 import enum
@@ -154,6 +155,7 @@ def _skills_root() -> Path:
         pass
     # Fallback dev tree
     import plugadvpl
+
     pkg_init = Path(plugadvpl.__file__).resolve()
     return pkg_init.parents[2] / "skills"
 
@@ -172,9 +174,7 @@ class WriteOutcome(enum.Enum):
     ERROR = "error"
 
 
-def _write_managed_file(
-    target_path: Path, content: str, marker_substring: str
-) -> WriteOutcome:
+def _write_managed_file(target_path: Path, content: str, marker_substring: str) -> WriteOutcome:
     """Escreve ou skipa um arquivo seguindo a política de marker (spec §6.1).
 
     - Não existe → escreve (WRITTEN).

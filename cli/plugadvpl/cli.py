@@ -579,9 +579,7 @@ def init(
         copilot_result = install_copilot_instructions(root, __version__)
         if not ctx.obj["quiet"]:
             if copilot_result.installed_global or copilot_result.installed_local_count:
-                typer.echo(
-                    f"OK  Copilot instructions: {copilot_result.summary()}"
-                )
+                typer.echo(f"OK  Copilot instructions: {copilot_result.summary()}")
             for warn in copilot_result.errors:
                 typer.secho(
                     f"⚠  Copilot instructions: {warn}",
@@ -644,9 +642,7 @@ def _check_copilot_instructions_staleness(root: Path) -> str | None:
         copilot_files.append(copilot_global)
     copilot_dir = root / ".github" / "instructions"
     if copilot_dir.exists():
-        copilot_files.extend(
-            sorted(copilot_dir.glob("plugadvpl-*.instructions.md"))
-        )
+        copilot_files.extend(sorted(copilot_dir.glob("plugadvpl-*.instructions.md")))
 
     inst_marker_re = re.compile(
         r"<!--\s*plugadvpl-instructions-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"

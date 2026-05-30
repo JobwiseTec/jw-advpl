@@ -9,6 +9,7 @@ Compartilha helpers com cursor_rules via plugadvpl._skill_catalog (DRY).
 
 Spec: docs/superpowers/specs/2026-05-29-copilot-instructions-design.md
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,8 +30,8 @@ from plugadvpl._skill_catalog import (
 class CopilotTarget:
     """Decisão do detect_copilot: o que instalar."""
 
-    install_global: bool   # .github/copilot-instructions.md
-    install_local: bool    # .github/instructions/plugadvpl-*.instructions.md
+    install_global: bool  # .github/copilot-instructions.md
+    install_local: bool  # .github/instructions/plugadvpl-*.instructions.md
 
 
 def detect_copilot(project_root: Path) -> CopilotTarget:
@@ -94,9 +95,7 @@ def render_global_instructions(version: str) -> str:
     return markers + body
 
 
-def render_skill_instructions(
-    skill_md_path: Path, version: str, globs: list[str]
-) -> str:
+def render_skill_instructions(skill_md_path: Path, version: str, globs: list[str]) -> str:
     """Gera `.github/instructions/plugadvpl-<skill>.instructions.md`.
 
     Pipeline (similar a render_skill_rule do Cursor):
@@ -119,12 +118,7 @@ def render_skill_instructions(
     # applyTo é STRING única no Copilot (Cursor usa array)
     apply_to = ",".join(globs) if globs else "**/*"
 
-    frontmatter = (
-        "---\n"
-        f'applyTo: "{apply_to}"\n'
-        f"description: {description}\n"
-        "---\n"
-    )
+    frontmatter = f'---\napplyTo: "{apply_to}"\ndescription: {description}\n---\n'
     markers = (
         f"<!-- plugadvpl-instructions-version: {version} -->\n"
         f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
@@ -137,7 +131,7 @@ class InstallResult:
     """Resumo do install_copilot_instructions."""
 
     installed_global: bool
-    installed_local_count: int               # 0..52
+    installed_local_count: int  # 0..52
     skipped_due_to_user_files: list[str]
     errors: list[str]
 
@@ -171,9 +165,7 @@ def _install_global_instructions(
         if outcome == WriteOutcome.SKIPPED_USER_FILE:
             skipped.append("copilot-instructions.md (global)")
         elif outcome == WriteOutcome.ERROR:
-            errors.append(
-                f"falha ao escrever {global_path}: permission/IO denied"
-            )
+            errors.append(f"falha ao escrever {global_path}: permission/IO denied")
         return (False, skipped, errors)
     except Exception as e:  # noqa: BLE001
         errors.append(f"global instructions erro: {e!r}")
@@ -200,26 +192,20 @@ def _install_one_skill(
             return (False, skipped, errors)
         content = render_skill_instructions(skill_md_path, version, globs)
         target_path = instructions_dir / f"plugadvpl-{skill_name}.instructions.md"
-        outcome = _write_managed_file(
-            target_path, content, INSTRUCTIONS_MARKER_PREFIX
-        )
+        outcome = _write_managed_file(target_path, content, INSTRUCTIONS_MARKER_PREFIX)
         if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
             return (True, skipped, errors)
         if outcome == WriteOutcome.SKIPPED_USER_FILE:
             skipped.append(f"plugadvpl-{skill_name}.instructions.md")
         elif outcome == WriteOutcome.ERROR:
-            errors.append(
-                f"falha ao escrever {target_path}: permission/IO denied"
-            )
+            errors.append(f"falha ao escrever {target_path}: permission/IO denied")
         return (False, skipped, errors)
     except Exception as e:  # noqa: BLE001
         errors.append(f"skill {skill_name}: {e!r}")
         return (False, skipped, errors)
 
 
-def install_copilot_instructions(
-    project_root: Path, version: str
-) -> InstallResult:
+def install_copilot_instructions(project_root: Path, version: str) -> InstallResult:
     """Orquestra detect + render + write pras instructions Copilot.
 
     Spec §3.3 da Fase 2. NUNCA propaga exception — try/except em cada bloco
@@ -249,9 +235,7 @@ def install_copilot_instructions(
             skills_root = _skills_root()
         except Exception as e:  # noqa: BLE001
             errors.append(f"_skills_root falhou: {e!r}")
-            return InstallResult(
-                installed_global, installed_local_count, skipped, errors
-            )
+            return InstallResult(installed_global, installed_local_count, skipped, errors)
 
         for skill_name, globs in _SKILL_GLOBS.items():
             ok, skp, err = _install_one_skill(
