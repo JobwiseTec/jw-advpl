@@ -164,7 +164,11 @@ class TestRenderSkillForGemini:
         assert "description: plugadvpl skill: grep" in result
 
     def test_transforms_body_substitutions(self, tmp_path: Path) -> None:
-        """Body passa pelas mesmas substituições do Cursor/Copilot."""
+        """Body transforma `/plugadvpl:X` → uvx (texto puro pro Gemini).
+
+        v0.16.5: Gemini usa style='plain' — antes assumia `Bash:` prefix
+        por engano (era falso-positivo herdado do Cursor).
+        """
         from plugadvpl.gemini_skills import render_skill_for_gemini
         skill_dir = tmp_path / "arch"
         skill_dir.mkdir()
@@ -175,8 +179,24 @@ class TestRenderSkillForGemini:
             encoding="utf-8",
         )
         result = render_skill_for_gemini(target, version="0.16.4")
-        assert "`Bash: uvx plugadvpl@0.16.4 arch`" in result
+        assert "uvx plugadvpl@0.16.4 arch" in result
         assert "/plugadvpl:arch" not in result
+
+    def test_render_skill_for_gemini_emits_plain_text_command(self, tmp_path: Path) -> None:
+        """v0.16.5 — Gemini deve receber texto puro, NÃO `Bash:` (Cursor MDC)."""
+        from plugadvpl.gemini_skills import render_skill_for_gemini
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\nUse `/plugadvpl:arch`.\n",
+            encoding="utf-8",
+        )
+        result = render_skill_for_gemini(target, version="0.16.5")
+        # Plain style
+        assert "uvx plugadvpl@0.16.5 arch" in result
+        assert "Bash:" not in result
+        assert "`Bash:" not in result
 
 
 class TestInstallGeminiSkills:

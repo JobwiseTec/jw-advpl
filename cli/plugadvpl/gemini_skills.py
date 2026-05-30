@@ -146,7 +146,7 @@ def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
     markers = (
         f"<!-- plugadvpl-gemini-version: {version} -->\n<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
-    return frontmatter + markers + _transform_body(body, version)
+    return frontmatter + markers + _transform_body(body, version, style="plain")
 
 
 @dataclass(frozen=True)

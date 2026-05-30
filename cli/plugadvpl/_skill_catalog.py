@@ -123,9 +123,7 @@ _SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
 _UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
 
 
-def _transform_body(
-    body: str, version: str, style: Literal["cursor", "plain"] = "plain"
-) -> str:
+def _transform_body(body: str, version: str, style: Literal["cursor", "plain"] = "plain") -> str:
     """Aplica 2 substituições NESTA ORDEM:
 
     3a) `/plugadvpl:<X>` → comando substituído (formato por agente)
