@@ -886,6 +886,50 @@ class TestDoctorCheckAgents:
         assert result.exit_code == 1
 
 
+class TestInitMultiAgent:
+    """v0.16.5 — init completo com 5 agentes detectados não conflita."""
+
+    def test_init_with_all_5_agents_detected(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Init com .cursor/, .github/, .gemini/, .codex/ no projeto +
+        ~/.cursor/, ~/.gemini/ no home → todos 5 agentes instalados."""
+        fake_home = synthetic_project.parent / "fake_home_multi"
+        (fake_home / ".cursor" / "rules").mkdir(parents=True)
+        (fake_home / ".gemini").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        (synthetic_project / ".github").mkdir()
+        (synthetic_project / ".gemini").mkdir()
+        (synthetic_project / ".codex").mkdir()
+
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+
+        assert result.exit_code == 0
+        # Claude Code
+        assert (synthetic_project / "CLAUDE.md").exists()
+        # Codex/AGENTS.md
+        assert (synthetic_project / "AGENTS.md").exists()
+        # Cursor
+        assert (synthetic_project / ".cursor" / "rules").exists()
+        cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
+        assert len(cursor_files) == 52
+        # Copilot
+        assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
+        copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
+        assert len(copilot_files) == 52
+        # Gemini
+        assert (synthetic_project / "GEMINI.md").exists()
+        gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
+        assert len(gemini_files) == 52
+        # Codex
+        assert (synthetic_project / ".codex" / "config.toml").exists()
+
+
 class TestIngest:
     def test_ingest_after_init(
         self, synthetic_project: Path, runner: CliRunner
