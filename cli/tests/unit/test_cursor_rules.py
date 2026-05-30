@@ -187,6 +187,29 @@ class TestRenderSkillRule:
         result = render_skill_rule(target, version="0.16.2", globs=[])
         assert "description: plugadvpl skill: grep" in result
 
+    def test_render_skill_rule_uses_cursor_style_explicit(self, tmp_path: Path) -> None:
+        """v0.16.5 — verifica output REAL contém literal `Bash: uvx plugadvpl@`.
+
+        Antes do gap fix v0.16.5, Cursor compartilhava `_transform_body` que
+        sempre emitia `Bash:`. Agora `_transform_body` default é 'plain'.
+        cursor_rules.render_skill_rule DEVE passar style='cursor' explícito.
+        Esta assertion bloqueia regressão: se alguém remover style="cursor",
+        o output muda pra texto puro e o teste falha.
+        """
+        from plugadvpl.cursor_rules import render_skill_rule
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\nUse `/plugadvpl:arch`.\n",
+            encoding="utf-8",
+        )
+        result = render_skill_rule(
+            target, version="0.16.5", globs=["**/*.prw"]
+        )
+        # Strict assertion: literal Bash: prefix must appear
+        assert "`Bash: uvx plugadvpl@0.16.5 arch`" in result
+
 
 class TestRenderGlobalRule:
     def test_always_apply_true(self) -> None:

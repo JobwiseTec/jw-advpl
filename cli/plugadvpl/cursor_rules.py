@@ -93,7 +93,7 @@ def render_skill_rule(skill_md_path: Path, version: str, globs: list[str]) -> st
         f"<!-- plugadvpl-rule-version: {version} -->\n<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
 
-    return frontmatter + markers + _transform_body(body, version)
+    return frontmatter + markers + _transform_body(body, version, style="cursor")
 
 
 _GLOBAL_DESCRIPTION = (
