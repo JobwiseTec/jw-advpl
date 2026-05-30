@@ -4,6 +4,86 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-05-30
+
+### Added — Gemini CLI native skills no `plugadvpl init` (Fase 3 multi-agente)
+
+`plugadvpl init` agora detecta Gemini CLI (via `~/.gemini/`, `gemini` no PATH, ou `.gemini/` no projeto) e gera:
+
+- **`~/.gemini/GEMINI.md`** (global home) — convenções ADVPL/TLPP machine-wide quando `~/.gemini/` existe ou `gemini` está no PATH.
+- **`<project>/GEMINI.md`** (4º gêmeo, junto com CLAUDE.md + AGENTS.md já existentes) — necessário porque Gemini CLI não lê AGENTS.md por padrão.
+- **52 arquivos** em `.gemini/skills/plugadvpl-<skill>/SKILL.md` — uma por skill com frontmatter Gemini (`name: plugadvpl-<X>` + `description`). Frontmatter mais simples que Cursor/Copilot — Gemini usa JIT scan + activation por descrição.
+
+Detection conservadora com **sinais INDEPENDENTES**: sinal global (`~/.gemini/` ou `gemini` PATH) ativa apenas global home; sinal de project (`.gemini/` no projeto) ativa apenas project. Consistente com Cursor policy — evita pegada não-solicitada.
+
+Single source: as 52 SKILL.md específicas são geradas em runtime a partir das `skills/<X>/SKILL.md` embarcadas no wheel (mesma fonte que Claude Code, Cursor e Copilot consomem). Substituições idênticas (`/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@0.16.4 <X>` ``).
+
+Marker `<!-- plugadvpl-gemini-version: X.Y.Z -->` controla idempotência. **Distinto dos 3 markers existentes** (`plugadvpl-rule-version`, `plugadvpl-instructions-version`, `plugadvpl-fragment-version`) — evita falso-positivo cross-agent. `plugadvpl status` detecta GEMINI.md ou skill desatualizadas.
+
+**Flag:** `plugadvpl init --no-gemini` desabilita mesmo com sinais presentes.
+
+**Garantia:** falha de I/O em Gemini nunca quebra `init` — mesmo NEVER-propagate das Fases 1/2.
+
+**Estrutura de skill por diretório:** Gemini espera `<skills_dir>/<name>/SKILL.md` (não arquivo flat). O orquestrador cria `.gemini/skills/plugadvpl-<X>/` antes de escrever SKILL.md.
+
+Predecessor: v0.16.3 entregou Copilot Instructions (Fase 2). v0.16.4 completa Fase 3 cobrindo Gemini CLI via mecanismo oficial GEMINI.md + `.gemini/skills/`.
+
+### Changed — `_skill_catalog.py` ganha `GEMINI_MARKER_PREFIX`
+
+Adição mínima (+1 constante) pra cobrir o terceiro marker distinto:
+- `RULE_MARKER_PREFIX` (Cursor, v0.16.2)
+- `INSTRUCTIONS_MARKER_PREFIX` (Copilot, v0.16.3)
+- `GEMINI_MARKER_PREFIX` (Gemini, v0.16.4 — novo)
+
+### Changed — `_check_fragment_staleness()` cobre Gemini files
+
+`plugadvpl status` agora detecta versão desatualizada em:
+- `CLAUDE.md` + `AGENTS.md` (v0.16.1)
+- Cursor rules (`~/.cursor/rules/plugadvpl.mdc` + `<project>/.cursor/rules/plugadvpl-*.mdc`, v0.16.2)
+- Copilot instructions (`.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md`, v0.16.3)
+- **Gemini files** (`~/.gemini/GEMINI.md` + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md`, v0.16.4 — novo)
+
+Helper `_check_gemini_staleness` paralelo ao Cursor/Copilot helpers (mantém PLR0912 ≤12).
+
+### Added — `plugadvpl.gemini_skills` módulo
+
+Novo módulo isolado (~321 linhas) com:
+- `GeminiTarget` + `InstallResult` dataclasses (frozen, mutable fields com `default_factory=list`)
+- `detect_gemini()` — política conservadora, sinais independentes
+- `render_global_gemini_md()` — markdown plano com marker
+- `render_skill_for_gemini()` — frontmatter Gemini (`name` + `description` apenas)
+- `install_gemini_skills()` — orquestrador top-level NEVER-propagate
+- Helpers `_install_gemini_global_home` + `_install_gemini_project_md` + `_install_one_gemini_skill` (PLR0912 preempt)
+
+Reusa `_skill_catalog` (DRY).
+
+### Added — 28 testes novos (TDD)
+
+- 17 unit em `test_gemini_skills.py` (6 detect + 3 render_global + 6 render_skill + 2 install)
+- 8 integration em `TestInitGeminiSkills` (no signals/project only/home only/--no-gemini/quiet + idempotency + overwrite + preserve)
+- 3 integration em `TestStatus` (stale home + project + skill)
+
+Suite full: 1123 → 1151 passed.
+
+### Bumped
+
+- `uvx plugadvpl@0.16.3` → `uvx plugadvpl@0.16.4` nas 26 skills operacionais.
+- `plugin.json` / `marketplace.json` → 0.16.4.
+
+### Multi-agente status (v0.16.4)
+
+Plugadvpl agora cobre nativamente **5 agentes IA**:
+
+| Agente | Mecanismo | Versão entregue |
+|---|---|---|
+| Claude Code | `CLAUDE.md` fragment | v0.1.x |
+| Codex CLI | `AGENTS.md` gêmeo | v0.16.1 |
+| Cursor | `.cursor/rules/*.mdc` (Cursor Rules) | v0.16.2 |
+| GitHub Copilot | `.github/copilot-instructions.md` + `.github/instructions/*.instructions.md` | v0.16.3 |
+| **Gemini CLI** | **`GEMINI.md` + `.gemini/skills/<X>/SKILL.md`** | **v0.16.4 (novo)** |
+
+Cada agente recebe convenções globais + 52 skills específicas no formato nativo.
+
 ## [0.16.3] - 2026-05-29
 
 ### Added — Copilot Instructions nativos no `plugadvpl init` (Fase 2 multi-agente)

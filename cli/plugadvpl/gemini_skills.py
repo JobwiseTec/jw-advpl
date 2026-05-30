@@ -13,6 +13,7 @@ Reusa _skill_catalog (DRY com cursor_rules + copilot_instructions).
 
 Spec: docs/superpowers/specs/2026-05-30-gemini-skills-design.md
 """
+
 from __future__ import annotations
 
 import shutil
@@ -34,7 +35,7 @@ from plugadvpl._skill_catalog import (
 class GeminiTarget:
     """Decisão do detect_gemini: o que instalar."""
 
-    install_global: bool   # ~/.gemini/GEMINI.md
+    install_global: bool  # ~/.gemini/GEMINI.md
     install_project: bool  # <project>/GEMINI.md + .gemini/skills/plugadvpl-*/SKILL.md
 
 
@@ -141,15 +142,9 @@ def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
     if not description:
         description = f"plugadvpl skill: {skill_name}"
 
-    frontmatter = (
-        "---\n"
-        f"name: plugadvpl-{skill_name}\n"
-        f"description: {description}\n"
-        "---\n"
-    )
+    frontmatter = f"---\nname: plugadvpl-{skill_name}\ndescription: {description}\n---\n"
     markers = (
-        f"<!-- plugadvpl-gemini-version: {version} -->\n"
-        f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
+        f"<!-- plugadvpl-gemini-version: {version} -->\n<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
     return frontmatter + markers + _transform_body(body, version)
 
@@ -158,9 +153,9 @@ def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
 class InstallResult:
     """Resumo do install_gemini_skills."""
 
-    installed_global_home: bool                                    # ~/.gemini/GEMINI.md
-    installed_project_md: bool                                     # <project>/GEMINI.md
-    installed_skills_count: int                                    # 0..52
+    installed_global_home: bool  # ~/.gemini/GEMINI.md
+    installed_project_md: bool  # <project>/GEMINI.md
+    installed_skills_count: int  # 0..52
     skipped_due_to_user_files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 

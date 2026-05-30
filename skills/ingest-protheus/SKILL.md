@@ -49,7 +49,7 @@ Auth via **HTTP Basic** (AppServer `Security=1`) — mesmas credenciais do `/plu
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.16.3 ingest-protheus $ARGUMENTS
+uvx plugadvpl@0.16.4 ingest-protheus $ARGUMENTS
 ```
 
 ## Exemplos

@@ -721,9 +721,7 @@ def _check_gemini_staleness(root: Path) -> str | None:
         # Glob recursivo: .gemini/skills/plugadvpl-<X>/SKILL.md
         gemini_files.extend(sorted(skills_dir.glob("plugadvpl-*/SKILL.md")))
 
-    marker_re = re.compile(
-        r"<!--\s*plugadvpl-gemini-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
-    )
+    marker_re = re.compile(r"<!--\s*plugadvpl-gemini-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->")
     for gf in gemini_files:
         try:
             content = gf.read_text(encoding="utf-8", errors="replace")

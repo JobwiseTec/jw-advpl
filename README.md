@@ -221,7 +221,7 @@ winget install astral-sh.uv                              # Windows
 #    (caminho varia entre CLI nativo e extensão VSCode)
 
 # 3. Abra o seu projeto Protheus e rode:
-/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md, .gitignore (+ Cursor rules + Copilot instructions se detectados)
+/plugadvpl:init      # cria .plugadvpl/index.db, fragments CLAUDE.md + AGENTS.md + (Cursor rules / Copilot instructions / Gemini skills se detectados), .gitignore
 /plugadvpl:ingest    # parser paralelo, ~30–60s para 2.000 fontes
 ```
 
@@ -731,6 +731,15 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.16.4 — Gemini CLI native skills no `init` (Fase 3 multi-agente)
+
+- **`plugadvpl init` agora detecta Gemini CLI** (~/.gemini/, gemini PATH, ou .gemini/ projeto) e gera `~/.gemini/GEMINI.md` (global) + `<project>/GEMINI.md` (4º gêmeo) + 52 `.gemini/skills/plugadvpl-<X>/SKILL.md` (specifics com frontmatter `name` + `description`)
+- Sinais detection **INDEPENDENTES** — global signal NÃO ativa project install (consistente com Cursor)
+- Marker `plugadvpl-gemini-version` distinto dos 3 anteriores — `_check_fragment_staleness` ganha 4ª passada
+- Flag `--no-gemini`; falha nunca quebra init
+- **Multi-agente completo: Claude + Codex + Cursor + Copilot + Gemini** (5 agentes nativos)
+- 28 testes novos (TDD). Suite full: 1151 passed
 
 ### v0.16.3 — Copilot Instructions nativos no `init` (Fase 2 multi-agente)
 
