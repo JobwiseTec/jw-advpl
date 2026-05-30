@@ -99,6 +99,10 @@ Não é mudança de código — é edição manual de 52 SKILL.md headers garant
 
 **Estratégia:** script Python que lista descriptions atuais + flag se NÃO contém pelo menos 1 keyword target. Editar manualmente as flagged. **Não automatizar edição** (risco de quebrar nuance). Script é só checker.
 
+**Threshold de aceitação:** ≥40 das 52 SKILL.md devem passar audit (skips OK pra meta-skills genuinas como `init`/`status` que não falam de ADVPL especificamente). Audit script é pré-commit gate em CI (parte do `doctor --check-agents`).
+
+**Nota encoding:** SKILL.md files são UTF-8 (TLPP/markdown convention) — Edit tool funciona direto. Não confundir com .prw cp1252.
+
 ### 3.3 Fix #3 — `plugadvpl doctor --check-agents`
 
 Novo subcomando do `doctor` (ou flag): valida formato dos arquivos gerados sem precisar instalar agentes.
@@ -115,7 +119,9 @@ Novo subcomando do `doctor` (ou flag): valida formato dos arquivos gerados sem p
 
 **Output:** tabela com agente / count / status (✅/⚠️/❌) + lista de issues.
 
-**Implementação:** novo módulo `cli/plugadvpl/agent_doctor.py` ou estender `cli/plugadvpl/doctor.py` se existir. Flag `--check-agents` em `plugadvpl doctor`.
+**Implementação:** novo módulo standalone `cli/plugadvpl/agent_doctor.py` (sem fallback estender — decisão fixa pra evitar ambiguidade no plan). `cli.py` wira flag `--check-agents` no comando `doctor` existente, chama `agent_doctor.run_checks(root, version)`.
+
+**Validação adicional pra Gemini dual-install:** quando `.agents/skills/` E `.gemini/skills/` existem ambos, checar se markers de versão batem entre as 2 cópias da mesma skill. Mismatch → warning ("plugadvpl-arch tem versão 0.16.4 em .gemini/skills/ mas 0.16.5 em .agents/skills/ — rode plugadvpl init pra sincronizar").
 
 ### 3.4 Fix #4 — Cursor meta-skills `alwaysApply: true`
 
@@ -249,7 +255,7 @@ Mesma garantia spec §7 das Fases 1-3: **NEVER propagates**. Cada novo helper (c
 - `test_transform_body_default_is_plain` — sem param → plain (safer default)
 
 **`test_cursor_rules.py`** (estende):
-- `test_render_skill_rule_uses_cursor_style` — verifica `Bash:` no body
+- `test_render_skill_rule_uses_cursor_style` — **asserts rendered .mdc body contém literal `` `Bash: uvx plugadvpl@`` ** (não só checa que função foi chamada com `style="cursor"`; precisa validar output real pra bloquear regressão mock-heavy)
 - `test_meta_skill_init_has_always_apply_true` — meta-skill ganha `alwaysApply: true`
 - `test_non_meta_skill_has_always_apply_false` — não-meta mantém false
 
@@ -346,3 +352,8 @@ Pre-flight da Task 2 (descriptions audit): script Python que reporta quais SKILL
 ## 9. Histórico
 
 - 2026-05-30: design inicial baseado em 4 research reports paralelos (Cursor, Copilot, Gemini, Codex). 8 gaps identificados, todos acionáveis em v0.16.5.
+- 2026-05-30: spec-reviewer aprovou com 3 fixes aplicados:
+  - **Audit threshold**: ≥40/52 SKILL.md must pass keyword audit; gate em CI via `doctor --check-agents`.
+  - **Dual-install parity check**: doctor flagga version mismatch entre `.gemini/skills/` e `.agents/skills/` da mesma skill.
+  - **Test assertion strictness**: `test_render_skill_rule_uses_cursor_style` valida output real (não mock).
+  - **agent_doctor.py decision fixed**: módulo standalone, sem ambiguidade.
