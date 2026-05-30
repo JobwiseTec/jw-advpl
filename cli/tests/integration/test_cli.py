@@ -487,6 +487,69 @@ class TestInitCopilotInstructions:
         )
         assert len(instructions) == 52
 
+    def test_idempotent_does_not_duplicate(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_copilot5"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        (synthetic_project / ".github").mkdir()
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        instructions = list(
+            (synthetic_project / ".github" / "instructions").glob(
+                "plugadvpl-*.instructions.md"
+            )
+        )
+        assert len(instructions) == 52
+        # Marker aparece uma vez por arquivo
+        arch_content = (
+            synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
+        ).read_text(encoding="utf-8")
+        assert arch_content.count("<!-- plugadvpl-instructions-version:") == 1
+
+    def test_overwrites_with_old_marker(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from plugadvpl import __version__
+        fake_home = synthetic_project.parent / "fake_home_copilot6"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        instructions_dir = synthetic_project / ".github" / "instructions"
+        instructions_dir.mkdir(parents=True)
+        stale = instructions_dir / "plugadvpl-arch.instructions.md"
+        stale.write_text(
+            "stale <!-- plugadvpl-instructions-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        new_content = stale.read_text(encoding="utf-8")
+        assert "stale" not in new_content
+        assert f"<!-- plugadvpl-instructions-version: {__version__} -->" in new_content
+
+    def test_preserves_user_file_without_marker(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_copilot7"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        instructions_dir = synthetic_project / ".github" / "instructions"
+        instructions_dir.mkdir(parents=True)
+        user_file = instructions_dir / "plugadvpl-arch.instructions.md"
+        user_file.write_text("my own file, no marker", encoding="utf-8")
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        # Preserva
+        assert user_file.read_text(encoding="utf-8") == "my own file, no marker"
+        # Warning
+        assert "plugadvpl-arch.instructions.md" in (result.stderr or "")
+        assert "sem marker plugadvpl" in (result.stderr or "")
+
 
 class TestIngest:
     def test_ingest_after_init(
