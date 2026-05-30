@@ -26,7 +26,7 @@ Sem integração nativa, dev usando Gemini CLI num projeto Protheus não tem con
 | # | Decisão | Justificativa |
 |---|---|---|
 | 1 | **Multi-file** (global + 52 skills) | Paridade arquitetural com Cursor/Copilot. Gemini SKILL.md formato é virtualmente idêntico ao nosso (frontmatter `name` + `description`) — reuso máximo do `_skill_catalog.py`. |
-| 2 | **Detection conservadora** (similar a Cursor) | `~/.gemini/` OU `gemini` no PATH (global); `.gemini/` no projeto OU sinal global (project). Evita pegada não-solicitada em projeto onde Gemini nunca foi usado. |
+| 2 | **Detection conservadora** (similar a Cursor) | `~/.gemini/` OU `gemini` no PATH → `install_global=True` (apenas global). `.gemini/` no projeto (sinal explícito de uso local) → `install_project=True`. Sinais SÃO independentes — sinal global NÃO ativa project (evita pegada não-solicitada em projeto onde Gemini nunca foi usado especificamente). |
 | 3 | **4º arquivo gêmeo `<project>/GEMINI.md`** | Junto com CLAUDE.md/AGENTS.md já existentes. Necessário porque Gemini não lê AGENTS.md por padrão; sem GEMINI.md, contexto plugadvpl não é carregado automaticamente. |
 | 4 | **Sem `~/.gemini/skills/` global** | Apenas `~/.gemini/GEMINI.md` machine-wide. Skills locais (52) ficam por-projeto. |
 | 5 | **Marker `<!-- plugadvpl-gemini-version: X.Y.Z -->`** | Distinto de `rule-version` (Cursor), `instructions-version` (Copilot), `fragment-version` (CLAUDE.md/AGENTS.md). Sem widening. |
@@ -200,11 +200,11 @@ def render_skill_for_gemini(skill_md_path: Path, version: str) -> str:
 ```python
 @dataclass(frozen=True)
 class InstallResult:
-    installed_global_home: bool   # ~/.gemini/GEMINI.md
-    installed_project_md: bool     # <project>/GEMINI.md
-    installed_skills_count: int    # 0..52
-    skipped_due_to_user_files: list[str]
-    errors: list[str]
+    installed_global_home: bool                                    # ~/.gemini/GEMINI.md
+    installed_project_md: bool                                     # <project>/GEMINI.md
+    installed_skills_count: int                                    # 0..52
+    skipped_due_to_user_files: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         parts = []
@@ -366,7 +366,7 @@ Exit code do `init` permanece 0 mesmo com falha total de Gemini.
 | `test_detect_home_gemini_dir_triggers_global` | `~/.gemini/` existe → global=True |
 | `test_detect_project_gemini_dir_triggers_project` | `.gemini/` no projeto |
 | `test_detect_both_signals_returns_both_true` | Ambos sinais |
-| `test_detect_cursor_in_path_triggers_global` | `shutil.which("gemini")` |
+| `test_detect_gemini_in_path_triggers_global` | `shutil.which("gemini")` |
 | `test_detect_handles_runtime_error_in_home` | Path.home lança |
 | `test_render_global_includes_version_marker` | Marker presente |
 | `test_render_global_no_frontmatter` | Markdown plano |
@@ -449,3 +449,7 @@ Exit code do `init` permanece 0 mesmo com falha total de Gemini.
 ## 10. Histórico
 
 - 2026-05-30: design inicial. Brainstorm aprovou: multi-file scope, detection conservadora, 4º gêmeo no root, sem `~/.gemini/skills/` global, marker `gemini-version` distinto. Sucessor da Fase 2 (v0.16.3 Copilot).
+- 2026-05-30: spec-reviewer encontrou 3 issues bloqueantes (todos aplicados):
+  - **Typo test name** `test_detect_cursor_in_path_triggers_global` → `test_detect_gemini_in_path_triggers_global` (copy-paste do Cursor spec).
+  - **Detection ambiguity §3.1 vs §3.2** clarificada: sinais SÃO independentes — `install_global` e `install_project` se ativam separadamente. Sinal global (`~/.gemini/` ou `gemini` PATH) NÃO ativa project (consistente com Cursor policy).
+  - **`InstallResult` frozen dataclass + mutable fields**: adicionado `field(default_factory=list)` nos campos `skipped_due_to_user_files` e `errors` pra evitar `TypeError` em construção sem args.
