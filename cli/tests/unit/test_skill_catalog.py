@@ -58,7 +58,8 @@ class TestTransformBody:
     def test_substitutes_slash_to_uvx(self) -> None:
         body = "Use `/plugadvpl:arch <arq>` antes de Read.\n"
         result = _transform_body(body, version="0.16.3")
-        assert "`Bash: uvx plugadvpl@0.16.3 arch`" in result
+        # v0.16.5: default style mudou pra 'plain' (Copilot/Gemini-safe).
+        assert "uvx plugadvpl@0.16.3 arch" in result
         assert "/plugadvpl:arch" not in result
 
     def test_normalizes_old_uvx_version(self) -> None:
@@ -66,6 +67,29 @@ class TestTransformBody:
         result = _transform_body(body, version="0.16.3")
         assert "uvx plugadvpl@0.16.3" in result
         assert "uvx plugadvpl@0.15.0" not in result
+
+    def test_cursor_style_emits_bash_prefix(self) -> None:
+        """style='cursor' → backtick + 'Bash:' prefix (MDC syntax)."""
+        body = "Use `/plugadvpl:arch` antes de Read.\n"
+        result = _transform_body(body, version="0.16.5", style="cursor")
+        assert "`Bash: uvx plugadvpl@0.16.5 arch`" in result
+        assert "/plugadvpl:arch" not in result
+
+    def test_plain_style_emits_text(self) -> None:
+        """style='plain' → texto puro (Copilot/Gemini)."""
+        body = "Use `/plugadvpl:arch` antes de Read.\n"
+        result = _transform_body(body, version="0.16.5", style="plain")
+        assert "uvx plugadvpl@0.16.5 arch" in result
+        assert "Bash:" not in result
+        assert "`Bash:" not in result
+        assert "/plugadvpl:arch" not in result
+
+    def test_default_style_is_plain(self) -> None:
+        """Sem param style → default 'plain' (safer, conservador)."""
+        body = "Use `/plugadvpl:arch` antes de Read.\n"
+        result = _transform_body(body, version="0.16.5")  # no style arg
+        assert "uvx plugadvpl@0.16.5 arch" in result
+        assert "Bash:" not in result
 
 
 class TestWriteManagedFile:

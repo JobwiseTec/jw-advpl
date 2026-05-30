@@ -16,6 +16,7 @@ import enum
 import re
 from importlib import resources as ir
 from pathlib import Path
+from typing import Literal
 
 # ---------------------------------------------------------------------------
 # Marker prefixes — narrow por agente (NÃO unificar; spec §3.1)
@@ -122,15 +123,28 @@ _SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
 _UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
 
 
-def _transform_body(body: str, version: str) -> str:
-    """Aplica 2 substituições, NESTA ORDEM:
+def _transform_body(
+    body: str, version: str, style: Literal["cursor", "plain"] = "plain"
+) -> str:
+    """Aplica 2 substituições NESTA ORDEM:
 
-    3a) `/plugadvpl:<X>` → `` `Bash: uvx plugadvpl@<ver> <X>` ``
+    3a) `/plugadvpl:<X>` → comando substituído (formato por agente)
     3b) `uvx plugadvpl@<qualquer>` → `uvx plugadvpl@<ver>`
 
-    Ordem importa: 3a primeiro emite uvx correto; 3b depois normaliza.
+    Args:
+        body: conteúdo a transformar.
+        version: versão runtime (substitui placeholders).
+        style: "cursor" emite `` `Bash: uvx plugadvpl@<ver> <X>` `` (MDC syntax);
+               "plain" emite `uvx plugadvpl@<ver> <X>` (texto puro pro Copilot/Gemini).
+               Default "plain" (safer; Copilot/Gemini interpretam Bash: como literal).
+
+    Cursor MDC interpreta backticks + Bash: como hint de comando inline;
+    Copilot/Gemini interpretam só texto puro.
     """
-    body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
+    if style == "cursor":
+        body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
+    else:  # plain
+        body = _SLASH_RE.sub(rf"uvx plugadvpl@{version} \1", body)
     body = _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
     return body
 
