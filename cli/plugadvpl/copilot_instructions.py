@@ -12,9 +12,18 @@ Spec: docs/superpowers/specs/2026-05-29-copilot-instructions-design.md
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import resources as ir
 from pathlib import Path
 
-from plugadvpl._skill_catalog import _parse_skill_md, _transform_body
+from plugadvpl._skill_catalog import (
+    INSTRUCTIONS_MARKER_PREFIX,
+    WriteOutcome,
+    _SKILL_GLOBS,
+    _parse_skill_md,
+    _skills_root,
+    _transform_body,
+    _write_managed_file,
+)
 
 
 @dataclass(frozen=True)
@@ -122,3 +131,121 @@ def render_skill_instructions(
         f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
     return frontmatter + markers + _transform_body(body, version)
+
+
+@dataclass(frozen=True)
+class InstallResult:
+    """Resumo do install_copilot_instructions."""
+
+    installed_global: bool
+    installed_local_count: int               # 0..52
+    skipped_due_to_user_files: list[str]
+    errors: list[str]
+
+    def summary(self) -> str:
+        parts = []
+        if self.installed_global:
+            parts.append("1 global")
+        if self.installed_local_count:
+            parts.append(f"{self.installed_local_count} locais")
+        return (" + ".join(parts) + " instaladas") if parts else "nada instalado"
+
+
+def install_copilot_instructions(
+    project_root: Path, version: str
+) -> InstallResult:
+    """Orquestra detect + render + write pras instructions Copilot.
+
+    Spec §3.3 da Fase 2. NUNCA propaga exception — try/except em cada bloco,
+    init nunca quebra por causa do Copilot.
+    """
+    skipped: list[str] = []
+    errors: list[str] = []
+    installed_global = False
+    installed_local_count = 0
+
+    try:
+        target = detect_copilot(project_root)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"detect_copilot falhou: {e!r}")
+        return InstallResult(False, 0, [], errors)
+
+    if target.install_global:
+        try:
+            global_path = (
+                project_root / ".github" / "copilot-instructions.md"
+            )
+            outcome = _write_managed_file(
+                global_path,
+                render_global_instructions(version),
+                INSTRUCTIONS_MARKER_PREFIX,
+            )
+            if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+                installed_global = True
+            elif outcome == WriteOutcome.SKIPPED_USER_FILE:
+                skipped.append("copilot-instructions.md (global)")
+            elif outcome == WriteOutcome.ERROR:
+                errors.append(
+                    f"falha ao escrever {global_path}: permission/IO denied"
+                )
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"global instructions erro: {e!r}")
+
+    if target.install_local:
+        instructions_dir = project_root / ".github" / "instructions"
+        try:
+            skills_root = _skills_root()
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"_skills_root falhou: {e!r}")
+            return InstallResult(
+                installed_global=installed_global,
+                installed_local_count=installed_local_count,
+                skipped_due_to_user_files=skipped,
+                errors=errors,
+            )
+
+        for skill_name, globs in _SKILL_GLOBS.items():
+            try:
+                resource = (
+                    ir.files("plugadvpl") / "skills" / skill_name / "SKILL.md"
+                )
+                with ir.as_file(resource) as skill_md_path:
+                    if not skill_md_path.exists():
+                        # Fallback dev tree
+                        skill_md_path = (
+                            skills_root / skill_name / "SKILL.md"
+                        )
+                        if not skill_md_path.exists():
+                            errors.append(
+                                f"skill {skill_name}: SKILL.md ausente"
+                            )
+                            continue
+                    content = render_skill_instructions(
+                        skill_md_path, version, globs
+                    )
+                target_path = (
+                    instructions_dir
+                    / f"plugadvpl-{skill_name}.instructions.md"
+                )
+                outcome = _write_managed_file(
+                    target_path, content, INSTRUCTIONS_MARKER_PREFIX
+                )
+                if outcome in (WriteOutcome.WRITTEN, WriteOutcome.OVERWRITTEN):
+                    installed_local_count += 1
+                elif outcome == WriteOutcome.SKIPPED_USER_FILE:
+                    skipped.append(
+                        f"plugadvpl-{skill_name}.instructions.md"
+                    )
+                elif outcome == WriteOutcome.ERROR:
+                    errors.append(
+                        f"falha ao escrever {target_path}: permission/IO denied"
+                    )
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"skill {skill_name}: {e!r}")
+
+    return InstallResult(
+        installed_global=installed_global,
+        installed_local_count=installed_local_count,
+        skipped_due_to_user_files=skipped,
+        errors=errors,
+    )

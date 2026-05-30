@@ -103,3 +103,32 @@ class TestRenderSkillInstructions:
         result = render_skill_instructions(target, version="0.16.3", globs=[])
         assert "`Bash: uvx plugadvpl@0.16.3 arch`" in result
         assert "/plugadvpl:arch" not in result
+
+
+class TestInstallCopilotInstructions:
+    def test_installs_global_and_locals_when_github_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """`.github/` no projeto → 1 global + 52 specifics gerados."""
+        from plugadvpl.copilot_instructions import install_copilot_instructions
+        project = tmp_path / "project"
+        (project / ".github").mkdir(parents=True)
+        result = install_copilot_instructions(project, version="0.16.3")
+        assert result.installed_global is True
+        assert result.installed_local_count == 52
+        assert not result.errors
+        # Files
+        assert (project / ".github" / "copilot-instructions.md").exists()
+        instructions = list(
+            (project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
+        )
+        assert len(instructions) == 52
+
+    def test_no_op_without_github(self, tmp_path: Path) -> None:
+        from plugadvpl.copilot_instructions import install_copilot_instructions
+        project = tmp_path / "project"
+        project.mkdir()
+        result = install_copilot_instructions(project, version="0.16.3")
+        assert result.installed_global is False
+        assert result.installed_local_count == 0
+        assert not (project / ".github").exists()
