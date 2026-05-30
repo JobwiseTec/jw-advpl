@@ -4,6 +4,69 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-30
+
+### Added — `plugadvpl doc-writer` gera blocos Protheus.doc canônicos TOTVS
+
+Inverso de `plugadvpl docs` (que **lê**) — `doc-writer` **escreve** o bloco `/*/{Protheus.doc} ... /*/` no formato canônico TOTVS a partir de flags estruturadas. Endereça gap #4 do `roadmap-vs-engpro-totvs.md`.
+
+Roundtrip-compatible: `extract_protheus_docs(generate_protheus_doc(spec))` recupera o spec sem perda.
+
+**CLI:**
+
+```bash
+plugadvpl doc-writer <funcao>
+    [--type function|user_function|method|class|property]
+    [--summary "descrição"] [--author "X"] [--since YYYY-MM] [--version V]
+    [--deprecated "motivo"]
+    [-p "nome,tipo,desc"]   # repetível; [nome] = opcional
+    [--return "tipo,desc"]
+    [-e "exemplo"]           # repetível
+```
+
+`--format json` emite metadata estruturada (`spec_to_dict`).
+
+**API pública** (`cli/plugadvpl/doc_writer.py`):
+
+- `DocSpec` frozen dataclass (13 campos seguindo shape de `_empty_doc()` do parser).
+- `Param` / `Return` dataclasses.
+- `generate_protheus_doc(spec) -> str` — bloco formatado canônico.
+- `spec_from_cli_args(funcao, **kwargs) -> DocSpec` — construtor a partir de flags brutas.
+- `spec_to_dict(spec) -> dict` — serialização JSON.
+
+**Skill:** `skills/doc-writer/SKILL.md` com when-to-use, exemplos completos, workflow recomendado, convenções de tipos canônicos ADVPL (`character`/`numeric`/`logical`/`date`/`array`/`block`/`object`/`nil`/`mixed`). Adicionada também a `_CURSOR_META_ALWAYS_APPLY` (Cursor sempre injeta — par simétrico de `docs`).
+
+**Testes (30 novos):**
+
+- 26 unit em `test_doc_writer.py` (basic, metadata, params com `[nome]` opcional, return, deprecated, examples multi-linha, history, CLI args, roundtrip extract→generate, edge cases vazios).
+- 4 integration em `TestDocWriter` (minimal, full metadata, `--format json`, deprecated com reason).
+
+Suite full: 1184 → 1216 passed.
+
+### Changed — CI `LINT_FILES` expandido de 22 → 30 (issue #17)
+
+Antes da v0.17.0, CI lintava só 22 dos 31 `.py` em `cli/plugadvpl/`. Os 8 arquivos novos do multi-agente (Fases 1-3) e v0.16.5 (`agent_doctor`, `codex_config`) ficavam fora do scope, acumulando débito.
+
+Adicionados ao `LINT_FILES` (todos `ruff check` + `ruff format` + `mypy` clean):
+
+- `_skill_catalog.py`, `_version.py`
+- `agent_doctor.py`, `codex_config.py` (v0.16.5)
+- `copilot_instructions.py`, `cursor_rules.py`, `gemini_skills.py` (v0.16.1-v0.16.4)
+- `doc_writer.py` (v0.17.0)
+
+**Refactors aplicados** pra deixar lint-clean:
+
+- `_skill_catalog.py`: `RET504` (remove assign antes de return) + `noqa: PLC0415` em import lazy intencional (evitar circular).
+- `copilot_instructions.py`: `TC003` (Path em `TYPE_CHECKING` block).
+- `cursor_rules.py`: extracts `_install_global_rule` + `_install_one_local_rule` helpers — preempt `PLR0912` em `install_cursor_rules`.
+
+Restante: ~9 `.py` em `cli/plugadvpl/parsing/` ainda têm débito legado (endereço em sub-issue futura quando demanda surgir).
+
+### Bumped
+
+- `uvx plugadvpl@0.16.5` → `uvx plugadvpl@0.17.0` nas 27 skills (incluindo `doc-writer`).
+- `plugin.json` / `marketplace.json` → 0.17.0.
+
 ## [0.16.5] - 2026-05-30
 
 ### Fixed — `_transform_body` agora respeita formato por agente (CRÍTICO)

@@ -766,6 +766,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.17.0 — `plugadvpl doc-writer` (Protheus.doc generator) + lint scope expand
+
+- **`plugadvpl doc-writer <funcao>`** — gera bloco `/*/{Protheus.doc} ... /*/` canônico TOTVS a partir de flags. Inverso do `docs` (que lê). Roundtrip-compatible: `extract → generate` recupera spec sem perda. Endereça gap #4 do `roadmap-vs-engpro-totvs.md`
+- Skill `/plugadvpl:doc-writer` com when-to-use, exemplos completos, workflow integrado com `arch` (extrai signature) + `edit-prw` (manipula .prw cp1252) + `cobertura-doc` (mede melhoria pós-fix)
+- 30 testes novos (26 unit + 4 integration). Suite: 1184 → 1216 passed
+- CI `LINT_FILES` expandido 22 → 30 arquivos (issue #17): adicionados `_skill_catalog`, `_version`, `agent_doctor`, `codex_config`, `copilot_instructions`, `cursor_rules`, `doc_writer`, `gemini_skills` — todos `ruff` + `mypy` clean
+- Refactors em `cursor_rules.install_cursor_rules` (extracts helpers) + `_skill_catalog._transform_body` (remove assign antes de return) pra preempt PLR0912/RET504
+
 ### v0.16.5 — Multi-agente post-research improvements
 
 - **CRITICAL FIX**: `_transform_body` agora respeita formato por agente. Antes v0.16.5, Copilot e Gemini recebiam sintaxe Cursor-específica (`` `Bash: uvx ...` ``) e interpretavam como string literal — perdiam ~50% do valor das 52 skills. Agora `_transform_body` aceita `style: Literal["cursor", "plain"]` com default "plain" (Cursor opt-in)
