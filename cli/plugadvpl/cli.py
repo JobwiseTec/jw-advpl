@@ -695,6 +695,49 @@ def _check_copilot_instructions_staleness(root: Path) -> str | None:
     return None
 
 
+def _check_gemini_staleness(root: Path) -> str | None:
+    """Detecta Gemini files desatualizados.
+
+    Cobre `~/.gemini/GEMINI.md` (global), `<project>/GEMINI.md` (projeto),
+    e `<project>/.gemini/skills/plugadvpl-*/SKILL.md` (specifics).
+    Retorna mensagem do primeiro arquivo desatualizado, ou None.
+
+    Marker é `<!-- plugadvpl-gemini-version: X.Y.Z -->` — distinto do
+    Cursor `rule-version`, Copilot `instructions-version`, e
+    fragment-version do CLAUDE.md/AGENTS.md. Evita falso-positivo cross-agent.
+    """
+    gemini_files: list[Path] = []
+    try:
+        home_global = Path.home() / ".gemini" / "GEMINI.md"
+        if home_global.exists():
+            gemini_files.append(home_global)
+    except RuntimeError:
+        pass
+    project_md = root / "GEMINI.md"
+    if project_md.exists():
+        gemini_files.append(project_md)
+    skills_dir = root / ".gemini" / "skills"
+    if skills_dir.exists():
+        # Glob recursivo: .gemini/skills/plugadvpl-<X>/SKILL.md
+        gemini_files.extend(sorted(skills_dir.glob("plugadvpl-*/SKILL.md")))
+
+    marker_re = re.compile(
+        r"<!--\s*plugadvpl-gemini-version:\s*(\d+\.\d+\.\d+[\w.+-]*)\s*-->"
+    )
+    for gf in gemini_files:
+        try:
+            content = gf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = marker_re.search(content)
+        if m is None:
+            continue
+        v = m.group(1)
+        if v != __version__:
+            return f"{gf.name} foi gerado por plugadvpl {v}"
+    return None
+
+
 def _check_fragment_staleness(root: Path) -> str | None:
     """Retorna mensagem descritiva se algum fragment plugadvpl está desatualizado.
 
@@ -705,6 +748,9 @@ def _check_fragment_staleness(root: Path) -> str | None:
     v0.16.3: estende pra Copilot instructions
     (`.github/copilot-instructions.md` global e
     `.github/instructions/plugadvpl-*.instructions.md` locais).
+    v0.16.4: estende pra Gemini skills (`~/.gemini/GEMINI.md` global,
+    `<project>/GEMINI.md` projeto, e
+    `<project>/.gemini/skills/plugadvpl-*/SKILL.md` specifics).
 
     Reporta o primeiro arquivo desatualizado encontrado. None se todos OK ou
     se nenhum dos arquivos existe (caso fresh sem init ainda).
@@ -736,7 +782,16 @@ def _check_fragment_staleness(root: Path) -> str | None:
         return cursor_msg
 
     # 3. Copilot instructions (instructions-version)
-    return _check_copilot_instructions_staleness(root)
+    copilot_msg = _check_copilot_instructions_staleness(root)
+    if copilot_msg is not None:
+        return copilot_msg
+
+    # 4. Gemini skills (gemini-version)
+    gemini_msg = _check_gemini_staleness(root)
+    if gemini_msg is not None:
+        return gemini_msg
+
+    return None
 
 
 def _write_agent_fragment(root: Path, filename: str) -> None:

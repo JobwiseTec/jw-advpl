@@ -1094,6 +1094,65 @@ class TestStatus:
         assert "plugadvpl-arch.instructions.md" in combined
         assert "0.15.0" in combined
 
+    def test_detects_stale_gemini_home(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`~/.gemini/GEMINI.md` com marker old → status reporta."""
+        fake_home = indexed_project.parent / "fake_home_gemini_status1"
+        gemini_dir = fake_home / ".gemini"
+        gemini_dir.mkdir(parents=True)
+        (gemini_dir / "GEMINI.md").write_text(
+            "stale <!-- plugadvpl-gemini-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "GEMINI.md" in combined
+        assert "0.15.0" in combined
+
+    def test_detects_stale_gemini_project(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`<project>/GEMINI.md` com marker old → status reporta."""
+        fake_home = indexed_project.parent / "fake_home_gemini_status2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        (indexed_project / "GEMINI.md").write_text(
+            "stale <!-- plugadvpl-gemini-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "GEMINI.md" in combined
+        assert "0.15.0" in combined
+
+    def test_detects_stale_gemini_skill(
+        self, indexed_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = indexed_project.parent / "fake_home_gemini_status3"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        skills_dir = indexed_project / ".gemini" / "skills" / "plugadvpl-arch"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "stale <!-- plugadvpl-gemini-version: 0.15.0 -->",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["--root", str(indexed_project), "status"]
+        )
+        combined = (result.stderr or "") + result.stdout
+        assert "SKILL.md" in combined
+        assert "0.15.0" in combined
+
 
 class TestDoctor:
     def test_doctor_returns_diagnostics(
