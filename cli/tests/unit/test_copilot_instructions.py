@@ -90,7 +90,11 @@ class TestRenderSkillInstructions:
         assert "<!-- plugadvpl-skill: callers -->" in result
 
     def test_transforms_body_substitutions(self, tmp_path: Path) -> None:
-        """Body deve passar pelas mesmas substituições do Cursor."""
+        """Body deve transformar `/plugadvpl:X` → uvx (texto puro pro Copilot).
+
+        v0.16.5: Copilot usa style='plain' — antes assumia `Bash:` prefix
+        por engano (era falso-positivo herdado do Cursor).
+        """
         from plugadvpl.copilot_instructions import render_skill_instructions
         skill_dir = tmp_path / "arch"
         skill_dir.mkdir()
@@ -101,8 +105,26 @@ class TestRenderSkillInstructions:
             encoding="utf-8",
         )
         result = render_skill_instructions(target, version="0.16.3", globs=[])
-        assert "`Bash: uvx plugadvpl@0.16.3 arch`" in result
+        assert "uvx plugadvpl@0.16.3 arch" in result
         assert "/plugadvpl:arch" not in result
+
+    def test_render_skill_instructions_emits_plain_text_command(self, tmp_path: Path) -> None:
+        """v0.16.5 — Copilot deve receber texto puro, NÃO `Bash:` (Cursor MDC)."""
+        from plugadvpl.copilot_instructions import render_skill_instructions
+        skill_dir = tmp_path / "arch"
+        skill_dir.mkdir()
+        target = skill_dir / "SKILL.md"
+        target.write_text(
+            "---\ndescription: X\n---\nUse `/plugadvpl:arch`.\n",
+            encoding="utf-8",
+        )
+        result = render_skill_instructions(
+            target, version="0.16.5", globs=["**/*.prw"]
+        )
+        # Plain style: command em texto, sem Bash:
+        assert "uvx plugadvpl@0.16.5 arch" in result
+        assert "Bash:" not in result
+        assert "`Bash:" not in result
 
 
 class TestInstallCopilotInstructions:

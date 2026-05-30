@@ -123,7 +123,7 @@ def render_skill_instructions(skill_md_path: Path, version: str, globs: list[str
         f"<!-- plugadvpl-instructions-version: {version} -->\n"
         f"<!-- plugadvpl-skill: {skill_name} -->\n\n"
     )
-    return frontmatter + markers + _transform_body(body, version)
+    return frontmatter + markers + _transform_body(body, version, style="plain")
 
 
 @dataclass(frozen=True)
