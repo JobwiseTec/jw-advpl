@@ -90,3 +90,22 @@ class TestDetectGemini:
         project.mkdir()
         result = detect_gemini(project)
         assert result == GeminiTarget(install_global=False, install_project=False)
+
+
+class TestRenderGlobalGeminiMd:
+    def test_includes_version_marker(self) -> None:
+        from plugadvpl.gemini_skills import render_global_gemini_md
+        result = render_global_gemini_md(version="0.16.4")
+        assert "<!-- plugadvpl-gemini-version: 0.16.4 -->" in result
+
+    def test_no_frontmatter(self) -> None:
+        """GEMINI.md é markdown plano — sem frontmatter ---."""
+        from plugadvpl.gemini_skills import render_global_gemini_md
+        result = render_global_gemini_md(version="0.16.4")
+        assert not result.startswith("---\n")
+
+    def test_substitutes_version_in_body(self) -> None:
+        from plugadvpl.gemini_skills import render_global_gemini_md
+        result = render_global_gemini_md(version="0.16.4")
+        assert "uvx plugadvpl@0.16.4" in result
+        assert "__VERSION__" not in result
