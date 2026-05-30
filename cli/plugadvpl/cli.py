@@ -1687,6 +1687,10 @@ def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/f
 # doctor
 # ---------------------------------------------------------------------------
 
+# v0.16.5: limite de skills listadas no output de `doctor --check-agents`.
+# Acima disso, mostra "... e mais N" pra evitar flood em projetos grandes.
+_DOCTOR_MAX_SKILLS_LISTED = 10
+
 
 @app.command()
 def doctor(
@@ -1708,13 +1712,42 @@ def doctor(
             "Cada fonte com discrepancia vira 1 row com arquivo/grep_raw/grep_code/parser/classificacao.",
         ),
     ] = False,
+    check_agents: Annotated[
+        bool,
+        typer.Option(
+            "--check-agents",
+            help="v0.16.5: valida formato dos arquivos gerados pra todos 5 agentes "
+            "(CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini) sem precisar instalar "
+            "os agentes externos.",
+        ),
+    ] = False,
 ) -> None:
     """Diagnósticos do índice (encoding, órfãos, FTS sync, lookups)."""
 
+    if check_agents:
+        from plugadvpl.agent_doctor import run_checks
+
+        root: Path = ctx.obj["root"]
+        report = run_checks(root, expected_version=__version__)
+        for check in report.checks:
+            typer.echo(f"{check.emoji()}  {check.name}: {check.detail}")
+        if report.skills_without_keywords:
+            typer.echo(
+                f"\nWARN  {len(report.skills_without_keywords)} skill(s) sem keywords ADVPL/Protheus:"
+            )
+            for name in report.skills_without_keywords[:_DOCTOR_MAX_SKILLS_LISTED]:
+                typer.echo(f"     - {name}")
+            if len(report.skills_without_keywords) > _DOCTOR_MAX_SKILLS_LISTED:
+                remainder = len(report.skills_without_keywords) - _DOCTOR_MAX_SKILLS_LISTED
+                typer.echo(f"     ... e mais {remainder}")
+        if any(c.status == "fail" for c in report.checks):
+            raise typer.Exit(code=1)
+        return
+
     rows = _with_ro_db(ctx, doctor_diagnostics)
     if check_funcs:
-        root: Path = ctx.obj["root"]
-        rows.extend(_with_ro_db(ctx, lambda c: doctor_func_count_check(c, root, detail=detail)))
+        root2: Path = ctx.obj["root"]
+        rows.extend(_with_ro_db(ctx, lambda c: doctor_func_count_check(c, root2, detail=detail)))
     _render_from_ctx(
         ctx,
         rows,

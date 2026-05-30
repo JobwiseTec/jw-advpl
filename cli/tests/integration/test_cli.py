@@ -820,6 +820,72 @@ class TestInitCodexConfig:
         assert user_config.read_text(encoding="utf-8") == "# my own config, no marker"
 
 
+class TestDoctorCheckAgents:
+    """v0.16.5 — plugadvpl doctor --check-agents valida arquivos gerados."""
+
+    def test_reports_all_green_after_init(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Apos init completo com .cursor/, .github/, .gemini/ — todos green."""
+        fake_home = synthetic_project.parent / "fake_home_doctor1"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        (synthetic_project / ".cursor").mkdir()
+        (synthetic_project / ".github").mkdir()
+        (synthetic_project / ".gemini").mkdir()
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "doctor", "--check-agents"],
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "claude_md" in result.stdout
+        assert "OK" in result.stdout  # algum check passou
+
+    def test_reports_missing_when_no_init(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Sem init -> CLAUDE.md/AGENTS.md ausentes (exit 0, missing != fail)."""
+        fake_home = synthetic_project.parent / "fake_home_doctor2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "doctor", "--check-agents"],
+        )
+        assert result.exit_code == 0, result.stderr
+        assert "missing" in result.stdout.lower() or "--" in result.stdout
+
+    def test_exit_code_1_on_fail(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """CLAUDE.md sem fragment markers -> check fails, exit 1."""
+        fake_home = synthetic_project.parent / "fake_home_doctor3"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        (synthetic_project / "CLAUDE.md").write_text(
+            "# Custom CLAUDE.md without plugadvpl fragment\n",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "doctor", "--check-agents"],
+        )
+        assert result.exit_code == 1
+
+
 class TestIngest:
     def test_ingest_after_init(
         self, synthetic_project: Path, runner: CliRunner
