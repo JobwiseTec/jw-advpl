@@ -151,17 +151,21 @@ class TestInit:
         self, tmp_path_factory: pytest.TempPathFactory,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Isola Path.home pra cada teste do TestInit (v0.16.2+).
+        """Isola Path.home pra cada teste do TestInit (v0.16.2+; v0.16.4 add gemini).
 
-        Sem isso, init() chama install_cursor_rules() que detecta ~/.cursor/
-        real do dev rodando localmente — escreveria rules em ~/.cursor/rules/
-        do dev (side-effect, não falha de teste, mas poluente). Aponta
-        Path.home pra tmp diretório limpo e neutraliza shutil.which.
+        Sem isso, init() chama install_cursor_rules() / install_gemini_skills()
+        que detectam ~/.cursor/ ou ~/.gemini/ real do dev rodando localmente —
+        escreveria rules/skills no home do dev (side-effect, não falha de teste,
+        mas poluente). Aponta Path.home pra tmp diretório limpo e neutraliza
+        shutil.which em ambos modulos.
         """
         fake_home = tmp_path_factory.mktemp("isolated_home_init")
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.setattr(
             "plugadvpl.cursor_rules.shutil.which", lambda _: None
+        )
+        monkeypatch.setattr(
+            "plugadvpl.gemini_skills.shutil.which", lambda _: None
         )
 
     def test_init_creates_db_and_claude_md(
@@ -549,6 +553,105 @@ class TestInitCopilotInstructions:
         # Warning
         assert "plugadvpl-arch.instructions.md" in (result.stderr or "")
         assert "sem marker plugadvpl" in (result.stderr or "")
+
+
+class TestInitGeminiSkills:
+    """v0.16.4 — init detecta Gemini e gera GEMINI.md + skills."""
+
+    def test_skips_gemini_when_no_signals(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sem ~/.gemini/, sem gemini PATH, sem .gemini/ projeto → no-op."""
+        fake_home = synthetic_project.parent / "fake_home_gemini"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert not (synthetic_project / "GEMINI.md").exists()
+        assert not (synthetic_project / ".gemini").exists()
+        assert "Gemini skills" not in result.stdout
+
+    def test_installs_when_project_has_gemini_dir(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`.gemini/` no projeto → project MD + 52 skills."""
+        fake_home = synthetic_project.parent / "fake_home_gemini2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        (synthetic_project / ".gemini").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert (synthetic_project / "GEMINI.md").exists()
+        skill_files = list(
+            (synthetic_project / ".gemini" / "skills").glob(
+                "plugadvpl-*/SKILL.md"
+            )
+        )
+        assert len(skill_files) == 52
+        assert "Gemini skills" in result.stdout
+
+    def test_installs_global_home_when_home_has_gemini(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`~/.gemini/` mockado → ~/.gemini/GEMINI.md criado."""
+        fake_home = synthetic_project.parent / "fake_home_gemini3"
+        (fake_home / ".gemini").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        # Sem .gemini/ no projeto — só global trigger
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert (fake_home / ".gemini" / "GEMINI.md").exists()
+        # Project NÃO recebe nada (sinais independentes)
+        assert not (synthetic_project / "GEMINI.md").exists()
+
+    def test_no_gemini_flag_skips_everything(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_gemini4"
+        (fake_home / ".gemini").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        (synthetic_project / ".gemini").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "init", "--no-gemini"]
+        )
+        assert result.exit_code == 0
+        assert not (synthetic_project / "GEMINI.md").exists()
+        assert not (fake_home / ".gemini" / "GEMINI.md").exists()
+        assert "Gemini skills" not in result.stdout
+
+    def test_quiet_suppresses_message(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_gemini5"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        (synthetic_project / ".gemini").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "--quiet", "init"]
+        )
+        assert result.exit_code == 0
+        assert "Gemini skills" not in result.stdout
+        skill_files = list(
+            (synthetic_project / ".gemini" / "skills").glob(
+                "plugadvpl-*/SKILL.md"
+            )
+        )
+        assert len(skill_files) == 52
 
 
 class TestIngest:

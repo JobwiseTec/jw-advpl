@@ -527,14 +527,24 @@ def init(
             help="Não instala Copilot instructions mesmo se `.github/` for detectado.",
         ),
     ] = False,
+    no_gemini: Annotated[
+        bool,
+        typer.Option(
+            "--no-gemini",
+            help="Não instala Gemini skills mesmo se Gemini for detectado (~/.gemini/, gemini no PATH, ou .gemini/ no projeto).",
+        ),
+    ] = False,
 ) -> None:
-    """Cria ``./.plugadvpl/index.db``, escreve fragments em ``CLAUDE.md`` + ``AGENTS.md``, atualiza ``.gitignore``, e (se detectado) gera Cursor rules + Copilot instructions.
+    """Cria ``./.plugadvpl/index.db``, escreve fragments em ``CLAUDE.md`` + ``AGENTS.md``, atualiza ``.gitignore``, e (se detectado) gera Cursor rules + Copilot instructions + Gemini skills.
 
     v0.16.1: ``CLAUDE.md`` + ``AGENTS.md`` fragments.
     v0.16.2: Cursor rules nativos em ``.cursor/rules/``.
     v0.16.3: Copilot instructions em ``.github/copilot-instructions.md`` +
     ``.github/instructions/plugadvpl-*.instructions.md`` quando ``.github/``
     existe no projeto. Use ``--no-copilot`` pra desabilitar.
+    v0.16.4: Gemini skills em ``~/.gemini/GEMINI.md`` + ``<project>/GEMINI.md`` +
+    ``.gemini/skills/plugadvpl-*/SKILL.md`` quando Gemini é detectado.
+    Use ``--no-gemini`` pra desabilitar.
     """
     root: Path = ctx.obj["root"]
     db_path: Path = ctx.obj["db"]
@@ -589,6 +599,30 @@ def init(
             for skipped in copilot_result.skipped_due_to_user_files:
                 typer.secho(
                     f"⚠  Copilot instructions: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+
+    if not no_gemini:
+        from plugadvpl.gemini_skills import install_gemini_skills
+
+        gemini_result = install_gemini_skills(root, __version__)
+        if not ctx.obj["quiet"]:
+            if (
+                gemini_result.installed_global_home
+                or gemini_result.installed_project_md
+                or gemini_result.installed_skills_count
+            ):
+                typer.echo(f"OK  Gemini skills: {gemini_result.summary()}")
+            for warn in gemini_result.errors:
+                typer.secho(
+                    f"⚠  Gemini skills: {warn}",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+            for skipped in gemini_result.skipped_due_to_user_files:
+                typer.secho(
+                    f"⚠  Gemini skills: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
                     fg=typer.colors.YELLOW,
                     err=True,
                 )
