@@ -328,3 +328,60 @@ class TestNamespaceInfer:
         assert r.status == "needs-review"
         assert len(r.todo_markers) == 1
         assert "ambiguo" in r.todo_markers[0].lower()
+
+
+class TestBeginSequenceToTry:
+    """Recipe order 8 — Begin Sequence/Recover/End Sequence -> try/catch."""
+
+    def test_simple_block_converts(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.begin_sequence import BeginSequenceToTry
+
+        content = (
+            "Begin Sequence\n"
+            "    DoStuff()\n"
+            "Recover Using oErr\n"
+            "    HandleError(oErr)\n"
+            "End Sequence\n"
+        )
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = BeginSequenceToTry().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "try" in r.new_content
+        assert "catch (oErr)" in r.new_content
+        assert "Begin Sequence" not in r.new_content
+
+    def test_nested_emits_todo_and_preserves(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.begin_sequence import BeginSequenceToTry
+
+        content = (
+            "Begin Sequence\n"
+            "    Begin Sequence\n"
+            "        Inner()\n"
+            "    Recover Using oInner\n"
+            "        InnerErr(oInner)\n"
+            "    End Sequence\n"
+            "Recover Using oErr\n"
+            "    Outer(oErr)\n"
+            "End Sequence\n"
+        )
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = BeginSequenceToTry().apply(content, ctx)
+        # Tem >=1 conversion (inner) e 1 aninhamento (outer) -> needs-review
+        assert r.status == "needs-review"
+        assert len(r.todo_markers) >= 1
+        assert any("aninhamento" in t.lower() for t in r.todo_markers)
+
+    def test_nochange_without_begin_sequence(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.begin_sequence import BeginSequenceToTry
+
+        content = "User Function X()\nReturn .T.\n"
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = BeginSequenceToTry().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_recipe_id_and_category(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.begin_sequence import BeginSequenceToTry
+
+        assert BeginSequenceToTry.id == "begin-sequence-to-try"
+        assert BeginSequenceToTry.category == "idioms"
