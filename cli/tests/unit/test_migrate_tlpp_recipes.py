@@ -112,3 +112,36 @@ class TestRenameExtension:
         ctx = MigrationContext(file_path=tmp_path / "a.txt", project_root=tmp_path)
         r = RenameExtension().apply("body", ctx)
         assert r.status == "skipped"
+
+
+class TestHeaderIncludes:
+    """Recipe order 3 — protheus.ch → totvs.ch + tlpp-core.th."""
+
+    def test_replaces_protheus_with_totvs(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.header_includes import HeaderIncludes
+
+        content = '#Include "protheus.ch"\n\nUser Function X()\nReturn\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = HeaderIncludes().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert '#Include "totvs.ch"' in r.new_content
+        assert "protheus.ch" not in r.new_content
+
+    def test_adds_tlpp_core_when_class_present(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.header_includes import HeaderIncludes
+
+        content = '#Include "protheus.ch"\n\nclass Foo\n  method new() class Foo\nendclass\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = HeaderIncludes().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "tlpp-core.th" in r.new_content
+
+    def test_nochange_when_already_totvs(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.header_includes import HeaderIncludes
+
+        content = '#Include "totvs.ch"\n\nUser Function X()\nReturn\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = HeaderIncludes().apply(content, ctx)
+        assert r.status == "nochange"
