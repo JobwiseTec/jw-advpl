@@ -1,6 +1,7 @@
 """Unit tests for plugadvpl/migrate_tlpp_recipes/ (v0.18.0+)."""
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -174,3 +175,75 @@ class TestRemovePublic:
 
         assert RemovePublicDefault.id == "remove-public-default"
         assert RemovePublicDefault.category == "safe"
+
+
+class TestUserFunctionLowercase:
+    """Recipe order 5 — User Function X() → function u_x() (caller-aware)."""
+
+    def test_user_function_simple_no_db(self, tmp_path: Path) -> None:
+        """Sem DB conn — modo conservador: aplica lowercase + emite todo."""
+        from plugadvpl.migrate_tlpp_recipes.user_function import UserFunctionLowercase
+
+        content = "User Function FATA050()\nReturn .T.\n"
+        ctx = MigrationContext(file_path=tmp_path / "FATA050.prw", project_root=tmp_path)
+        r = UserFunctionLowercase().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert r.new_content is not None
+        assert "function u_fata050(" in r.new_content
+        assert len(r.todo_markers) == 1
+        assert "DB não disponível" in r.todo_markers[0]
+
+    def test_recipe_id(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.user_function import UserFunctionLowercase
+
+        assert UserFunctionLowercase.id == "user-function-lowercase"
+        assert UserFunctionLowercase.category == "safe"
+
+    def test_with_db_no_external_callers(self, tmp_path: Path) -> None:
+        """DB conn presente, função sem callers externos → lowercase sem todo."""
+        from plugadvpl.migrate_tlpp_recipes.user_function import UserFunctionLowercase
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE chamadas (destino TEXT, origem_arquivo TEXT)")
+        # nenhum caller pra FATA050
+        db.commit()
+
+        file_path = tmp_path / "FATA050.prw"
+        content = "User Function FATA050()\nReturn .T.\n"
+        ctx = MigrationContext(
+            file_path=file_path, project_root=tmp_path, db_connection=db
+        )
+        r = UserFunctionLowercase().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "function u_fata050(" in r.new_content
+        assert r.todo_markers == []
+
+    def test_with_db_external_callers_preserves(self, tmp_path: Path) -> None:
+        """DB conn presente, função com callers externos → preserva + todo."""
+        from plugadvpl.migrate_tlpp_recipes.user_function import UserFunctionLowercase
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE chamadas (destino TEXT, origem_arquivo TEXT)")
+        file_path = tmp_path / "FATA050.prw"
+        # 2 callers em outros arquivos
+        db.execute(
+            "INSERT INTO chamadas VALUES (?, ?)",
+            ("FATA050", str(tmp_path / "outro.prw")),
+        )
+        db.execute(
+            "INSERT INTO chamadas VALUES (?, ?)",
+            ("FATA050", str(tmp_path / "outro2.prw")),
+        )
+        db.commit()
+
+        content = "User Function FATA050()\nReturn .T.\n"
+        ctx = MigrationContext(
+            file_path=file_path, project_root=tmp_path, db_connection=db
+        )
+        r = UserFunctionLowercase().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert r.new_content is not None
+        assert "function u_fata050(" in r.new_content
+        assert len(r.todo_markers) == 1
+        assert "2 caller" in r.todo_markers[0]
