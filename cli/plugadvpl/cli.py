@@ -1455,6 +1455,16 @@ def ini_audit(  # noqa: PLR0912 -- typer command com varios filtros mutuamente e
                     f"info={sev.get('info', 0)}).",
                     err=True,
                 )
+                for fid in ing_res.file_ids:
+                    score_val = audit_res.score_by_file.get(fid)
+                    if score_val is None:
+                        continue
+                    comp = audit_res.compliance_by_file.get(fid, "")
+                    arq_row = conn.execute(
+                        "SELECT arquivo FROM ini_files WHERE id = ?", (fid,)
+                    ).fetchone()
+                    arq_name = arq_row[0] if arq_row is not None else str(fid)
+                    typer.secho(f"  Score {arq_name}: {score_val:.1f} ({comp}).", err=True)
     finally:
         close_db(conn)
 
