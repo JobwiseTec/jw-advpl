@@ -22,6 +22,7 @@ Estratégia de detecção:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -147,6 +148,7 @@ def convert_and_save(
     to_encoding: str | None = None,
     from_encoding: str | None = None,
     backup: bool = True,
+    timestamp: bool = False,
 ) -> tuple[str, str, Path | None]:
     """Converte arquivo de ``from_encoding`` para ``to_encoding`` e grava in-place.
 
@@ -154,7 +156,10 @@ def convert_and_save(
         path: arquivo a converter.
         to_encoding: encoding de destino. Default = ``expected_encoding_for(path)``.
         from_encoding: encoding de origem. Default = ``detect_encoding(raw)[0]``.
-        backup: se True (default), cria ``<path>.bak`` antes de gravar.
+        backup: se True (default), cria backup antes de gravar.
+        timestamp: v0.18.0+ — se True E ``backup=True``, cria
+            ``<path>.bak.<YYYYMMDDHHMMSS>`` ao invés de ``<path>.bak`` fixo.
+            Preserva ``.bak`` legado existente (não sobrescreve).
 
     Returns:
         Tupla ``(from_used, to_used, backup_path_or_None)``.
@@ -184,8 +189,13 @@ def convert_and_save(
 
     backup_path: Path | None = None
     if backup:
-        backup_path = path.with_suffix(path.suffix + ".bak")
-        backup_path.write_bytes(raw)
+        if timestamp:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            backup_path = path.with_suffix(path.suffix + f".bak.{ts}")
+        else:
+            backup_path = path.with_suffix(path.suffix + ".bak")
+        if not backup_path.exists():
+            backup_path.write_bytes(raw)
 
     path.write_bytes(out_bytes)
     return src, dst, backup_path

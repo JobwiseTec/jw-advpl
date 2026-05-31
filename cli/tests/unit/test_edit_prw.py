@@ -176,6 +176,44 @@ class TestConvertAndSave:
         with pytest.raises(ValueError, match="Falha ao decodificar"):
             convert_and_save(fp, from_encoding="utf-8", backup=False)
 
+    def test_timestamp_creates_bak_with_timestamp_suffix(
+        self, tmp_path: Path
+    ) -> None:
+        """v0.18.0+: timestamp=True gera .bak.<YYYYMMDDHHMMSS>."""
+        import re
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        _, _, bak = convert_and_save(fp, backup=True, timestamp=True)
+        assert bak is not None
+        assert re.search(r"\.bak\.\d{14}$", bak.name), (
+            f"esperado .bak.<14 digits>, vi {bak.name}"
+        )
+        assert bak.exists()
+
+    def test_timestamp_preserves_legacy_bak(self, tmp_path: Path) -> None:
+        """v0.18.0+: timestamp=True NÃO sobrescreve .bak legado existente."""
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        # Cria .bak legado com conteúdo conhecido
+        legacy = tmp_path / "foo.prw.bak"
+        legacy.write_bytes(b"LEGACY-CONTENT")
+        # Roda convert com timestamp
+        _, _, bak = convert_and_save(fp, backup=True, timestamp=True)
+        # Legacy preservado
+        assert legacy.exists()
+        assert legacy.read_bytes() == b"LEGACY-CONTENT"
+        # bak retornado é .bak.<ts>, não o legado
+        assert bak is not None
+        assert bak != legacy
+
+    def test_timestamp_false_keeps_legacy_behavior(self, tmp_path: Path) -> None:
+        """v0.18.0+: default timestamp=False mantém .bak fixo (compat)."""
+        fp = tmp_path / "foo.prw"
+        fp.write_bytes("Função".encode("utf-8"))
+        _, _, bak = convert_and_save(fp, backup=True)
+        assert bak is not None
+        assert bak.name == "foo.prw.bak"
+
 
 # --- encode_cp1252_bytes ----------------------------------------------------
 
