@@ -13,8 +13,11 @@ from __future__ import annotations
 import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+
+import typer
 
 from plugadvpl.migrate_tlpp_recipes import (
     REGISTRY,
@@ -174,8 +177,197 @@ def dry_run(plan: MigrationPlan) -> MigrationReport:
                 )
             )
 
+    # final_content é setado se conteúdo mudou OU se algum recipe 'ok'
+    # produziu side-effect (ex: rename-extension não muda content mas
+    # exige write em path novo).
+    has_ok_sideeffect = any(r.status == "ok" for r in results)
+    if current_content != content or has_ok_sideeffect:
+        final = current_content
+    else:
+        final = None
     return MigrationReport(
         file_path=plan.file_path,
         recipe_results=results,
-        final_content=current_content if current_content != content else None,
+        final_content=final,
+    )
+
+
+def _create_backup(file_path: Path) -> Path | None:
+    """Cria backup .bak.<YYYYMMDDHHMMSS>.
+
+    Preserva .bak legado sem timestamp (não sobrescreve).
+    """
+    if not file_path.exists():
+        return None
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    bak_path = file_path.with_suffix(file_path.suffix + f".bak.{ts}")
+    if bak_path.exists():
+        # já existe (run anterior no mesmo segundo) — não sobrescreve
+        return bak_path
+    bak_path.write_bytes(file_path.read_bytes())
+    return bak_path
+
+
+def _find_oldest_bak(file_path: Path) -> Path | None:
+    """Acha .bak.<timestamp> mais antigo OU .bak legado."""
+    parent = file_path.parent
+    base = file_path.name
+    candidates = sorted(parent.glob(f"{base}.bak.*"))
+    if candidates:
+        # mais antigo (sort lexicográfico de timestamp = cronológico)
+        return candidates[0]
+    legacy = file_path.with_suffix(file_path.suffix + ".bak")
+    return legacy if legacy.exists() else None
+
+
+def _restore_via_git(file_path: Path, project_root: Path) -> bool:
+    """Tenta ``git checkout HEAD -- <file>``. Returns True se OK."""
+    try:
+        r = subprocess.run(
+            ["git", "checkout", "HEAD", "--", str(file_path)],
+            cwd=project_root,
+            capture_output=True,
+            timeout=10,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _validate_via_compile(tlpp_path: Path) -> bool:
+    """Roda plugadvpl compile <tlpp> em modo appre. True se exit=0."""
+    try:
+        from plugadvpl.compile import CompileRequest
+        from plugadvpl.compile import run as compile_run
+        from plugadvpl.runtime_config import RuntimeConfig
+
+        req = CompileRequest(
+            files=[tlpp_path],
+            mode="appre",
+            no_warnings=False,
+        )
+        cfg = RuntimeConfig.load_or_default()
+        result = compile_run(req, cfg, tlpp_path.parent)
+        return result.exit_code == 0
+    except Exception:  # noqa: BLE001 — validate é best-effort
+        return False
+
+
+def _rollback_cascade(
+    file_path: Path,
+    tlpp_path: Path,
+    bak_path: Path | None,
+    project_root: Path,
+) -> Literal["bak", "git", "failed"]:
+    """Cascata §4.2.4: bak → git → abort."""
+    # Tentativa primária: restore via bak
+    if bak_path is None:
+        bak_path = _find_oldest_bak(file_path)
+    if bak_path and bak_path.exists():
+        try:
+            file_path.write_bytes(bak_path.read_bytes())
+            if tlpp_path.exists() and tlpp_path != file_path:
+                tlpp_path.unlink()
+            return "bak"
+        except OSError:
+            pass
+
+    # Fallback 1: git checkout
+    if _restore_via_git(file_path, project_root):
+        if tlpp_path.exists() and tlpp_path != file_path:
+            try:
+                tlpp_path.unlink()
+            except OSError:
+                pass
+        return "git"
+
+    # Fallback 2: abort
+    return "failed"
+
+
+def _write_and_rename(report: MigrationReport, plan: MigrationPlan) -> Path:
+    """Aplica final_content + rename .prw → .tlpp se rename-extension rodou.
+
+    Retorna path final (.tlpp se rename ok, .prw se não).
+    """
+    if report.final_content is None:
+        return plan.file_path  # nada mudou
+    # Detecta se rename-extension rodou OK
+    rename_ok = any(
+        r.recipe_id == "rename-extension" and r.status == "ok"
+        for r in report.recipe_results
+    )
+    target = (
+        plan.file_path.with_suffix(".tlpp") if rename_ok else plan.file_path
+    )
+    target.write_text(report.final_content, encoding="utf-8")
+    if rename_ok and plan.file_path != target and plan.file_path.exists():
+        plan.file_path.unlink()
+    return target
+
+
+def apply(plan: MigrationPlan, *, validate: bool = False) -> MigrationReport:
+    """Aplica recipes ao FS (com pre-flight, backup, validate, rollback)."""
+    errors = _check_pre_flight(plan)
+    if errors:
+        return MigrationReport(
+            file_path=plan.file_path,
+            recipe_results=[
+                RecipeResult(
+                    recipe_id="pre-flight",
+                    status="error",
+                    message="; ".join(errors),
+                )
+            ],
+        )
+
+    # Backup ANTES de qualquer write
+    bak_path = _create_backup(plan.file_path)
+
+    # Dry run pra obter final_content
+    report = dry_run(plan)
+    if report.final_content is None:
+        return report  # nada a aplicar
+
+    # Write + rename
+    target = _write_and_rename(report, plan)
+
+    # Validate
+    if validate:
+        ok = _validate_via_compile(target)
+        if not ok:
+            # Rollback cascade
+            outcome = _rollback_cascade(
+                plan.file_path, target, bak_path, plan.project_root
+            )
+            new_report = MigrationReport(
+                file_path=plan.file_path,
+                recipe_results=report.recipe_results,
+                final_content=None,
+                rollback_used=outcome,
+                compile_validated=False,
+            )
+            if outcome == "failed":
+                typer.echo(
+                    "CRITICAL: rollback falhou. "
+                    "Arquivo em estado intermediário. "
+                    f"Restaure manualmente de {bak_path} ou via git.",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+            return new_report
+        return MigrationReport(
+            file_path=target,
+            recipe_results=report.recipe_results,
+            final_content=report.final_content,
+            rollback_used="none",
+            compile_validated=True,
+        )
+
+    return MigrationReport(
+        file_path=target,
+        recipe_results=report.recipe_results,
+        final_content=report.final_content,
+        rollback_used="none",
+        compile_validated=False,
     )

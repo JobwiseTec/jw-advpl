@@ -199,3 +199,115 @@ class TestDryRun:
         report = dry_run(plan)
         ids = [r.recipe_id for r in report.recipe_results]
         assert ids == ["rename-extension", "header-includes"]
+
+
+class TestApplyAndRollback:
+    def test_apply_writes_tlpp_when_valid(self, tmp_path, monkeypatch) -> None:
+        """Happy path: apply escreve .tlpp, valida compile=0, mantém."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+
+        f = tmp_path / "a.prw"
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda p: True,
+        )
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            no_impact_check=True,
+            allow_dirty=True,
+            tlpp_version=(20, 3, 2),
+        )
+        report = apply(plan, validate=True)
+        # .tlpp existe; .prw foi renamed
+        assert (tmp_path / "a.tlpp").exists()
+        assert not f.exists()
+        assert report.rollback_used == "none"
+        assert report.compile_validated
+
+    def test_rollback_via_bak_when_compile_fails(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Compile fails → rollback restaura .prw de .bak.<timestamp>."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+
+        original_content = "User Function X()\nReturn .T.\n"
+        f = tmp_path / "a.prw"
+        f.write_text(original_content, encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda p: False,
+        )
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        report = apply(plan, validate=True)
+        # .prw voltou; .tlpp foi removido
+        assert f.exists()
+        assert not (tmp_path / "a.tlpp").exists()
+        assert report.rollback_used == "bak"
+        assert f.read_text(encoding="cp1252") == original_content
+
+    def test_rollback_via_git_when_bak_missing(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """BAK deletado entre runs → fallback git checkout."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+
+        def fake_git_restore(file_path, project_root):
+            file_path.write_text("RESTORED VIA GIT", encoding="cp1252")
+            return True
+
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile", lambda p: False
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git", fake_git_restore
+        )
+        f = tmp_path / "a.prw"
+        f.write_text("orig", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        # Hack: monkeypatch _create_backup pra no-op (força bak missing)
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup", lambda p: None
+        )
+        report = apply(plan, validate=True)
+        assert report.rollback_used == "git"
+
+    def test_rollback_failed_exit_2(self, tmp_path, monkeypatch) -> None:
+        """Bak missing + git fails → exit code 2 (CRITICAL)."""
+        import pytest
+        import typer
+
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile", lambda p: False
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git",
+            lambda f, r: False,
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup", lambda p: None
+        )
+        f = tmp_path / "a.prw"
+        f.write_text("orig", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        with pytest.raises(typer.Exit) as exc:
+            apply(plan, validate=True)
+        assert exc.value.exit_code == 2
