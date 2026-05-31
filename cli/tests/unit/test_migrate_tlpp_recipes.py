@@ -247,3 +247,49 @@ class TestUserFunctionLowercase:
         assert "function u_fata050(" in r.new_content
         assert len(r.todo_markers) == 1
         assert "2 caller" in r.todo_markers[0]
+
+
+class TestNamedArgs:
+    """Recipe order 6 — := → = em named-args, gated tlpp_version≥20.3.2."""
+
+    def test_skip_when_version_below_gate(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.named_args import NamedArgs
+
+        content = "Foo(p1 := 1, p2 := 2)\n"
+        ctx = MigrationContext(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            tlpp_version=(20, 3, 1),
+        )
+        r = NamedArgs().apply(content, ctx)
+        assert r.status == "skipped"
+        assert "20.3.2" in r.message
+
+    def test_converts_assignment_in_call(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.named_args import NamedArgs
+
+        content = "Foo(p1 := 1, p2 := 2)\n"
+        ctx = MigrationContext(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            tlpp_version=(20, 3, 2),
+        )
+        r = NamedArgs().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "p1 = 1" in r.new_content
+        assert "p2 = 2" in r.new_content
+        assert ":=" not in r.new_content
+
+    def test_nochange_when_no_assignment_in_call(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.named_args import NamedArgs
+
+        # := em assignment normal (sem parens) — fica intacto
+        content = "Local cVar := 'x'\n"
+        ctx = MigrationContext(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            tlpp_version=(20, 3, 2),
+        )
+        r = NamedArgs().apply(content, ctx)
+        assert r.status == "nochange"
