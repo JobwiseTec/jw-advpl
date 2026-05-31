@@ -91,3 +91,43 @@ class TestRenderLogDiagnoseHtml:
         html = render_log_diagnose_html("c.log", 10, [_finding(message="<script>XSS</script>")])
         assert "<script>XSS" not in html
         assert "&lt;script&gt;XSS" in html
+
+    def test_escapes_html_multi_vector_xss(self) -> None:
+        """Regression: vetores XSS em múltiplos campos (snippet, file_label,
+        link.environment, link.stack) — todos devem passar por html.escape()."""
+        finding = _finding(
+            message="<img src=x onerror=alert(1)>",
+            snippet="</pre><script>orig</script>",
+            categoria="<svg onload=alert('c')>",
+            sugestao_fix="<a href='javascript:alert(1)'>click</a>",
+        )
+        link = {
+            "file": "<x>.log", "environment": "<env>", "thread": "<t>",
+            "metrics": {}, "stack": "</code><script>s</script>",
+            "matched": True, "matched_by": "<m>",
+            "enriched": 1,
+        }
+        out = render_log_diagnose_html(
+            "<title-injection></h1>",
+            10,
+            [finding],
+            link=link,
+        )
+        # Nenhum vetor raw deve sobreviver
+        assert "<img src=x onerror=" not in out
+        assert "<svg onload=" not in out
+        assert "<a href='javascript:" not in out
+        assert "</title-injection></h1>" not in out
+        assert "</pre><script>orig" not in out
+        assert "</code><script>s" not in out
+        # Escaped forms presentes
+        assert "&lt;img src=x onerror=alert(1)&gt;" in out
+        assert "&lt;svg onload=" in out
+        assert "&lt;env&gt;" in out
+
+    def test_ora_code_in_deeplink_is_lowercased(self) -> None:
+        """ora_code 'ORA-00904' vira 'ora-00904' no URL (formato Oracle docs)."""
+        out = render_log_diagnose_html("c.log", 10, [_finding(ora_code="ORA-00942")])
+        assert "https://docs.oracle.com/error-help/db/ora-00942/" in out
+        # Versão maiúscula NÃO vaza no path
+        assert "/ORA-00942/" not in out

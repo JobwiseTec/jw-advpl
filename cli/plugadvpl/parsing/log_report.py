@@ -48,6 +48,9 @@ _STYLE = """
 """
 
 
+_MAX_TIPS_IN_REPORT = 5
+
+
 def _esc(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
@@ -120,7 +123,8 @@ def render_log_diagnose_html(  # noqa: PLR0915
         original = str(f.get("snippet") or "")
         orig_html = (
             f"<details><summary>original</summary><pre class='orig'>{_esc(original)}</pre></details>"
-            if original.strip() else ""
+            if original.strip()
+            else ""
         )
         arows.append(
             f"<tr><td>{i}</td>"
@@ -155,7 +159,7 @@ def render_log_diagnose_html(  # noqa: PLR0915
             f"<div class='tip'><b style='color:{fg}'>{emoji} [{_esc(f.get('categoria'))}] "
             f"{_esc(msg[:140])}</b><br>💡 {_esc(tip)}{ref_a}</div>"
         )
-        if len(tips) >= 5:
+        if len(tips) >= _MAX_TIPS_IN_REPORT:
             break
     tips_html = "\n".join(tips)
 
@@ -170,9 +174,9 @@ def render_log_diagnose_html(  # noqa: PLR0915
 <div class="cards">
   <div class="card"><div class="big">{len(findings)}</div>findings ({total_events} eventos)</div>
   <div class="card sevwrap">
-    <span style="color:#b42318;background:#fde8e6">\U0001f534 {by_sev['critical']}</span>
-    <span style="color:#9a6700;background:#fff3cd">\U0001f7e1 {by_sev['warning']}</span>
-    <span style="color:#0f5fb3;background:#e6f0fb">\u2139\ufe0f {by_sev['info']}</span>
+    <span style="color:#b42318;background:#fde8e6">\U0001f534 {by_sev["critical"]}</span>
+    <span style="color:#9a6700;background:#fff3cd">\U0001f7e1 {by_sev["warning"]}</span>
+    <span style="color:#0f5fb3;background:#e6f0fb">\u2139\ufe0f {by_sev["info"]}</span>
     <div style="margin-top:6px;color:#555">por severidade</div>
   </div>
   {metrics_card}
@@ -187,7 +191,7 @@ def render_log_diagnose_html(  # noqa: PLR0915
 <tbody>
 {arows_html}
 </tbody></table>
-{f'<h2>Dicas de correção</h2>{tips_html}' if tips_html else ''}
+{f"<h2>Dicas de correção</h2>{tips_html}" if tips_html else ""}
 <footer>Gerado por plugadvpl log-diagnose --format html</footer>
 </div></body></html>"""
 
