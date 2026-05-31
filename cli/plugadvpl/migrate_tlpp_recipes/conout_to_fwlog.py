@@ -21,7 +21,7 @@ class ConOutToFwLog(RecipeBase):
     category = "idioms"
     description = "ConOut() -> FwLogMsg('info', ...)"
 
-    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:
+    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:  # noqa: ARG002
         new_content = _CONOUT_RE.sub('FwLogMsg("info", ', content)
         if new_content == content:
             return RecipeResult(recipe_id=self.id, status="nochange")

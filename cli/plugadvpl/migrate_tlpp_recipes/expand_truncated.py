@@ -16,17 +16,13 @@ import re
 
 from plugadvpl.migrate_tlpp_recipes import MigrationContext, RecipeBase, RecipeResult
 
-_FUNCTION_DEF_RE = re.compile(
-    r"\b(?:User\s+|Static\s+)?Function\s+(\w{10})\s*\(", re.IGNORECASE
-)
+_FUNCTION_DEF_RE = re.compile(r"\b(?:User\s+|Static\s+)?Function\s+(\w{10})\s*\(", re.IGNORECASE)
 
 
 class ExpandTruncatedNames(RecipeBase):
     id = "expand-truncated-names"
     category = "idioms"
-    description = (
-        "Detecta nomes truncados a 10 chars (limite ADVPL legacy) - emite todos"
-    )
+    description = "Detecta nomes truncados a 10 chars (limite ADVPL legacy) - emite todos"
 
     def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:
         if ctx.db_connection is None:
@@ -42,8 +38,7 @@ class ExpandTruncatedNames(RecipeBase):
         for m in matches:
             name = m.group(1)
             cursor = ctx.db_connection.execute(
-                "SELECT COUNT(*) FROM chamadas "
-                "WHERE destino = ? AND origem_arquivo != ?",
+                "SELECT COUNT(*) FROM chamadas WHERE destino = ? AND origem_arquivo != ?",
                 (name.upper(), str(ctx.file_path)),
             )
             callers = int(cursor.fetchone()[0])

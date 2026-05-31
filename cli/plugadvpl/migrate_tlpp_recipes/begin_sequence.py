@@ -25,7 +25,7 @@ class BeginSequenceToTry(RecipeBase):
     category = "idioms"
     description = "Begin Sequence/Recover/End Sequence -> try/catch"
 
-    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:
+    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:  # noqa: ARG002
         todos: list[str] = []
 
         def replace(match: re.Match[str]) -> str:
@@ -34,9 +34,7 @@ class BeginSequenceToTry(RecipeBase):
             catch_body = match.group(3).strip()
             # Detecta aninhamento dentro do try_body
             if _NESTED_RE.search(try_body):
-                todos.append(
-                    "begin-sequence-to-try: aninhamento detectado - revise manualmente"
-                )
+                todos.append("begin-sequence-to-try: aninhamento detectado - revise manualmente")
                 return match.group(0)  # mantém original
             return f"try\n    {try_body}\ncatch ({err_var})\n    {catch_body}\nend"
 

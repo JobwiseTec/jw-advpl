@@ -29,13 +29,12 @@ class JsonInline(RecipeBase):
     category = "idioms"
     description = "JsonObject():New() + chain -> JSON inline { ... }"
 
-    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:
+    def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:  # noqa: ARG002
         matches = list(_JSON_NEW_RE.finditer(content))
         if not matches:
             return RecipeResult(recipe_id=self.id, status="nochange")
         todos = [
-            f"json-inline: {m.group(1)} := JsonObject():New() pode ser inline - "
-            f"revisar manualmente"
+            f"json-inline: {m.group(1)} := JsonObject():New() pode ser inline - revisar manualmente"
             for m in matches
         ]
         return RecipeResult(

@@ -10,9 +10,12 @@ precisa propor namespace manualmente).
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from plugadvpl.migrate_tlpp_recipes import MigrationContext, RecipeBase, RecipeResult
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _NAMESPACE_RE = re.compile(r"^\s*namespace\s+[\w.]+\s*$", re.IGNORECASE | re.MULTILINE)
 
@@ -42,18 +45,14 @@ class NamespaceInfer(RecipeBase):
 
     def apply(self, content: str, ctx: MigrationContext) -> RecipeResult:
         if _NAMESPACE_RE.search(content):
-            return RecipeResult(
-                recipe_id=self.id, status="nochange", message="ja tem namespace"
-            )
+            return RecipeResult(recipe_id=self.id, status="nochange", message="ja tem namespace")
         ns = _infer_namespace(ctx.file_path)
         if ns is None:
             return RecipeResult(
                 recipe_id=self.id,
                 status="needs-review",
                 message="path nao indicativo - defina namespace manualmente",
-                todo_markers=[
-                    "namespace-infer: path ambiguo; defina namespace manualmente"
-                ],
+                todo_markers=["namespace-infer: path ambiguo; defina namespace manualmente"],
             )
         new_content = f"namespace {ns}\n\n" + content
         return RecipeResult(recipe_id=self.id, status="ok", new_content=new_content)
