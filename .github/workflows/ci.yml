@@ -92,6 +92,11 @@ jobs:
         plugadvpl/migrate_tlpp_recipes/rename_extension.py
         plugadvpl/migrate_tlpp_recipes/user_function.py
         plugadvpl/output.py
+        plugadvpl/parsing/ini_audit.py
+        plugadvpl/parsing/ini_known_keys.py
+        plugadvpl/parsing/ini_report.py
+        plugadvpl/parsing/ini_suggest.py
+        plugadvpl/parsing/log_report.py
         plugadvpl/query.py
         plugadvpl/runtime_config.py
         plugadvpl/scan.py

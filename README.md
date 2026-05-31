@@ -778,9 +778,9 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 - **40 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
 - **54 skills** (21 knowledge + 33 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
-- **Schema SQLite v15** — 15 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
+- **Schema SQLite v18** — 18 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` v0.19.0)
 - **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1297 testes verde** (unit + integration + bench + smoke real opcional) — ~82s suite full
+- **1339 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -796,6 +796,17 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.19.0 — `ini-audit` ganha score + HTML; `log-diagnose` ganha cross-link + HTML (PRs externos)
+
+- **`ini-audit` score 0–100 + selo** (`compliant`/`partial`/`non_compliant`) ponderado por severidade (crit ×3.0/warn ×1.5/info ×0.5), persistido em `ini_files` (migration 017+018) na mesma transação dos findings. Aparece no CLI: `Score AppServer_TSS.ini: 34.7 (non_compliant)` — [@tbarbito](https://github.com/tbarbito), PR [#21](https://github.com/JoniPraia/plugadvpl/pull/21)
+- **Detecção estrutural de fonte de banco**: INI com 2+ fontes ativas (`[TopConnect]`/`[DBAccess]`/`DB*` no `[Environment]`) num papel direto vira finding `warning` `INI-DB-CONFLICT`; alternativas redundantes viram `ok_with_note`
+- **`ini-audit --format html`** self-contained com card de score, findings agrupados, ~170 chaves canônicas TDN catalogadas (detecção de typos/obsoletas), seções comentadas, dirty lines, **INI sugerido** reescrito preservando comentários + botão copiar
+- **`log-diagnose --link <arquivo>`**: correlaciona `console.log` ↔ `profile.log` por `environment::thread`; enriquece findings com pico memória/uptime/stack do profile — [@tbarbito](https://github.com/tbarbito), PR [#23](https://github.com/JoniPraia/plugadvpl/pull/23)
+- **`log-diagnose --format html`** com deep-link Oracle pro código ORA específico (`docs.oracle.com/error-help/db/ora-xxxxx/`)
+- `OutputFormat.html` adicionado ao `output.py` — infra reusável por outros comandos
+- **Review do mantedor**: smoke E2E + 8 edge cases (XSS multi-vetor, BOM+CRLF, duplicates, connection strings, Unicode/acentos, seção comentada) + 6 regression tests + lint cleanup dos 5 arquivos novos
+- Schema bump v16 → v18. 38 testes novos. Suite: 1297 → 1339 passed
 
 ### v0.18.0 — `plugadvpl migrate-tlpp` (primeiro migrador ADVPL→TLPP determinístico)
 

@@ -4,6 +4,55 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-05-31
+
+### Added — `ini-audit` ganha score de conformidade + detecção de fonte de banco + `--format html` (PR #21 [@tbarbito](https://github.com/tbarbito))
+
+Closes [#20](https://github.com/JoniPraia/plugadvpl/issues/20).
+
+**Score de conformidade ponderado por severidade** (crit ×3.0, warn ×1.5, info ×0.5) com selo (`compliant ≥85` / `partial ≥60` / `non_compliant <60`) persistido em `ini_files.score` + `compliance` (migration 017+018) na **mesma transação** dos findings — nunca stale. Aparece no resumo do CLI: `Score AppServer_TSS.ini: 34.7 (non_compliant)`.
+
+**Detecção estrutural de fonte de banco:** quando INI define a conexão por **uma** fonte (`[TopConnect]` / `[DBAccess]` / `DB*` no `[Environment]`), as demais viram `ok_with_note` (alternativas redundantes). **2+ fontes ativas** num papel que conecta direto viram finding `warning` `INI-DB-CONFLICT` — captura uma classe de problema real em ambientes mal configurados.
+
+**`--format html` self-contained:** card de score + selo + findings agrupados (críticos/warnings/justificados) + chaves não-reconhecidas (typos/obsoletas via novo módulo `ini_known_keys.py` com catálogo de ~170 chaves canônicas TDN) + seções comentadas + dirty lines + **INI sugerido** que reescreve preservando comentários (`[CORRECAO]` no valor divergente, chaves críticas ausentes injetadas DENTRO da seção existente, BOM removido). Botão "copiar" no HTML.
+
+`OutputFormat.html` adicionado ao `output.py` — infra reusável por outros comandos.
+
+### Added — `log-diagnose` ganha cross-link console↔profile + `--format html` (PR #23 [@tbarbito](https://github.com/tbarbito))
+
+Closes [#22](https://github.com/JoniPraia/plugadvpl/issues/22).
+
+**`--link <arquivo>`:** ingere o arquivo oposto e correlaciona por `environment::thread` (fallback `thread` → `environment`). Enriquece findings do principal cuja thread bate com a do linkado, com contexto do profile (pico memória, uptime, stack). Sem match → resultado gracioso. Resume cross-link em stderr + bloco no HTML.
+
+**`--format html`:** cards de severidade + métricas, resumo por categoria, tabela de findings com link TDN/Oracle, trecho original num expansível, dicas de correção, bloco de correlação. **Deep-link Oracle pro código específico** (`docs.oracle.com/error-help/db/ora-xxxxx/`) em vez da página índice — economiza 1 click no troubleshooting.
+
+### Review do mantedor
+
+Ambos PRs passaram por revisão técnica antes do merge:
+- **Smoke E2E** com INIs e logs sintéticos — `INI-DB-CONFLICT` detectado, HTML renderizado, score correto (34.7 non_compliant em INI com 2 fontes DB ativas).
+- **Edge cases** validados: XSS multi-vetor (`<svg onload>`, `<img onerror>`, `javascript:` URL, `</td>` injection), BOM+CRLF, chaves duplicadas, connection strings com `;`/`=`, seções comentadas, unicode/acentos.
+- **Lint cleanup** dos 5 arquivos novos: `RUF002`, `TC003`, `UP035`, `F401`, `I001`, `SIM103`, `PLR2004` (extrai `_MAX_TIPS_IN_REPORT` constante), `format` pass — todos `ruff` + `mypy` clean.
+- **6 regression tests adicionados** (4 em `ini_*`, 2 em `log_*`) cobrindo XSS multi-vetor, duplicate keys, connection strings com chars especiais, seção comentada, URL Oracle lowercase.
+
+### Changed — Schema bump v16 → v18
+
+Migrations 017 (`ini_score`) e 018 (`ini_summary`) adicionam colunas `score`, `compliance`, `summary_json` em `ini_files`.
+
+### Tests
+
+- PR #21: 21 unit tests novos do @tbarbito + 4 regression do review = 25
+- PR #23: 11 unit tests novos do @tbarbito + 2 regression do review = 13
+- Total: **38 testes novos**. Suite full: 1297 → 1339 passed.
+
+### Bumped
+
+- `uvx plugadvpl@0.18.0` → `uvx plugadvpl@0.19.0` nas 28 skills.
+- `plugin.json` / `marketplace.json` → 0.19.0.
+
+### Créditos
+
+Features inteiramente desenhadas e implementadas por **[@tbarbito](https://github.com/tbarbito)** — mesmo autor da feature original de `ini-audit` + `log-diagnose` no PR [#6](https://github.com/JoniPraia/plugadvpl/pull/6) (v0.4.x, ~16k linhas com 487 regras TDN + 19 alert rules). Esta release v0.19.0 estende as ferramentas que ele mesmo entregou, com revisão técnica + regression tests do mantedor.
+
 ## [0.18.0] - 2026-05-31
 
 ### Added — `plugadvpl migrate-tlpp` (migrador determinístico ADVPL clássico → TLPP moderno)
