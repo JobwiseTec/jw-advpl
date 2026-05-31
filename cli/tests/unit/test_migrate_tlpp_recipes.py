@@ -85,3 +85,30 @@ class TestConvertEncoding:
         ctx = MigrationContext(file_path=tmp_path / "a.tlpp", project_root=tmp_path)
         r = ConvertEncoding().apply("body", ctx)
         assert r.status == "nochange"
+
+
+class TestRenameExtension:
+    """Recipe order 2 — marca .prw pra rename .tlpp."""
+
+    def test_prw_returns_ok_with_content(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.rename_extension import RenameExtension
+
+        ctx = MigrationContext(file_path=tmp_path / "FATA050.prw", project_root=tmp_path)
+        r = RenameExtension().apply("body", ctx)
+        assert r.status == "ok"
+        assert r.new_content == "body"
+        assert "FATA050" in r.message
+
+    def test_tlpp_returns_nochange(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.rename_extension import RenameExtension
+
+        ctx = MigrationContext(file_path=tmp_path / "a.tlpp", project_root=tmp_path)
+        r = RenameExtension().apply("body", ctx)
+        assert r.status == "nochange"
+
+    def test_unknown_extension_returns_skipped(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.rename_extension import RenameExtension
+
+        ctx = MigrationContext(file_path=tmp_path / "a.txt", project_root=tmp_path)
+        r = RenameExtension().apply("body", ctx)
+        assert r.status == "skipped"
