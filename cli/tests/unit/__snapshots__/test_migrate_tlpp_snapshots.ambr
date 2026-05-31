@@ -1,0 +1,73 @@
+# serializer version: 1
+# name: test_simple_user_function_snapshot
+  '''
+  #Include "totvs.ch"
+  
+  function u_fata050()
+      Local cMsg := "Ola mundo"
+      FwLogMsg("info", cMsg)
+  Return .T.
+  
+  '''
+# ---
+# name: test_with_begin_sequence_snapshot
+  '''
+  #Include "totvs.ch"
+  
+  function u_fata060()
+      Local oErr
+      Local lOk := .T.
+  
+      try
+      If !lOk
+              Break
+          EndIf
+          FwLogMsg("info", "Sucesso")
+  catch (oErr)
+      FwLogMsg("info", "Falhou: " + oErr:Description)
+  end
+  Return lOk
+  
+  '''
+# ---
+# name: test_with_json_object_snapshot
+  '''
+  #Include "totvs.ch"
+  
+  function u_fata070()
+      Local oJson = JsonObject():New()
+  
+      oJson["id"] := 1
+      oJson["nome"] := "Teste"
+      oJson["ativo"] := .T.
+  Return oJson
+  
+  '''
+# ---
+# name: test_with_namespace_hint_snapshot
+  '''
+  namespace custom.sigafat.with_namespace_hint
+  
+  #Include "totvs.ch"
+  
+  function u_mt460fim()
+      Local cFil = xFilial("SF2")
+      FwLogMsg("info", "Modulo SIGAFAT - filial " + cFil)
+  Return .T.
+  
+  '''
+# ---
+# name: test_with_public_var_snapshot
+  '''
+  #Include "totvs.ch"
+  
+  cVarGlobal := "x"
+  nContador := 0
+  
+  function u_fata080()
+      nContador := nContador + 1
+      ConOut(cVarGlobal)
+  Return nContador
+  
+  '''
+# ---
