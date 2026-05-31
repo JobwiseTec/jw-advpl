@@ -10,6 +10,7 @@ Spec: docs/superpowers/specs/2026-05-31-migrate-tlpp-design.md
 
 from __future__ import annotations
 
+import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,3 +50,39 @@ class MigrationReport:
 
     def all_todos(self) -> list[str]:
         return [t for r in self.recipe_results for t in r.todo_markers]
+
+
+def _check_pre_flight(plan: MigrationPlan) -> list[str]:
+    """Pre-flight gates (spec §4.1). Retorna lista de erros bloqueantes."""
+    errors: list[str] = []
+
+    # §4.1.1 — git working tree limpo
+    if not plan.allow_dirty:
+        try:
+            r = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=plan.project_root,
+                capture_output=True,
+                timeout=10,
+            )
+            if r.stdout.strip():
+                errors.append(
+                    "git working tree não está limpo. "
+                    "Use --allow-dirty pra prosseguir."
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # Sem git ou hangs — ignora (warning seria nice, sem bloqueio)
+            pass
+
+    # §4.1.3 — DB populated (CRITICAL pra caller detection)
+    if not plan.no_impact_check:
+        db_path = plan.project_root / ".plugadvpl" / "index.db"
+        if not db_path.exists():
+            errors.append(
+                "DB .plugadvpl/index.db ausente. "
+                "Execute 'plugadvpl ingest' antes "
+                "OU use --no-impact-check "
+                "(preserva nomes truncados; modo conservador)."
+            )
+
+    return errors

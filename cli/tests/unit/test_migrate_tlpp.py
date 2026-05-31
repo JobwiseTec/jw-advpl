@@ -1,6 +1,7 @@
 """Unit tests for plugadvpl/migrate_tlpp.py + migrate_tlpp_diff.py (v0.18.0+)."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from plugadvpl.migrate_tlpp_diff import has_changes, unified_diff_text
@@ -53,3 +54,67 @@ class TestMigrationDataclasses:
             ],
         )
         assert report.counts() == {"ok": 2, "nochange": 1, "needs-review": 1}
+
+
+class TestPreFlight:
+    def test_blocks_when_dirty_git(self, tmp_path: Path, monkeypatch) -> None:
+        """git status --porcelain non-empty + sem --allow-dirty → bloqueio."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+
+        def fake_run(cmd, **kw):
+            class R:
+                returncode = 0
+                stdout = b" M file.txt\n"
+
+            return R()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        # cria DB pra não disparar erro de ingest também
+        (tmp_path / ".plugadvpl").mkdir()
+        (tmp_path / ".plugadvpl" / "index.db").write_bytes(b"")
+        plan = MigrationPlan(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        errors = _check_pre_flight(plan)
+        assert any("git" in e.lower() for e in errors)
+
+    def test_allows_dirty_with_override(self, tmp_path: Path, monkeypatch) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+
+        def fake_run(cmd, **kw):
+            class R:
+                returncode = 0
+                stdout = b" M file.txt\n"
+
+            return R()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        plan = MigrationPlan(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            allow_dirty=True,
+            no_impact_check=True,
+        )
+        errors = _check_pre_flight(plan)
+        # git error não aparece com allow_dirty=True
+        assert not any("working tree" in e.lower() for e in errors)
+
+    def test_blocks_when_db_not_ingested(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Sem .plugadvpl/index.db + sem --no-impact-check → bloqueio."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+
+        def fake_run(cmd, **kw):
+            class R:
+                returncode = 0
+                stdout = b""
+
+            return R()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        plan = MigrationPlan(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            allow_dirty=True,
+        )
+        errors = _check_pre_flight(plan)
+        assert any("ingest" in e.lower() or "db" in e.lower() for e in errors)
