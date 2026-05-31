@@ -118,3 +118,84 @@ class TestPreFlight:
         )
         errors = _check_pre_flight(plan)
         assert any("ingest" in e.lower() or "db" in e.lower() for e in errors)
+
+
+class TestDryRun:
+    def test_safe_only_skips_idioms(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+
+        f = tmp_path / "a.prw"
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            enable_idioms=False,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        report = dry_run(plan)
+        # 6 SAFE recipes rodados; 5 IDIOMS não devem aparecer no report
+        ids_executed = {r.recipe_id for r in report.recipe_results}
+        idioms_ids = {
+            "namespace-infer",
+            "begin-sequence-to-try",
+            "conout-to-fwlog",
+            "json-inline",
+            "expand-truncated-names",
+        }
+        assert not (ids_executed & idioms_ids)
+
+    def test_idioms_enabled_runs_all_11(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+
+        f = tmp_path / "SIGAFAT" / "a.prw"
+        f.parent.mkdir()
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            enable_idioms=True,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        report = dry_run(plan)
+        assert len(report.recipe_results) == 11
+
+    def test_topological_order_preserved(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+        from plugadvpl.migrate_tlpp_recipes import CANONICAL_ORDER
+
+        f = tmp_path / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            enable_idioms=True,
+            no_impact_check=True,
+            allow_dirty=True,
+        )
+        report = dry_run(plan)
+        ids_executed = [r.recipe_id for r in report.recipe_results]
+        # ids_executed deve ser subsequência preservando ordem de CANONICAL_ORDER
+        idx_map = [CANONICAL_ORDER.index(i) for i in ids_executed]
+        assert idx_map == sorted(idx_map), "ordem violada"
+
+    def test_selected_recipes_filters_but_keeps_order(
+        self, tmp_path: Path
+    ) -> None:
+        """selected_recipes=['header-includes', 'rename-extension'] aplica os 2
+        mas em ordem canônica (rename=2, header=3 → header DEPOIS rename)."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+
+        f = tmp_path / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f,
+            project_root=tmp_path,
+            no_impact_check=True,
+            allow_dirty=True,
+            selected_recipes=("header-includes", "rename-extension"),
+        )
+        report = dry_run(plan)
+        ids = [r.recipe_id for r in report.recipe_results]
+        assert ids == ["rename-extension", "header-includes"]

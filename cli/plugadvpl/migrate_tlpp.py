@@ -14,9 +14,18 @@ import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from plugadvpl.migrate_tlpp_recipes import RecipeResult
+from plugadvpl.migrate_tlpp_recipes import (
+    REGISTRY,
+    MigrationContext,
+    RecipeResult,
+    _register_all,
+    filter_by_category,
+)
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 @dataclass(frozen=True)
@@ -86,3 +95,87 @@ def _check_pre_flight(plan: MigrationPlan) -> list[str]:
             )
 
     return errors
+
+
+def _open_db(project_root: Path) -> sqlite3.Connection | None:
+    """Abre DB read-only se existe."""
+    import sqlite3
+
+    db_path = project_root / ".plugadvpl" / "index.db"
+    if not db_path.exists():
+        return None
+    try:
+        return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.OperationalError:
+        return None
+
+
+def _select_recipes(plan: MigrationPlan) -> list[str]:
+    """Filtra + ordena topologicamente as recipes a executar."""
+    _register_all()
+    available = filter_by_category(plan.enable_idioms)
+    if plan.selected_recipes:
+        # Intersect mantendo ordem canônica de available
+        selected = set(plan.selected_recipes)
+        return [r for r in available if r in selected]
+    return available
+
+
+def dry_run(plan: MigrationPlan) -> MigrationReport:
+    """Aplica recipes IN MEMORY (sem tocar FS). Retorna report com diffs."""
+    db_conn = _open_db(plan.project_root)
+    ctx = MigrationContext(
+        file_path=plan.file_path,
+        project_root=plan.project_root,
+        enable_idioms=plan.enable_idioms,
+        tlpp_version=plan.tlpp_version,
+        db_connection=db_conn,
+    )
+    # Read raw bytes + decode cp1252 (caso especial pra convert-encoding;
+    # recipe é só marker — orquestrador faz I/O)
+    try:
+        raw = plan.file_path.read_bytes()
+        # detect: utf-8 BOM → utf-8; senão utf-8 strict; senão cp1252
+        if raw.startswith(b"\xef\xbb\xbf"):
+            content = raw.decode("utf-8-sig")
+        else:
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                content = raw.decode("cp1252", errors="replace")
+    except OSError as e:
+        return MigrationReport(
+            file_path=plan.file_path,
+            recipe_results=[
+                RecipeResult(
+                    recipe_id="io",
+                    status="error",
+                    message=f"read failed: {e!r}",
+                )
+            ],
+        )
+
+    selected_ids = _select_recipes(plan)
+    results: list[RecipeResult] = []
+    current_content = content
+    for rid in selected_ids:
+        recipe = REGISTRY[rid]
+        try:
+            r = recipe.apply(current_content, ctx)
+            results.append(r)
+            if r.new_content is not None and r.status in ("ok", "needs-review"):
+                current_content = r.new_content
+        except Exception as e:  # noqa: BLE001 — recipe não deve quebrar pipeline
+            results.append(
+                RecipeResult(
+                    recipe_id=rid,
+                    status="error",
+                    message=f"{e!r}",
+                )
+            )
+
+    return MigrationReport(
+        file_path=plan.file_path,
+        recipe_results=results,
+        final_content=current_content if current_content != content else None,
+    )
