@@ -1,4 +1,4 @@
-"""Audit engine — cruza ini_keys × ini_rules → grava ini_audit_findings.
+"""Audit engine — cruza ini_keys x ini_rules → grava ini_audit_findings.
 
 Estratégia idêntica ao ``env_manager.parse_ini.compare_against_best_practices``:
 pra cada regra carregada do catálogo (``ini_rules``), procura a chave na seção
@@ -19,14 +19,17 @@ Filtro de roles:
     Regras com lista (``'broker_http|broker_soap'``) só aplicam aos roles
     listados. Match exato (case-sensitive contra ``ini_files.role``).
 """
+
 from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Sequence
 
 # Padrão de intenção em comentários — quando o cliente já documentou que o
 # valor diverge do recomendado, o finding vira ``ok_with_note`` em vez de
@@ -56,6 +59,7 @@ class _Rule:
 @dataclass(slots=True)
 class AuditResult:
     """Sumário de uma chamada de audit."""
+
     files_audited: int = 0
     findings_total: int = 0
     by_severity: dict[str, int] = field(
@@ -95,10 +99,16 @@ _DB_CONN_INDICATORS: frozenset[str] = frozenset({"database", "server", "port", "
 # Chaves DB* no [Environment] que indicam conexão definida ali.
 _DB_ENV_INDICATORS: frozenset[str] = frozenset({"dbdatabase", "dbserver", "dbalias", "dbport"})
 # Papéis que NÃO conectam direto ao banco (isentos da detecção de conflito).
-_ROLES_WITHOUT_DB: frozenset[str] = frozenset({
-    "broker_http", "broker_soap", "broker_rest",
-    "dbaccess_master", "dbaccess_slave", "dbaccess_standalone",
-})
+_ROLES_WITHOUT_DB: frozenset[str] = frozenset(
+    {
+        "broker_http",
+        "broker_soap",
+        "broker_rest",
+        "dbaccess_master",
+        "dbaccess_slave",
+        "dbaccess_standalone",
+    }
+)
 
 
 def _section_defines_db(conn: sqlite3.Connection, file_id: int, section_norm: str) -> bool:
@@ -133,9 +143,10 @@ def _env_defines_db(conn: sqlite3.Connection, file_id: int) -> bool:
 @dataclass(slots=True)
 class _DbSources:
     """Resultado da detecção de fonte de banco de um INI."""
-    redundant: frozenset[str]       # seções (norm) que viram ok_with_note
-    sources_label: str              # rótulo das fontes presentes (p/ a nota)
-    conflict: bool                  # True se 2+ fontes ativas num papel direto
+
+    redundant: frozenset[str]  # seções (norm) que viram ok_with_note
+    sources_label: str  # rótulo das fontes presentes (p/ a nota)
+    conflict: bool  # True se 2+ fontes ativas num papel direto
 
 
 def _detect_db_sources(conn: sqlite3.Connection, file_id: int, role: str) -> _DbSources:
@@ -180,7 +191,9 @@ def _detect_db_sources(conn: sqlite3.Connection, file_id: int, role: str) -> _Db
 
 
 def _load_rules_for_target(
-    conn: sqlite3.Connection, tipo: str, role: str,
+    conn: sqlite3.Connection,
+    tipo: str,
+    role: str,
 ) -> list[_Rule]:
     """Carrega regras aplicáveis a um INI específico (filtra por tipo + role).
 
@@ -219,13 +232,21 @@ def _load_rules_for_target(
 # =============================================================================
 
 
-_ENV_KEY_INDICATORS = frozenset({
-    "rootpath", "sourcepath", "rpodb", "rpoversion", "startpath",
-})
+_ENV_KEY_INDICATORS = frozenset(
+    {
+        "rootpath",
+        "sourcepath",
+        "rpodb",
+        "rpoversion",
+        "startpath",
+    }
+)
 
 
 def _resolve_target_sections(
-    conn: sqlite3.Connection, file_id: int, section_glob: str,
+    conn: sqlite3.Connection,
+    file_id: int,
+    section_glob: str,
 ) -> list[tuple[int, str]]:
     """Devolve ``[(section_id, name_raw), ...]`` que casam o ``section_glob``.
 
@@ -283,7 +304,7 @@ def _resolve_target_sections(
 # =============================================================================
 
 
-def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:
+def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:  # noqa: PLR0911 -- dispatch por detection_kind (8 ramos) + early returns; split em sub-funções por kind viraria ainda mais ruidoso
     """True se ``current_value`` está CONFORME com ``rule``."""
     expected = rule.expected.strip()
     current = (current_value or "").strip()
@@ -322,9 +343,7 @@ def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:
         hi = int(hi_str) if hi_str else None
         if lo is not None and val < lo:
             return False
-        if hi is not None and val > hi:
-            return False
-        return True
+        return not (hi is not None and val > hi)
 
     if rule.detection_kind == "regex":
         try:
@@ -350,9 +369,7 @@ def _value_matches(current: str, expected: str) -> bool:
     # Equivalência booleana
     if e in _BOOL_TRUE and c in _BOOL_TRUE:
         return True
-    if e in _BOOL_FALSE and c in _BOOL_FALSE:
-        return True
-    return False
+    return e in _BOOL_FALSE and c in _BOOL_FALSE
 
 
 # =============================================================================
@@ -444,23 +461,40 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                 score_ok += weight
                 score_weight += weight
                 n_intentional += 1
-                findings.append((
-                    file_id, sec_name, rule.key_name, rule.regra_id, rule.severidade,
-                    f"[{sec_name}] {rule.key_name} (alternativa redundante)",
-                    f"Seção alternativa redundante — INI usa {db.sources_label} como fonte de banco.",
-                    int(key_row[3]) if key_row is not None else 0,
-                    "ok_with_note",
-                ))
+                findings.append(
+                    (
+                        file_id,
+                        sec_name,
+                        rule.key_name,
+                        rule.regra_id,
+                        rule.severidade,
+                        f"[{sec_name}] {rule.key_name} (alternativa redundante)",
+                        f"Seção alternativa redundante — INI usa {db.sources_label} como fonte de banco.",
+                        int(key_row[3]) if key_row is not None else 0,
+                        "ok_with_note",
+                    )
+                )
                 continue
 
             if key_row is None:
                 # Chave ausente. Só vira finding se a regra exigir presença.
-                if rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"} and rule.expected:
-                    findings.append((
-                        file_id, sec_name, rule.key_name, rule.regra_id, rule.severidade,
-                        f"[{sec_name}] {rule.key_name}=  (chave ausente)",
-                        rule.fix_guidance, 0, "active",
-                    ))
+                if (
+                    rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}
+                    and rule.expected
+                ):
+                    findings.append(
+                        (
+                            file_id,
+                            sec_name,
+                            rule.key_name,
+                            rule.regra_id,
+                            rule.severidade,
+                            f"[{sec_name}] {rule.key_name}=  (chave ausente)",
+                            rule.fix_guidance,
+                            0,
+                            "active",
+                        )
+                    )
                     n_missing += 1
                     # Missing bloqueante: peso no denominador; crítico recebe boost 2x.
                     score_weight += weight * (2.0 if rule.severidade == "critical" else 1.0)
@@ -476,11 +510,19 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
             # Não-conforme: ok_with_note se justificado em comentário.
             intentional = _has_intentional_note(c_above or "", c_inline or "")
             status = "ok_with_note" if intentional else "active"
-            findings.append((
-                file_id, sec_name, key_name, rule.regra_id, rule.severidade,
-                f"[{sec_name}] {key_name}={value}"[:200],
-                rule.fix_guidance, int(linha), status,
-            ))
+            findings.append(
+                (
+                    file_id,
+                    sec_name,
+                    key_name,
+                    rule.regra_id,
+                    rule.severidade,
+                    f"[{sec_name}] {key_name}={value}"[:200],
+                    rule.fix_guidance,
+                    int(linha),
+                    status,
+                )
+            )
             # Score: ok_with_note e info contam como OK; critical/warning punem.
             score_weight += weight
             if intentional or rule.severidade == "info":
@@ -492,20 +534,29 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
 
     # Conflito de banco: 2+ fontes ativas num papel que conecta direto.
     if db.conflict:
-        findings.append((
-            file_id, "General", "ConexaoBanco", "INI-DB-CONFLICT", "warning",
-            f"Múltiplas configurações de banco: {db.sources_label}",
-            "Múltiplas fontes de banco detectadas — pode causar conflito; "
-            "verifique qual está sendo usada efetivamente.",
-            0, "active",
-        ))
+        findings.append(
+            (
+                file_id,
+                "General",
+                "ConexaoBanco",
+                "INI-DB-CONFLICT",
+                "warning",
+                f"Múltiplas configurações de banco: {db.sources_label}",
+                "Múltiplas fontes de banco detectadas — pode causar conflito; "
+                "verifique qual está sendo usada efetivamente.",
+                0,
+                "active",
+            )
+        )
         score_weight += _SCORE_WEIGHTS["warning"]
         n_mismatch += 1
 
     score = round(score_ok / score_weight * 100, 1) if score_weight > 0 else 100.0
     score = min(100.0, max(0.0, score))
     summary = {
-        "ok": n_ok, "mismatch": n_mismatch, "missing": n_missing,
+        "ok": n_ok,
+        "mismatch": n_mismatch,
+        "missing": n_missing,
         "intentional": n_intentional,
         "total_rules": n_ok + n_mismatch + n_missing + n_intentional,
     }
@@ -533,14 +584,18 @@ def audit_files(conn: sqlite3.Connection, file_ids: Sequence[int]) -> AuditResul
         result.findings_total += count
 
     # Conta por severidade (1 SELECT consolidado)
-    cur = conn.execute(
-        """
+    cur = (
+        conn.execute(
+            """
         SELECT severidade, COUNT(*) FROM ini_audit_findings
         WHERE file_id IN ({}) AND status = 'active'
         GROUP BY severidade
         """.format(",".join("?" * len(file_ids))),
-        list(file_ids),
-    ) if file_ids else None
+            list(file_ids),
+        )
+        if file_ids
+        else None
+    )
     if cur is not None:
         for sev, cnt in cur.fetchall():
             if sev in result.by_severity:

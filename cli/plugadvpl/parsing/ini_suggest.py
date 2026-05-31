@@ -85,9 +85,7 @@ def generate_suggested_ini(original_text: str, items: list[dict[str, Any]]) -> s
         if m_kv and cur is not None:
             corr = corrections.get((cur.lower(), m_kv.group(1).lower()))
             if corr is not None:
-                out.append(
-                    f"{m_kv.group(1)}={corr}  ; [CORRECAO] valor anterior: {m_kv.group(2)}"
-                )
+                out.append(f"{m_kv.group(1)}={corr}  ; [CORRECAO] valor anterior: {m_kv.group(2)}")
                 continue
         out.append(line)
 

@@ -73,8 +73,12 @@ def _file_block(parsed: dict[str, Any], comp: dict[str, Any], idx: int) -> str:
     fg, bg = _BADGE_COLORS.get(status, ("#333", "#eee"))
     s = comp.get("summary", {})
     findings = comp.get("findings", [])
-    crit = [f for f in findings if f.get("severity") == "critical" and f.get("status") != "ok_with_note"]
-    warn = [f for f in findings if f.get("severity") == "warning" and f.get("status") != "ok_with_note"]
+    crit = [
+        f for f in findings if f.get("severity") == "critical" and f.get("status") != "ok_with_note"
+    ]
+    warn = [
+        f for f in findings if f.get("severity") == "warning" and f.get("status") != "ok_with_note"
+    ]
     note = [f for f in findings if f.get("status") == "ok_with_note"]
 
     out: list[str] = ["<header>"]
@@ -108,7 +112,9 @@ def _file_block(parsed: dict[str, Any], comp: dict[str, Any], idx: int) -> str:
         out.append(
             "<table><thead><tr><th>Seção</th><th>Chave</th><th>Atual</th>"
             "<th>Recomendado</th><th>Detalhe</th></tr></thead><tbody>"
-            + _rows(crit, ["section", "key_name", "current_value", "recommended_value", "description"])
+            + _rows(
+                crit, ["section", "key_name", "current_value", "recommended_value", "description"]
+            )
             + "</tbody></table>"
         )
     if warn:

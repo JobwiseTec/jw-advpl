@@ -112,3 +112,30 @@ class TestRenderIniAuditHtml:
         html = render_ini_audit_html([_report(**comp)])
         assert "<script>XSS" not in html
         assert "&lt;script&gt;XSS&lt;/script&gt;" in html
+
+    def test_escapes_html_multi_vector_xss(self) -> None:
+        """Regression: nenhum dos vetores XSS comuns deve vazar em qualquer campo."""
+        comp = {"findings": [
+            {
+                "section": "<svg onload=alert('s')>",
+                "key_name": "a&b<c>d",
+                "severity": "critical",
+                "status": "active",
+                "current_value": "<img src=x onerror=alert(1)>",
+                "recommended_value": "javascript:alert(2)",
+                "description": "</td><td>injected",
+            },
+        ], "unknown_keys": [
+            {"section": "<x>", "key_name": "y", "value": "<z>", "reason": "<w>"},
+        ]}
+        html = render_ini_audit_html([_report(**comp)])
+        # Nenhum vetor raw deve sobreviver fora de contexto escaped
+        assert "<svg onload=" not in html
+        assert "<img src=x onerror=" not in html
+        # O <script> que aparece é APENAS o template do clipboard (legítimo)
+        assert html.count("<script>") == 1  # o template <script>function _cp</script>
+        # </td> injetado não pode escapar célula
+        assert "</td><td>injected" not in html
+        assert "&lt;/td&gt;&lt;td&gt;injected" in html
+        # &amp; usado pra escapar literais
+        assert "a&amp;b&lt;c&gt;d" in html
