@@ -3164,3 +3164,47 @@ class TestMigrateTlppInit:
         )
         # Read-only: arquivo intacto
         assert f.read_text(encoding="cp1252") == original
+
+
+class TestMigrateTlppRename:
+    """v0.18.0 — plugadvpl migrate-tlpp rename: subset conservador (convert + rename)."""
+
+    def test_rename_diff_only_without_write(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "migrate-tlpp", "rename", "a.prw"],
+        )
+        assert result.exit_code == 0
+        # diff so, .prw permanece
+        assert f.exists()
+        assert not (synthetic_project / "a.tlpp").exists()
+
+    def test_rename_write_applies_rename_and_encoding(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        # Validate=False default pra rename (mais conservador)
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "rename",
+                "a.prw",
+                "--write",
+                "--allow-dirty",
+            ],
+        )
+        assert result.exit_code == 0
+        assert (synthetic_project / "a.tlpp").exists()
+        assert not f.exists()

@@ -3462,6 +3462,59 @@ def migrate_tlpp_init(
     )
 
 
+@migrate_tlpp_app.command("rename")
+def migrate_tlpp_rename(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Arquivo .prw a renomear.")],
+    write: Annotated[
+        bool,
+        typer.Option("--write", help="Aplica rename (default: só diff)."),
+    ] = False,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Após write, valida via compile."),
+    ] = False,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option("--allow-dirty", help="Permite working tree dirty."),
+    ] = False,
+) -> None:
+    """Renomeia .prw → .tlpp + converte encoding cp1252 → utf-8.
+
+    Subset conservador: aplica APENAS recipes ``convert-encoding`` e
+    ``rename-extension`` (canonical order 1-2). Pra recipes completos
+    use ``migrate-tlpp recipes``.
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, apply, dry_run
+
+    root: Path = ctx.obj["root"]
+    target_file = arquivo if arquivo.is_absolute() else root / arquivo
+    plan = MigrationPlan(
+        file_path=target_file,
+        project_root=root,
+        no_impact_check=True,  # rename nao precisa DB
+        allow_dirty=allow_dirty,
+        selected_recipes=("convert-encoding", "rename-extension"),
+    )
+    report = apply(plan, validate=validate) if write else dry_run(plan)
+    if report.final_content is not None and not write:
+        from plugadvpl.migrate_tlpp_diff import unified_diff_text
+
+        diff = unified_diff_text(
+            target_file.read_text(encoding="cp1252", errors="replace"),
+            report.final_content,
+            str(target_file),
+            str(target_file.with_suffix(".tlpp")),
+        )
+        typer.echo(diff)
+    counts = report.counts()
+    typer.secho(
+        f"rename: ok={counts.get('ok', 0)} nochange={counts.get('nochange', 0)}",
+        fg=typer.colors.GREEN,
+        err=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------
