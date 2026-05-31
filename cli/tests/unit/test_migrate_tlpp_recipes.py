@@ -59,3 +59,29 @@ class TestRegistry:
             "expand-truncated-names",
         ]
         assert CANONICAL_ORDER == expected
+
+
+class TestConvertEncoding:
+    """Recipe order 1 — converte cp1252 → utf-8 (marker no MVP)."""
+
+    def test_idempotent_when_already_utf8(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.convert_encoding import ConvertEncoding
+
+        content = "User Function X()\nReturn .T.\n"
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = ConvertEncoding().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_recipe_id_and_category(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.convert_encoding import ConvertEncoding
+
+        assert ConvertEncoding.id == "convert-encoding"
+        assert ConvertEncoding.category == "safe"
+
+    def test_skip_when_tlpp_extension(self, tmp_path: Path) -> None:
+        """Se path já é .tlpp, recipe vira nochange."""
+        from plugadvpl.migrate_tlpp_recipes.convert_encoding import ConvertEncoding
+
+        ctx = MigrationContext(file_path=tmp_path / "a.tlpp", project_root=tmp_path)
+        r = ConvertEncoding().apply("body", ctx)
+        assert r.status == "nochange"
