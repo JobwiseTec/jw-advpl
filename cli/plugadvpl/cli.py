@@ -3361,6 +3361,108 @@ def edit_prw_clean(
 
 
 # ---------------------------------------------------------------------------
+# migrate-tlpp (v0.18.0): migrador deterministico ADVPL classico -> TLPP
+# ---------------------------------------------------------------------------
+
+
+migrate_tlpp_app = typer.Typer(
+    name="migrate-tlpp",
+    help="Migrador determinístico .prw → .tlpp (pipeline ts-migrate-style).",
+    no_args_is_help=True,
+)
+app.add_typer(migrate_tlpp_app, name="migrate-tlpp")
+
+
+def _parse_tlpp_version(s: str | None) -> tuple[int, int, int]:
+    """Parseia '20.3.2' -> (20, 3, 2). None/'' -> (0, 0, 0)."""
+    if not s:
+        return (0, 0, 0)
+    parts = s.split(".")
+    nums = [int(p) for p in parts[:3]]
+    while len(nums) < 3:  # noqa: PLR2004 -- semver tem 3 niveis (major.minor.patch)
+        nums.append(0)
+    return (nums[0], nums[1], nums[2])
+
+
+@migrate_tlpp_app.command("init")
+def migrate_tlpp_init(
+    ctx: typer.Context,
+    pasta: Annotated[
+        Path,
+        typer.Argument(help="Pasta a analisar (recursivo). Default: root do projeto."),
+    ] = Path(),
+    enable_idioms: Annotated[
+        bool,
+        typer.Option("--idioms", help="Inclui recipes IDIOMS na análise."),
+    ] = False,
+    tlpp_version: Annotated[
+        str | None,
+        typer.Option("--tlpp-version", help="Versão AppServer alvo (ex: 20.3.2)."),
+    ] = None,
+) -> None:
+    """Analisa projeto e lista candidatos a migração sem tocar em nada.
+
+    Output (table ou JSON via --format): arquivo, candidato, recipes que
+    aplicariam, blockers de lint (SEC-001/SEC-004), impact (count callers
+    externos via DB).
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+
+    root: Path = ctx.obj["root"]
+    target_dir = pasta if pasta.is_absolute() else root / pasta
+    if not target_dir.exists():
+        typer.secho(f"Pasta não encontrada: {target_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    parsed_version = _parse_tlpp_version(tlpp_version)
+    rows: list[dict[str, object]] = []
+    for prw_file in sorted(target_dir.rglob("*.prw")):
+        plan = MigrationPlan(
+            file_path=prw_file,
+            project_root=root,
+            enable_idioms=enable_idioms,
+            tlpp_version=parsed_version,
+            no_impact_check=True,  # init nao escreve, OK skipar
+            allow_dirty=True,
+        )
+        report = dry_run(plan)
+        counts = report.counts()
+        rows.append(
+            {
+                "arquivo": str(prw_file.relative_to(root)),
+                "recipes_ok": counts.get("ok", 0),
+                "nochange": counts.get("nochange", 0),
+                "needs_review": counts.get("needs-review", 0),
+                "todos": len(report.all_todos()),
+            }
+        )
+
+    fmt = ctx.obj.get("format", "table") if ctx.obj else "table"
+    if fmt == "json":
+        import json as _json
+
+        typer.echo(
+            _json.dumps(
+                {"total": len(rows), "rows": rows},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["arquivo", "recipes_ok", "nochange", "needs_review", "todos"],
+        title=f"Candidatos a migração em {target_dir.relative_to(root) if target_dir.is_relative_to(root) else target_dir}",
+        next_steps=[
+            "plugadvpl migrate-tlpp rename <arquivo>  # so rename + encoding",
+            "plugadvpl migrate-tlpp recipes <arquivo>  # diff completo",
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------
 

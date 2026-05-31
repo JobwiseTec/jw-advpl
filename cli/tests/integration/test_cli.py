@@ -3094,3 +3094,73 @@ class TestEditPrwClean:
         assert result.exit_code == 0
         assert not bak.exists()
         assert fp.exists()  # fonte original preservada
+
+
+class TestMigrateTlppInit:
+    """v0.18.0 — plugadvpl migrate-tlpp init analisa projeto sem tocar nada."""
+
+    def test_init_lists_candidates_in_synthetic_project(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        # Cria 2 .prw sintéticos
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        (synthetic_project / "src" / "a.prw").write_text(
+            "User Function A()\nReturn .T.\n",
+            encoding="cp1252",
+        )
+        (synthetic_project / "src" / "b.prw").write_text(
+            "User Function B()\nReturn .T.\n",
+            encoding="cp1252",
+        )
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "migrate-tlpp", "init", "src"],
+        )
+        assert result.exit_code == 0, result.stderr
+        # output menciona 2 arquivos
+        assert "a.prw" in result.stdout or "a.prw" in result.stderr
+        assert "b.prw" in result.stdout or "b.prw" in result.stderr
+
+    def test_init_format_json(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        (synthetic_project / "src" / "a.prw").write_text(
+            "body",
+            encoding="cp1252",
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "--format",
+                "json",
+                "migrate-tlpp",
+                "init",
+                "src",
+            ],
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["total"] >= 1
+
+    def test_init_does_not_modify_files(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        f = synthetic_project / "src" / "a.prw"
+        original = "User Function A()\nReturn .T.\n"
+        f.write_text(original, encoding="cp1252")
+        runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "migrate-tlpp", "init", "src"],
+        )
+        # Read-only: arquivo intacto
+        assert f.read_text(encoding="cp1252") == original
