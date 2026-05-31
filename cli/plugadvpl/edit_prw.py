@@ -22,7 +22,7 @@ Estratégia de detecção:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -190,7 +190,7 @@ def convert_and_save(
     backup_path: Path | None = None
     if backup:
         if timestamp:
-            ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
             backup_path = path.with_suffix(path.suffix + f".bak.{ts}")
         else:
             backup_path = path.with_suffix(path.suffix + ".bak")

@@ -10,11 +10,12 @@ Spec: docs/superpowers/specs/2026-05-31-migrate-tlpp-design.md
 
 from __future__ import annotations
 
+import contextlib
+import sqlite3
 import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 import typer
@@ -28,7 +29,7 @@ from plugadvpl.migrate_tlpp_recipes import (
 )
 
 if TYPE_CHECKING:
-    import sqlite3
+    from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -76,12 +77,10 @@ def _check_pre_flight(plan: MigrationPlan) -> list[str]:
                 cwd=plan.project_root,
                 capture_output=True,
                 timeout=10,
+                check=False,
             )
             if r.stdout.strip():
-                errors.append(
-                    "git working tree não está limpo. "
-                    "Use --allow-dirty pra prosseguir."
-                )
+                errors.append("git working tree não está limpo. Use --allow-dirty pra prosseguir.")
         except (subprocess.TimeoutExpired, FileNotFoundError):
             # Sem git ou hangs — ignora (warning seria nice, sem bloqueio)
             pass
@@ -102,8 +101,6 @@ def _check_pre_flight(plan: MigrationPlan) -> list[str]:
 
 def _open_db(project_root: Path) -> sqlite3.Connection | None:
     """Abre DB read-only se existe."""
-    import sqlite3
-
     db_path = project_root / ".plugadvpl" / "index.db"
     if not db_path.exists():
         return None
@@ -168,7 +165,7 @@ def dry_run(plan: MigrationPlan) -> MigrationReport:
             results.append(r)
             if r.new_content is not None and r.status in ("ok", "needs-review"):
                 current_content = r.new_content
-        except Exception as e:  # noqa: BLE001 — recipe não deve quebrar pipeline
+        except Exception as e:  # recipe não deve quebrar pipeline
             results.append(
                 RecipeResult(
                     recipe_id=rid,
@@ -181,10 +178,7 @@ def dry_run(plan: MigrationPlan) -> MigrationReport:
     # produziu side-effect (ex: rename-extension não muda content mas
     # exige write em path novo).
     has_ok_sideeffect = any(r.status == "ok" for r in results)
-    if current_content != content or has_ok_sideeffect:
-        final = current_content
-    else:
-        final = None
+    final = current_content if current_content != content or has_ok_sideeffect else None
     return MigrationReport(
         file_path=plan.file_path,
         recipe_results=results,
@@ -199,7 +193,7 @@ def _create_backup(file_path: Path) -> Path | None:
     """
     if not file_path.exists():
         return None
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     bak_path = file_path.with_suffix(file_path.suffix + f".bak.{ts}")
     if bak_path.exists():
         # já existe (run anterior no mesmo segundo) — não sobrescreve
@@ -228,6 +222,7 @@ def _restore_via_git(file_path: Path, project_root: Path) -> bool:
             cwd=project_root,
             capture_output=True,
             timeout=10,
+            check=False,
         )
         return r.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -237,19 +232,30 @@ def _restore_via_git(file_path: Path, project_root: Path) -> bool:
 def _validate_via_compile(tlpp_path: Path) -> bool:
     """Roda plugadvpl compile <tlpp> em modo appre. True se exit=0."""
     try:
-        from plugadvpl.compile import CompileRequest
-        from plugadvpl.compile import run as compile_run
-        from plugadvpl.runtime_config import RuntimeConfig
+        # Imports lazy: compile/runtime_config têm deps pesadas
+        # (RuntimeConfig pode falhar em ambiente sem TDS) — valida-se
+        # best-effort.
+        from plugadvpl.compile import CompileRequest  # noqa: PLC0415
+        from plugadvpl.compile import run as compile_run  # noqa: PLC0415
+        from plugadvpl.runtime_config import load as load_runtime  # noqa: PLC0415
 
         req = CompileRequest(
             files=[tlpp_path],
             mode="appre",
             no_warnings=False,
+            timeout_seconds=None,
+            no_security_warning=False,
+            includes_override=None,
+            changed_since=None,
         )
-        cfg = RuntimeConfig.load_or_default()
+        # load() pode levantar ou retornar None; passar None é aceito.
+        try:
+            cfg = load_runtime(tlpp_path.parent)
+        except Exception:  # best-effort
+            cfg = None
         result = compile_run(req, cfg, tlpp_path.parent)
         return result.exit_code == 0
-    except Exception:  # noqa: BLE001 — validate é best-effort
+    except Exception:  # validate é best-effort
         return False
 
 
@@ -275,10 +281,8 @@ def _rollback_cascade(
     # Fallback 1: git checkout
     if _restore_via_git(file_path, project_root):
         if tlpp_path.exists() and tlpp_path != file_path:
-            try:
+            with contextlib.suppress(OSError):
                 tlpp_path.unlink()
-            except OSError:
-                pass
         return "git"
 
     # Fallback 2: abort
@@ -294,12 +298,9 @@ def _write_and_rename(report: MigrationReport, plan: MigrationPlan) -> Path:
         return plan.file_path  # nada mudou
     # Detecta se rename-extension rodou OK
     rename_ok = any(
-        r.recipe_id == "rename-extension" and r.status == "ok"
-        for r in report.recipe_results
+        r.recipe_id == "rename-extension" and r.status == "ok" for r in report.recipe_results
     )
-    target = (
-        plan.file_path.with_suffix(".tlpp") if rename_ok else plan.file_path
-    )
+    target = plan.file_path.with_suffix(".tlpp") if rename_ok else plan.file_path
     target.write_text(report.final_content, encoding="utf-8")
     if rename_ok and plan.file_path != target and plan.file_path.exists():
         plan.file_path.unlink()
@@ -337,9 +338,7 @@ def apply(plan: MigrationPlan, *, validate: bool = False) -> MigrationReport:
         ok = _validate_via_compile(target)
         if not ok:
             # Rollback cascade
-            outcome = _rollback_cascade(
-                plan.file_path, target, bak_path, plan.project_root
-            )
+            outcome = _rollback_cascade(plan.file_path, target, bak_path, plan.project_root)
             new_report = MigrationReport(
                 file_path=plan.file_path,
                 recipe_results=report.recipe_results,
