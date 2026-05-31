@@ -23,6 +23,7 @@ Opções globais (callback ``main_callback``): ``--root``, ``--format``, ``--qui
 from __future__ import annotations
 
 import io
+import json
 import re
 import sqlite3
 import sys
@@ -59,7 +60,9 @@ from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
+from plugadvpl.parsing.ini import parse_ini_file
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
+from plugadvpl.parsing.ini_known_keys import detect_unknown_keys
 from plugadvpl.parsing.ini_report import render_ini_audit_html
 from plugadvpl.parsing.ini_suggest import generate_suggested_ini
 from plugadvpl.parsing.log_diagnose import diagnose_files as log_diagnose_files
@@ -89,6 +92,8 @@ from plugadvpl.query import (
     ini_audit_fix_items,
     ini_audit_query,
     ini_audit_scores,
+    ini_findings_enriched,
+    ini_rules_keys,
     lint_query,
     log_diagnose_query,
     metrics_query,
@@ -1346,28 +1351,92 @@ def _read_ini_text(caminho: str) -> str:
         return data.decode("cp1252", errors="replace")
 
 
-def _render_ini_audit_html(
-    conn: sqlite3.Connection,
-    arquivo: str | None,
-    severity: str | None,
-    regra: str | None,
-) -> str:
-    """Monta o relatório HTML do ini-audit, enriquecendo cada arquivo com o
-    INI sugerido (corrigido) quando há findings com valor recomendado."""
-    scores = ini_audit_scores(conn, arquivo)
-    for s in scores:
-        items = ini_audit_fix_items(conn, int(s["id"]))
-        suggested = ""
-        if items:
-            try:
-                suggested = generate_suggested_ini(_read_ini_text(str(s["caminho"])), items)
-            except OSError:
-                suggested = ""
-        s["suggested_ini"] = suggested
-    findings = ini_audit_query(
-        conn, arquivo=arquivo, severity=severity, regra_id=regra, show_ok_with_note=True
-    )
-    return render_ini_audit_html(scores, findings)
+_COMPLIANCE_LABELS = {
+    "compliant": "EM CONFORMIDADE",
+    "partial": "PARCIALMENTE CONFORME",
+    "non_compliant": "FORA DE CONFORMIDADE",
+}
+_ENV_INDICATOR_KEYS = frozenset({"rootpath", "sourcepath", "rpodb", "rpoversion", "startpath"})
+
+
+def _render_ini_audit_html(conn: sqlite3.Connection, arquivo: str | None) -> str:
+    """Monta o relatório HTML do ini-audit: re-parseia cada INI (encoding,
+    seções comentadas, linhas malformadas) e combina com score/findings/INI
+    sugerido do índice — cobrindo todas as seções do relatório."""
+    rules_keys = ini_rules_keys(conn)
+    reports: list[dict[str, Any]] = []
+    for sc in ini_audit_scores(conn, arquivo):
+        try:
+            content = _read_ini_text(str(sc["caminho"]))
+        except OSError:
+            content = ""
+        parsed_obj = parse_ini_file(content, filename=str(sc["arquivo"]))
+
+        sections_map: dict[str, dict[str, str]] = {
+            sec.name_raw: {} for sec in parsed_obj.sections if not sec.commented
+        }
+        for k in parsed_obj.keys:
+            sections_map.setdefault(k.section_name, {})[k.key_name] = k.value
+        env_names = {
+            sec
+            for sec, kv in sections_map.items()
+            if any(key.lower() in _ENV_INDICATOR_KEYS for key in kv)
+        }
+
+        active = [s for s in parsed_obj.sections if not s.commented]
+        commented = [s for s in parsed_obj.sections if s.commented]
+        parsed = {
+            "filename": parsed_obj.filename or sc["arquivo"],
+            "ini_type": parsed_obj.tipo,
+            "ini_role": parsed_obj.role,
+            "encoding_info": {
+                "detected": parsed_obj.encoding_info.detected,
+                "has_bom": parsed_obj.encoding_info.has_bom,
+                "warnings": list(parsed_obj.encoding_info.warnings),
+            },
+            "meta": {
+                "total_sections": len(active),
+                "total_commented_sections": len(commented),
+                "total_keys": len(parsed_obj.keys),
+                "total_commented": 0,
+                "total_dirty_lines": len(parsed_obj.dirty_lines),
+            },
+            "commented_sections": [
+                {"section": s.name_raw, "line": s.linha_inicio} for s in commented
+            ],
+            "dirty_lines": [
+                {"line": d.linha, "content": d.content, "reason": d.reason}
+                for d in parsed_obj.dirty_lines
+            ],
+        }
+
+        findings = ini_findings_enriched(conn, int(sc["id"]))
+        for f in findings:
+            f["current_value"] = sections_map.get(str(f["section"]), {}).get(str(f["key_name"]))
+
+        unknown = detect_unknown_keys(sections_map, parsed_obj.tipo, env_names, rules_keys)
+        try:
+            summ = json.loads(str(sc.get("summary_json") or "{}"))
+        except (json.JSONDecodeError, TypeError):
+            summ = {}
+        summ["unknown_keys"] = len(unknown)
+
+        fix_items = ini_audit_fix_items(conn, int(sc["id"]))
+        suggested = generate_suggested_ini(content, fix_items) if (fix_items and content) else ""
+
+        comp = {
+            "score": sc["score"],
+            "compliance_status": sc["compliance"],
+            "compliance_label": _COMPLIANCE_LABELS.get(
+                str(sc["compliance"]), str(sc["compliance"])
+            ),
+            "summary": summ,
+            "findings": findings,
+            "unknown_keys": unknown,
+            "suggested_ini": suggested,
+        }
+        reports.append({"parsed": parsed, "comp": comp})
+    return render_ini_audit_html(reports)
 
 
 @app.command(name="ini-audit")
@@ -1512,7 +1581,7 @@ def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mut
     if ctx.obj["format"] == "html":
         report = _with_ro_db(
             ctx,
-            lambda c: _render_ini_audit_html(c, arquivo, severity, regra),
+            lambda c: _render_ini_audit_html(c, arquivo),
         )
         typer.echo(report)
         return

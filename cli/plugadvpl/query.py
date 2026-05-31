@@ -397,14 +397,51 @@ def ini_audit_scores(
         where = "WHERE arquivo = ? COLLATE NOCASE"
         params.append(arquivo)
     sql = f"""
-        SELECT id, caminho, arquivo, tipo, role, score, compliance
+        SELECT id, caminho, arquivo, tipo, role, score, compliance, summary_json
         FROM ini_files
         {where}
         ORDER BY score ASC, arquivo
     """
     rows = conn.execute(sql, params).fetchall()
-    cols = ["id", "caminho", "arquivo", "tipo", "role", "score", "compliance"]
+    cols = ["id", "caminho", "arquivo", "tipo", "role", "score", "compliance", "summary_json"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def ini_findings_enriched(conn: sqlite3.Connection, file_id: int) -> list[dict[str, Any]]:
+    """Findings de 1 INI enriquecidos com ``expected`` + ``descricao`` da regra
+    (para o relatório: Recomendado/Detalhe). ``current_value`` é resolvido pelo
+    caller a partir do re-parse do arquivo."""
+    sql = """
+        SELECT f.section_raw, f.key_name, f.severidade, f.status, f.snippet,
+               f.sugestao_fix, r.expected, r.descricao
+        FROM ini_audit_findings f
+        LEFT JOIN ini_rules r ON r.regra_id = f.regra_id
+        WHERE f.file_id = ?
+        ORDER BY
+            CASE f.severidade WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            f.section_raw, f.key_name
+    """
+    rows = conn.execute(sql, (file_id,)).fetchall()
+    cols = [
+        "section",
+        "key_name",
+        "severity",
+        "status",
+        "snippet",
+        "comment",
+        "recommended_value",
+        "description",
+    ]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def ini_rules_keys(conn: sqlite3.Connection) -> dict[str, set[str]]:
+    """``{secao_low: {chave_low}}`` de todas as regras do catálogo — usado pela
+    detecção de chaves não-reconhecidas (chave coberta por regra não é unknown)."""
+    out: dict[str, set[str]] = {}
+    for sec, key in conn.execute("SELECT section_glob, key_name FROM ini_rules"):
+        out.setdefault(str(sec).strip().lower(), set()).add(str(key).strip().lower())
+    return out
 
 
 def ini_audit_fix_items(conn: sqlite3.Connection, file_id: int) -> list[dict[str, Any]]:
