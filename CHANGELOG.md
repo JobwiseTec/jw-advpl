@@ -4,6 +4,82 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-31
+
+### Added — `plugadvpl migrate-tlpp` (migrador determinístico ADVPL clássico → TLPP moderno)
+
+Primeiro migrador determinístico do ecossistema TOTVS. Inverso da migração manual: aplica 11 recipes em ordem topológica fixa, com auto-validação via `plugadvpl compile` e rollback cascata em 3 níveis. Endereça gap #6 do `roadmap-vs-engpro-totvs.md`.
+
+**Posicionamento (do research multi-modal):**
+- TOTVS oficial (`totvs/engpro-advpl-tlpp-skills`) tem knowledge skill `advpl-to-tlpp-migration` (15 passos + `tlpp-migration-patterns.md`) mas **nenhuma ferramenta executável**.
+- `tds-vscode` não tem refactor/code-action ADVPL→TLPP. `advpls` CLI não tem `--migrate`.
+- Único competidor (`thalysjuvenal/advpl-specialist`, 155★) é AI-driven, sem garantia de equivalência semântica.
+- **plugadvpl v0.18.0 = primeiro com migrador determinístico + auto-validação via compile + impact analyzer via DB**.
+
+**4 subcomandos (pipeline ts-migrate-style):**
+
+```bash
+plugadvpl migrate-tlpp init <pasta>      # analisa, gera report, read-only
+plugadvpl migrate-tlpp rename <arq>      # só rename + encoding (mais conservador)
+plugadvpl migrate-tlpp recipes <arq>     # aplica recipes (diff por default; --write aplica)
+plugadvpl migrate-tlpp todos             # lista débitos `@plugadvpl-todo` pendentes
+```
+
+**11 recipes em ordem canônica topológica (spec §3.6):**
+
+| # | Recipe ID | Categoria | Função |
+|---|---|---|---|
+| 1 | `convert-encoding` | SAFE | cp1252 → utf-8 (decodificado pelo orquestrador antes dos recipes) |
+| 2 | `rename-extension` | SAFE | `.prw` → `.tlpp` |
+| 3 | `header-includes` | SAFE | `protheus.ch` → `totvs.ch` + adiciona `tlpp-core.th` se TLPP features detectadas |
+| 4 | `remove-public-default` | SAFE | `PUBLIC cVar` → `cVar` (TLPP é private por default) |
+| 5 | `user-function-lowercase` | SAFE | `User Function X()` → `function u_x()`; preserva nome se há callers externos (DB query) |
+| 6 | `named-args` | SAFE | `:=` → `=` em chamadas (gated `--tlpp-version=20.3.2+`) |
+| 7 | `namespace-infer` | IDIOMS | Adiciona `namespace custom.<modulo>.<nome>` baseado em path |
+| 8 | `begin-sequence-to-try` | IDIOMS | `Begin Sequence/Recover/End Sequence` → `try/catch`; aninhado → `@plugadvpl-todo` |
+| 9 | `conout-to-fwlog` | IDIOMS | `ConOut("msg")` → `FwLogMsg("info", "msg")` |
+| 10 | `json-inline` | IDIOMS | Detecta `JsonObject():New()` chains, emite `@plugadvpl-todo` (consolidação inline manual) |
+| 11 | `expand-truncated-names` | IDIOMS | Detecta nomes 10-char (limite ADVPL legacy); emite `@plugadvpl-todo` via DB lookup |
+
+**Safety gates (spec §4):**
+
+- **Pre-flight:** git working tree clean (override `--allow-dirty`); DB ingest populado (override `--no-impact-check` — modo conservador preserva nomes truncados); lint pre-flight rejeita arquivos com `SEC-001`/`SEC-004`; backup `.bak.<YYYYMMDDHHMMSS>` automático (preserva `.bak` legado).
+- **Post-flight (com `--validate`):** roda `plugadvpl compile` automaticamente. Se falha, rollback cascata: (1) `.bak.<timestamp>` mais antigo → (2) `git checkout HEAD -- <file>` → (3) abort `typer.Exit(2)` com mensagem CRITICAL.
+- **NEVER-propagate:** exception em qualquer recipe vira `status="error"` sem matar restantes.
+
+**Markers `@plugadvpl-todo`:** recipes que não conseguem 100% inserem comentário `// @plugadvpl-todo:<recipe-id> <razão>`. `migrate-tlpp todos` varre projeto e lista débitos. Sintaxe `//` confirmada válida em TLPP moderno.
+
+**Atribuição (spec §9):** Material TOTVS Engenharia de Produto (`engpro-advpl-tlpp-skills/skills/advpl-tlpp/advpl-to-tlpp-migration/`) sob licença MIT (commit `8131443e23cdcf6c7b6e4c943756d98aa7d42f75`, verificado em 2026-05-31). plugadvpl é MIT — derivação compatível. Permalinks SHA-fixo na skill `/plugadvpl:migrate-tlpp`.
+
+**Skill `/plugadvpl:migrate-tlpp`** (54ª skill do plugin; agora adicionada a `_SKILL_GLOBS` + `_CURSOR_META_ALWAYS_APPLY`).
+
+### Added — `edit_prw.convert_and_save` ganha `timestamp` kwarg
+
+Backup com timestamp (`.bak.<YYYYMMDDHHMMSS>`) ao invés de `.bak` fixo. Default `False` — backward-compat preservada com callers existentes. Necessário pra `migrate-tlpp` permitir re-runs sem sobrescrever backup original.
+
+### Added — Snapshot fixtures pra roundtrip
+
+5 fixtures `.prw` em `cli/tests/fixtures/migrate_tlpp/` cobrem padrões típicos (User Function simples, Begin Sequence, JsonObject chain, PUBLIC var, namespace hint via path SIGAFAT). Snapshot tests via syrupy bloqueiam regressão de transformação.
+
+### Changed — Lint scope expand
+
+`LINT_FILES` ganha novos arquivos: `migrate_tlpp.py`, `migrate_tlpp_diff.py`, `migrate_tlpp_recipes/*.py` (11 arquivos). Total: 29 → ~41 arquivos cobertos por `ruff check` + `format` + `mypy`.
+
+### Tests
+
+- 30+ unit tests recipes (11 recipes × 3-4 tests cada)
+- 13 unit tests orquestrador (dataclasses, pre-flight, dry_run, apply, rollback cascata 3 caminhos)
+- 12 integration tests CLI (init/rename/recipes/todos)
+- 5 snapshot tests fixtures
+- 3 rollback cascata integration tests
+
+Suite full: 1216 → **1297 passed** (+81 testes).
+
+### Bumped
+
+- `uvx plugadvpl@0.17.0` → `uvx plugadvpl@0.18.0` nas 28 skills (27 + `migrate-tlpp` nova).
+- `plugin.json` / `marketplace.json` → 0.18.0.
+
 ## [0.17.0] - 2026-05-30
 
 ### Added — `plugadvpl doc-writer` gera blocos Protheus.doc canônicos TOTVS

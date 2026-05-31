@@ -766,6 +766,16 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.18.0 — `plugadvpl migrate-tlpp` (primeiro migrador ADVPL→TLPP determinístico)
+
+- **`plugadvpl migrate-tlpp <subcomando>`** — pipeline ts-migrate-style com 4 subcomandos (`init`/`rename`/`recipes`/`todos`) e 11 recipes em ordem topológica fixa (6 SAFE default + 5 IDIOMS opt-in `--idioms`). Cada recipe é arquivo isolado, testável, com ID estável
+- **Posicionamento de mercado:** TOTVS oficial tem knowledge (`engpro-advpl-tlpp-skills`) mas zero ferramenta executável. Único concorrente (`advpl-specialist`, 155★) é AI-driven, não-reproduzível. plugadvpl v0.18.0 é o **primeiro com auto-validação via `plugadvpl compile`** + impact analyzer via DB
+- **Safety gates:** git clean check, DB ingest pre-flight, backup `.bak.<timestamp>`, rollback cascata 3 níveis (bak → git checkout → abort exit 2). `--validate` flag roda compile automaticamente; se falha, rollback
+- **Markers `@plugadvpl-todo`:** recipes que não conseguem 100% inserem comentários listáveis via `migrate-tlpp todos` — migração iterativa
+- **Atribuição TOTVS oficial:** material `engpro-advpl-tlpp-skills/skills/advpl-tlpp/advpl-to-tlpp-migration/` (licença MIT, commit `8131443e`) — permalinks SHA-fixo na skill
+- Skill `/plugadvpl:migrate-tlpp` (54ª do plugin). `edit_prw.convert_and_save` ganha `timestamp` kwarg
+- 81 testes novos. Suite: 1216 → 1297 passed
+
 ### v0.17.0 — `plugadvpl doc-writer` (Protheus.doc generator) + lint scope expand
 
 - **`plugadvpl doc-writer <funcao>`** — gera bloco `/*/{Protheus.doc} ... /*/` canônico TOTVS a partir de flags. Inverso do `docs` (que lê). Roundtrip-compatible: `extract → generate` recupera spec sem perda. Endereça gap #4 do `roadmap-vs-engpro-totvs.md`
