@@ -65,7 +65,9 @@ from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
 from plugadvpl.parsing.ini_known_keys import detect_unknown_keys
 from plugadvpl.parsing.ini_report import render_ini_audit_html
 from plugadvpl.parsing.ini_suggest import generate_suggested_ini
+from plugadvpl.parsing.log import extract_header_metadata, scan_metrics
 from plugadvpl.parsing.log_diagnose import diagnose_files as log_diagnose_files
+from plugadvpl.parsing.log_report import render_log_diagnose_html
 from plugadvpl.parsing.parser import parse_source
 from plugadvpl.query import (
     arch as q_arch,
@@ -96,6 +98,8 @@ from plugadvpl.query import (
     ini_rules_keys,
     lint_query,
     log_diagnose_query,
+    log_report_files,
+    log_report_findings,
     metrics_query,
     param_query,
     protheus_doc_homonyms,
@@ -1624,8 +1628,116 @@ def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mut
 # ---------------------------------------------------------------------------
 
 
+def _read_log_text(caminho: str) -> str:
+    data = Path(caminho).read_bytes()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def _compute_log_link(
+    conn: sqlite3.Connection,
+    main_file_ids: list[int],
+    linked_path: Path,
+) -> dict[str, Any]:
+    """Ingere o arquivo linkado e correlaciona com os logs principais por
+    ``environment::thread`` (fallback ``thread`` → ``environment``). Devolve o
+    contexto do linkado (env/thread/métricas/stack) + ``matched_by`` + nº de
+    findings enriquecidos (mesma thread)."""
+    ingest_log_paths(conn, [linked_path])
+    content = _read_log_text(str(linked_path))
+    meta = extract_header_metadata(content)
+    metr = scan_metrics(content)
+
+    metrics: dict[str, Any] = {}
+    if metr.start_time_s:
+        metrics["uptime_seconds"] = float(metr.start_time_s)
+    if metr.memory_resident_mb:
+        metrics["memory_app_peak_mb"] = float(metr.memory_resident_mb)
+    if metr.memory_total_mb and metr.memory_free_mb:
+        metrics["memory_os_last"] = {
+            "physical_mb": float(metr.memory_total_mb),
+            "free_mb": float(metr.memory_free_mb),
+            "used_mb": float(metr.memory_used_mb or 0),
+        }
+    stack = meta.extra.get("callstack", "") or meta.extra.get("stack", "")
+
+    main_env = ""
+    main_threads: set[str] = set()
+    if main_file_ids:
+        ph = ",".join("?" * len(main_file_ids))
+        env_row = conn.execute(
+            f"SELECT environment FROM log_files WHERE id IN ({ph}) AND environment != '' LIMIT 1",
+            list(main_file_ids),
+        ).fetchone()
+        main_env = str(env_row[0]) if env_row else ""
+        for (tid,) in conn.execute(
+            f"SELECT DISTINCT thread_id FROM log_findings WHERE file_id IN ({ph})",
+            list(main_file_ids),
+        ):
+            if tid:
+                main_threads.add(str(tid))
+
+    if (
+        meta.environment
+        and meta.thread
+        and meta.thread in main_threads
+        and (not main_env or main_env == meta.environment)
+    ):
+        matched_by = "environment::thread"
+    elif meta.thread and meta.thread in main_threads:
+        matched_by = "thread"
+    elif main_env and meta.environment and main_env == meta.environment:
+        matched_by = "environment"
+    else:
+        matched_by = "none"
+
+    enriched = 0
+    if meta.thread and matched_by in ("environment::thread", "thread") and main_file_ids:
+        ph = ",".join("?" * len(main_file_ids))
+        enriched = int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM log_findings WHERE file_id IN ({ph}) AND thread_id = ?",
+                [*main_file_ids, meta.thread],
+            ).fetchone()[0]
+        )
+
+    return {
+        "file": linked_path.name,
+        "environment": meta.environment,
+        "thread": meta.thread,
+        "metrics": metrics,
+        "stack": stack,
+        "matched": matched_by != "none",
+        "matched_by": matched_by,
+        "enriched": enriched,
+    }
+
+
+def _render_log_diagnose_html(
+    conn: sqlite3.Connection,
+    arquivo: str | None,
+    severity: str | None,
+    category: str | None,
+    rule: str | None,
+    link_info: dict[str, Any] | None,
+) -> str:
+    """Monta o relatório HTML do log-diagnose (findings + correlação)."""
+    findings = log_report_findings(conn, arquivo, severity, category, rule)
+    files = log_report_files(conn, arquivo)
+    label = ", ".join(str(f["arquivo"]) for f in files) or (arquivo or "(logs)")
+    total = sum(int(f.get("total_events") or 0) for f in files)
+    return render_log_diagnose_html(label, total, findings, metrics={}, link=link_info)
+
+
+# ---------------------------------------------------------------------------
+# log-diagnose (command)
+# ---------------------------------------------------------------------------
+
+
 @app.command(name="log-diagnose")
-def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/file/since/...); cada branch e validacao independente
+def log_diagnose(  # noqa: PLR0912, PLR0915 -- typer command com filtros (severity/tipo/file/since/...) + branch de --link e --format html; cada branch e validacao independente
     ctx: typer.Context,
     paths: Annotated[
         list[str] | None,
@@ -1680,6 +1792,14 @@ def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/f
             help="Só faz ingest (popula log_files/events) sem rodar match.",
         ),
     ] = False,
+    link: Annotated[
+        str | None,
+        typer.Option(
+            "--link",
+            help="Arquivo oposto (console/profile) para correlacionar por "
+            "environment::thread (cross-link console↔profile).",
+        ),
+    ] = None,
 ) -> None:
     """Diagnosticar logs Protheus (console.log/error.log/profile.log/compila.log).
 
@@ -1734,6 +1854,7 @@ def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/f
         )
         raise typer.Exit(code=2)
 
+    link_info: dict[str, Any] | None = None
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
@@ -1776,10 +1897,35 @@ def log_diagnose(  # noqa: PLR0912 -- typer command com filtros (severity/tipo/f
                     f"info={sev.get('info', 0)}).",
                     err=True,
                 )
+
+            if link:
+                link_path = Path(link)
+                if not link_path.exists():
+                    typer.secho(
+                        f"Arquivo de link não encontrado: {link_path}",
+                        fg=typer.colors.RED,
+                        err=True,
+                    )
+                    raise typer.Exit(code=2)
+                link_info = _compute_log_link(conn, list(ing_res.file_ids), link_path)
+                if not obj["quiet"]:
+                    typer.secho(
+                        f"Link: {link_info['matched_by']} — {link_info['enriched']} findings "
+                        f"na thread {link_info['thread'] or '—'}.",
+                        err=True,
+                    )
     finally:
         close_db(conn)
 
     # 4. Render (RO)
+    if ctx.obj["format"] == "html":
+        report = _with_ro_db(
+            ctx,
+            lambda c: _render_log_diagnose_html(c, arquivo, severity, category, rule, link_info),
+        )
+        typer.echo(report)
+        return
+
     rows = _with_ro_db(
         ctx,
         lambda c: log_diagnose_query(
