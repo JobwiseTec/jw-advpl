@@ -105,6 +105,12 @@ ignore = ["E501", "PLR0913"]  # line-length pelo formatter; PLR0913=too-many-arg
     # subcomando invocado. Sem ciclos detectados (só __main__.py importa cli).
     "PLC0415",
 ]
+"plugadvpl/migrate_tlpp_recipes/__init__.py" = [
+    # _register_all() faz lazy import dos 11 recipes pra evitar import
+    # circular (cada recipe importa RecipeBase/RecipeResult/MigrationContext
+    # desse __init__). Padrão idêntico ao cli.py.
+    "PLC0415",
+]
 
 [tool.ruff.format]
 docstring-code-format = true   # formata exemplos de código dentro de docstrings

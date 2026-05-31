@@ -9,10 +9,12 @@ RecipeBase é o contrato; subclasses implementam ``apply()``.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    import sqlite3
+    from pathlib import Path
 
 # Ordem canônica fixa (spec §3.6) — recipes são sempre aplicados nesta
 # sequência independente da ordem em --recipe flags.
@@ -128,7 +130,4 @@ def is_safe(recipe_id: str) -> bool:
 def filter_by_category(enable_idioms: bool) -> list[str]:
     """Lista de recipe_ids em ordem canônica filtrada por categoria."""
     _register_all()
-    return [
-        rid for rid in CANONICAL_ORDER
-        if enable_idioms or is_safe(rid)
-    ]
+    return [rid for rid in CANONICAL_ORDER if enable_idioms or is_safe(rid)]
