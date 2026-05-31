@@ -449,3 +449,86 @@ class TestJsonInline:
 
         assert JsonInline.id == "json-inline"
         assert JsonInline.category == "idioms"
+
+
+class TestExpandTruncatedNames:
+    """Recipe order 11 — detecta nomes 10-char (limite ADVPL legacy)."""
+
+    def test_skipped_when_no_db(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.expand_truncated import (
+            ExpandTruncatedNames,
+        )
+
+        content = "User Function FATA050ABC()\nReturn .T.\n"
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = ExpandTruncatedNames().apply(content, ctx)
+        assert r.status == "skipped"
+        assert "DB" in r.message or "ingest" in r.message.lower()
+
+    def test_detects_10char_names_with_callers(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.expand_truncated import (
+            ExpandTruncatedNames,
+        )
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE chamadas (destino TEXT, origem_arquivo TEXT)")
+        file_path = tmp_path / "a.prw"
+        # 1 caller pra FATA050ABC (10 chars exatos) em outro arquivo
+        db.execute(
+            "INSERT INTO chamadas VALUES (?, ?)",
+            ("FATA050ABC", str(tmp_path / "outro.prw")),
+        )
+        db.commit()
+
+        # FATA050ABC tem exatamente 10 chars
+        content = "User Function FATA050ABC()\nReturn .T.\n"
+        ctx = MigrationContext(
+            file_path=file_path, project_root=tmp_path, db_connection=db
+        )
+        r = ExpandTruncatedNames().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert len(r.todo_markers) == 1
+        assert "1 caller" in r.todo_markers[0]
+        assert "FATA050ABC" in r.todo_markers[0]
+
+    def test_detects_10char_names_without_callers(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.expand_truncated import (
+            ExpandTruncatedNames,
+        )
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE chamadas (destino TEXT, origem_arquivo TEXT)")
+        db.commit()
+
+        content = "User Function FATA050ABC()\nReturn .T.\n"
+        ctx = MigrationContext(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            db_connection=db,
+        )
+        r = ExpandTruncatedNames().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert len(r.todo_markers) == 1
+        assert "candidato" in r.todo_markers[0].lower()
+
+    def test_nochange_when_no_10char_names(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.expand_truncated import (
+            ExpandTruncatedNames,
+        )
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE chamadas (destino TEXT, origem_arquivo TEXT)")
+        db.commit()
+
+        # nomes != 10 chars (FATA050 = 7, FATA050ABCDE = 12)
+        content = (
+            "User Function FATA050()\nReturn\n"
+            "Static Function FATA050ABCDE()\nReturn\n"
+        )
+        ctx = MigrationContext(
+            file_path=tmp_path / "a.prw",
+            project_root=tmp_path,
+            db_connection=db,
+        )
+        r = ExpandTruncatedNames().apply(content, ctx)
+        assert r.status == "nochange"
