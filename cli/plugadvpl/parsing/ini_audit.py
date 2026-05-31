@@ -21,6 +21,7 @@ Filtro de roles:
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -365,10 +366,16 @@ def _has_intentional_note(comment_above: str, comment_inline: str) -> bool:
     return bool(text) and bool(_INTENT_RE.search(text))
 
 
-def _persist_score(conn: sqlite3.Connection, file_id: int, score: float, compliance: str) -> None:
+def _persist_score(
+    conn: sqlite3.Connection,
+    file_id: int,
+    score: float,
+    compliance: str,
+    summary: dict[str, int] | None = None,
+) -> None:
     conn.execute(
-        "UPDATE ini_files SET score = ?, compliance = ? WHERE id = ?",
-        (score, compliance, file_id),
+        "UPDATE ini_files SET score = ?, compliance = ?, summary_json = ? WHERE id = ?",
+        (score, compliance, json.dumps(summary or {}), file_id),
     )
 
 
@@ -400,6 +407,7 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
     findings: list[tuple[int, str, str, str, str, str, str, int, str]] = []
     score_ok = 0.0
     score_weight = 0.0
+    n_ok = n_mismatch = n_missing = n_intentional = 0
 
     for rule in rules:
         weight = _SCORE_WEIGHTS.get(rule.severidade, 0.5)
@@ -426,6 +434,7 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                 if key_row is not None and _evaluate_value(rule, key_row[2]):
                     score_ok += weight
                     score_weight += weight
+                    n_ok += 1
                     continue
                 if key_row is None and not (
                     rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}
@@ -434,6 +443,7 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                     continue
                 score_ok += weight
                 score_weight += weight
+                n_intentional += 1
                 findings.append((
                     file_id, sec_name, rule.key_name, rule.regra_id, rule.severidade,
                     f"[{sec_name}] {rule.key_name} (alternativa redundante)",
@@ -451,6 +461,7 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                         f"[{sec_name}] {rule.key_name}=  (chave ausente)",
                         rule.fix_guidance, 0, "active",
                     ))
+                    n_missing += 1
                     # Missing bloqueante: peso no denominador; crítico recebe boost 2x.
                     score_weight += weight * (2.0 if rule.severidade == "critical" else 1.0)
                 continue
@@ -459,6 +470,7 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
             if _evaluate_value(rule, value):
                 score_ok += weight
                 score_weight += weight
+                n_ok += 1
                 continue
 
             # Não-conforme: ok_with_note se justificado em comentário.
@@ -473,6 +485,10 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
             score_weight += weight
             if intentional or rule.severidade == "info":
                 score_ok += weight
+            if intentional:
+                n_intentional += 1
+            else:
+                n_mismatch += 1
 
     # Conflito de banco: 2+ fontes ativas num papel que conecta direto.
     if db.conflict:
@@ -484,10 +500,16 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
             0, "active",
         ))
         score_weight += _SCORE_WEIGHTS["warning"]
+        n_mismatch += 1
 
     score = round(score_ok / score_weight * 100, 1) if score_weight > 0 else 100.0
     score = min(100.0, max(0.0, score))
-    _persist_score(conn, file_id, score, _compliance_label(score))
+    summary = {
+        "ok": n_ok, "mismatch": n_mismatch, "missing": n_missing,
+        "intentional": n_intentional,
+        "total_rules": n_ok + n_mismatch + n_missing + n_intentional,
+    }
+    _persist_score(conn, file_id, score, _compliance_label(score), summary)
 
     if findings:
         conn.executemany(

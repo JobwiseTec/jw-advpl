@@ -1,0 +1,169 @@
+"""Constantes de chaves conhecidas por seção INI + detecção de chaves
+não-reconhecidas (typos/obsoletas). Espelha a referência de chaves válidas
+usada pela auditoria; chave fora do conjunto conhecido vira finding informativo.
+"""
+
+from __future__ import annotations
+
+_DYNAMIC_SECTIONS: set[str] = {
+    "enable_ws", "balance_http", "balance_web_services", "webapp/webapp",
+    "dia", "noite", "plano", "plano_dia", "plano_noite",
+    "server2", "server3", "server4", "server5",
+}
+
+_DBACCESS_GENERAL_EXTRA: set[str] = {
+    "mode", "masterserver", "masterport", "licenseserver", "licenseport",
+    "licenselimit", "byyouproc", "threadinfo", "logfull", "glbprofiler",
+    "addcolumnsonline", "threadmin", "threadmax", "threadinc",
+    "checkdeadlock", "ssl_dbaccess",
+    # FIX #2: chaves Audit* do DBAccess (legítimas, não são typo).
+    # Ver https://tdn.totvs.com/display/tec/Auditoria+do+DBAccess
+    "auditlog", "auditserver", "auditport", "auditlevel",
+    "auditall", "auditsqlexec", "auditprocexec", "auditthreadcomment",
+    "auditerpusername", "auditsinglethread", "auditfile", "auditmaxsize",
+}
+
+_KNOWN_KEYS_BY_SECTION: dict[str, set[str]] = {
+    "general": {
+        "maxstringsize", "consolelog", "consolemaxsize", "consolelogdate",
+        "consolefile", "logtimestamp", "showfulllog", "showipclient",
+        "canacceptmonitor", "canacceptdebugger", "servertype",
+        "servermemoryinfo", "servermemorylimit", "heaplimit",
+        "maxbucketcommittime", "inactivetimeout", "maxquerysize",
+        "mode", "masterserver", "trace", "canacceptfsremote",
+        "buildkillusers", "checkspecialkey", "canrunjobs",
+        "asyncconsolelog", "installpath", "ctreemode", "app_environment",
+        "echoconsolelog", "ixblog", "logprofiler", "fwtracelog",
+        "skip_msg_appbld_bc68a", "killstack", "tracestack",
+        "changeencodingbehavior", "debugthreadusedmemory",
+    },
+    "environment": {
+        "sourcepath", "rootpath", "startpath", "rpodb", "rpoversion",
+        "rpolanguage", "rpointerface", "localfiles", "trace",
+        "localdbextension", "topmemomega",
+        "changeencodingbehavior", "rpocustom", "x2_path", "pictformat",
+        "regionallanguage", "specialkey", "startsysindb", "consolelog",
+        "maxstringsize", "killstack", "inactivetimeout",
+        "dbdatabase", "dbserver", "dbalias", "dbport",
+        "topconntype", "maxquerysize",
+        "tracestack", "logprofiler", "ixblog", "fwtracelog",
+        "advsqlreplay", "advsqlreplayiop", "advsqlreplaylog",
+        "advsqlreplaymaxsize", "advsqlreplaypath", "advsqlreplaystackdepth",
+        "canlogadvplfunctions", "ctreerootpath",
+        "sped_savewsdl", "sped_hverao", "xmlsaveall",
+        "tssondemand", "loginfo", "logerro", "sped_delmail",
+        "log_period", "log_period_tr2", "systimeadjust",
+    },
+    "drivers": {"active", "multiprotocolport", "multiprotocolportsecure", "secure"},
+    "tcp": {"type", "port", "ip"},
+    "ssl": {"type", "port", "ip"},
+    "dbaccess": {"server", "port", "database", "alias", "driver", "memomega", "protheusonly"},
+    "topconnect": {"server", "port", "database", "alias", "driver", "memomega", "protheusonly", "topcontype"},
+    "webapp": {
+        "port", "envserver", "lastmainprog", "websocket", "hideparamsform",
+        "interface", "etags", "httpheaders", "httpheaders_options",
+        "maxbodysize", "maxheadersize", "maxrequesttime", "nonstoperror",
+        "obfuscate_protocol", "onlyhostnames", "ipsbind",
+        "sslcacertificate", "sslcacertificatefile", "sslcertificate",
+        "sslclientauth", "sslkey", "sslmethod", "sslpassphrase", "threadcookie",
+    },
+    "http": {"enable", "port", "path", "instances", "sessiontimeout", "maxstringsize", "environment"},
+    "https": {"enable", "port", "path", "instances", "sessiontimeout", "sslcertificate", "sslkey"},
+    "onstart": {"jobs", "refreshrate"},
+    "httpjob": {"main", "environment", "instances", "type", "ontimeexec", "ontimeended"},
+    "httprest": {"port", "ipsbind", "uris", "security"},
+    "httpv11": {"enable", "port", "path", "sockets", "timeout"},
+    "httpuri": {"url", "preparein", "instances", "corsenable", "alloworigin", "expirationtime", "expirationdelta"},
+    "service": {"name", "displayname", "description"},
+    "licenseclient": {"server", "port"},
+    "licenseserver": {"port", "enable", "enabledisabledsessions"},
+    "sslconfigure": {
+        "hsm", "verbose", "ssl2", "ssl3", "tls1", "tls1_0", "tls1_1",
+        "tls1_2", "tls1_3", "bugs", "state",
+        "certificateclient", "keyclient", "passphrase",
+        "certificateserver", "keyserver",
+        "verify_peer", "ssl_cipher",
+    },
+    "webagent": {
+        "port", "version", "windows_x86", "windows_x64", "url",
+        "linux_x64_deb", "linux_x64_rpm",
+        "darwin_universal", "darwin_arm64", "darwin_x64",
+        "disableincompatibleso",
+    },
+    "webmonitor": {"enable"},
+    "app_monitor": {"enable"},
+    "tds": {"allowedit", "allowapplypatch"},
+    "proxy": {"enable", "server", "port", "user", "password"},
+    "oracle": {"environments", "clientlibrary"},
+    "mssql": {"environments", "clientlibrary", "server", "database", "port"},
+    "postgresql": {"environments", "clientlibrary", "server", "database", "port"},
+    "balance_http": {
+        "service_name", "local_server_port", "monitoring_type",
+        "create_session_history", "ssl_encrypt_upstream", "ssl_method",
+        "ssl_certificate", "ssl_key", "using_webmonitor",
+        "service_display_name", "session_timeout", "monitor_time",
+        "alter_orig", "log_level",
+    },
+    "balance_web_services": {
+        "service_name", "local_server_port", "session_timeout",
+        "monitor_time", "alter_orig", "log_level",
+    },
+    "_job_generic": {
+        "type", "main", "environment", "instances", "sigaweb", "sigaws",
+        "instancename", "onstart", "onconnect", "abendlock", "xmlsaveall",
+        "expirationtime", "profile", "trace", "ontimeexec", "ontimeended",
+        "expirationdelta", "nparms", "parm1", "parm2", "parm3",
+        "preparein", "tsssecurity", "responsejob", "defaultpage",
+    },
+    "_dbaccess_driver_env": {
+        "user", "password", "tablespace", "indexspace", "lobspace",
+        "memoasblob", "memoinquery", "compression", "usebind", "locktimeout",
+        "logaction",
+        # FIX #3: chaves adicionais de [<DRIVER>/<env>] no DBAccess.
+        "disable", "alias", "database", "server", "port", "driver",
+        "instance", "schema", "connectstring", "blobasvarchar",
+    },
+}
+
+
+def detect_unknown_keys(
+    sections: dict[str, dict[str, str]],
+    ini_type: str,
+    env_section_names: set[str],
+    rules_keys: dict[str, set[str]],
+) -> list[dict[str, str]]:
+    """Chaves presentes no INI que não constam no conjunto conhecido da seção
+    nem em nenhuma regra do catálogo. ``sections``: {nome: {chave: valor}};
+    ``env_section_names``: nomes (raw) de seções de environment; ``rules_keys``:
+    {secao_low: {chave_low}} derivado do catálogo."""
+    unknown: list[dict[str, str]] = []
+    for sec_name, sec_data in sections.items():
+        sec_lower = sec_name.lower()
+        if sec_lower in _DYNAMIC_SECTIONS or ":" in sec_name:
+            continue
+
+        known: set[str] = set()
+        if "/" in sec_name:
+            known.update(_KNOWN_KEYS_BY_SECTION.get("_dbaccess_driver_env", set()))
+        elif sec_lower in _KNOWN_KEYS_BY_SECTION:
+            known.update(_KNOWN_KEYS_BY_SECTION[sec_lower])
+        elif sec_name in env_section_names:
+            known.update(_KNOWN_KEYS_BY_SECTION["environment"])
+        else:
+            known.update(_KNOWN_KEYS_BY_SECTION["_job_generic"])
+
+        if ini_type == "dbaccess" and sec_lower == "general":
+            known.update(_DBACCESS_GENERAL_EXTRA)
+        known.update(rules_keys.get(sec_lower, set()))
+
+        for key, val in sec_data.items():
+            if key.lower() not in known:
+                unknown.append({
+                    "section": sec_name, "key_name": key, "value": val,
+                    "severity": "warning",
+                    "reason": f"Chave '{key}' pode ser erro de digitacao ou obsoleta.",
+                })
+    return unknown
+
+
+__all__ = ["detect_unknown_keys"]
