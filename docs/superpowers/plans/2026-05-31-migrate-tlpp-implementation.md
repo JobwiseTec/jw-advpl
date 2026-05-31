@@ -469,7 +469,14 @@ class ConvertEncoding(RecipeBase):
         return RecipeResult(recipe_id=self.id, status="nochange")
 ```
 
-NOTA: Esta recipe é peculiar — a conversão real é I/O-level (bytes), não string-level. Orquestrador (`migrate_tlpp.py`) chama `edit_prw.convert_and_save` durante a etapa write, e este recipe só serve pra REGISTRAR que a etapa foi planejada. Suficiente pra MVP — refactor pra deixar mais robusto fica pra v0.19.x.
+**CONTRATO IMPORTANTE (esclarecimento spec-reviewer):**
+
+Esta recipe é peculiar — conversão real é I/O-level (bytes), não string-level. **Quem faz a decodificação cp1252 é o orquestrador** (Task 15c, função `dry_run`), que lê bytes raw E decodifica ANTES de chamar qualquer recipe. Esta recipe `convert-encoding` é apenas **marker** que sinaliza no `MigrationReport` que essa decodificação ocorreu como parte do pipeline canônico. Assim:
+- Orquestrador `dry_run` lê `plan.file_path.read_bytes()`, decodifica (utf-8 com BOM > utf-8 > cp1252) e usa essa string como `current_content` inicial.
+- Recipe `convert-encoding` é então invocada, mas retorna `nochange` porque a string já está em utf-8 in-memory.
+- Quando recipe `rename-extension` rodar (order 2), orquestrador escreve `current_content` (já utf-8) em `.tlpp` (Task 15d, `_write_and_rename`) com encoding `utf-8`.
+
+Net effect: o pipeline produz arquivo `.tlpp` em utf-8 mesmo com recipe `convert-encoding` retornando `nochange`. Suficiente pra MVP. Refactor pra recipe fazer transformação real fica pra v0.19.x.
 
 - [ ] **Step 4: Run GREEN** + **Step 5: Commit** (com mensagem destacando que conversão real é I/O via edit_prw, recipe é só marker)
 
@@ -1068,33 +1075,715 @@ Tests: skip se DB None; detecta funções 10-char com callers vs sem callers; no
 
 ---
 
-## Chunk 4: Orquestrador + safety gates
+## Chunk 4: Orquestrador + safety gates (expandido em 4 sub-tasks)
 
-### Task 15: `migrate_tlpp.py` orquestrador
+### Task 15a: Orquestrador — dataclasses `MigrationPlan` + `MigrationReport`
 
 **Files:**
-- Create: `cli/plugadvpl/migrate_tlpp.py` (~250 linhas)
-- Add to: `cli/tests/unit/test_migrate_tlpp.py` (+8 tests)
+- Create: `cli/plugadvpl/migrate_tlpp.py` (skeleton; só dataclasses + imports)
+- Add to: `cli/tests/unit/test_migrate_tlpp.py` (+2 tests)
 
-Estrutura:
-- `MigrationPlan` dataclass: file + ordered_recipes + tlpp_version + enable_idioms
-- `MigrationReport` dataclass: per-file × per-recipe results + sumário categorizado
-- `dry_run(file, ctx) -> MigrationReport`: aplica recipes IN MEMORY, retorna diff por recipe
-- `apply(file, ctx) -> MigrationReport`: dry_run + escreve + validate + rollback se falhar
-- `_check_pre_flight(ctx) -> list[str]`: valida git clean, DB ingested, lint pre-flight, backup
-- `_rollback_cascade(file, bak_path) -> Literal["ok", "git", "failed"]`: §4.2.4 cascata
+- [ ] **Step 1: 2 RED tests**
 
-Plan provides exact code (~250 linhas). Tests cover:
-1. dry_run with all 11 recipes, no DB, no idioms → 6 SAFE applied, idioms skipped
-2. dry_run with idioms enabled → all 11
-3. apply with rollback success when compile fails
-4. apply with rollback-via-git when bak fails
-5. apply with rollback-failed → exit 2
-6. pre-flight blocks when working tree dirty (without --allow-dirty)
-7. pre-flight blocks when DB not ingested (without --no-impact-check)
-8. backup timestamp doesn't overwrite legacy .bak
+```python
+class TestMigrationDataclasses:
+    def test_plan_default_idioms_false(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan
+        plan = MigrationPlan(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        assert plan.enable_idioms is False
+        assert plan.tlpp_version == (0, 0, 0)
+        assert plan.allow_dirty is False
+        assert plan.no_impact_check is False
 
-(Código completo no orquestrador omitido aqui por brevidade — implementador segue contratos de RecipeBase + topological iteration + safety gate functions descritos.)
+    def test_report_aggregates_by_status(self) -> None:
+        from plugadvpl.migrate_tlpp import MigrationReport
+        from plugadvpl.migrate_tlpp_recipes import RecipeResult
+        report = MigrationReport(
+            file_path=Path("a.prw"),
+            recipe_results=[
+                RecipeResult(recipe_id="r1", status="ok"),
+                RecipeResult(recipe_id="r2", status="ok"),
+                RecipeResult(recipe_id="r3", status="nochange"),
+                RecipeResult(recipe_id="r4", status="needs-review"),
+            ],
+        )
+        assert report.counts() == {"ok": 2, "nochange": 1, "needs-review": 1}
+```
+
+- [ ] **Step 2: Create `cli/plugadvpl/migrate_tlpp.py` (skeleton)**
+
+```python
+"""Orquestrador do plugadvpl migrate-tlpp (v0.18.0+).
+
+Aplica recipes em ordem canônica topológica (spec §3.6), com
+safety gates pre-flight (git clean, DB ingest check, backup),
+auto-validação via compile, e rollback cascata em 3 níveis
+(.bak → git checkout → abort exit 2).
+
+Spec: docs/superpowers/specs/2026-05-31-migrate-tlpp-design.md
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from collections import Counter
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+from plugadvpl.migrate_tlpp_recipes import (
+    CANONICAL_ORDER,
+    MigrationContext,
+    RecipeResult,
+    REGISTRY,
+    _register_all,
+    filter_by_category,
+)
+
+if TYPE_CHECKING:
+    import sqlite3
+
+
+@dataclass(frozen=True)
+class MigrationPlan:
+    """Spec do que migrar: arquivo + flags."""
+
+    file_path: Path
+    project_root: Path
+    enable_idioms: bool = False
+    tlpp_version: tuple[int, int, int] = (0, 0, 0)
+    allow_dirty: bool = False
+    no_impact_check: bool = False
+    selected_recipes: tuple[str, ...] = ()  # vazio = todos os filtrados por category
+
+
+@dataclass(frozen=True)
+class MigrationReport:
+    """Resultado agregado de aplicar todas recipes a 1 arquivo."""
+
+    file_path: Path
+    recipe_results: list[RecipeResult] = field(default_factory=list)
+    final_content: str | None = None  # conteúdo após todas recipes
+    rollback_used: Literal["none", "bak", "git", "failed"] = "none"
+    compile_validated: bool = False
+
+    def counts(self) -> dict[str, int]:
+        return dict(Counter(r.status for r in self.recipe_results))
+
+    def has_errors(self) -> bool:
+        return any(r.status == "error" for r in self.recipe_results)
+
+    def all_todos(self) -> list[str]:
+        return [t for r in self.recipe_results for t in r.todo_markers]
+```
+
+- [ ] **Step 3: Run GREEN** — 2 PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add cli/plugadvpl/migrate_tlpp.py cli/tests/unit/test_migrate_tlpp.py
+git commit -m "feat(migrate-tlpp): MigrationPlan + MigrationReport dataclasses
+
+Foundation pro orquestrador. Plan = spec do que migrar; Report =
+agregado de resultados das recipes.
+
+2 unit tests. Commit parcial — pre-flight/apply/rollback vêm nas
+Tasks 15b-15d.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 15b: Pre-flight gates (`_check_pre_flight`)
+
+**Files:**
+- Modify: `cli/plugadvpl/migrate_tlpp.py` (+ função `_check_pre_flight`)
+- Add to: `cli/tests/unit/test_migrate_tlpp.py` (+3 tests)
+
+- [ ] **Step 1: 3 RED tests**
+
+```python
+class TestPreFlight:
+    def test_blocks_when_dirty_git(self, tmp_path: Path, monkeypatch) -> None:
+        """git status --porcelain non-empty + sem --allow-dirty → bloqueio."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+        # Mock git pra simular dirty
+        def fake_run(cmd, **kw):
+            class R: returncode = 0; stdout = b" M file.txt\n"
+            return R()
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        plan = MigrationPlan(file_path=tmp_path/"a.prw", project_root=tmp_path)
+        errors = _check_pre_flight(plan)
+        assert any("git" in e.lower() for e in errors)
+
+    def test_allows_dirty_with_override(self, tmp_path: Path, monkeypatch) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+        def fake_run(cmd, **kw):
+            class R: returncode = 0; stdout = b" M file.txt\n"
+            return R()
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        plan = MigrationPlan(file_path=tmp_path/"a.prw", project_root=tmp_path,
+                             allow_dirty=True)
+        errors = _check_pre_flight(plan)
+        # git error não aparece com allow_dirty=True (pode ter outros — DB, etc)
+        assert not any("working tree" in e.lower() for e in errors)
+
+    def test_blocks_when_db_not_ingested(self, tmp_path: Path, monkeypatch) -> None:
+        """Sem .plugadvpl/index.db + sem --no-impact-check → bloqueio."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, _check_pre_flight
+        def fake_run(cmd, **kw):
+            class R: returncode = 0; stdout = b""
+            return R()
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        plan = MigrationPlan(file_path=tmp_path/"a.prw", project_root=tmp_path)
+        errors = _check_pre_flight(plan)
+        assert any("ingest" in e.lower() or "db" in e.lower() for e in errors)
+```
+
+- [ ] **Step 2: Implementação em `migrate_tlpp.py`**
+
+```python
+# Adicionar após dataclasses
+
+
+def _check_pre_flight(plan: MigrationPlan) -> list[str]:
+    """Pre-flight gates (spec §4.1). Retorna lista de erros bloqueantes."""
+    errors: list[str] = []
+
+    # §4.1.1 — git working tree limpo
+    if not plan.allow_dirty:
+        try:
+            r = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=plan.project_root,
+                capture_output=True,
+                timeout=10,
+            )
+            if r.stdout.strip():
+                errors.append(
+                    "git working tree não está limpo. Use --allow-dirty pra prosseguir."
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # Sem git ou hangs — ignora (warning seria nice, sem bloqueio)
+            pass
+
+    # §4.1.3 — DB populated (CRITICAL pra caller detection)
+    if not plan.no_impact_check:
+        db_path = plan.project_root / ".plugadvpl" / "index.db"
+        if not db_path.exists():
+            errors.append(
+                "DB .plugadvpl/index.db ausente. Execute 'plugadvpl ingest' antes "
+                "OU use --no-impact-check (preserva nomes truncados; modo conservador)."
+            )
+
+    return errors
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+```bash
+git add cli/plugadvpl/migrate_tlpp.py cli/tests/unit/test_migrate_tlpp.py
+git commit -m "feat(migrate-tlpp): _check_pre_flight gates (git clean + DB ingest)
+
+Spec §4.1: bloqueio antes de qualquer write se:
+- git working tree dirty (override: --allow-dirty)
+- DB .plugadvpl/index.db ausente (override: --no-impact-check)
+
+3 unit tests. Lint pre-flight (SEC-001/SEC-004) fica pra Task 15c
+junto com apply (precisa orquestrador completo).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 15c: `dry_run` + `apply` + topological iteration
+
+**Files:**
+- Modify: `cli/plugadvpl/migrate_tlpp.py` (+ `dry_run`, `apply`, `_open_db`)
+- Add to: `cli/tests/unit/test_migrate_tlpp.py` (+4 tests)
+
+- [ ] **Step 1: 4 RED tests**
+
+```python
+class TestDryRun:
+    def test_safe_only_skips_idioms(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+        f = tmp_path / "a.prw"
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            enable_idioms=False, no_impact_check=True, allow_dirty=True,
+        )
+        report = dry_run(plan)
+        # 6 SAFE recipes rodados; 5 IDIOMS não devem aparecer no report
+        ids_executed = {r.recipe_id for r in report.recipe_results}
+        idioms_ids = {"namespace-infer", "begin-sequence-to-try",
+                      "conout-to-fwlog", "json-inline", "expand-truncated-names"}
+        assert not (ids_executed & idioms_ids)
+
+    def test_idioms_enabled_runs_all_11(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+        f = tmp_path / "SIGAFAT" / "a.prw"
+        f.parent.mkdir()
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            enable_idioms=True, no_impact_check=True, allow_dirty=True,
+        )
+        report = dry_run(plan)
+        assert len(report.recipe_results) == 11
+
+    def test_topological_order_preserved(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+        from plugadvpl.migrate_tlpp_recipes import CANONICAL_ORDER
+        f = tmp_path / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            enable_idioms=True, no_impact_check=True, allow_dirty=True,
+        )
+        report = dry_run(plan)
+        ids_executed = [r.recipe_id for r in report.recipe_results]
+        # ids_executed deve ser subsequência preservando ordem de CANONICAL_ORDER
+        idx_map = [CANONICAL_ORDER.index(i) for i in ids_executed]
+        assert idx_map == sorted(idx_map), "ordem violada"
+
+    def test_selected_recipes_filters_but_keeps_order(self, tmp_path: Path) -> None:
+        """selected_recipes=['header-includes', 'rename-extension'] aplica os 2
+        mas em ordem canônica (rename=2, header=3 → header DEPOIS rename)."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+        f = tmp_path / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            no_impact_check=True, allow_dirty=True,
+            selected_recipes=("header-includes", "rename-extension"),  # ordem invertida no input
+        )
+        report = dry_run(plan)
+        ids = [r.recipe_id for r in report.recipe_results]
+        assert ids == ["rename-extension", "header-includes"]  # canônica preservada
+```
+
+- [ ] **Step 2: Implementação**
+
+```python
+# Adicionar após _check_pre_flight
+
+
+def _open_db(project_root: Path) -> "sqlite3.Connection | None":
+    """Abre DB read-only se existe."""
+    import sqlite3
+    db_path = project_root / ".plugadvpl" / "index.db"
+    if not db_path.exists():
+        return None
+    try:
+        return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.OperationalError:
+        return None
+
+
+def _select_recipes(plan: MigrationPlan) -> list[str]:
+    """Filtra + ordena topologicamente as recipes a executar."""
+    _register_all()
+    available = filter_by_category(plan.enable_idioms)
+    if plan.selected_recipes:
+        # Intersect mantendo ordem canônica de available
+        selected = set(plan.selected_recipes)
+        return [r for r in available if r in selected]
+    return available
+
+
+def dry_run(plan: MigrationPlan) -> MigrationReport:
+    """Aplica recipes IN MEMORY (sem tocar FS). Retorna report com diffs."""
+    db_conn = _open_db(plan.project_root)
+    ctx = MigrationContext(
+        file_path=plan.file_path,
+        project_root=plan.project_root,
+        enable_idioms=plan.enable_idioms,
+        tlpp_version=plan.tlpp_version,
+        db_connection=db_conn,
+    )
+    # Read raw bytes + decode cp1252 (caso especial pra convert-encoding;
+    # recipe é só marker — orquestrador faz I/O)
+    try:
+        raw = plan.file_path.read_bytes()
+        # detect: utf-8 BOM → utf-8; senão cp1252 (default Protheus)
+        if raw.startswith(b"\xef\xbb\xbf"):
+            content = raw.decode("utf-8-sig")
+        else:
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                content = raw.decode("cp1252", errors="replace")
+    except OSError as e:
+        return MigrationReport(
+            file_path=plan.file_path,
+            recipe_results=[RecipeResult(
+                recipe_id="io",
+                status="error",
+                message=f"read failed: {e!r}",
+            )],
+        )
+
+    selected_ids = _select_recipes(plan)
+    results: list[RecipeResult] = []
+    current_content = content
+    for rid in selected_ids:
+        recipe = REGISTRY[rid]
+        try:
+            r = recipe.apply(current_content, ctx)
+            results.append(r)
+            if r.new_content is not None and r.status in ("ok", "needs-review"):
+                current_content = r.new_content
+        except Exception as e:
+            results.append(RecipeResult(
+                recipe_id=rid, status="error",
+                message=f"{e!r}",
+            ))
+
+    return MigrationReport(
+        file_path=plan.file_path,
+        recipe_results=results,
+        final_content=current_content if current_content != content else None,
+    )
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+```bash
+git commit -m "feat(migrate-tlpp): dry_run + topological recipe iteration
+
+Spec §3.5-3.6: recipes aplicados em ordem canonica fixa (CANONICAL_ORDER),
+mesmo quando --recipe vem em ordem arbitraria. Selecao filtra mas
+preserva ordem.
+
+I/O: read bytes + decode cp1252 (default Protheus) ou utf-8 se BOM.
+Decode acontece no orquestrador (caso especial pra convert-encoding;
+spec §3.6 nota 1).
+
+NEVER-propagate: exception em recipe vira status='error' sem matar
+restantes.
+
+4 unit tests. apply() + rollback vêm na Task 15d.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 15d: `apply` + rollback cascata `_rollback_cascade` (§4.2.4)
+
+**Files:**
+- Modify: `cli/plugadvpl/migrate_tlpp.py` (+ `apply`, `_rollback_cascade`, `_write_and_rename`)
+- Add to: `cli/tests/unit/test_migrate_tlpp.py` (+4 tests)
+
+- [ ] **Step 1: 4 RED tests**
+
+```python
+class TestApplyAndRollback:
+    def test_apply_writes_tlpp_when_valid(self, tmp_path, monkeypatch) -> None:
+        """Happy path: apply escreve .tlpp, valida compile=0, mantém."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+        f = tmp_path / "a.prw"
+        f.write_text("User Function X()\nReturn .T.\n", encoding="cp1252")
+        # Mock compile pra retornar success
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda p: True,
+        )
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            no_impact_check=True, allow_dirty=True, tlpp_version=(20, 3, 2),
+        )
+        report = apply(plan, validate=True)
+        # .tlpp existe; .prw foi renamed
+        assert (tmp_path / "a.tlpp").exists()
+        assert not f.exists()
+        assert report.rollback_used == "none"
+        assert report.compile_validated
+
+    def test_rollback_via_bak_when_compile_fails(self, tmp_path, monkeypatch) -> None:
+        """Compile fails → rollback restaura .prw de .bak.<timestamp>."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+        original_content = "User Function X()\nReturn .T.\n"
+        f = tmp_path / "a.prw"
+        f.write_text(original_content, encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda p: False,  # compile falha
+        )
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            no_impact_check=True, allow_dirty=True,
+        )
+        report = apply(plan, validate=True)
+        # .prw voltou; .tlpp foi removido
+        assert f.exists()
+        assert not (tmp_path / "a.tlpp").exists()
+        assert report.rollback_used == "bak"
+        assert f.read_text(encoding="cp1252") == original_content
+
+    def test_rollback_via_git_when_bak_missing(self, tmp_path, monkeypatch) -> None:
+        """BAK deletado entre runs → fallback git checkout."""
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+        # Simula git checkout funcionando, sem .bak
+        def fake_git_restore(file_path, project_root):
+            file_path.write_text("RESTORED VIA GIT", encoding="cp1252")
+            return True
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile", lambda p: False
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git", fake_git_restore
+        )
+        # Não cria .bak (apply criaria, mas vamos forçar bak missing post-write)
+        f = tmp_path / "a.prw"
+        f.write_text("orig", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            no_impact_check=True, allow_dirty=True,
+        )
+        # apply normalmente cria .bak.timestamp; pra forçar bak missing, deletamos manualmente
+        # Hack: monkeypatch _create_backup pra no-op
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup", lambda p: None
+        )
+        report = apply(plan, validate=True)
+        assert report.rollback_used == "git"
+
+    def test_rollback_failed_exit_2(self, tmp_path, monkeypatch) -> None:
+        """Bak missing + git fails → exit code 2 (CRITICAL)."""
+        import pytest
+        import typer
+        from plugadvpl.migrate_tlpp import MigrationPlan, apply
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile", lambda p: False
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git",
+            lambda f, r: False,
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup", lambda p: None
+        )
+        f = tmp_path / "a.prw"
+        f.write_text("orig", encoding="cp1252")
+        plan = MigrationPlan(
+            file_path=f, project_root=tmp_path,
+            no_impact_check=True, allow_dirty=True,
+        )
+        with pytest.raises(typer.Exit) as exc:
+            apply(plan, validate=True)
+        assert exc.value.exit_code == 2
+```
+
+- [ ] **Step 2: Implementação**
+
+```python
+# Adicionar após dry_run
+
+import typer
+
+
+def _create_backup(file_path: Path) -> Path | None:
+    """Cria backup .bak.<YYYYMMDDHHMMSS>. Preserva .bak legado sem timestamp."""
+    if not file_path.exists():
+        return None
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    bak_path = file_path.with_suffix(file_path.suffix + f".bak.{ts}")
+    if bak_path.exists():
+        return bak_path  # já existe (run anterior no mesmo segundo) — não sobrescreve
+    bak_path.write_bytes(file_path.read_bytes())
+    return bak_path
+
+
+def _find_oldest_bak(file_path: Path) -> Path | None:
+    """Acha .bak.<timestamp> mais antigo OU .bak legado."""
+    parent = file_path.parent
+    base = file_path.name
+    candidates = sorted(parent.glob(f"{base}.bak.*"))
+    if candidates:
+        return candidates[0]  # mais antigo (sort lexicográfico de timestamp = cronológico)
+    legacy = file_path.with_suffix(file_path.suffix + ".bak")
+    return legacy if legacy.exists() else None
+
+
+def _restore_via_git(file_path: Path, project_root: Path) -> bool:
+    """Tenta `git checkout HEAD -- <file>`. Returns True se OK."""
+    try:
+        r = subprocess.run(
+            ["git", "checkout", "HEAD", "--", str(file_path)],
+            cwd=project_root,
+            capture_output=True,
+            timeout=10,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _validate_via_compile(tlpp_path: Path) -> bool:
+    """Roda plugadvpl compile <tlpp> em modo appre. True se exit=0."""
+    from plugadvpl.compile import CompileRequest, run as compile_run
+    from plugadvpl.runtime_config import RuntimeConfig
+    try:
+        req = CompileRequest(
+            files=[tlpp_path],
+            mode="appre",
+            no_warnings=False,
+        )
+        # RuntimeConfig pode falhar se não setado; aceita ambos
+        cfg = RuntimeConfig.load_or_default()
+        result = compile_run(req, cfg, tlpp_path.parent)
+        return result.exit_code == 0
+    except Exception:
+        return False
+
+
+def _rollback_cascade(
+    file_path: Path,
+    tlpp_path: Path,
+    bak_path: Path | None,
+    project_root: Path,
+) -> Literal["bak", "git", "failed"]:
+    """Cascata §4.2.4: bak → git → abort."""
+    # Tentativa primária: restore via bak
+    if bak_path is None:
+        bak_path = _find_oldest_bak(file_path)
+    if bak_path and bak_path.exists():
+        try:
+            file_path.write_bytes(bak_path.read_bytes())
+            if tlpp_path.exists() and tlpp_path != file_path:
+                tlpp_path.unlink()
+            return "bak"
+        except OSError:
+            pass
+
+    # Fallback 1: git checkout
+    if _restore_via_git(file_path, project_root):
+        if tlpp_path.exists() and tlpp_path != file_path:
+            try:
+                tlpp_path.unlink()
+            except OSError:
+                pass
+        return "git"
+
+    # Fallback 2: abort
+    return "failed"
+
+
+def _write_and_rename(report: MigrationReport, plan: MigrationPlan) -> Path:
+    """Aplica final_content + rename .prw → .tlpp (se rename-extension rodou).
+
+    Retorna path final (.tlpp se rename ok, .prw se não).
+    """
+    if report.final_content is None:
+        return plan.file_path  # nada mudou
+    # Detecta se rename-extension rodou OK
+    rename_ok = any(
+        r.recipe_id == "rename-extension" and r.status == "ok"
+        for r in report.recipe_results
+    )
+    target = (
+        plan.file_path.with_suffix(".tlpp") if rename_ok else plan.file_path
+    )
+    target.write_text(report.final_content, encoding="utf-8")
+    if rename_ok and plan.file_path != target and plan.file_path.exists():
+        plan.file_path.unlink()
+    return target
+
+
+def apply(plan: MigrationPlan, *, validate: bool = False) -> MigrationReport:
+    """Aplica recipes ao FS (com pre-flight, backup, validate, rollback)."""
+    errors = _check_pre_flight(plan)
+    if errors:
+        return MigrationReport(
+            file_path=plan.file_path,
+            recipe_results=[RecipeResult(
+                recipe_id="pre-flight",
+                status="error",
+                message="; ".join(errors),
+            )],
+        )
+
+    # Backup ANTES de qualquer write
+    bak_path = _create_backup(plan.file_path)
+
+    # Dry run pra obter final_content
+    report = dry_run(plan)
+    if report.final_content is None:
+        return report  # nada a aplicar
+
+    # Write + rename
+    target = _write_and_rename(report, plan)
+
+    # Validate
+    if validate:
+        ok = _validate_via_compile(target)
+        if not ok:
+            # Rollback cascade
+            outcome = _rollback_cascade(
+                plan.file_path, target, bak_path, plan.project_root
+            )
+            new_report = MigrationReport(
+                file_path=plan.file_path,
+                recipe_results=report.recipe_results,
+                final_content=None,
+                rollback_used=outcome,
+                compile_validated=False,
+            )
+            if outcome == "failed":
+                typer.echo(
+                    f"CRITICAL: rollback falhou. Arquivo em estado intermediário. "
+                    f"Restaure manualmente de {bak_path} ou via git.",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+            return new_report
+        return MigrationReport(
+            file_path=target,
+            recipe_results=report.recipe_results,
+            final_content=report.final_content,
+            rollback_used="none",
+            compile_validated=True,
+        )
+
+    return MigrationReport(
+        file_path=target,
+        recipe_results=report.recipe_results,
+        final_content=report.final_content,
+        rollback_used="none",
+        compile_validated=False,
+    )
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+Suite full pós-Task 15d: ~1262 passed (1216 + 37 SAFE/IDIOMS recipes + ~9 orquestrador).
+
+```bash
+git commit -m "feat(migrate-tlpp): apply + rollback cascata §4.2.4
+
+Spec §4.2: validate via plugadvpl compile (modo appre); se falha,
+rollback cascata em 3 niveis:
+1. _restore via .bak.<timestamp> mais antigo
+2. _restore_via_git checkout HEAD -- <file>
+3. abort com typer.Exit(2) + mensagem CRITICAL
+
+_create_backup nunca sobrescreve .bak legado (preserva).
+_validate_via_compile reusa plugadvpl.compile.run em modo appre.
+
+4 unit tests (happy + 3 rollback paths).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
 
 ---
 
@@ -1103,6 +1792,16 @@ Plan provides exact code (~250 linhas). Tests cover:
 **Files:**
 - Modify: `cli/plugadvpl/edit_prw.py` — add `timestamp: bool = False` param
 - Add to: `cli/tests/unit/test_edit_prw.py` (+3 tests)
+
+- [ ] **Step 0: PRE-READ + caller verification**
+
+ANTES de Edit, rodar:
+```
+Read cli/plugadvpl/edit_prw.py — confirma assinatura atual de convert_and_save
+Grep "convert_and_save\(" no repo inteiro — lista callers existentes
+```
+
+Importante porque novo param `timestamp` deve ser kwarg-only com default `False` pra preservar backward compat. Confirma que callers passam args posicionalmente OU por kwarg sem colidir.
 
 ```python
 # Em edit_prw.py — encontrar def convert_and_save e adicionar timestamp
@@ -1141,35 +1840,579 @@ Tests:
 
 ---
 
-## Chunk 5: CLI 4 subcomandos
+## Chunk 5: CLI 4 subcomandos (typer sub-app)
 
-### Task 17: `plugadvpl migrate-tlpp init <projeto>`
+### Task 17: Typer sub-app + `migrate-tlpp init <projeto>`
 
 **Files:**
-- Modify: `cli/plugadvpl/cli.py` (+1 typer sub-app + 1 subcommand)
+- Modify: `cli/plugadvpl/cli.py` (+ typer sub-app + `init` subcommand)
 - Add to: `cli/tests/integration/test_cli.py` — `TestMigrateTlppInit` (3 tests)
 
-Estrutura: criar `migrate_tlpp_app = typer.Typer(name="migrate-tlpp", ...)` análogo a `edit_prw_app`. Subcomando `init` analisa todos `.prw` no projeto, mostra tabela/json com candidatos + blockers + impact.
+- [ ] **Step 1: 3 RED integration tests**
 
-### Task 18: `migrate-tlpp rename <arquivo>` (2 integration tests)
+```python
+class TestMigrateTlppInit:
+    """v0.18.0 — plugadvpl migrate-tlpp init analisa projeto sem tocar nada."""
 
-### Task 19: `migrate-tlpp recipes <arquivo>` (5 integration tests — diff-only, --write, --idioms, --validate rollback, --allow-dirty)
+    def test_init_lists_candidates_in_synthetic_project(
+        self, synthetic_project: Path, runner: CliRunner,
+    ) -> None:
+        # Cria 2 .prw sintéticos
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        (synthetic_project / "src" / "a.prw").write_text(
+            "User Function A()\nReturn .T.\n", encoding="cp1252",
+        )
+        (synthetic_project / "src" / "b.prw").write_text(
+            "User Function B()\nReturn .T.\n", encoding="cp1252",
+        )
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "init", "src"],
+        )
+        assert result.exit_code == 0, result.stderr
+        # output menciona 2 arquivos
+        assert "a.prw" in result.stdout or "a.prw" in result.stderr
+        assert "b.prw" in result.stdout or "b.prw" in result.stderr
 
-### Task 20: `migrate-tlpp todos` (2 integration tests)
+    def test_init_format_json(
+        self, synthetic_project: Path, runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        (synthetic_project / "src" / "a.prw").write_text(
+            "body", encoding="cp1252",
+        )
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "--format", "json",
+                  "migrate-tlpp", "init", "src"],
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["total"] >= 1
 
-(Cada Task = bite-sized commits separados.)
+    def test_init_does_not_modify_files(
+        self, synthetic_project: Path, runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "src").mkdir(exist_ok=True)
+        f = synthetic_project / "src" / "a.prw"
+        original = "User Function A()\nReturn .T.\n"
+        f.write_text(original, encoding="cp1252")
+        runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "init", "src"],
+        )
+        # Read-only: arquivo intacto
+        assert f.read_text(encoding="cp1252") == original
+```
+
+- [ ] **Step 2: Find spot em `cli.py` pra inserir typer sub-app**
+
+Procurar onde `edit_prw_app` é criado (~linha 2960 em v0.18.0). Inserir DEPOIS:
+
+```python
+# ---------------------------------------------------------------------------
+# migrate-tlpp (v0.18.0): migrador deterministico ADVPL clássico -> TLPP
+# ---------------------------------------------------------------------------
+
+
+migrate_tlpp_app = typer.Typer(
+    name="migrate-tlpp",
+    help="Migrador determinístico .prw → .tlpp (pipeline ts-migrate-style).",
+    no_args_is_help=True,
+)
+app.add_typer(migrate_tlpp_app, name="migrate-tlpp")
+
+
+def _parse_tlpp_version(s: str | None) -> tuple[int, int, int]:
+    if not s:
+        return (0, 0, 0)
+    parts = s.split(".")
+    return tuple(int(p) for p in parts[:3]) + (0,) * (3 - len(parts[:3]))  # type: ignore[return-value]
+
+
+@migrate_tlpp_app.command("init")
+def migrate_tlpp_init(
+    ctx: typer.Context,
+    pasta: Annotated[
+        Path,
+        typer.Argument(help="Pasta a analisar (recursivo). Default: root do projeto."),
+    ] = Path("."),
+    enable_idioms: Annotated[
+        bool,
+        typer.Option("--idioms", help="Inclui recipes IDIOMS na análise."),
+    ] = False,
+    tlpp_version: Annotated[
+        str | None,
+        typer.Option("--tlpp-version", help="Versão AppServer alvo (ex: 20.3.2)."),
+    ] = None,
+) -> None:
+    """Analisa projeto e lista candidatos a migração sem tocar em nada.
+
+    Output (table ou JSON via --format): arquivo, candidato, recipes que
+    aplicariam, blockers de lint (SEC-001/SEC-004), impact (count callers
+    externos via DB).
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, dry_run
+    root: Path = ctx.obj["root"]
+    target_dir = pasta if pasta.is_absolute() else root / pasta
+    if not target_dir.exists():
+        typer.secho(f"Pasta não encontrada: {target_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    parsed_version = _parse_tlpp_version(tlpp_version)
+    rows: list[dict] = []
+    for prw_file in sorted(target_dir.rglob("*.prw")):
+        plan = MigrationPlan(
+            file_path=prw_file,
+            project_root=root,
+            enable_idioms=enable_idioms,
+            tlpp_version=parsed_version,
+            no_impact_check=True,  # init não escreve, OK skipar
+            allow_dirty=True,
+        )
+        report = dry_run(plan)
+        counts = report.counts()
+        rows.append({
+            "arquivo": str(prw_file.relative_to(root)),
+            "recipes_ok": counts.get("ok", 0),
+            "nochange": counts.get("nochange", 0),
+            "needs_review": counts.get("needs-review", 0),
+            "todos": len(report.all_todos()),
+        })
+
+    _render_from_ctx(
+        ctx, rows,
+        columns=["arquivo", "recipes_ok", "nochange", "needs_review", "todos"],
+        title=f"Candidatos a migração em {target_dir.relative_to(root)}",
+        next_steps=[
+            "plugadvpl migrate-tlpp rename <arquivo>  # só rename + encoding",
+            "plugadvpl migrate-tlpp recipes <arquivo>  # diff completo",
+        ],
+    )
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+```bash
+git commit -m "feat(cli): plugadvpl migrate-tlpp typer sub-app + init subcommand
+
+Spec §3.4: init analisa pasta sem tocar nada, lista candidatos.
+Reusa dry_run do orquestrador (Task 15c).
+
+3 integration tests (lista em table, lista em JSON, read-only).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 18: `migrate-tlpp rename <arquivo>`
+
+**Files:**
+- Modify: `cli/plugadvpl/cli.py` (+ subcommand)
+- Add to: `cli/tests/integration/test_cli.py` — `TestMigrateTlppRename` (2 tests)
+
+- [ ] **Step 1: 2 RED tests** (rename diff-only sem `--write`, rename `--write` aplica + valida)
+
+```python
+class TestMigrateTlppRename:
+    def test_rename_diff_only_without_write(self, synthetic_project, runner) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "rename", "a.prw"],
+        )
+        assert result.exit_code == 0
+        # diff só, .prw permanece
+        assert f.exists()
+        assert not (synthetic_project / "a.tlpp").exists()
+
+    def test_rename_write_applies_rename_and_encoding(
+        self, synthetic_project, runner, monkeypatch,
+    ) -> None:
+        # Validate=False default pra rename (mais conservador)
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "rename",
+                  "a.prw", "--write", "--allow-dirty"],
+        )
+        assert result.exit_code == 0
+        assert (synthetic_project / "a.tlpp").exists()
+        assert not f.exists()
+```
+
+- [ ] **Step 2: Subcommand implementation**
+
+```python
+@migrate_tlpp_app.command("rename")
+def migrate_tlpp_rename(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Arquivo .prw a renomear.")],
+    write: Annotated[
+        bool, typer.Option("--write", help="Aplica rename (default: só diff).")
+    ] = False,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Após write, valida via compile."),
+    ] = False,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option("--allow-dirty", help="Permite working tree dirty."),
+    ] = False,
+) -> None:
+    """Renomeia .prw → .tlpp + converte encoding cp1252 → utf-8.
+
+    Subset conservador: aplica APENAS recipes `convert-encoding` e
+    `rename-extension` (canonical order 1-2). Pra recipes completos
+    use `migrate-tlpp recipes`.
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, apply, dry_run
+    root: Path = ctx.obj["root"]
+    target_file = arquivo if arquivo.is_absolute() else root / arquivo
+    plan = MigrationPlan(
+        file_path=target_file,
+        project_root=root,
+        no_impact_check=True,  # rename não precisa DB
+        allow_dirty=allow_dirty,
+        selected_recipes=("convert-encoding", "rename-extension"),
+    )
+    if write:
+        report = apply(plan, validate=validate)
+    else:
+        report = dry_run(plan)
+    if report.final_content is not None and not write:
+        from plugadvpl.migrate_tlpp_diff import unified_diff_text
+        diff = unified_diff_text(
+            target_file.read_text(encoding="cp1252", errors="replace"),
+            report.final_content,
+            str(target_file),
+            str(target_file.with_suffix(".tlpp")),
+        )
+        typer.echo(diff)
+    counts = report.counts()
+    typer.secho(
+        f"rename: ok={counts.get('ok', 0)} nochange={counts.get('nochange', 0)}",
+        fg=typer.colors.GREEN, err=True,
+    )
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+---
+
+### Task 19: `migrate-tlpp recipes <arquivo>` (mais complexo — 5 testes)
+
+**Files:**
+- Modify: `cli/plugadvpl/cli.py` (+ subcommand)
+- Add to: `cli/tests/integration/test_cli.py` — `TestMigrateTlppRecipes` (5 tests)
+
+- [ ] **Step 1: 5 RED tests**
+
+```python
+class TestMigrateTlppRecipes:
+    def test_recipes_diff_only_default(self, synthetic_project, runner) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "recipes",
+                  "a.prw", "--no-impact-check", "--allow-dirty"],
+        )
+        assert result.exit_code == 0
+        # .prw intacto (sem --write)
+        assert f.exists()
+        assert not (synthetic_project / "a.tlpp").exists()
+
+    def test_recipes_write_applies(self, synthetic_project, runner) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "recipes",
+                  "a.prw", "--write", "--no-impact-check", "--allow-dirty"],
+        )
+        assert result.exit_code == 0
+        # .tlpp criado
+        assert (synthetic_project / "a.tlpp").exists()
+
+    def test_recipes_idioms_runs_all_11(self, synthetic_project, runner) -> None:
+        f = synthetic_project / "SIGAFAT" / "a.prw"
+        f.parent.mkdir(exist_ok=True)
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "recipes",
+                  "SIGAFAT/a.prw", "--idioms", "--no-impact-check", "--allow-dirty"],
+        )
+        assert result.exit_code == 0
+
+    def test_recipes_validate_rollback_when_compile_fails(
+        self, synthetic_project, runner, monkeypatch,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        original = "User Function X()\nReturn\n"
+        f.write_text(original, encoding="cp1252")
+        # Mock _validate_via_compile pra retornar False (compile falha)
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile", lambda p: False,
+        )
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "recipes",
+                  "a.prw", "--write", "--validate",
+                  "--no-impact-check", "--allow-dirty"],
+        )
+        # Rollback restaura .prw
+        assert f.exists()
+        assert f.read_text(encoding="cp1252") == original
+
+    def test_recipes_format_json(self, synthetic_project, runner) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "--format", "json",
+                  "migrate-tlpp", "recipes", "a.prw",
+                  "--no-impact-check", "--allow-dirty"],
+        )
+        assert result.exit_code == 0
+        # JSON output parseável
+        payload = json.loads(result.stdout)
+        assert "recipes" in payload or "rows" in payload
+```
+
+- [ ] **Step 2: Subcommand**
+
+```python
+@migrate_tlpp_app.command("recipes")
+def migrate_tlpp_recipes(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument()],
+    write: Annotated[bool, typer.Option("--write")] = False,
+    enable_idioms: Annotated[bool, typer.Option("--idioms")] = False,
+    tlpp_version: Annotated[str | None, typer.Option("--tlpp-version")] = None,
+    validate: Annotated[bool, typer.Option("--validate")] = False,
+    allow_dirty: Annotated[bool, typer.Option("--allow-dirty")] = False,
+    no_impact_check: Annotated[bool, typer.Option("--no-impact-check")] = False,
+    recipe: Annotated[
+        list[str] | None,
+        typer.Option("--recipe", "-r", help="Recipe ID (repetível)."),
+    ] = None,
+) -> None:
+    """Aplica recipes de transformação ADVPL → TLPP.
+
+    Default: diff-only. --write aplica + opcionalmente --validate.
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, apply, dry_run
+    root: Path = ctx.obj["root"]
+    target_file = arquivo if arquivo.is_absolute() else root / arquivo
+    parsed_version = _parse_tlpp_version(tlpp_version)
+    plan = MigrationPlan(
+        file_path=target_file,
+        project_root=root,
+        enable_idioms=enable_idioms,
+        tlpp_version=parsed_version,
+        allow_dirty=allow_dirty,
+        no_impact_check=no_impact_check,
+        selected_recipes=tuple(recipe or ()),
+    )
+    if write:
+        report = apply(plan, validate=validate)
+    else:
+        report = dry_run(plan)
+    if report.final_content is not None and not write:
+        from plugadvpl.migrate_tlpp_diff import unified_diff_text
+        before = target_file.read_text(encoding="cp1252", errors="replace")
+        diff = unified_diff_text(
+            before, report.final_content,
+            str(target_file), str(target_file.with_suffix(".tlpp")),
+        )
+        typer.echo(diff)
+    # Sumário categorizado
+    counts = report.counts()
+    fmt = ctx.obj.get("format", "table") if ctx.obj else "table"
+    if fmt == "json":
+        import json as _json
+        typer.echo(_json.dumps({
+            "arquivo": str(target_file.relative_to(root)),
+            "recipes": [
+                {"id": r.recipe_id, "status": r.status, "message": r.message}
+                for r in report.recipe_results
+            ],
+            "counts": counts,
+            "todos": report.all_todos(),
+            "rollback_used": report.rollback_used,
+        }, ensure_ascii=False, indent=2))
+    else:
+        typer.secho(
+            f"recipes: ok={counts.get('ok',0)} nochange={counts.get('nochange',0)} "
+            f"needs-review={counts.get('needs-review',0)} error={counts.get('error',0)}",
+            fg=typer.colors.GREEN if not report.has_errors() else typer.colors.RED,
+            err=True,
+        )
+        if report.rollback_used != "none":
+            typer.secho(f"⚠ rollback usado: {report.rollback_used}",
+                       fg=typer.colors.YELLOW, err=True)
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+---
+
+### Task 20: `migrate-tlpp todos`
+
+**Files:**
+- Modify: `cli/plugadvpl/cli.py` (+ subcommand)
+- Add to: `cli/tests/integration/test_cli.py` — `TestMigrateTlppTodos` (2 tests)
+
+- [ ] **Step 1: 2 RED tests**
+
+```python
+class TestMigrateTlppTodos:
+    def test_todos_empty_when_no_markers(self, synthetic_project, runner) -> None:
+        (synthetic_project / "x.tlpp").write_text("function u_x()\nreturn .T.\n", encoding="utf-8")
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "todos"],
+        )
+        assert result.exit_code == 0
+        assert "nenhum" in result.stdout.lower() or "0" in result.stdout
+
+    def test_todos_lists_markers(self, synthetic_project, runner) -> None:
+        (synthetic_project / "y.tlpp").write_text(
+            "// @plugadvpl-todo:namespace-infer revise manualmente\n"
+            "namespace x\n",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "migrate-tlpp", "todos"],
+        )
+        assert result.exit_code == 0
+        assert "namespace-infer" in result.stdout
+        assert "y.tlpp" in result.stdout
+```
+
+- [ ] **Step 2: Subcommand**
+
+```python
+import re as _re
+
+_TODO_MARKER_RE = _re.compile(
+    r"//\s*@plugadvpl-todo:([^\s]+)\s*(.*?)$", _re.MULTILINE,
+)
+
+
+@migrate_tlpp_app.command("todos")
+def migrate_tlpp_todos(
+    ctx: typer.Context,
+    pasta: Annotated[Path, typer.Argument()] = Path("."),
+) -> None:
+    """Lista débitos `@plugadvpl-todo` pendentes em arquivos .tlpp."""
+    root: Path = ctx.obj["root"]
+    target_dir = pasta if pasta.is_absolute() else root / pasta
+    rows: list[dict] = []
+    for tlpp_file in sorted(target_dir.rglob("*.tlpp")):
+        try:
+            content = tlpp_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line_no, line in enumerate(content.splitlines(), start=1):
+            m = _TODO_MARKER_RE.search(line)
+            if m:
+                rows.append({
+                    "arquivo": str(tlpp_file.relative_to(root)),
+                    "linha": line_no,
+                    "recipe": m.group(1),
+                    "mensagem": m.group(2).strip(),
+                })
+    if not rows:
+        typer.secho("Nenhum débito @plugadvpl-todo encontrado.",
+                   fg=typer.colors.GREEN, err=True)
+        return
+    _render_from_ctx(
+        ctx, rows,
+        columns=["arquivo", "linha", "recipe", "mensagem"],
+        title=f"Débitos @plugadvpl-todo em {target_dir.relative_to(root)}",
+    )
+```
+
+- [ ] **Step 3: Run GREEN + Commit**
+
+(Cada Task 17-20 = 1 commit separado.)
 
 ---
 
 ## Chunk 6: Skill + edge cases tests
 
-### Task 21: `skills/migrate-tlpp/SKILL.md` com atribuição TOTVS
+### Task 21: `skills/migrate-tlpp/SKILL.md` com atribuição TOTVS + bumps 53→54
 
-Estrutura igual ao `doc-writer/SKILL.md`: frontmatter `description` com keywords ADVPL/Protheus/TLPP, quando-usar, exemplos, workflow, atribuição.
+**Step 0 (LICENSE check — BLOCKING):**
 
-Atribuição (spec §9): permalinks com commit SHA fixo (resolver durante implementação via `gh api repos/totvs/engpro-advpl-tlpp-skills/commits/main` pra pegar SHA atual; checar LICENSE — abrir issue bloqueante se não-declarada).
+ANTES de qualquer trabalho na skill, rodar:
+```bash
+gh api repos/totvs/engpro-advpl-tlpp-skills/license --jq '.license.spdx_id'
+gh api repos/totvs/engpro-advpl-tlpp-skills/commits/main --jq '.sha' | head -c 40
+```
 
-Adicionar `migrate-tlpp` ao `_SKILL_GLOBS` (meta-skill, escopo vazio) e `_CURSOR_META_ALWAYS_APPLY`. Atualizar bumps 53 → 54 em ALL test asserts (mesma operação do v0.17.0 quando doc-writer foi adicionado).
+Se LICENSE retornar `null`/`NOASSERTION`/proprietária: **abortar implementation de Task 21** e abrir issue bloqueante. Se MIT/Apache/BSD: prosseguir e salvar SHA pro permalink.
+
+**Step 1-3:** Estrutura igual ao `doc-writer/SKILL.md`: frontmatter `description` com keywords ADVPL/Protheus/TLPP, quando-usar, exemplos dos 4 subcomandos, workflow, atribuição com permalinks `<COMMIT-SHA>` resolvidos no Step 0.
+
+**Step 4: Adicionar `migrate-tlpp` ao catálogo**
+
+Em `cli/plugadvpl/_skill_catalog.py`:
+
+```python
+_SKILL_GLOBS: dict[str, list[str]] = {
+    # ... existing entries ...
+    "docs": [],
+    "doc-writer": [],
+    "migrate-tlpp": [],  # NOVO v0.18.0 — meta-skill
+    "trace": [],
+    # ... resto ...
+}
+
+_CURSOR_META_ALWAYS_APPLY: set[str] = {
+    # ... existing ...
+    "docs",
+    "doc-writer",
+    "migrate-tlpp",  # NOVO v0.18.0
+}
+```
+
+**Step 5: Bumps 53 → 54 em test asserts (script verbatim)**
+
+Criar `d:\tmp\bump_skill_count_v0180.py`:
+
+```python
+"""Bump skill count asserts 53 → 54 em test files (Python bytes — memory feedback_powershell_utf8_bom)."""
+import re
+from pathlib import Path
+
+files = [
+    'cli/tests/integration/test_cli.py',
+    'cli/tests/unit/test_copilot_instructions.py',
+    'cli/tests/unit/test_cursor_rules.py',
+    'cli/tests/unit/test_gemini_skills.py',
+    'cli/tests/unit/test_skill_catalog.py',
+]
+
+root = Path('d:/IA/Projetos/plugadvpl')
+total = 0
+for f in files:
+    p = root / f
+    content = p.read_text(encoding='utf-8')
+    new = content
+    new = re.sub(r'== 53\b', '== 54', new)
+    new = re.sub(r'installed_local_count=53\b', 'installed_local_count=54', new)
+    new = re.sub(r'installed_skills_count=53\b', 'installed_skills_count=54', new)
+    new = re.sub(r'installed_agents_skills_count=53\b', 'installed_agents_skills_count=54', new)
+    new = new.replace('53 skills', '54 skills')
+    new = new.replace('test_has_53_skills', 'test_has_54_skills')
+    new = new.replace('"53 locais"', '"54 locais"')
+    if new != content:
+        diff = sum(1 for a, b in zip(content.split('\n'), new.split('\n')) if a != b)
+        p.write_text(new, encoding='utf-8', newline='\n')
+        print(f'  {f}: {diff} linhas alteradas')
+        total += diff
+print(f'Total: {total} linhas')
+```
+
+Run via Python system: `"/c/Users/jonil/AppData/Local/Programs/Python/Python312/python.exe" d:/tmp/bump_skill_count_v0180.py`. Expected: ~30 linhas alteradas.
+
+**Step 6: Run full suite + commit**
 
 ### Task 22: Snapshot fixtures pra roundtrip
 
@@ -1328,8 +2571,26 @@ gh release view v0.18.0 --json name,tagName,assets
 
 3. **DB schema dependency:** Tasks 7 (user-function-lowercase) e 13 (expand-truncated-names) requerem schema com tabela `chamadas (destino, origem_arquivo)`. Tests usam in-memory sqlite. Spec assume DB já existe pelo `plugadvpl ingest` pré-requisito.
 
-4. **Licença TOTVS check:** ANTES de v0.18.0 ship, abrir issue verificando licença `totvs/engpro-advpl-tlpp-skills` (spec §9). Se proprietária, atribuição pode não ser suficiente — derivação requer permissão.
+4. **Licença TOTVS check (BLOCKING):** Task 21 Step 0 verifica licença do `totvs/engpro-advpl-tlpp-skills`. Se proprietária ou NOASSERTION, **abortar Task 21** e abrir issue antes de prosseguir. Atribuição mesmo correta não substitui licença incompatível pra derivação.
 
-5. **Suite count bumps:** Adicionar `migrate-tlpp` ao `_SKILL_GLOBS` faz 53 → 54 skills. Aplicar Python script análogo ao do v0.17.0 (replace `== 53` → `== 54` e similares) nos test files.
+5. **Suite count bumps:** Task 21 Step 5 inclui o script Python verbatim pra bump 53 → 54.
 
-6. **Spec-reviewer concerns:** Spec aplicou 10 fixes pré-implementação. Re-leia §3.6 (ordem) e §4.2.4 (rollback cascata) durante Tasks 15-16.
+6. **Spec-reviewer concerns:** Spec aplicou 10 fixes pré-implementação. Re-leia §3.6 (ordem) e §4.2.4 (rollback cascata) durante Tasks 15c-15d.
+
+7. **NÃO IMPLEMENTAR (spec §8 Out of Scope):** Os seguintes itens FICAM PARA v0.19.x+ e o subagent NÃO deve tentar implementar mesmo vendo gancho no código existente:
+   - MVC `Static Function` + `StaticCall` cross-file → namespace (exige check appserver ≥12.1.2410)
+   - Classes ADVPL clássicas → classes TLPP modernas com herança/interfaces
+   - `WsRESTful WSMETHOD` → annotations `@Get`/`@Post`/`@Put`/`@Delete` (parser de URL mapping)
+   - Tipagem opcional `as Type` (requer type inference; sem AST plugadvpl não suporta)
+   - `Begin Transaction` → `try/finally` com commit/rollback (semântica não-trivial)
+   - Cross-file refactor (mover funções entre namespaces baseado em uso)
+   - Modo interativo `[y/n]` por recipe (preferimos batch + diff)
+
+   Se subagent ver código relacionado (ex: `extract_rest_endpoints` no parser), USA pra detecção/análise mas NÃO transforma.
+
+8. **Dependências entre chunks (sequencial obrigatório):**
+   - Chunk 1 (foundation) precede Chunks 2-3 (recipes).
+   - Chunks 2-3 precedem Chunk 4 (orquestrador usa REGISTRY populated).
+   - Chunk 4 precede Chunk 5 (CLI chama dry_run/apply).
+   - Chunk 6 (skill + snapshots) pode rodar em paralelo a Chunk 4 (sem dep crítica).
+   - Chunk 7 (release) é último, depois de tudo verde.
