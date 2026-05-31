@@ -145,3 +145,32 @@ class TestHeaderIncludes:
         ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
         r = HeaderIncludes().apply(content, ctx)
         assert r.status == "nochange"
+
+
+class TestRemovePublic:
+    """Recipe order 4 — PUBLIC X → X."""
+
+    def test_removes_public_keyword(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.remove_public import RemovePublicDefault
+
+        content = 'PUBLIC cVar := "x"\nPUBLIC nVal := 42\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = RemovePublicDefault().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "PUBLIC" not in r.new_content
+        assert 'cVar := "x"' in r.new_content
+
+    def test_nochange_without_public(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.remove_public import RemovePublicDefault
+
+        content = 'Local cVar := "x"\nReturn\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = RemovePublicDefault().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_recipe_id_and_category(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.remove_public import RemovePublicDefault
+
+        assert RemovePublicDefault.id == "remove-public-default"
+        assert RemovePublicDefault.category == "safe"
