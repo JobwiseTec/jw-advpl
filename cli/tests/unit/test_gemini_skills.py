@@ -203,7 +203,7 @@ class TestInstallGeminiSkills:
     def test_installs_all_three_layers_when_signals_present(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """~/.gemini/ + .gemini/ projeto → home + project MD + 53 skills."""
+        """~/.gemini/ + .gemini/ projeto → home + project MD + 54 skills."""
         from plugadvpl.gemini_skills import install_gemini_skills
         fake_home = tmp_path / "home"
         (fake_home / ".gemini").mkdir(parents=True)
@@ -216,7 +216,7 @@ class TestInstallGeminiSkills:
 
         assert result.installed_global_home is True
         assert result.installed_project_md is True
-        assert result.installed_skills_count == 53
+        assert result.installed_skills_count == 54
         assert not result.errors
         # Files exist
         assert (fake_home / ".gemini" / "GEMINI.md").exists()
@@ -224,7 +224,7 @@ class TestInstallGeminiSkills:
         skill_files = list(
             (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(skill_files) == 53
+        assert len(skill_files) == 54
 
     def test_no_op_without_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -266,10 +266,10 @@ class TestInstallGeminiSkills:
         agents_files = list(
             (project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(gemini_files) == 53
-        assert len(agents_files) == 53
-        assert result.installed_skills_count == 53
-        assert result.installed_agents_skills_count == 53
+        assert len(gemini_files) == 54
+        assert len(agents_files) == 54
+        assert result.installed_skills_count == 54
+        assert result.installed_agents_skills_count == 54
 
     def test_no_install_to_agents_skills_when_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -290,7 +290,7 @@ class TestInstallGeminiSkills:
         gemini_files = list(
             (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(gemini_files) == 53
+        assert len(gemini_files) == 54
         # .agents/ NÃO foi criado
         assert not (project / ".agents").exists()
         assert result.installed_agents_skills_count == 0
