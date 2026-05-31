@@ -3515,6 +3515,112 @@ def migrate_tlpp_rename(
     )
 
 
+@migrate_tlpp_app.command("recipes")
+def migrate_tlpp_recipes(
+    ctx: typer.Context,
+    arquivo: Annotated[Path, typer.Argument(help="Arquivo .prw a migrar.")],
+    write: Annotated[
+        bool,
+        typer.Option("--write", help="Aplica recipes ao FS (default: só diff)."),
+    ] = False,
+    enable_idioms: Annotated[
+        bool,
+        typer.Option("--idioms", help="Inclui recipes IDIOMS (opt-in)."),
+    ] = False,
+    tlpp_version: Annotated[
+        str | None,
+        typer.Option("--tlpp-version", help="Versão AppServer alvo (ex: 20.3.2)."),
+    ] = None,
+    validate: Annotated[
+        bool,
+        typer.Option("--validate", help="Após write, valida via compile."),
+    ] = False,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option("--allow-dirty", help="Permite working tree dirty."),
+    ] = False,
+    no_impact_check: Annotated[
+        bool,
+        typer.Option("--no-impact-check", help="Pula gate de DB ingest."),
+    ] = False,
+    recipe: Annotated[
+        list[str] | None,
+        typer.Option("--recipe", "-r", help="Recipe ID (repetível)."),
+    ] = None,
+) -> None:
+    """Aplica recipes de transformação ADVPL → TLPP.
+
+    Default: diff-only. ``--write`` aplica + opcionalmente ``--validate``.
+    """
+    from plugadvpl.migrate_tlpp import MigrationPlan, apply, dry_run
+
+    root: Path = ctx.obj["root"]
+    target_file = arquivo if arquivo.is_absolute() else root / arquivo
+    parsed_version = _parse_tlpp_version(tlpp_version)
+    plan = MigrationPlan(
+        file_path=target_file,
+        project_root=root,
+        enable_idioms=enable_idioms,
+        tlpp_version=parsed_version,
+        allow_dirty=allow_dirty,
+        no_impact_check=no_impact_check,
+        selected_recipes=tuple(recipe or ()),
+    )
+    report = apply(plan, validate=validate) if write else dry_run(plan)
+    if report.final_content is not None and not write:
+        from plugadvpl.migrate_tlpp_diff import unified_diff_text
+
+        before = target_file.read_text(encoding="cp1252", errors="replace")
+        diff = unified_diff_text(
+            before,
+            report.final_content,
+            str(target_file),
+            str(target_file.with_suffix(".tlpp")),
+        )
+        typer.echo(diff)
+
+    # Sumario categorizado
+    counts = report.counts()
+    fmt = ctx.obj.get("format", "table") if ctx.obj else "table"
+    if fmt == "json":
+        import json as _json
+
+        rel_arquivo = (
+            str(target_file.relative_to(root))
+            if target_file.is_relative_to(root)
+            else str(target_file)
+        )
+        typer.echo(
+            _json.dumps(
+                {
+                    "arquivo": rel_arquivo,
+                    "recipes": [
+                        {"id": r.recipe_id, "status": r.status, "message": r.message}
+                        for r in report.recipe_results
+                    ],
+                    "counts": counts,
+                    "todos": report.all_todos(),
+                    "rollback_used": report.rollback_used,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        typer.secho(
+            f"recipes: ok={counts.get('ok', 0)} nochange={counts.get('nochange', 0)} "
+            f"needs-review={counts.get('needs-review', 0)} error={counts.get('error', 0)}",
+            fg=typer.colors.GREEN if not report.has_errors() else typer.colors.RED,
+            err=True,
+        )
+        if report.rollback_used != "none":
+            typer.secho(
+                f"⚠ rollback usado: {report.rollback_used}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+
 # ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------

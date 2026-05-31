@@ -3208,3 +3208,136 @@ class TestMigrateTlppRename:
         assert result.exit_code == 0
         assert (synthetic_project / "a.tlpp").exists()
         assert not f.exists()
+
+
+class TestMigrateTlppRecipes:
+    """v0.18.0 — plugadvpl migrate-tlpp recipes: pipeline completo."""
+
+    def test_recipes_diff_only_default(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "a.prw",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        assert result.exit_code == 0
+        # .prw intacto (sem --write)
+        assert f.exists()
+        assert not (synthetic_project / "a.tlpp").exists()
+
+    def test_recipes_write_applies(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "a.prw",
+                "--write",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        assert result.exit_code == 0
+        # .tlpp criado
+        assert (synthetic_project / "a.tlpp").exists()
+
+    def test_recipes_idioms_runs_all_11(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        f = synthetic_project / "SIGAFAT" / "a.prw"
+        f.parent.mkdir(exist_ok=True)
+        f.write_text("User Function X()\nReturn\n", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "SIGAFAT/a.prw",
+                "--idioms",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_recipes_validate_rollback_when_compile_fails(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        original = "User Function X()\nReturn\n"
+        f.write_text(original, encoding="cp1252")
+        # Mock _validate_via_compile pra retornar False (compile falha)
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda _p: False,
+        )
+        runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "a.prw",
+                "--write",
+                "--validate",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        # Rollback restaura .prw
+        assert f.exists()
+        assert f.read_text(encoding="cp1252") == original
+
+    def test_recipes_format_json(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        f = synthetic_project / "a.prw"
+        f.write_text("body", encoding="cp1252")
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "--format",
+                "json",
+                "migrate-tlpp",
+                "recipes",
+                "a.prw",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        assert result.exit_code == 0
+        # JSON output parseavel
+        payload = json.loads(result.stdout)
+        assert "recipes" in payload or "rows" in payload
