@@ -30,9 +30,9 @@
 |---|---|---|
 | **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
 | **Codex** + AGENTS.md ecosystem | `AGENTS.md` (gêmeo idêntico) | sempre |
-| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 52 | `.cursor/` no projeto |
-| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 52 | `.github/` no projeto |
-| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 52 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 54 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 54 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 54 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
 | **+ Codex CLI** (extra) | `.codex/config.toml` mínimo | `.codex/` ou `codex` no PATH |
 
 Sinais de detection são **INDEPENDENTES** — sinal global (`~/.cursor/`, `~/.gemini/`) NÃO ativa install no projeto. Cada agente tem sua flag `--no-<agent>` pra desabilitar mesmo com sinal presente.
@@ -278,10 +278,10 @@ Pronto. A partir daqui o Claude já consulta o índice antes de abrir qualquer `
 ## Instalando o plugin Claude Code (opcional, para slash commands)
 
 Além da CLI, o plugadvpl também é um **plugin Claude Code** que adiciona:
-- Slash commands `/plugadvpl:arch`, `/plugadvpl:find`, `/plugadvpl:callers`, etc.
-- 18 knowledge skills temáticas que Claude carrega automaticamente (advpl-mvc, advpl-tlpp, advpl-pontos-entrada, etc.)
+- Slash commands `/plugadvpl:arch`, `/plugadvpl:find`, `/plugadvpl:callers`, `/plugadvpl:doc-writer`, `/plugadvpl:migrate-tlpp`, etc.
+- 21 knowledge skills temáticas que Claude carrega automaticamente (advpl-mvc, advpl-tlpp, advpl-pontos-entrada, advpl-debugging, etc.)
 - Hook `SessionStart` que detecta projetos ADVPL e sugere `/plugadvpl:init`
-- 4 subagents especializados (analyzer, impact-analyzer, code-generator, reviewer-bot)
+- 6 subagents especializados (analyzer, impact-analyzer, code-generator, reviewer-bot, log-investigator, ini-auditor)
 
 A forma de instalar depende de onde você usa o Claude Code:
 
@@ -324,7 +324,7 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ## Comandos disponíveis
 
-O CLI Python expõe **30 subcomandos**, todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **40 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -361,6 +361,7 @@ O CLI Python expõe **30 subcomandos**, todos espelhados em slash commands do pl
 | `/plugadvpl:workflow` | Lista os 4 mecanismos de execução não-direta: `workflow`/`schedule`/`job_standalone`/`mail_send` (filtros `--kind`/`--target`/`--arquivo`) |
 | `/plugadvpl:execauto` | Resolve `MsExecAuto({\|x,y,z\| MATA410(x,y,z)}, ...)` → rotina canônica + módulo + tabelas inferidas (filtros `--routine`/`--modulo`/`--op`/`--dynamic`) |
 | `/plugadvpl:docs [modulo]` | Catálogo de Protheus.doc agregado por módulo/autor/tipo. Modo `--show <fn>` em Markdown estruturado, `--orphans` cruza com BP-007 |
+| `/plugadvpl:doc-writer <funcao>` | **Gera** bloco `/*/{Protheus.doc} ... /*/` canônico TOTVS a partir de flags estruturadas (`--type`, `--author`, `-p "nome,tipo,desc"`, `--return`, `--deprecated`, `--example`). Inverso do `docs` (que lê). Roundtrip-compatible (v0.17.0+) |
 
 ### Trace + Qualidade
 
@@ -370,6 +371,33 @@ O CLI Python expõe **30 subcomandos**, todos espelhados em slash commands do pl
 | `/plugadvpl:metrics [arq]` | Métricas por função: complexidade ciclomática McCabe (`cc`), LOC, nesting, fan-out, params, `has_doc` |
 | `/plugadvpl:hotspots` | Top-N funções por critério (`--tipo user_func/method/calls/risk`) — onde começar refactor |
 | `/plugadvpl:cobertura-doc` | % de funções com Protheus.doc por módulo ou tipo de source |
+
+### Migração ADVPL → TLPP
+
+| Comando | Função |
+|---|---|
+| `/plugadvpl:migrate-tlpp init <pasta>` | Analisa pasta e lista candidatos a migração com counters de recipes que aplicariam + blockers (lint SEC-001/004) + impact (callers externos via DB). Read-only |
+| `/plugadvpl:migrate-tlpp rename <arq>` | Subset conservador: apenas `convert-encoding` + `rename-extension`. `.prw` cp1252 → `.tlpp` utf-8 |
+| `/plugadvpl:migrate-tlpp recipes <arq>` | Aplica os **11 recipes** em ordem canônica fixa (6 SAFE default + 5 IDIOMS via `--idioms`). Flags: `--write` (default diff-only), `--validate` (roda `compile` automaticamente; rollback cascata se falha), `--tlpp-version 20.3.2+` (gating de named-args), `--allow-dirty`, `--no-impact-check` |
+| `/plugadvpl:migrate-tlpp todos` | Lista débitos `@plugadvpl-todo` pendentes em `.tlpp` gerados — workflow iterativo de migração parcial |
+
+**Recipes** (v0.18.0):
+
+| # | Recipe | Categoria | Transformação |
+|---|---|---|---|
+| 1 | `convert-encoding` | SAFE | cp1252 → utf-8 (decode no orquestrador antes dos recipes) |
+| 2 | `rename-extension` | SAFE | `.prw` → `.tlpp` |
+| 3 | `header-includes` | SAFE | `protheus.ch` → `totvs.ch` + adiciona `tlpp-core.th` se TLPP features |
+| 4 | `remove-public-default` | SAFE | `PUBLIC cVar` → `cVar` (TLPP é private por default) |
+| 5 | `user-function-lowercase` | SAFE | `User Function X()` → `function u_x()` (preserva nome se há callers externos via DB) |
+| 6 | `named-args` | SAFE | `:=` → `=` em chamadas (gated `--tlpp-version=20.3.2+`) |
+| 7 | `namespace-infer` | IDIOMS | Adiciona `namespace custom.<modulo>.<nome>` baseado em path |
+| 8 | `begin-sequence-to-try` | IDIOMS | `Begin Sequence/Recover/End Sequence` → `try/catch` |
+| 9 | `conout-to-fwlog` | IDIOMS | `ConOut("msg")` → `FwLogMsg("info", "msg")` |
+| 10 | `json-inline` | IDIOMS | Detecta `JsonObject():New()` chains, emite `@plugadvpl-todo` |
+| 11 | `expand-truncated-names` | IDIOMS | Detecta nomes 10-char (limite ADVPL legacy) via DB lookup |
+
+**Atribuição:** material derivado de [`totvs/engpro-advpl-tlpp-skills`](https://github.com/totvs/engpro-advpl-tlpp-skills) (MIT). Detalhes na skill `/plugadvpl:migrate-tlpp` com permalinks SHA-fixo.
 
 ### Runtime ADVPL — edit + compile
 
@@ -465,7 +493,7 @@ Sem mapeamento, `sonar_rules` vem como `[]` — não quebra parsers downstream. 
 
 ## Skills incluídas
 
-Além dos 30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o plugin traz **19 knowledge skills** carregadas pelo Claude conforme contexto:
+Além dos 33 command wrappers (1 por subcomando do CLI + `help` + `setup`), o plugin traz **21 knowledge skills** carregadas pelo Claude conforme contexto:
 
 | Skill | Quando carrega |
 |---|---|
@@ -491,7 +519,7 @@ Além dos 30 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-code-review` | 40 regras BP/SEC/PERF/MOD/SX (28 single-file + 11 cross-file `SX-001..SX-011` + 1 encoding) |
 | `ingest-protheus` | Workflow do `ingest-protheus` (REST ao vivo via COLETADB) |
 
-Também incluídos: **5 agents** especializados (`advpl-analyzer`, `advpl-impact-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-log-investigator`), **1 SessionStart hook** Node.js que faz onboarding cross-platform do `.plugadvpl/` e **2 auditores** (`advpl-ini-auditor`, `advpl-log-investigator`) que envelopam `ini-audit`/`log-diagnose` com correction tips TDN.
+Também incluídos: **6 agents** especializados (`advpl-analyzer`, `advpl-impact-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-log-investigator`, `advpl-ini-auditor`) e **1 SessionStart hook** Node.js que faz onboarding cross-platform do `.plugadvpl/` — os agents `advpl-ini-auditor` e `advpl-log-investigator` envelopam `ini-audit`/`log-diagnose` com correction tips TDN.
 
 ---
 
@@ -524,7 +552,7 @@ O plugin é dividido em **camadas independentes** — cada uma adiciona um tipo 
 - **Includes** (`#include "totvs.ch"`) — resolvidos ou não
 - **Encoding** (detecta CP1252 vs UTF-8 strict — vira lint ENC-001 quando `.prw` é UTF-8)
 - **Capabilities** computadas: source_type (mvc/rest/cadastro/relatorio/PE/job), tem RecLock, tem REST, tem MVC, etc.
-- **Lint findings** single-file (38 regras: best-practice, security, performance, modernization, webservice, encoding)
+- **Lint findings** single-file (28 regras single-file + 1 encoding: best-practice, security, performance, modernization, webservice; total 40 com as 11 cross-file SX)
 
 Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_-'` (mantém `A1_COD`/`FW-Browse` como um token só) e um **trigram** para busca substring exata (`SA1->A1_COD`, `%xfilial%`).
 
@@ -748,16 +776,19 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **30 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
-- **50 skills** (19 knowledge + 31 slash command wrappers), 5 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`), 1 SessionStart hook
+- **40 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
+- **54 skills** (21 knowledge + 33 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v15** — 15 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*`)
 - **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1051 testes verde** (unit + integration + bench + smoke real opcional) — ~57s suite full
+- **1297 testes verde** (unit + integration + bench + smoke real opcional) — ~82s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
+- Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
 ### Próximas entregas
 
+- **`plugadvpl exec`** (Fase 2 runtime ADVPL) — cliente HTTP nativo que consome contrato `U_EXEC` (v0.7.0). Executa função ADVPL arbitrária com args via CLI, sem precisar abrir TDS
 - **`apply-patch`** — aplicar `.PTM` via advpls, idempotente com backup. Issue [#4](https://github.com/JoniPraia/plugadvpl/issues/4)
+- **`dtc-reader`** — leitor/exporter de `.dtc` (FairCom c-tree ISAM) standalone, sem Protheus. Issue [#12](https://github.com/JoniPraia/plugadvpl/issues/12)
 - **`sx-drift`** — compara dicionário SX local vs estado atual do AppServer via REST, mostra drift por tabela/campo
 
 ---
