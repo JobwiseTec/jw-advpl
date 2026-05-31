@@ -327,6 +327,79 @@ def log_diagnose_query(
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+def log_report_findings(
+    conn: sqlite3.Connection,
+    arquivo: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    rule_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Findings do log para o relatório ``--format html`` (inclui ``snippet`` =
+    trecho original do erro, usado no expansível por finding)."""
+    where: list[str] = ["f.status = 'active'"]
+    params: list[Any] = []
+    if arquivo:
+        where.append("lf.arquivo = ? COLLATE NOCASE")
+        params.append(arquivo)
+    if severity:
+        where.append("f.severity = ?")
+        params.append(severity)
+    if category:
+        where.append("f.category = ?")
+        params.append(category)
+    if rule_id:
+        where.append("f.rule_id = ?")
+        params.append(rule_id)
+    sql = f"""
+        SELECT lf.arquivo, f.line_number, f.timestamp, f.thread_id, f.severity,
+               f.category, f.rule_id, f.message, f.snippet, f.correction_tip,
+               f.tdn_url, f.ora_code
+        FROM log_findings f
+        JOIN log_files lf ON lf.id = f.file_id
+        WHERE {" AND ".join(where)}
+        ORDER BY
+            CASE f.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            lf.arquivo, f.line_number DESC
+    """
+    rows = conn.execute(sql, params).fetchall()
+    cols = [
+        "arquivo",
+        "linha",
+        "timestamp",
+        "thread_id",
+        "severidade",
+        "categoria",
+        "rule_id",
+        "message",
+        "snippet",
+        "sugestao_fix",
+        "tdn_url",
+        "ora_code",
+    ]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def log_report_files(
+    conn: sqlite3.Connection,
+    arquivo: str | None = None,
+) -> list[dict[str, Any]]:
+    """Metadata por arquivo de log para o cabeçalho do relatório."""
+    where = ""
+    params: list[Any] = []
+    if arquivo:
+        where = "WHERE arquivo = ? COLLATE NOCASE"
+        params.append(arquivo)
+    sql = f"""
+        SELECT arquivo, tipo, environment, build, total_events, last_ts
+        FROM log_files
+        {where}
+        ORDER BY arquivo
+    """
+    rows = conn.execute(sql, params).fetchall()
+    cols = ["arquivo", "tipo", "environment", "build", "total_events", "last_ts"]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
 def ini_audit_query(
     conn: sqlite3.Connection,
     arquivo: str | None = None,
