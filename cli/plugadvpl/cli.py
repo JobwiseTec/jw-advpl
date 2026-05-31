@@ -3621,6 +3621,59 @@ def migrate_tlpp_recipes(
             )
 
 
+_TODO_MARKER_RE = re.compile(
+    r"//\s*@plugadvpl-todo:(\S+)\s*(.*?)$",
+    re.MULTILINE,
+)
+
+
+@migrate_tlpp_app.command("todos")
+def migrate_tlpp_todos(
+    ctx: typer.Context,
+    pasta: Annotated[
+        Path,
+        typer.Argument(help="Pasta a varrer (recursivo). Default: root."),
+    ] = Path(),
+) -> None:
+    """Lista débitos ``@plugadvpl-todo`` pendentes em arquivos .tlpp."""
+    root: Path = ctx.obj["root"]
+    target_dir = pasta if pasta.is_absolute() else root / pasta
+    rows: list[dict[str, object]] = []
+    for tlpp_file in sorted(target_dir.rglob("*.tlpp")):
+        try:
+            content = tlpp_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line_no, line in enumerate(content.splitlines(), start=1):
+            m = _TODO_MARKER_RE.search(line)
+            if m:
+                rows.append(
+                    {
+                        "arquivo": str(tlpp_file.relative_to(root))
+                        if tlpp_file.is_relative_to(root)
+                        else str(tlpp_file),
+                        "linha": line_no,
+                        "recipe": m.group(1),
+                        "mensagem": m.group(2).strip(),
+                    }
+                )
+    if not rows:
+        typer.secho(
+            "Nenhum débito @plugadvpl-todo encontrado.",
+            fg=typer.colors.GREEN,
+        )
+        return
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["arquivo", "linha", "recipe", "mensagem"],
+        title=(
+            f"Débitos @plugadvpl-todo em "
+            f"{target_dir.relative_to(root) if target_dir.is_relative_to(root) else target_dir}"
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # compile (v0.8.0 Fase 1): wrapper sobre advpls
 # ---------------------------------------------------------------------------

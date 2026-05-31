@@ -3341,3 +3341,43 @@ class TestMigrateTlppRecipes:
         # JSON output parseavel
         payload = json.loads(result.stdout)
         assert "recipes" in payload or "rows" in payload
+
+
+class TestMigrateTlppTodos:
+    """v0.18.0 — plugadvpl migrate-tlpp todos: lista @plugadvpl-todo em .tlpp."""
+
+    def test_todos_empty_when_no_markers(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "x.tlpp").write_text(
+            "function u_x()\nreturn .T.\n",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "migrate-tlpp", "todos"],
+        )
+        assert result.exit_code == 0
+        assert "nenhum" in result.stdout.lower() or "0" in result.stdout or "nenhum" in result.stderr.lower()
+
+    def test_todos_lists_markers(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+    ) -> None:
+        (synthetic_project / "y.tlpp").write_text(
+            "// @plugadvpl-todo:namespace-infer revise manualmente\n"
+            "namespace x\n",
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app,
+            ["--root", str(synthetic_project), "migrate-tlpp", "todos"],
+        )
+        assert result.exit_code == 0
+        # rich table renderiza em stderr (output.py:err_console); aceita ambos
+        combined = result.stdout + (result.stderr or "")
+        assert "namespace-infer" in combined
+        assert "y.tlpp" in combined
