@@ -473,6 +473,25 @@ class TestScore:
         assert score == 100.0
         assert compliance == "compliant"
 
+    def test_ini_audit_scores_query(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        from plugadvpl.query import ini_audit_scores
+
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="S-Q", section_glob="General", key_name="K1",
+            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        scores = ini_audit_scores(conn)
+        assert len(scores) == 1
+        assert scores[0]["arquivo"] == "appserver.ini"
+        assert scores[0]["score"] == 100.0
+        assert scores[0]["compliance"] == "compliant"
+
 
 # =============================================================================
 # Detecção de fonte de banco

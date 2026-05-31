@@ -386,6 +386,27 @@ def ini_audit_query(
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+def ini_audit_scores(
+    conn: sqlite3.Connection,
+    arquivo: str | None = None,
+) -> list[dict[str, Any]]:
+    """Score de conformidade + selo por INI auditado (cli ``ini-audit --format html``)."""
+    where = ""
+    params: list[Any] = []
+    if arquivo:
+        where = "WHERE arquivo = ? COLLATE NOCASE"
+        params.append(arquivo)
+    sql = f"""
+        SELECT arquivo, tipo, role, score, compliance
+        FROM ini_files
+        {where}
+        ORDER BY score ASC, arquivo
+    """
+    rows = conn.execute(sql, params).fetchall()
+    cols = ["arquivo", "tipo", "role", "score", "compliance"]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
 def lint_query(
     conn: sqlite3.Connection,
     arquivo: str | None = None,

@@ -60,6 +60,7 @@ from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
+from plugadvpl.parsing.ini_report import render_ini_audit_html
 from plugadvpl.parsing.log_diagnose import diagnose_files as log_diagnose_files
 from plugadvpl.parsing.parser import parse_source
 from plugadvpl.query import (
@@ -85,6 +86,7 @@ from plugadvpl.query import (
     hotspots_query,
     impacto_query,
     ini_audit_query,
+    ini_audit_scores,
     lint_query,
     log_diagnose_query,
     metrics_query,
@@ -129,6 +131,7 @@ class OutputFormat(StrEnum):
     json = "json"
     table = "table"
     md = "md"
+    html = "html"
 
 
 class GrepMode(StrEnum):
@@ -1333,7 +1336,7 @@ def lint(
 
 
 @app.command(name="ini-audit")
-def ini_audit(  # noqa: PLR0912 -- typer command com varios filtros mutuamente exclusivos (severity/role/category/file/...); split viraria boilerplate de wrappers
+def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mutuamente exclusivos (severity/role/category/file/...) + branch de --format html; split viraria boilerplate de wrappers
     ctx: typer.Context,
     paths: Annotated[
         list[str] | None,
@@ -1469,6 +1472,25 @@ def ini_audit(  # noqa: PLR0912 -- typer command com varios filtros mutuamente e
         close_db(conn)
 
     # 4. Render (RO)
+    # --format html: relatório rico (score/selo + findings agrupados). Os
+    # justificados (ok_with_note) entram sempre no HTML, numa seção própria.
+    if ctx.obj["format"] == "html":
+        report = _with_ro_db(
+            ctx,
+            lambda c: render_ini_audit_html(
+                ini_audit_scores(c, arquivo),
+                ini_audit_query(
+                    c,
+                    arquivo=arquivo,
+                    severity=severity,
+                    regra_id=regra,
+                    show_ok_with_note=True,
+                ),
+            ),
+        )
+        typer.echo(report)
+        return
+
     rows = _with_ro_db(
         ctx,
         lambda c: ini_audit_query(
