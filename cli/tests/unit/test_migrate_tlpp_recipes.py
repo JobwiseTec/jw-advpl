@@ -385,3 +385,33 @@ class TestBeginSequenceToTry:
 
         assert BeginSequenceToTry.id == "begin-sequence-to-try"
         assert BeginSequenceToTry.category == "idioms"
+
+
+class TestConOutToFwLog:
+    """Recipe order 9 — ConOut() -> FwLogMsg('info', ...)."""
+
+    def test_converts_conout_call(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.conout_to_fwlog import ConOutToFwLog
+
+        content = 'ConOut("hello world")\nConOut("again")\n'
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = ConOutToFwLog().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert 'FwLogMsg("info", "hello world")' in r.new_content
+        assert 'FwLogMsg("info", "again")' in r.new_content
+        assert "ConOut(" not in r.new_content
+
+    def test_nochange_without_conout(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.conout_to_fwlog import ConOutToFwLog
+
+        content = "User Function X()\nReturn .T.\n"
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = ConOutToFwLog().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_recipe_id_and_category(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.conout_to_fwlog import ConOutToFwLog
+
+        assert ConOutToFwLog.id == "conout-to-fwlog"
+        assert ConOutToFwLog.category == "idioms"
