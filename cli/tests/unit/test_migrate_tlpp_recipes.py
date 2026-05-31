@@ -293,3 +293,38 @@ class TestNamedArgs:
         )
         r = NamedArgs().apply(content, ctx)
         assert r.status == "nochange"
+
+
+class TestNamespaceInfer:
+    """Recipe order 7 — namespace inferido por path."""
+
+    def test_infers_from_siga_path(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.namespace_infer import NamespaceInfer
+
+        file_path = tmp_path / "src" / "SIGAFAT" / "MT460FIM.prw"
+        content = "User Function MT460FIM()\nReturn\n"
+        ctx = MigrationContext(file_path=file_path, project_root=tmp_path)
+        r = NamespaceInfer().apply(content, ctx)
+        assert r.status == "ok"
+        assert r.new_content is not None
+        assert "namespace custom.sigafat.mt460fim" in r.new_content
+
+    def test_nochange_when_namespace_present(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.namespace_infer import NamespaceInfer
+
+        file_path = tmp_path / "src" / "SIGAFAT" / "MT460FIM.prw"
+        content = "namespace custom.foo.bar\n\nUser Function MT460FIM()\nReturn\n"
+        ctx = MigrationContext(file_path=file_path, project_root=tmp_path)
+        r = NamespaceInfer().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_needs_review_when_path_ambiguous(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.namespace_infer import NamespaceInfer
+
+        file_path = tmp_path / "utils" / "helper.prw"
+        content = "User Function HELPER()\nReturn\n"
+        ctx = MigrationContext(file_path=file_path, project_root=tmp_path)
+        r = NamespaceInfer().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert len(r.todo_markers) == 1
+        assert "ambiguo" in r.todo_markers[0].lower()
