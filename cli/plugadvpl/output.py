@@ -14,6 +14,7 @@ Convenções:
 
 from __future__ import annotations
 
+import html
 import json
 import sys
 from typing import Any
@@ -65,6 +66,8 @@ def render(
         _render_json(rows, total, truncated, compact)
     elif format == "md":
         _render_md(rows, columns, truncated, remaining)
+    elif format == "html":
+        _render_html(rows, columns, title, truncated, remaining)
     else:
         _render_table(rows, columns, title, compact, truncated, remaining)
 
@@ -109,6 +112,49 @@ def _render_md(
         sys.stdout.write(
             f"\n_... e mais {remaining} resultados; refine os filtros ou aumente --limit_\n"
         )
+    sys.stdout.flush()
+
+
+_HTML_STYLE = (
+    "body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:24px;color:#1a1a1a}"
+    "h1{font-size:18px}table{border-collapse:collapse;width:100%;font-size:13px}"
+    "th,td{border-bottom:1px solid #eee;padding:6px 10px;text-align:left;vertical-align:top}"
+    "th{background:#f0f2f5}"
+)
+
+
+def _render_html(
+    rows: list[dict[str, Any]],
+    columns: list[str] | None,
+    title: str | None,
+    truncated: bool,
+    remaining: int,
+) -> None:
+    """Tabela HTML self-contained (CSS inline) em stdout."""
+    out: list[str] = [
+        "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>",
+        f"<style>{_HTML_STYLE}</style></head><body>",
+    ]
+    if title:
+        out.append(f"<h1>{html.escape(title)}</h1>")
+    if not rows:
+        out.append("<p><em>(sem resultados)</em></p></body></html>")
+        sys.stdout.write("\n".join(out) + "\n")
+        sys.stdout.flush()
+        return
+    cols = columns or list(rows[0].keys())
+    out.append("<table><thead><tr>")
+    out.extend(f"<th>{html.escape(c)}</th>" for c in cols)
+    out.append("</tr></thead><tbody>")
+    for r in rows:
+        out.append("<tr>")
+        out.extend(f"<td>{html.escape(str(r.get(c, '')))}</td>" for c in cols)
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    if truncated:
+        out.append(f"<p><em>... e mais {remaining} resultados; aumente --limit.</em></p>")
+    out.append("</body></html>")
+    sys.stdout.write("\n".join(out) + "\n")
     sys.stdout.flush()
 
 

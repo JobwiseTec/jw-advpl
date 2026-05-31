@@ -1,4 +1,4 @@
-"""Audit engine — cruza ini_keys × ini_rules → grava ini_audit_findings.
+"""Audit engine — cruza ini_keys x ini_rules → grava ini_audit_findings.
 
 Estratégia idêntica ao ``env_manager.parse_ini.compare_against_best_practices``:
 pra cada regra carregada do catálogo (``ini_rules``), procura a chave na seção
@@ -19,13 +19,17 @@ Filtro de roles:
     Regras com lista (``'broker_http|broker_soap'``) só aplicam aos roles
     listados. Match exato (case-sensitive contra ``ini_files.role``).
 """
+
 from __future__ import annotations
 
+import json
 import re
-import sqlite3
-from dataclasses import dataclass
-from typing import Any, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Sequence
 
 # Padrão de intenção em comentários — quando o cliente já documentou que o
 # valor diverge do recomendado, o finding vira ``ok_with_note`` em vez de
@@ -55,13 +59,130 @@ class _Rule:
 @dataclass(slots=True)
 class AuditResult:
     """Sumário de uma chamada de audit."""
+
     files_audited: int = 0
     findings_total: int = 0
-    by_severity: dict[str, int] = None  # type: ignore[assignment]
+    by_severity: dict[str, int] = field(
+        default_factory=lambda: {"critical": 0, "warning": 0, "info": 0}
+    )
+    score_by_file: dict[int, float] = field(default_factory=dict)
+    compliance_by_file: dict[int, str] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        if self.by_severity is None:
-            self.by_severity = {"critical": 0, "warning": 0, "info": 0}
+
+# =============================================================================
+# Score de conformidade (ponderado)
+# =============================================================================
+
+# Peso de cada severidade no cálculo do score. Crítico pesa o dobro de warning,
+# warning o triplo de info. Mesma escala usada pelo selo de conformidade.
+_SCORE_WEIGHTS: dict[str, float] = {"critical": 3.0, "warning": 1.5, "info": 0.5}
+
+# Limiares do selo (compliance).
+_THRESHOLD_COMPLIANT = 85.0
+_THRESHOLD_PARTIAL = 60.0
+
+
+def _compliance_label(score: float) -> str:
+    if score >= _THRESHOLD_COMPLIANT:
+        return "compliant"
+    if score >= _THRESHOLD_PARTIAL:
+        return "partial"
+    return "non_compliant"
+
+
+# =============================================================================
+# Detecção de fonte primária de banco
+# =============================================================================
+
+# Chaves que indicam que uma seção [TopConnect]/[DBAccess] define a conexão.
+_DB_CONN_INDICATORS: frozenset[str] = frozenset({"database", "server", "port", "alias"})
+# Chaves DB* no [Environment] que indicam conexão definida ali.
+_DB_ENV_INDICATORS: frozenset[str] = frozenset({"dbdatabase", "dbserver", "dbalias", "dbport"})
+# Papéis que NÃO conectam direto ao banco (isentos da detecção de conflito).
+_ROLES_WITHOUT_DB: frozenset[str] = frozenset(
+    {
+        "broker_http",
+        "broker_soap",
+        "broker_rest",
+        "dbaccess_master",
+        "dbaccess_slave",
+        "dbaccess_standalone",
+    }
+)
+
+
+def _section_defines_db(conn: sqlite3.Connection, file_id: int, section_norm: str) -> bool:
+    """True se a seção (não comentada) existe E tem chave indicadora de conexão."""
+    cur = conn.execute(
+        """
+        SELECT 1
+        FROM ini_sections s
+        JOIN ini_keys k ON k.section_id = s.id
+        WHERE s.file_id = ? AND s.commented = 0 AND s.name_norm = ?
+              AND k.key_norm IN ('database', 'server', 'port', 'alias')
+        LIMIT 1
+        """,
+        (file_id, section_norm),
+    )
+    return cur.fetchone() is not None
+
+
+def _env_defines_db(conn: sqlite3.Connection, file_id: int) -> bool:
+    """True se há chave DB* (dbdatabase/dbserver/...) em qualquer seção ativa."""
+    cur = conn.execute(
+        """
+        SELECT 1 FROM ini_keys
+        WHERE file_id = ? AND key_norm IN ('dbdatabase', 'dbserver', 'dbalias', 'dbport')
+        LIMIT 1
+        """,
+        (file_id,),
+    )
+    return cur.fetchone() is not None
+
+
+@dataclass(slots=True)
+class _DbSources:
+    """Resultado da detecção de fonte de banco de um INI."""
+
+    redundant: frozenset[str]  # seções (norm) que viram ok_with_note
+    sources_label: str  # rótulo das fontes presentes (p/ a nota)
+    conflict: bool  # True se 2+ fontes ativas num papel direto
+
+
+def _detect_db_sources(conn: sqlite3.Connection, file_id: int, role: str) -> _DbSources:
+    """Detecta a fonte de banco em uso e as seções redundantes/conflito.
+
+    Quando o INI define a conexão por UMA fonte (TopConnect, DBAccess ou DB* no
+    Environment), as demais seções de banco viram alternativas redundantes. Se
+    houver 2+ fontes ativas num papel que conecta direto, é conflito.
+    """
+    has_topconnect = _section_defines_db(conn, file_id, "topconnect")
+    has_dbaccess = _section_defines_db(conn, file_id, "dbaccess")
+    has_env = _env_defines_db(conn, file_id)
+
+    redundant: set[str] = set()
+    if has_topconnect or has_dbaccess or has_env:
+        if not has_dbaccess:
+            redundant.add("dbaccess")
+        if not has_topconnect:
+            redundant.add("topconnect")
+
+    labels: list[str] = []
+    if has_topconnect:
+        labels.append("[TopConnect]")
+    if has_dbaccess:
+        labels.append("[DBAccess]")
+    if has_env:
+        labels.append("DB* em [Environment]")
+
+    n_sources = sum((has_topconnect, has_dbaccess, has_env))
+    conflict = n_sources > 1 and role not in _ROLES_WITHOUT_DB
+
+    return _DbSources(
+        redundant=frozenset(redundant),
+        sources_label=", ".join(labels) or "outra fonte",
+        conflict=conflict,
+    )
 
 
 # =============================================================================
@@ -70,7 +191,9 @@ class AuditResult:
 
 
 def _load_rules_for_target(
-    conn: sqlite3.Connection, tipo: str, role: str,
+    conn: sqlite3.Connection,
+    tipo: str,
+    role: str,
 ) -> list[_Rule]:
     """Carrega regras aplicáveis a um INI específico (filtra por tipo + role).
 
@@ -109,13 +232,21 @@ def _load_rules_for_target(
 # =============================================================================
 
 
-_ENV_KEY_INDICATORS = frozenset({
-    "rootpath", "sourcepath", "rpodb", "rpoversion", "startpath",
-})
+_ENV_KEY_INDICATORS = frozenset(
+    {
+        "rootpath",
+        "sourcepath",
+        "rpodb",
+        "rpoversion",
+        "startpath",
+    }
+)
 
 
 def _resolve_target_sections(
-    conn: sqlite3.Connection, file_id: int, section_glob: str,
+    conn: sqlite3.Connection,
+    file_id: int,
+    section_glob: str,
 ) -> list[tuple[int, str]]:
     """Devolve ``[(section_id, name_raw), ...]`` que casam o ``section_glob``.
 
@@ -173,7 +304,7 @@ def _resolve_target_sections(
 # =============================================================================
 
 
-def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:
+def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:  # noqa: PLR0911 -- dispatch por detection_kind (8 ramos) + early returns; split em sub-funções por kind viraria ainda mais ruidoso
     """True se ``current_value`` está CONFORME com ``rule``."""
     expected = rule.expected.strip()
     current = (current_value or "").strip()
@@ -212,9 +343,7 @@ def _evaluate_value(rule: _Rule, current_value: str | None) -> bool:
         hi = int(hi_str) if hi_str else None
         if lo is not None and val < lo:
             return False
-        if hi is not None and val > hi:
-            return False
-        return True
+        return not (hi is not None and val > hi)
 
     if rule.detection_kind == "regex":
         try:
@@ -240,9 +369,7 @@ def _value_matches(current: str, expected: str) -> bool:
     # Equivalência booleana
     if e in _BOOL_TRUE and c in _BOOL_TRUE:
         return True
-    if e in _BOOL_FALSE and c in _BOOL_FALSE:
-        return True
-    return False
+    return e in _BOOL_FALSE and c in _BOOL_FALSE
 
 
 # =============================================================================
@@ -256,10 +383,25 @@ def _has_intentional_note(comment_above: str, comment_inline: str) -> bool:
     return bool(text) and bool(_INTENT_RE.search(text))
 
 
-def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:
+def _persist_score(
+    conn: sqlite3.Connection,
+    file_id: int,
+    score: float,
+    compliance: str,
+    summary: dict[str, int] | None = None,
+) -> None:
+    conn.execute(
+        "UPDATE ini_files SET score = ?, compliance = ?, summary_json = ? WHERE id = ?",
+        (score, compliance, json.dumps(summary or {}), file_id),
+    )
+
+
+def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0912, PLR0915 -- pipeline de auditoria de 1 arquivo (deteccao de banco + loop de regras + score + conflito); dividir viraria passagem de muito estado entre helpers
     """Re-audita 1 INI: limpa findings anteriores, processa regras, grava findings.
 
-    Retorna a quantidade de findings criados.
+    Calcula também o score de conformidade ponderado e grava em ``ini_files``
+    (mesma transação dos findings — nunca fica stale). Retorna a quantidade de
+    findings criados.
     """
     # Pega tipo + role do arquivo
     cur = conn.execute(
@@ -271,24 +413,26 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:
         return 0
     tipo, role = row[0] or "", row[1] or ""
 
-    rules = _load_rules_for_target(conn, tipo, role)
-    if not rules:
-        # Sem regras pra esse role; ainda assim limpa findings antigos
-        conn.execute("DELETE FROM ini_audit_findings WHERE file_id = ?", (file_id,))
-        return 0
-
     # Limpa findings antigos (rebuild atômico)
     conn.execute("DELETE FROM ini_audit_findings WHERE file_id = ?", (file_id,))
 
+    # Detecção de banco é estrutural (independe do catálogo de regras).
+    db = _detect_db_sources(conn, file_id, role)
+    # Sem regras pro role, o loop é no-op; ainda assim avaliamos conflito + score.
+    rules = _load_rules_for_target(conn, tipo, role)
+
     findings: list[tuple[int, str, str, str, str, str, str, int, str]] = []
+    score_ok = 0.0
+    score_weight = 0.0
+    n_ok = n_mismatch = n_missing = n_intentional = 0
 
     for rule in rules:
+        weight = _SCORE_WEIGHTS.get(rule.severidade, 0.5)
+        is_redundant = rule.section_glob.strip().lower() in db.redundant
+
         target_sections = _resolve_target_sections(conn, file_id, rule.section_glob)
         if not target_sections:
-            # Seção não existe no INI. Em geral isso não é finding (regra de
-            # seção que não se aplica), exceto se a key for is_required=True.
-            # Mas como o YAML do env_manager não diferencia "key ausente em seção
-            # ausente", mantemos conservador: skip.
+            # Seção não existe no INI: conservador, não pontua nem gera finding.
             continue
 
         for sec_id, sec_name in target_sections:
@@ -302,11 +446,44 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:
             )
             key_row = cur.fetchone()
 
+            # Seção de banco redundante: a regra não pune (fonte alternativa).
+            if is_redundant:
+                if key_row is not None and _evaluate_value(rule, key_row[2]):
+                    score_ok += weight
+                    score_weight += weight
+                    n_ok += 1
+                    continue
+                if key_row is None and not (
+                    rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}
+                    and rule.expected
+                ):
+                    continue
+                score_ok += weight
+                score_weight += weight
+                n_intentional += 1
+                findings.append(
+                    (
+                        file_id,
+                        sec_name,
+                        rule.key_name,
+                        rule.regra_id,
+                        rule.severidade,
+                        f"[{sec_name}] {rule.key_name} (alternativa redundante)",
+                        f"Seção alternativa redundante — INI usa {db.sources_label} como fonte de banco.",
+                        int(key_row[3]) if key_row is not None else 0,
+                        "ok_with_note",
+                    )
+                )
+                continue
+
             if key_row is None:
                 # Chave ausente. Só vira finding se a regra exigir presença.
-                if rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}:
-                    if rule.expected:  # tem valor esperado → chave é importante
-                        findings.append((
+                if (
+                    rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}
+                    and rule.expected
+                ):
+                    findings.append(
+                        (
                             file_id,
                             sec_name,
                             rule.key_name,
@@ -316,28 +493,74 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:
                             rule.fix_guidance,
                             0,
                             "active",
-                        ))
+                        )
+                    )
+                    n_missing += 1
+                    # Missing bloqueante: peso no denominador; crítico recebe boost 2x.
+                    score_weight += weight * (2.0 if rule.severidade == "critical" else 1.0)
                 continue
 
             _kid, key_name, value, linha, c_inline, c_above = key_row
-            conforme = _evaluate_value(rule, value)
-            if conforme:
+            if _evaluate_value(rule, value):
+                score_ok += weight
+                score_weight += weight
+                n_ok += 1
                 continue
 
-            # Não-conforme: detecta status (ok_with_note se justificado)
-            status = "ok_with_note" if _has_intentional_note(c_above or "", c_inline or "") else "active"
-            snippet = f"[{sec_name}] {key_name}={value}"
-            findings.append((
+            # Não-conforme: ok_with_note se justificado em comentário.
+            intentional = _has_intentional_note(c_above or "", c_inline or "")
+            status = "ok_with_note" if intentional else "active"
+            findings.append(
+                (
+                    file_id,
+                    sec_name,
+                    key_name,
+                    rule.regra_id,
+                    rule.severidade,
+                    f"[{sec_name}] {key_name}={value}"[:200],
+                    rule.fix_guidance,
+                    int(linha),
+                    status,
+                )
+            )
+            # Score: ok_with_note e info contam como OK; critical/warning punem.
+            score_weight += weight
+            if intentional or rule.severidade == "info":
+                score_ok += weight
+            if intentional:
+                n_intentional += 1
+            else:
+                n_mismatch += 1
+
+    # Conflito de banco: 2+ fontes ativas num papel que conecta direto.
+    if db.conflict:
+        findings.append(
+            (
                 file_id,
-                sec_name,
-                key_name,
-                rule.regra_id,
-                rule.severidade,
-                snippet[:200],
-                rule.fix_guidance,
-                int(linha),
-                status,
-            ))
+                "General",
+                "ConexaoBanco",
+                "INI-DB-CONFLICT",
+                "warning",
+                f"Múltiplas configurações de banco: {db.sources_label}",
+                "Múltiplas fontes de banco detectadas — pode causar conflito; "
+                "verifique qual está sendo usada efetivamente.",
+                0,
+                "active",
+            )
+        )
+        score_weight += _SCORE_WEIGHTS["warning"]
+        n_mismatch += 1
+
+    score = round(score_ok / score_weight * 100, 1) if score_weight > 0 else 100.0
+    score = min(100.0, max(0.0, score))
+    summary = {
+        "ok": n_ok,
+        "mismatch": n_mismatch,
+        "missing": n_missing,
+        "intentional": n_intentional,
+        "total_rules": n_ok + n_mismatch + n_missing + n_intentional,
+    }
+    _persist_score(conn, file_id, score, _compliance_label(score), summary)
 
     if findings:
         conn.executemany(
@@ -361,18 +584,34 @@ def audit_files(conn: sqlite3.Connection, file_ids: Sequence[int]) -> AuditResul
         result.findings_total += count
 
     # Conta por severidade (1 SELECT consolidado)
-    cur = conn.execute(
-        """
+    cur = (
+        conn.execute(
+            """
         SELECT severidade, COUNT(*) FROM ini_audit_findings
         WHERE file_id IN ({}) AND status = 'active'
         GROUP BY severidade
         """.format(",".join("?" * len(file_ids))),
-        list(file_ids),
-    ) if file_ids else None
+            list(file_ids),
+        )
+        if file_ids
+        else None
+    )
     if cur is not None:
         for sev, cnt in cur.fetchall():
             if sev in result.by_severity:
                 result.by_severity[sev] = int(cnt)
+
+    # Score + selo por arquivo (gravados em ini_files pelo audit_one_file).
+    if file_ids:
+        score_cur = conn.execute(
+            "SELECT id, score, compliance FROM ini_files WHERE id IN ({})".format(
+                ",".join("?" * len(file_ids))
+            ),
+            list(file_ids),
+        )
+        for fid, score, compliance in score_cur.fetchall():
+            result.score_by_file[int(fid)] = float(score)
+            result.compliance_by_file[int(fid)] = compliance or ""
 
     conn.commit()
     return result

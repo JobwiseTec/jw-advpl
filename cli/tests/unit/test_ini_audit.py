@@ -362,3 +362,203 @@ class TestRoleFiltering:
             "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='X-ROLE'"
         ).fetchone()[0]
         assert n == 0, "Regra com applies_to_role específico não deve aplicar a outro role"
+
+
+# =============================================================================
+# Score de conformidade
+# =============================================================================
+
+
+def _clear_rules(conn: sqlite3.Connection) -> None:
+    """Remove o catálogo seedado para testar o score com regras controladas."""
+    conn.execute("DELETE FROM ini_rules")
+
+
+def _score_of(conn: sqlite3.Connection, file_id: int) -> tuple[float, str]:
+    row = conn.execute(
+        "SELECT score, compliance FROM ini_files WHERE id = ?", (file_id,)
+    ).fetchone()
+    return float(row[0]), str(row[1])
+
+
+class TestScore:
+    def test_score_persisted_and_in_range(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        p = _write(tmp_path, "appserver.ini", "[General]\nMaxStringSize=1\n")
+        r = ingest_ini_paths(conn, [p])
+        res = audit_files(conn, r.file_ids)
+        fid = r.file_ids[0]
+        score, compliance = _score_of(conn, fid)
+        assert 0.0 <= score <= 100.0
+        assert compliance in {"compliant", "partial", "non_compliant"}
+        assert res.score_by_file[fid] == score
+        assert res.compliance_by_file[fid] == compliance
+
+    def test_perfect_compliance_scores_100(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="S-OK", section_glob="General", key_name="K1",
+            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        score, compliance = _score_of(conn, r.file_ids[0])
+        assert score == 100.0
+        assert compliance == "compliant"
+
+    def test_critical_mismatch_zeroes_isolated_score(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="S-CRIT", section_glob="General", key_name="K1",
+            expected="42", severidade="critical", detection_kind="value_eq",
+            applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        score, compliance = _score_of(conn, r.file_ids[0])
+        assert score == 0.0
+        assert compliance == "non_compliant"
+
+    def test_info_mismatch_does_not_penalize(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="S-INFO", section_glob="General", key_name="K1",
+            expected="42", severidade="info", detection_kind="value_eq",
+            applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        score, _ = _score_of(conn, r.file_ids[0])
+        assert score == 100.0
+
+    def test_missing_critical_applies_2x_boost(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        # 1 regra conforme (warning, peso 1.5) + 1 crítica ausente (peso 3.0 × 2).
+        _insert_rule(
+            conn, regra_id="S-PASS", section_glob="General", key_name="K1",
+            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+        )
+        _insert_rule(
+            conn, regra_id="S-MISS", section_glob="General", key_name="K2",
+            expected="5", severidade="critical", detection_kind="value_eq",
+            applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=1\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        score, _ = _score_of(conn, r.file_ids[0])
+        # score_ok=1.5 ; score_weight = 1.5 + 3.0×2 = 7.5 → 20.0
+        assert score == 20.0
+
+    def test_no_rules_scores_100(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        score, compliance = _score_of(conn, r.file_ids[0])
+        assert score == 100.0
+        assert compliance == "compliant"
+
+    def test_ini_audit_scores_query(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        from plugadvpl.query import ini_audit_scores
+
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="S-Q", section_glob="General", key_name="K1",
+            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+        )
+        p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        scores = ini_audit_scores(conn)
+        assert len(scores) == 1
+        assert scores[0]["arquivo"] == "appserver.ini"
+        assert scores[0]["score"] == 100.0
+        assert scores[0]["compliance"] == "compliant"
+
+
+# =============================================================================
+# Detecção de fonte de banco
+# =============================================================================
+
+
+class TestDbSources:
+    def test_db_conflict_emits_warning(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        content = (
+            "[General]\nConsoleLog=1\n"
+            "[Environment]\nRootPath=/r\nSourcePath=/s\nDbServer=10.0.0.1\nDbDatabase=DB\n"
+            "[DBAccess]\nServer=10.0.0.1\nDatabase=DB\n"
+            "[TopConnect]\nServer=10.0.0.2\nDatabase=DB\n"
+        )
+        p = _write(tmp_path, "appserver.ini", content)
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        row = conn.execute(
+            "SELECT severidade, status FROM ini_audit_findings WHERE regra_id='INI-DB-CONFLICT'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "warning"
+        assert row[1] == "active"
+
+    def test_redundant_db_section_marked_ok_with_note(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        # [TopConnect] é a fonte; [DBAccess] presente mas sem chaves de conexão.
+        _insert_rule(
+            conn, regra_id="S-DBA", section_glob="DBAccess", key_name="SomeKey",
+            expected="right", detection_kind="value_eq", applies_to_tipo="appserver",
+        )
+        content = (
+            "[General]\nConsoleLog=1\n"
+            "[TopConnect]\nServer=10.0.0.2\nDatabase=DB\nPort=7890\n"
+            "[DBAccess]\nSomeKey=wrong\n"
+        )
+        p = _write(tmp_path, "appserver.ini", content)
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        row = conn.execute(
+            "SELECT status FROM ini_audit_findings WHERE regra_id='S-DBA'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "ok_with_note"
+        n = conn.execute(
+            "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='INI-DB-CONFLICT'"
+        ).fetchone()[0]
+        assert n == 0
+
+    def test_no_conflict_for_dbaccess_role(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        _clear_rules(conn)
+        content = (
+            "[General]\nConsoleLog=1\n"
+            "[DBAccess]\nServer=10.0.0.1\nDatabase=DB\n"
+            "[TopConnect]\nServer=10.0.0.2\nDatabase=DB\n"
+        )
+        p = _write(tmp_path, "dbaccess.ini", content)
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        n = conn.execute(
+            "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='INI-DB-CONFLICT'"
+        ).fetchone()[0]
+        assert n == 0
