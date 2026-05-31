@@ -397,13 +397,30 @@ def ini_audit_scores(
         where = "WHERE arquivo = ? COLLATE NOCASE"
         params.append(arquivo)
     sql = f"""
-        SELECT arquivo, tipo, role, score, compliance
+        SELECT id, caminho, arquivo, tipo, role, score, compliance
         FROM ini_files
         {where}
         ORDER BY score ASC, arquivo
     """
     rows = conn.execute(sql, params).fetchall()
-    cols = ["arquivo", "tipo", "role", "score", "compliance"]
+    cols = ["id", "caminho", "arquivo", "tipo", "role", "score", "compliance"]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def ini_audit_fix_items(conn: sqlite3.Connection, file_id: int) -> list[dict[str, Any]]:
+    """Itens p/ o INI sugerido: findings ativos critical/warning cuja regra tem
+    valor esperado (``expected``). Devolve ``section`` / ``key`` / ``expected``."""
+    sql = """
+        SELECT f.section_raw, f.key_name, r.expected
+        FROM ini_audit_findings f
+        JOIN ini_rules r ON r.regra_id = f.regra_id
+        WHERE f.file_id = ?
+              AND f.status = 'active'
+              AND f.severidade IN ('critical', 'warning')
+              AND r.expected != ''
+    """
+    rows = conn.execute(sql, (file_id,)).fetchall()
+    cols = ["section", "key", "expected"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 

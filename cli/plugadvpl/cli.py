@@ -61,6 +61,7 @@ from plugadvpl.output import render
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
 from plugadvpl.parsing.ini_report import render_ini_audit_html
+from plugadvpl.parsing.ini_suggest import generate_suggested_ini
 from plugadvpl.parsing.log_diagnose import diagnose_files as log_diagnose_files
 from plugadvpl.parsing.parser import parse_source
 from plugadvpl.query import (
@@ -85,6 +86,7 @@ from plugadvpl.query import (
     grep_fts,
     hotspots_query,
     impacto_query,
+    ini_audit_fix_items,
     ini_audit_query,
     ini_audit_scores,
     lint_query,
@@ -1335,6 +1337,39 @@ def lint(
 # ---------------------------------------------------------------------------
 
 
+def _read_ini_text(caminho: str) -> str:
+    """Lê o INI original (UTF-8 com fallback CP1252) para gerar o sugerido."""
+    data = Path(caminho).read_bytes()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def _render_ini_audit_html(
+    conn: sqlite3.Connection,
+    arquivo: str | None,
+    severity: str | None,
+    regra: str | None,
+) -> str:
+    """Monta o relatório HTML do ini-audit, enriquecendo cada arquivo com o
+    INI sugerido (corrigido) quando há findings com valor recomendado."""
+    scores = ini_audit_scores(conn, arquivo)
+    for s in scores:
+        items = ini_audit_fix_items(conn, int(s["id"]))
+        suggested = ""
+        if items:
+            try:
+                suggested = generate_suggested_ini(_read_ini_text(str(s["caminho"])), items)
+            except OSError:
+                suggested = ""
+        s["suggested_ini"] = suggested
+    findings = ini_audit_query(
+        conn, arquivo=arquivo, severity=severity, regra_id=regra, show_ok_with_note=True
+    )
+    return render_ini_audit_html(scores, findings)
+
+
 @app.command(name="ini-audit")
 def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mutuamente exclusivos (severity/role/category/file/...) + branch de --format html; split viraria boilerplate de wrappers
     ctx: typer.Context,
@@ -1477,16 +1512,7 @@ def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mut
     if ctx.obj["format"] == "html":
         report = _with_ro_db(
             ctx,
-            lambda c: render_ini_audit_html(
-                ini_audit_scores(c, arquivo),
-                ini_audit_query(
-                    c,
-                    arquivo=arquivo,
-                    severity=severity,
-                    regra_id=regra,
-                    show_ok_with_note=True,
-                ),
-            ),
+            lambda c: _render_ini_audit_html(c, arquivo, severity, regra),
         )
         typer.echo(report)
         return

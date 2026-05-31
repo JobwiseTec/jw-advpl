@@ -42,6 +42,10 @@ _STYLE = (
     "th{background:#f0f2f5}"
     ".sev{padding:2px 8px;border-radius:999px;font-weight:700;font-size:12px}"
     "code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:12px}"
+    "pre{background:#1f2937;color:#e6edf3;padding:14px;border-radius:8px;overflow:auto;"
+    "font-size:12px;line-height:1.45;max-height:420px;white-space:pre-wrap;word-break:break-word}"
+    ".copybtn{background:#2563eb;color:#fff;border:0;padding:6px 13px;border-radius:6px;"
+    "cursor:pointer;font-size:13px;margin-bottom:6px}"
     "footer{text-align:center;color:#888;font-size:12px;margin:26px 0 8px}"
 )
 
@@ -91,7 +95,7 @@ def render_ini_audit_html(
         out.append("<p><em>Nenhum INI auditado.</em></p></div></body></html>")
         return "\n".join(out)
 
-    for fl in files:
+    for idx, fl in enumerate(files):
         arquivo = str(fl.get("arquivo"))
         compliance = str(fl.get("compliance") or "")
         fg, bg, label = _BADGE_STYLE.get(compliance, ("#333", "#eee", compliance or "—"))
@@ -126,7 +130,18 @@ def render_ini_audit_html(
             out.append(f"<h2>✅ Justificados / redundantes ({len(notes)})</h2>")
             out.append(_findings_table(notes))
 
+        suggested = str(fl.get("suggested_ini") or "")
+        if suggested.strip():
+            sid = f"sug{idx}"
+            out.append("<h2>🛠️ INI sugerido (correções preservando comentários)</h2>")
+            out.append(f"<button class='copybtn' onclick=\"_cp('{sid}')\">📋 Copiar</button>")
+            out.append(f"<pre id='{sid}'>{_esc(suggested)}</pre>")
+
     out.append("<footer>Gerado por plugadvpl ini-audit --format html</footer>")
+    out.append(
+        "<script>function _cp(id){const e=document.getElementById(id);"
+        "navigator.clipboard.writeText(e.innerText)}</script>"
+    )
     out.append("</div></body></html>")
     return "\n".join(out)
 
