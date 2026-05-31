@@ -3381,3 +3381,131 @@ class TestMigrateTlppTodos:
         combined = result.stdout + (result.stderr or "")
         assert "namespace-infer" in combined
         assert "y.tlpp" in combined
+
+
+class TestMigrateTlppRollbackCascade:
+    """v0.18.0 — cascata de rollback (spec §4.2.4) ponta-a-ponta via CLI.
+
+    Cobre os 3 caminhos quando ``--validate`` falha:
+    1. ``.bak.<timestamp>`` mais antigo restaura `.prw` (caminho default).
+    2. Bak ausente -> ``git checkout HEAD -- <file>`` (fallback 1).
+    3. Bak ausente + git falha -> ``typer.Exit(code=2)`` (CRITICAL).
+    """
+
+    def test_rollback_via_bak_when_compile_fails(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Compile fails -> rollback via .bak.<timestamp> restaura .prw."""
+        f = synthetic_project / "rb1.prw"
+        original = "User Function RB1()\nReturn .T.\n"
+        f.write_text(original, encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda _p: False,
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "rb1.prw",
+                "--write",
+                "--validate",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        # .prw restaurado pelo .bak.<ts>; .tlpp removido
+        assert f.exists()
+        assert f.read_text(encoding="cp1252") == original
+        assert not (synthetic_project / "rb1.tlpp").exists()
+        # exit_code != 2 (rollback bem-sucedido via bak)
+        assert result.exit_code != 2
+
+    def test_rollback_via_git_when_bak_missing(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Bak ausente -> fallback git checkout funciona, exit != 2."""
+        f = synthetic_project / "rb2.prw"
+        f.write_text("User Function RB2()\nReturn\n", encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda _p: False,
+        )
+        # Forca _create_backup retornar None (sem bak)
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup",
+            lambda _p: None,
+        )
+
+        # Fake git restore: escreve conteudo "restored" no .prw
+        def fake_git_restore(file_path: Path, _project_root: Path) -> bool:
+            file_path.write_text("RESTORED VIA GIT", encoding="cp1252")
+            return True
+
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git",
+            fake_git_restore,
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "rb2.prw",
+                "--write",
+                "--validate",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        # Git restore aplicado; exit != 2 (cascade nao chegou no abort)
+        assert result.exit_code != 2
+
+    def test_rollback_failed_exit_2(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Bak missing + git falha -> typer.Exit(code=2) propagado pelo runner."""
+        f = synthetic_project / "rb3.prw"
+        f.write_text("User Function RB3()\nReturn\n", encoding="cp1252")
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._validate_via_compile",
+            lambda _p: False,
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._create_backup",
+            lambda _p: None,
+        )
+        monkeypatch.setattr(
+            "plugadvpl.migrate_tlpp._restore_via_git",
+            lambda _f, _r: False,
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(synthetic_project),
+                "migrate-tlpp",
+                "recipes",
+                "rb3.prw",
+                "--write",
+                "--validate",
+                "--no-impact-check",
+                "--allow-dirty",
+            ],
+        )
+        # CRITICAL: cascata exauriu -> exit 2 propagado
+        assert result.exit_code == 2
