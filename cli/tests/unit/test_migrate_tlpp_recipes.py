@@ -415,3 +415,37 @@ class TestConOutToFwLog:
 
         assert ConOutToFwLog.id == "conout-to-fwlog"
         assert ConOutToFwLog.category == "idioms"
+
+
+class TestJsonInline:
+    """Recipe order 10 — detecta JsonObject():New() chains (MVP nao auto)."""
+
+    def test_detects_and_emits_todo(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.json_inline import JsonInline
+
+        content = (
+            "Local oJson := JsonObject():New()\n"
+            'oJson["id"] := 1\n'
+            'oJson["nome"] := "x"\n'
+        )
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = JsonInline().apply(content, ctx)
+        assert r.status == "needs-review"
+        assert len(r.todo_markers) == 1
+        assert "oJson" in r.todo_markers[0]
+        # MVP nao transforma — new_content == content
+        assert r.new_content == content
+
+    def test_nochange_without_json_object(self, tmp_path: Path) -> None:
+        from plugadvpl.migrate_tlpp_recipes.json_inline import JsonInline
+
+        content = "User Function X()\nLocal cVar := 'x'\nReturn\n"
+        ctx = MigrationContext(file_path=tmp_path / "a.prw", project_root=tmp_path)
+        r = JsonInline().apply(content, ctx)
+        assert r.status == "nochange"
+
+    def test_recipe_id_and_category(self) -> None:
+        from plugadvpl.migrate_tlpp_recipes.json_inline import JsonInline
+
+        assert JsonInline.id == "json-inline"
+        assert JsonInline.category == "idioms"
