@@ -59,6 +59,7 @@ from plugadvpl.ingest_log import (
 from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
+from plugadvpl.parsing import apis_build as apis_build_module
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.ini import parse_ini_file
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
@@ -1338,6 +1339,53 @@ def lint(
         rows,
         title="Lint findings",
         next_steps=[f"plugadvpl arch {rows[0]['arquivo']}"] if rows else None,
+    )
+
+
+@app.command(name="check-build")
+def check_build(
+    ctx: typer.Context,
+    arquivo: Annotated[str, typer.Argument(help="Fonte ADVPL/TLPP a verificar.")],
+    target_build: Annotated[
+        str,
+        typer.Option("--target-build", "-b", help="Build Protheus alvo (ex: 24.3.0.5)."),
+    ],
+) -> None:
+    """Sinaliza uso de método FW*/Ms* ausente na build alvo (catálogo ``apis_por_build``).
+
+    Resolve ``oVar := Classe():New()`` por função e só reporta ``oVar:Metodo(``
+    quando a classe é confirmada no catálogo e o build alvo cai fora da janela de
+    disponibilidade — zero falso-positivo. Não precisa de índice (lê o catálogo
+    embarcado + o fonte direto).
+    """
+    path = Path(arquivo)
+    if not path.exists():
+        typer.secho(f"Erro: arquivo não encontrado: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    data = path.read_bytes()
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError:
+        content = data.decode("cp1252", errors="replace")
+
+    catalog = apis_build_module.load_apis_catalog()
+    findings = apis_build_module.check_build(content, catalog, target_build)
+    rows: list[dict[str, object]] = [
+        {
+            "arquivo": path.name,
+            "linha": f["linha"],
+            "destino": f"{f['var']}:{f['metodo']}",
+            "classe": f["classe"],
+            "ausente_em": target_build,
+            "nota": f["nota"],
+        }
+        for f in findings
+    ]
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["arquivo", "linha", "destino", "classe", "ausente_em", "nota"],
+        title=f"Métodos ausentes na build {target_build}",
     )
 
 

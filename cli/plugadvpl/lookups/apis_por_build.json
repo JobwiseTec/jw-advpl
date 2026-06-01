@@ -1,0 +1,11 @@
+[
+  {
+    "chave": "FWMarkBrowse:SetBlkBackColor",
+    "classe": "FWMarkBrowse",
+    "metodo": "SetBlkBackColor",
+    "build_min": "24.3.1.4",
+    "build_max": null,
+    "fonte": "observação de campo (a confirmar TDN)",
+    "nota": "Em builds anteriores a 24.3.1.4 o FWMarkBrowse não expõe SetBlkBackColor. Para colorir linha use AddLegend/SetColorFn, ou exponha MsSelect:oBrowse (TCBrowse) que tem SetBlkBackColor."
+  }
+]

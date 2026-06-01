@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "18"
+SCHEMA_VERSION = "19"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -123,6 +123,11 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "log_categories.json": (
         "log_categories",
         ["category_id", "descricao", "severity_default", "fallback_tip", "tdn_url"],
+    ),
+    # v0.20.0 (migration 019): catálogo de APIs por build (issue #26).
+    "apis_por_build.json": (
+        "apis_por_build",
+        ["chave", "classe", "metodo", "build_min", "build_max", "fonte", "nota"],
     ),
 }
 

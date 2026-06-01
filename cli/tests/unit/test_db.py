@@ -278,6 +278,8 @@ class TestSeedLookups:
             "ini_rules.json", "ini_roles.json",
             # v0.12.0: monitor de log
             "log_rules.json", "log_tips.json", "log_categories.json",
+            # v0.20.0: catálogo de APIs por build (#26)
+            "apis_por_build.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 
