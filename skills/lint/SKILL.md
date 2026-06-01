@@ -19,7 +19,7 @@ Roda lint plugadvpl em um arquivo ADVPL/TLPP, aplicando o catalogo de regras con
 
 - `--severity <nivel>` — filtra por severidade minima (`error`, `warn`, `info`)
 - `--regra <id>` — roda apenas a regra com este id (ex: `--regra BP-001`)
-- `--target-build <build>` — inclui findings `BUILD-001`: uso de metodo `FW*`/`Ms*`/`FWBrowse` ausente na build Protheus alvo (ex: `24.3.0.5`), via catalogo `apis_por_build`. Use quando o cliente roda uma build especifica.
+- `--target-build <build>` — inclui findings `BUILD-001`: uso de metodo `FW*`/`Ms*`/`FWBrowse` ausente na build Protheus alvo (ex: `24.3.0.5`, a RELEASE Protheus — nao a build do AppServer), via catalogo `apis_por_build`. Use quando o cliente roda uma build especifica. **Persiste no indice**: depois de passar a flag uma vez, o `lint` (sem a flag) ja roda o build-check automatico com essa build.
 
 ## Execucao
 

@@ -37,6 +37,7 @@ from plugadvpl import __version__
 from plugadvpl.db import (
     apply_migrations,
     close_db,
+    get_meta,
     init_meta,
     open_db,
     seed_lookups,
@@ -1381,10 +1382,28 @@ def lint(
                 err=True,
             )
 
+    # Resolve build alvo: a flag persiste em meta.target_build; sem flag, lê de lá
+    # (configurar uma vez -> build-check roda automático no lint seguinte, inclusive
+    # multi-agente). Build é a RELEASE Protheus (ex: 24.3.0.5), não a build do AppServer.
+    effective_build = target_build
+    if target_build:
+        db_path = ctx.obj["db"]
+        if db_path.exists():
+            conn = open_db(db_path)
+            try:
+                set_meta(conn, "target_build", target_build)
+                conn.commit()
+            finally:
+                close_db(conn)
+    else:
+        effective_build = _with_ro_db(ctx, lambda c: get_meta(c, "target_build"))
+
     rows = _with_ro_db(ctx, lambda c: lint_query(c, arquivo, severity, regra))
 
-    if target_build:
-        build_rows = _lint_build_check_rows(ctx.obj["root"], arquivo, severity, regra, target_build)
+    if effective_build:
+        build_rows = _lint_build_check_rows(
+            ctx.obj["root"], arquivo, severity, regra, effective_build
+        )
         rows = sorted(
             [*rows, *build_rows],
             key=lambda r: (str(r["arquivo"]), int(r["linha"])),

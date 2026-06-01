@@ -1680,6 +1680,12 @@ class TestLint:
             b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "ingest"])
+        # projeto fresco, sem build configurado: nenhum BUILD-001
+        r0 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
+        assert not [
+            r for r in json.loads(r0.stdout)["rows"] if r.get("regra_id") == "BUILD-001"
+        ]
+        # com a flag: BUILD-001 na linha certa
         result = runner.invoke(
             app,
             ["--root", str(src), "--format", "json", "lint", "--target-build", "24.3.0.5"],
@@ -1689,10 +1695,33 @@ class TestLint:
         build = [r for r in rows if r.get("regra_id") == "BUILD-001"]
         assert len(build) == 1, f"esperado 1 BUILD-001, rows={rows}"
         assert build[0]["linha"] == 3
-        # sem a flag: nenhum BUILD-001
-        result2 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
-        rows2 = json.loads(result2.stdout)["rows"]
-        assert not [r for r in rows2 if r.get("regra_id") == "BUILD-001"]
+
+    def test_lint_target_build_persists_to_meta(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """--target-build persiste em meta; lint subsequente (sem flag) reaproveita."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ZZUI.prw").write_bytes(
+            b"User Function ZZUI()\n"
+            b"  Local oBrowse := FWMarkBrowse():New()\n"
+            b'  oBrowse:SetBlkBackColor({|| "RED"})\n'
+            b"Return\n"
+        )
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        # 1a vez: com a flag -> BUILD-001 + persiste em meta
+        r1 = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "lint", "--target-build", "24.3.0.5"],
+        )
+        assert r1.exit_code == 0, r1.stderr
+        assert [f for f in json.loads(r1.stdout)["rows"] if f.get("regra_id") == "BUILD-001"]
+        # 2a vez: SEM a flag -> ainda BUILD-001 (lido do meta.target_build)
+        r2 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
+        assert r2.exit_code == 0, r2.stderr
+        assert [
+            f for f in json.loads(r2.stdout)["rows"] if f.get("regra_id") == "BUILD-001"
+        ], "build-check deveria rodar automaticamente a partir de meta.target_build"
 
     def test_callers_flags_is_self_call(
         self, tmp_path: Path, runner: CliRunner
