@@ -1,6 +1,6 @@
 # plugadvpl CLI — Referência completa
 
-Esta página documenta cada subcomando da CLI `plugadvpl` (atualizada para v0.4.3). A CLI é construída com [Typer](https://typer.tiangolo.com/) e expõe **21 subcomandos** mais um callback global com opções compartilhadas.
+Esta página documenta cada subcomando da CLI `plugadvpl` (atualizada para v0.20.0). A CLI é construída com [Typer](https://typer.tiangolo.com/) e expõe **35 subcomandos** (mais os sub-apps `edit-prw` e `migrate-tlpp`) e um callback global com opções compartilhadas.
 
 Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcomando> --help` para ver opções específicas.
 
@@ -9,12 +9,22 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
 - [Opções globais](#opcoes-globais)
 - [Universo 1 — Fontes (v0.1)](#universo-1)
   - **write-path**: [`init`](#init), [`ingest`](#ingest), [`reindex`](#reindex)
-  - **read-only**: [`status`](#status), [`find`](#find), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`doctor`](#doctor), [`grep`](#grep)
-  - **utilitários**: [`version`](#version), [`help`](#help)
+  - **read-only**: [`status`](#status), [`find`](#find), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`check-build`](#check-build), [`doctor`](#doctor), [`grep`](#grep)
+  - **utilitários**: [`version`](#version), [`help`](#help), [`edit-prw`](#edit-prw), [`compile`](#compile)
 - [Universo 2 — Dicionário SX (v0.3)](#universo-2)
-  - [`ingest-sx`](#ingest-sx), [`impacto`](#impacto), [`gatilho`](#gatilho), [`sx-status`](#sx-status)
+  - [`ingest-sx`](#ingest-sx), [`impacto`](#impacto), [`gatilho`](#gatilho), [`sx-status`](#sx-status), [`semantica`](#semantica)
 - [Universo 3 — Rastreabilidade (v0.4)](#universo-3)
   - [`workflow`](#workflow), [`execauto`](#execauto), [`docs`](#docs)
+- [Universo 4 — Rastreabilidade & qualidade (v0.4)](#universo-4)
+  - [`trace`](#trace), [`metrics`](#metrics), [`hotspots`](#hotspots), [`cobertura-doc`](#cobertura-doc), [`doc-writer`](#doc-writer)
+- [Universo 5 — Ingestão REST (v0.5)](#universo-5)
+  - [`ingest-protheus`](#ingest-protheus)
+- [Universo 6 — Migração ADVPL→TLPP (v0.6)](#universo-6)
+  - [`migrate-tlpp`](#migrate-tlpp)
+- [Universo 7 — Ops / Troca Quente (v0.7)](#universo-7)
+  - [`tq`](#tq)
+- [Auditoria — INI & Logs (v0.11+)](#auditoria)
+  - [`ini-audit`](#ini-audit), [`log-diagnose`](#log-diagnose)
 - [Exit codes](#exit-codes)
 
 ---
@@ -532,6 +542,120 @@ Modos:
 
 Inferência de módulo dual: path-based (`SIGA\w{3,4}` no path) +
 routine-prefix (reaproveita catálogo do `execauto`).
+
+---
+
+## <a id="universo-4"></a>Universo 4 — Rastreabilidade & qualidade (v0.4)
+
+### <a id="trace"></a>`trace <entidade>`
+
+Trace agregado cross-universo de uma entidade (função, arquivo ou campo): junta `arch` + `docs` + `execauto` + gatilhos numa visão única.
+
+```
+plugadvpl trace FATA050.prw
+plugadvpl trace A1_COD
+```
+
+---
+
+### <a id="metrics"></a>`metrics [arquivo]`
+
+Métricas por função. Sem `arquivo`, agrega o projeto.
+
+```
+plugadvpl metrics FATA050.prw
+```
+
+---
+
+### <a id="hotspots"></a>`hotspots`
+
+Top-N funções mais chamadas no projeto (candidatas a cuidado/teste/refactor). `--limit` é a opção global.
+
+```
+plugadvpl --limit 20 hotspots
+```
+
+---
+
+### <a id="cobertura-doc"></a>`cobertura-doc`
+
+Cobertura de `Protheus.doc` agregada — quanto do código tem header documentado.
+
+```
+plugadvpl cobertura-doc
+```
+
+---
+
+### <a id="doc-writer"></a>`doc-writer <funcao>`
+
+Gera o bloco `/*/{Protheus.doc} ... /*/` (com `@type`/`@param`/`@return`) para uma função ADVPL/TLPP indexada — pra colar no fonte.
+
+```
+plugadvpl doc-writer MaCntSA1
+```
+
+---
+
+## <a id="universo-5"></a>Universo 5 — Ingestão via REST (v0.5)
+
+### <a id="ingest-protheus"></a>`ingest-protheus`
+
+Indexa o Dicionário SX ao vivo via REST API do COLETADB (em vez de CSVs exportados) — útil quando não se tem os SXs em arquivo.
+
+```
+plugadvpl ingest-protheus
+```
+
+---
+
+## <a id="universo-6"></a>Universo 6 — Migração ADVPL→TLPP (v0.6)
+
+### <a id="migrate-tlpp"></a>`migrate-tlpp <subcomando>`
+
+Pipeline ts-migrate-style pra migrar `.prw` → `.tlpp`. Sub-app com `init`/`rename`/`recipes`/`todos` e 11 recipes (6 SAFE default + 5 IDIOMS via `--idioms`), cada uma isolada e testável.
+
+```
+plugadvpl migrate-tlpp init
+plugadvpl migrate-tlpp recipes MEUMOD.prw
+plugadvpl migrate-tlpp todos
+```
+
+---
+
+## <a id="universo-7"></a>Universo 7 — Ops / Troca Quente (v0.7)
+
+### <a id="tq"></a>`tq`
+
+Restart do AppServer + healthcheck (Troca Quente MVP local) — recarrega o ambiente após deploy de RPO.
+
+```
+plugadvpl tq
+```
+
+---
+
+## <a id="auditoria"></a>Auditoria — INI & Logs (v0.11+)
+
+### <a id="ini-audit"></a>`ini-audit [paths...]`
+
+Audita arquivos INI Protheus (`appserver.ini`, `dbaccess.ini`, `tss.ini`, broker) contra 487 regras TDN-oficiais, com score 0–100 + selo de conformidade (`compliant`/`partial`/`non_compliant`). Com `--format html` gera um relatório self-contained.
+
+```
+plugadvpl ini-audit appserver.ini
+plugadvpl --format html ini-audit AppServer_TSS.ini > relatorio.html
+```
+
+---
+
+### <a id="log-diagnose"></a>`log-diagnose [paths...]`
+
+Diagnostica logs Protheus (`console.log`/`error.log`/`profile.log`/`compila.log`): classifica findings por severidade + categoria e correlaciona com correction tips da KB TDN. Com `--format html` gera relatório.
+
+```
+plugadvpl log-diagnose console.log
+```
 
 ---
 
