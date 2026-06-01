@@ -331,6 +331,63 @@ class TestPerf001SelectStar:
         assert "PERF-001" not in _ids(findings)
 
 
+# --- SQL-001: comentário -- dentro de BeginSql -------------------------------
+
+
+class TestSql001LineCommentInBeginSql:
+    def test_positive_line_comment_inside_beginsql(self) -> None:
+        src = (
+            "User Function ABCSQL1()\n"          # 1
+            "  Local cAlias := ''\n"             # 2
+            "  BeginSql Alias cAlias\n"          # 3
+            "    SELECT C5_NUM\n"                # 4
+            "      FROM %table:SC5% SC5\n"       # 5
+            "     WHERE SC5.%notDel%\n"          # 6
+            "       AND (\n"                     # 7
+            "             -- periodo so quando nao tem filtro\n"  # 8
+            "             C5_TIPO <> 'X'\n"      # 9
+            "           )\n"                     # 10
+            "  EndSql\n"                         # 11
+            "Return\n"                           # 12
+        )
+        findings = lint_source(_parsed_for(src), src)
+        sql001 = [f for f in findings if f["regra_id"] == "SQL-001"]
+        assert len(sql001) == 1
+        assert sql001[0]["severidade"] == "critical"
+        assert sql001[0]["funcao"] == "ABCSQL1"
+        assert sql001[0]["linha"] == 3  # aponta pro BeginSql do bloco
+
+    def test_negative_dashes_inside_string_literal(self) -> None:
+        """`--` dentro de literal SQL ('--N/A--') não é comentário — não sinaliza."""
+        src = (
+            "User Function ABCSQL2()\n"
+            "  Local cAlias := ''\n"
+            "  BeginSql Alias cAlias\n"
+            "    SELECT C5_NUM\n"
+            "      FROM %table:SC5% SC5\n"
+            "     WHERE SC5.%notDel%\n"
+            "       AND C5_OBS = '--N/A--'\n"
+            "  EndSql\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src), src)
+        assert "SQL-001" not in _ids(findings)
+
+    def test_negative_beginsql_without_comment(self) -> None:
+        src = (
+            "User Function ABCSQL3()\n"
+            "  Local cAlias := ''\n"
+            "  BeginSql Alias cAlias\n"
+            "    SELECT C5_NUM\n"
+            "      FROM %table:SC5% SC5\n"
+            "     WHERE SC5.%notDel%\n"
+            "  EndSql\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src), src)
+        assert "SQL-001" not in _ids(findings)
+
+
 # --- PERF-002: sem %notDel% --------------------------------------------------
 
 

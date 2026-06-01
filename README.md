@@ -516,7 +516,7 @@ Além dos 33 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-dicionario-sx-validacoes` | Expressões ADVPL embutidas em X3_VALID/INIT/WHEN/VLDUSER, X7_REGRA, X1_VALID, X6_VALID/INIT — guia pra análise de impacto |
 | `advpl-refactoring` | 6 padrões com before/after (DbSeek loop, Posicione repetido, IFs hardcoded, AxCadastro→MVC, string concat em loop, RecLock sem Begin Transaction) — usar quando o pedido for "melhorar"/"refatorar"/"está lento" |
 | `advpl-debugging` | Top 30 erros comuns em produção + métodos de debug — inclui seção `Begin Sequence / Recover` precisa de `ErrorBlock({\|e\| Break(e)})` pra capturar exceptions nativas (TOPCONN, REST, native) |
-| `advpl-code-review` | 40 regras BP/SEC/PERF/MOD/SX (28 single-file + 11 cross-file `SX-001..SX-011` + 1 encoding) |
+| `advpl-code-review` | 41 regras BP/SEC/PERF/MOD/SX/SQL (29 single-file + 11 cross-file `SX-001..SX-011` + 1 encoding) |
 | `ingest-protheus` | Workflow do `ingest-protheus` (REST ao vivo via COLETADB) |
 
 Também incluídos: **6 agents** especializados (`advpl-analyzer`, `advpl-impact-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-log-investigator`, `advpl-ini-auditor`) e **1 SessionStart hook** Node.js que faz onboarding cross-platform do `.plugadvpl/` — os agents `advpl-ini-auditor` e `advpl-log-investigator` envelopam `ini-audit`/`log-diagnose` com correction tips TDN.
@@ -779,7 +779,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **40 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
 - **54 skills** (21 knowledge + 33 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v18** — 18 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` v0.19.0)
-- **40 lint rules** (28 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
+- **41 lint rules** (29 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **1339 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)

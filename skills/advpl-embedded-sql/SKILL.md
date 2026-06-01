@@ -74,6 +74,8 @@ QRY->(DbCloseArea())
 
 > **Quirk:** o `*` (asterisco) **não pode ser primeiro char de linha** dentro de `BeginSql` — o pré-processador ADVPL trata como comentário (`*` é comentário de linha em alguns dialetos). Use indentação ou move pro fim da linha anterior.
 
+> **Quirk (lint SQL-001, critical):** **nunca** use comentário SQL line-style `--` dentro de `BeginSql..EndSql`. O pré-processador não garante a preservação das quebras de linha; ao concatenar, o `--` comenta **o resto da query até o `EndSql`**, gerando `ORA-00936: missing expression` (ou parser error silencioso) só em runtime. Mova o comentário pra fora do bloco (use `//` no ADVPL). O lint do plugadvpl pega isso antes de compilar — vide regra `SQL-001`.
+
 ## `MPSysOpenQuery` — TCQuery com tipagem automática
 
 Variante moderna do `TCQuery` que faz `TCSetField` automaticamente para colunas que estão no SX3 — elimina o esforço manual:

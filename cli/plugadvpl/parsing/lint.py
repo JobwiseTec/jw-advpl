@@ -1085,6 +1085,52 @@ def _check_perf003_no_xfilial(
     return findings
 
 
+# SQL-001: literal de string SQL (single-quoted, '' = aspa escapada). Removido
+# antes do match de `--` pra não confundir '--' DENTRO de string com comentário.
+_SQL_STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+
+
+def _check_sql001_line_comment_in_beginsql(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """SQL-001 (critical): comentário SQL line-style (--) dentro de BeginSql..EndSql.
+
+    O preprocessador do BeginSql não garante preservação de quebras de linha; um
+    comentário `--` pode comer o resto da query até o EndSql, gerando ORA-00936 /
+    parser errors silenciosos em runtime. Detecta `--` fora de literal SQL, só em
+    blocos multi-linha (BeginSql; TCQuery single-line não sofre o swallow de \\n).
+    """
+    findings: list[dict[str, Any]] = []
+    sql_blocks = parsed.get("sql_embedado", []) or []
+    funcoes = parsed.get("funcoes", []) or []
+
+    for sql in sql_blocks:
+        snippet = sql.get("snippet", "") or ""
+        if "\n" not in snippet:
+            continue  # single-line (TCQuery/TCSqlExec) não tem \n pra ser comido
+        if not any(
+            "--" in _SQL_STRING_LITERAL_RE.sub("", line) for line in snippet.split("\n")
+        ):
+            continue
+        linha = int(sql.get("linha", 1))
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _funcao_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "SQL-001",
+                "severidade": "critical",
+                "snippet": _snippet_at_line(content, linha) or snippet[:_SNIPPET_MAX],
+                "sugestao_fix": (
+                    "Remova o comentário `--` de dentro do BeginSql (mova pra fora ou "
+                    "use `//` no ADVPL). O preprocessador pode concatenar linhas e o "
+                    "`--` comenta o resto da query até o EndSql (ORA-00936)."
+                ),
+            }
+        )
+    return findings
+
+
 def _check_mod001_conout_instead_fwlogmsg(
     arquivo: str, parsed: dict[str, Any], content: str
 ) -> list[dict[str, Any]]:
@@ -1984,6 +2030,7 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_perf001_select_star(arquivo, parsed, content))
     findings.extend(_check_perf002_no_notdel(arquivo, parsed, content))
     findings.extend(_check_perf003_no_xfilial(arquivo, parsed, content))
+    findings.extend(_check_sql001_line_comment_in_beginsql(arquivo, parsed, content))
     findings.extend(_check_perf004_string_concat_in_loop(arquivo, parsed, content))
     findings.extend(_check_perf005_reccount_for_existence(arquivo, parsed, content))
     findings.extend(_check_mod001_conout_instead_fwlogmsg(arquivo, parsed, content))

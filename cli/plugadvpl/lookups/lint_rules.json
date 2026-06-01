@@ -220,6 +220,18 @@
     "sonar_rules": []
   },
   {
+    "regra_id": "SQL-001",
+    "titulo": "Comentário SQL line-style (--) dentro de BeginSql..EndSql",
+    "severidade": "critical",
+    "categoria": "best-practice",
+    "descricao": "Comentário `--` dentro de um bloco `BeginSql..EndSql`. O preprocessador do BeginSql não garante preservação das quebras de linha; ao concatenar linhas, o `--` comenta o resto da query até o `EndSql`, gerando erro silencioso em runtime (ORA-00936: missing expression / parser errors). Detecta `--` fora de literal de string SQL, apenas em blocos multi-linha (TCQuery single-line não sofre o problema).",
+    "fix_guidance": "Mova o comentário para FORA do `BeginSql` (use `//` no ADVPL). Se precisar comentar dentro do SQL, prefira `/* ... */` — mas note que também não é 100% garantido em todas as builds. O mais seguro é não comentar dentro do bloco.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_sql001_line_comment_in_beginsql",
+    "sonar_rules": []
+  },
+  {
     "regra_id": "PERF-004",
     "titulo": "Concatenação de string com + ou += em loop",
     "severidade": "warning",
