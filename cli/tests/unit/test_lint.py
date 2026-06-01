@@ -388,6 +388,56 @@ class TestSql001LineCommentInBeginSql:
         assert "SQL-001" not in _ids(findings)
 
 
+# --- SQL-002: UPDATE/DELETE sem WHERE ----------------------------------------
+
+
+class TestSql002UpdateDeleteNoWhere:
+    def test_positive_update_no_where(self) -> None:
+        src = (
+            "User Function ABCSQLU()\n"
+            "  TCSqlExec(\"UPDATE SA1010 SET A1_BLOQ = '1'\")\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src), src)
+        sql002 = [f for f in findings if f["regra_id"] == "SQL-002"]
+        assert len(sql002) == 1
+        assert sql002[0]["severidade"] == "critical"
+
+    def test_positive_delete_no_where(self) -> None:
+        src = (
+            "User Function ABCSQLD()\n"
+            "  TCSqlExec('DELETE FROM SC5010')\n"
+            "Return\n"
+        )
+        assert "SQL-002" in _ids(lint_source(_parsed_for(src), src))
+
+    def test_negative_update_with_where_after_inner_quote(self) -> None:
+        """WHERE depois de valor com aspas ('1') — full-string capture, sem FP."""
+        src = (
+            "User Function ABCSQLW()\n"
+            "  TCSqlExec(\"UPDATE SA1010 SET A1_BLOQ = '1' WHERE A1_FILIAL = '01'\")\n"
+            "Return\n"
+        )
+        assert "SQL-002" not in _ids(lint_source(_parsed_for(src), src))
+
+    def test_negative_select_not_flagged(self) -> None:
+        src = (
+            "User Function ABCSQLS()\n"
+            "  TCQuery('SELECT A1_COD FROM SA1010 WHERE %notDel%')\n"
+            "Return\n"
+        )
+        assert "SQL-002" not in _ids(lint_source(_parsed_for(src), src))
+
+    def test_negative_commented_out(self) -> None:
+        """TCSqlExec comentado não dispara (strip remove comentário)."""
+        src = (
+            "User Function ABCSQLC()\n"
+            "  // TCSqlExec(\"DELETE FROM SA1010\")\n"
+            "Return\n"
+        )
+        assert "SQL-002" not in _ids(lint_source(_parsed_for(src), src))
+
+
 # --- PERF-002: sem %notDel% --------------------------------------------------
 
 

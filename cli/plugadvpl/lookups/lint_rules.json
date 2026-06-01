@@ -232,6 +232,18 @@
     "sonar_rules": []
   },
   {
+    "regra_id": "SQL-002",
+    "titulo": "UPDATE/DELETE SQL sem WHERE (corrupção de tabela em massa)",
+    "severidade": "critical",
+    "categoria": "best-practice",
+    "descricao": "`UPDATE`/`DELETE` literal sem cláusula `WHERE` altera ou apaga a TABELA INTEIRA — corrupção de dados em massa, geralmente catastrófica e irreversível. Detecta em `TCSqlExec(literal)` e `BeginSql..EndSql`, capturando a string SQL COMPLETA (não o snippet truncado nas aspas internas) para não dar falso-positivo quando o `WHERE` vem depois de um valor entre aspas. SQL montado dinamicamente (variável) não é capturado (não dá pra inspecionar com segurança).",
+    "fix_guidance": "Adicione um `WHERE` (com `%xfilial:TABELA%` se a tabela for filializada — senão pode atingir TODAS as filiais). Se for uma operação full-table realmente intencional (ex: limpeza de tabela temporária), isole em rotina dedicada e documente o motivo.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_sql002_updel_no_where",
+    "sonar_rules": []
+  },
+  {
     "regra_id": "PERF-004",
     "titulo": "Concatenação de string com + ou += em loop",
     "severidade": "warning",

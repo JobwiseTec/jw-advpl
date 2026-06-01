@@ -130,6 +130,8 @@ End Transaction
 
 > **Crítico:** `TCSqlExec` **não tem macros** (`%notDel%`/`%xfilial%`). Você precisa expandir manualmente. **Esquecer `%xfilial%` aqui causa cross-filial corruption** — UPDATE pode atingir todas as filiais.
 
+> **Crítico (lint SQL-002):** `UPDATE`/`DELETE` **sem `WHERE`** altera/apaga a **tabela inteira** — corrupção em massa, geralmente irreversível. Sempre tenha um `WHERE` (com `%xfilial:TABELA%` se filializada). O lint do plugadvpl detecta isso em `TCSqlExec(literal)`/`BeginSql` — vide regra `SQL-002`.
+
 ## Limitações do cursor de query
 
 Um cursor aberto por `BeginSql`/`TCQuery`/`MPSysOpenQuery` é **read-only** e tem navegação limitada:

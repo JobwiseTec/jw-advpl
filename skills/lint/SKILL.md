@@ -1,5 +1,5 @@
 ---
-description: Roda lint plugadvpl em um arquivo (41 regras); com --target-build inclui BUILD-001 (uso de método FW*/Ms* ausente na build Protheus alvo)
+description: Roda lint plugadvpl em um arquivo (42 regras); com --target-build inclui BUILD-001 (uso de método FW*/Ms* ausente na build Protheus alvo)
 disable-model-invocation: true
 arguments: [arquivo]
 allowed-tools: [Bash]

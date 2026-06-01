@@ -1131,6 +1131,57 @@ def _check_sql001_line_comment_in_beginsql(
     return findings
 
 
+# SQL-002: captura a string SQL COMPLETA (não o snippet truncado nas aspas).
+# TCSqlExec(literal): aspas externas " ou ' delimitam; inner quotes preservadas.
+_SQL_TCSQLEXEC_FULL_RE = re.compile(r'\bTCSqlExec\s*\(\s*(?:"([^"]*)"|\'([^\']*)\')', re.IGNORECASE)
+_SQL_BEGINSQL_DML_RE = re.compile(
+    r"\bBeginSql\b(?:\s+Alias\s+\S+)?\s*(.*?)\bEndSql\b", re.IGNORECASE | re.DOTALL
+)
+_SQL_UPD_DEL_RE = re.compile(r"^\s*(?:UPDATE|DELETE)\b", re.IGNORECASE)
+_SQL_WHERE_RE = re.compile(r"\bWHERE\b", re.IGNORECASE)
+
+
+def _check_sql002_updel_no_where(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """SQL-002 (critical): UPDATE/DELETE SQL sem WHERE (corrupção de tabela em massa).
+
+    Um UPDATE/DELETE literal sem WHERE altera/apaga a TABELA INTEIRA. Detecta em
+    `TCSqlExec(literal)` e `BeginSql..EndSql`, capturando a string COMPLETA (não o
+    snippet truncado nas aspas internas) pra não dar falso-positivo quando o WHERE
+    vem depois de um valor entre aspas. SQL dinâmico (variável) não é capturado.
+    """
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    stripped = strip_advpl(content, strip_strings=False)
+    seen: set[int] = set()
+    for rx in (_SQL_TCSQLEXEC_FULL_RE, _SQL_BEGINSQL_DML_RE):
+        for m in rx.finditer(stripped):
+            sql = next((g for g in m.groups() if g is not None), "")
+            if not _SQL_UPD_DEL_RE.match(sql) or _SQL_WHERE_RE.search(sql):
+                continue
+            linha = stripped.count("\n", 0, m.start()) + 1
+            if linha in seen:
+                continue
+            seen.add(linha)
+            findings.append(
+                {
+                    "arquivo": arquivo,
+                    "funcao": _funcao_at_line(funcoes, linha),
+                    "linha": linha,
+                    "regra_id": "SQL-002",
+                    "severidade": "critical",
+                    "snippet": _snippet_at_line(content, linha) or sql[:_SNIPPET_MAX],
+                    "sugestao_fix": (
+                        "UPDATE/DELETE sem WHERE altera/apaga a TABELA INTEIRA. "
+                        "Adicione WHERE (com %xfilial:TABELA% se filializada). Se for "
+                        "operação full-table intencional, isole e documente."
+                    ),
+                }
+            )
+    return findings
+
+
 def _check_mod001_conout_instead_fwlogmsg(
     arquivo: str, parsed: dict[str, Any], content: str
 ) -> list[dict[str, Any]]:
@@ -2031,6 +2082,7 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_perf002_no_notdel(arquivo, parsed, content))
     findings.extend(_check_perf003_no_xfilial(arquivo, parsed, content))
     findings.extend(_check_sql001_line_comment_in_beginsql(arquivo, parsed, content))
+    findings.extend(_check_sql002_updel_no_where(arquivo, parsed, content))
     findings.extend(_check_perf004_string_concat_in_loop(arquivo, parsed, content))
     findings.extend(_check_perf005_reccount_for_existence(arquivo, parsed, content))
     findings.extend(_check_mod001_conout_instead_fwlogmsg(arquivo, parsed, content))
