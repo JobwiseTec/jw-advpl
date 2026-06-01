@@ -61,6 +61,7 @@ from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
 from plugadvpl.parsing import apis_build as apis_build_module
 from plugadvpl.parsing import lint as lint_module
+from plugadvpl.parsing import semantica as semantica_module
 from plugadvpl.parsing.ini import parse_ini_file
 from plugadvpl.parsing.ini_audit import audit_files as ini_audit_files
 from plugadvpl.parsing.ini_known_keys import detect_unknown_keys
@@ -1386,6 +1387,36 @@ def check_build(
         rows,
         columns=["arquivo", "linha", "destino", "classe", "ausente_em", "nota"],
         title=f"Métodos ausentes na build {target_build}",
+    )
+
+
+@app.command()
+def semantica(
+    ctx: typer.Context,
+    campo: Annotated[str, typer.Argument(help="Campo SX (ex: B6_CLIFOR).")],
+) -> None:
+    """Mostra a semântica contextual de um campo SX (catálogo ``campos_semantica``).
+
+    Alguns campos têm significado que muda conforme um discriminador
+    (TIPO/PODER3/STATUS). Lê o catálogo embarcado (só semântica padrão Protheus,
+    sem termo de cliente) — não precisa de índice.
+    """
+    catalog = semantica_module.load_semantica_catalog()
+    rows: list[dict[str, object]] = [
+        {
+            "campo": e["campo"],
+            "tabela": e["tabela"],
+            "discriminador": e.get("discriminador") or "(sempre)",
+            "semantica": e["semantica"],
+            "fonte": e.get("fonte", ""),
+        }
+        for e in semantica_module.lookup_semantica(catalog, campo)
+    ]
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["campo", "tabela", "discriminador", "semantica", "fonte"],
+        title=f"Semântica de {campo.strip().upper()}",
     )
 
 

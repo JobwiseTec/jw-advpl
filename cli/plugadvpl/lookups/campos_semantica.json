@@ -1,0 +1,50 @@
+[
+  {
+    "chave": "B6_CLIFOR:B6_PODER3=R",
+    "tabela": "SB6",
+    "campo": "B6_CLIFOR",
+    "discriminador": "B6_PODER3=R",
+    "semantica": "Em poder de terceiros, identifica o DETENTOR do material — não necessariamente o cliente da NF. Casar B6_CLIFOR direto com F2_CLIENTE leva a resultado errado.",
+    "fonte": "observação de campo (a confirmar TDN)"
+  },
+  {
+    "chave": "B6_LOJA:B6_PODER3=R",
+    "tabela": "SB6",
+    "campo": "B6_LOJA",
+    "discriminador": "B6_PODER3=R",
+    "semantica": "Loja do DETENTOR (poder de terceiros), não a loja do cliente da NF.",
+    "fonte": "observação de campo (a confirmar TDN)"
+  },
+  {
+    "chave": "B6_IDENT:",
+    "tabela": "SB6",
+    "campo": "B6_IDENT",
+    "discriminador": "",
+    "semantica": "Sequência identificadora POR FILIAL. Registros com o mesmo IDENT em filiais diferentes são pontas da mesma operação física (ex: saída na origem + saldo no detentor).",
+    "fonte": "observação de campo (a confirmar TDN)"
+  },
+  {
+    "chave": "D2_NFORI:D2_TIPO=D",
+    "tabela": "SD2",
+    "campo": "D2_NFORI",
+    "discriminador": "D2_TIPO=D",
+    "semantica": "Em NF de devolução/retorno (D2_TIPO='D'), aponta para o documento de Remessa original.",
+    "fonte": "TDN"
+  },
+  {
+    "chave": "D2_NFORI:D2_TIPO=N",
+    "tabela": "SD2",
+    "campo": "D2_NFORI",
+    "discriminador": "D2_TIPO=N",
+    "semantica": "Em saída normal (D2_TIPO='N'), quando preenchido aponta para o documento de origem (ex: Remessa) — semântica OPOSTA ao retorno, mesma coluna.",
+    "fonte": "observação de campo (a confirmar TDN)"
+  },
+  {
+    "chave": "D2_SERIORI:",
+    "tabela": "SD2",
+    "campo": "D2_SERIORI",
+    "discriminador": "",
+    "semantica": "Série do documento de origem referenciado em D2_NFORI (par com D2_NFORI para localizar a NF apontada).",
+    "fonte": "TDN"
+  }
+]

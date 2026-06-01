@@ -279,12 +279,12 @@ class TestCursorInstallResultSummary:
         from plugadvpl.cursor_rules import InstallResult
         r = InstallResult(
             installed_global=True,
-            installed_local_count=56,
+            installed_local_count=57,
             skipped_due_to_user_files=[],
             errors=[],
         )
         assert "global (experimental)" in r.summary()
-        assert "56 locais" in r.summary()
+        assert "57 locais" in r.summary()
 
 
 class TestInstallCursorRules:
@@ -303,12 +303,12 @@ class TestInstallCursorRules:
         result = install_cursor_rules(project, version="0.16.2")
 
         assert result.installed_global is True
-        assert result.installed_local_count == 56
+        assert result.installed_local_count == 57
         assert not result.errors
         # Smoke: arquivos foram criados
         assert (fake_home / ".cursor" / "rules" / "plugadvpl.mdc").exists()
         local_rules = list((project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(local_rules) == 56
+        assert len(local_rules) == 57
 
     def test_no_op_when_no_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

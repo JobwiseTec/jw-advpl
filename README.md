@@ -30,9 +30,9 @@
 |---|---|---|
 | **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
 | **Codex** + AGENTS.md ecosystem | `AGENTS.md` (gêmeo idêntico) | sempre |
-| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 56 | `.cursor/` no projeto |
-| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 56 | `.github/` no projeto |
-| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 56 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 57 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 57 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 57 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
 | **+ Codex CLI** (extra) | `.codex/config.toml` mínimo | `.codex/` ou `codex` no PATH |
 
 Sinais de detection são **INDEPENDENTES** — sinal global (`~/.cursor/`, `~/.gemini/`) NÃO ativa install no projeto. Cada agente tem sua flag `--no-<agent>` pra desabilitar mesmo com sinal presente.
@@ -777,8 +777,8 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
 - **40 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
-- **56 skills** (22 knowledge + 34 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
-- **Schema SQLite v19** — 19 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` v0.19.0)
+- **57 skills** (22 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **Schema SQLite v20** — 20 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` v0.19.0)
 - **41 lint rules** (29 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
 - **1339 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5

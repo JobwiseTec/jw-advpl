@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "19"
+SCHEMA_VERSION = "20"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -128,6 +128,11 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "apis_por_build.json": (
         "apis_por_build",
         ["chave", "classe", "metodo", "build_min", "build_max", "fonte", "nota"],
+    ),
+    # v0.20.0 (migration 020): semântica contextual de campos SX (issue #27).
+    "campos_semantica.json": (
+        "campos_semantica",
+        ["chave", "tabela", "campo", "discriminador", "semantica", "fonte"],
     ),
 }
 

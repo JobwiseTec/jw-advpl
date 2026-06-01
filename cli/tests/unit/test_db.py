@@ -280,6 +280,8 @@ class TestSeedLookups:
             "log_rules.json", "log_tips.json", "log_categories.json",
             # v0.20.0: catálogo de APIs por build (#26)
             "apis_por_build.json",
+            # v0.20.0: semântica contextual de campos SX (#27)
+            "campos_semantica.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 
