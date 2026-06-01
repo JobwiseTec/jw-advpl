@@ -4,6 +4,23 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-01
+
+### Added
+
+- **Lint `SQL-001`** (critical): comentário SQL line-style `--` dentro de `BeginSql..EndSql`. O preprocessador não garante preservação de `\n` → ao concatenar linhas, o `--` comenta o resto da query até o `EndSql` (ORA-00936 silencioso). Detecta fora de literal de string, só em blocos multi-linha. Closes [#24](https://github.com/JoniPraia/plugadvpl/issues/24).
+- **Lint `SQL-002`** (critical): `UPDATE`/`DELETE` SQL sem `WHERE` (corrupção de tabela em massa). Captura a string SQL COMPLETA em `TCSqlExec(literal)`/`BeginSql` (não o snippet truncado nas aspas internas) — sem falso-positivo quando o `WHERE` vem depois de um valor entre aspas.
+- **Catálogo `apis_por_build` + comando `check-build <fonte> --target-build`**: sinaliza uso de método `FW*`/`MsDialog`/`FWBrowse` ausente na build Protheus alvo, antes de compilar. Resolve `oVar := Classe():New()` por função e só reporta com a classe confirmada (zero falso-positivo). Migration 019. Closes [#26](https://github.com/JoniPraia/plugadvpl/issues/26).
+- **Catálogo `campos_semantica` + comando `semantica <campo>`**: semântica contextual de campos SX cujo significado muda conforme um discriminador (TIPO/PODER3/STATUS) — só semântica padrão Protheus. Migration 020. Closes [#27](https://github.com/JoniPraia/plugadvpl/issues/27).
+- **`lint --target-build <build>`**: inclui findings `BUILD-001` (build-check do `apis_por_build`) no fluxo normal do lint. Persiste em `meta.target_build` — configurar uma vez faz o build-check rodar automático no `lint` seguinte (inclusive multi-agente).
+- **Skill `advpl-ui-patterns`**: catálogo de patterns visuais Protheus (browses `FWMarkBrowse`/`FWBrowse`/`MsSelect`, `MsDialog` via `MsAdvSize`, ParamBox por tipo, atalhos `SetKey`+`VK_*`, coloração, export Excel via `FWMSExcel:GetXMLFile` → `.xml`). Closes [#25](https://github.com/JoniPraia/plugadvpl/issues/25).
+
+### Changed
+
+- **Schema v18 → v20** (migration 019 `apis_por_build` + 020 `campos_semantica`).
+- **42 lint rules** (era 40, +`SQL-001`/`SQL-002`); **57 skills** (era 54, +`advpl-ui-patterns`/`check-build`/`semantica`); **35 subcomandos**.
+- `docs/cli-reference.md` atualizada — documenta os 35 comandos (faltavam ~10: Universo 4/5/6/7 + auditoria INI/log).
+
 ## [0.19.0] - 2026-05-31
 
 ### Added — `ini-audit` ganha score de conformidade + detecção de fonte de banco + `--format html` (PR #21 [@tbarbito](https://github.com/tbarbito))

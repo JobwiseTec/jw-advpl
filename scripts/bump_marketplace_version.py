@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+_UVX_PIN_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
 
 ROOT = Path(__file__).parent.parent
 
@@ -50,6 +53,16 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"[OK] {marketplace_json_path}")
+
+    # Bump uvx pins nas skills (validate_plugin.py exige match com plugin.json).
+    n_skills = 0
+    for skill_md in sorted((ROOT / "skills").glob("*/SKILL.md")):
+        text = skill_md.read_text(encoding="utf-8")
+        new = _UVX_PIN_RE.sub(f"uvx plugadvpl@{version}", text)
+        if new != text:
+            skill_md.write_text(new, encoding="utf-8")
+            n_skills += 1
+    print(f"[OK] {n_skills} SKILL.md (uvx pin -> {version})")
 
 
 if __name__ == "__main__":

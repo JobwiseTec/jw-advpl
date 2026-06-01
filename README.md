@@ -797,6 +797,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.20.0 — lint `SQL-001`/`SQL-002` + build-check (`apis_por_build`) + semântica de campos + skill UI
+
+- **2 regras de lint novas** (→ **42** no total): `SQL-001` (comentário `--` em `BeginSql` → ORA-00936 silencioso) e `SQL-002` (`UPDATE`/`DELETE` sem `WHERE` → corrupção de tabela em massa, captura a string SQL completa sem falso-positivo).
+- **`check-build` + catálogo `apis_por_build`**: detecta método `FW*`/`Ms*` ausente numa build Protheus alvo (antes de compilar), resolvendo `oVar := Classe():New()` por função (zero falso-positivo). Integrado ao `lint --target-build` (finding `BUILD-001`), persistido em `meta` — configura uma vez, roda automático.
+- **`semantica` + catálogo `campos_semantica`**: semântica contextual de campos SX (mesma coluna, significado oposto conforme o discriminador).
+- **Skill `advpl-ui-patterns`**: patterns visuais Protheus (browses, `MsDialog`/`MsAdvSize`, ParamBox, coloração, export Excel). Total: **57 skills**.
+- Schema **v18 → v20** (migrations 019/020); `cli-reference` completa (35 comandos).
+
 ### v0.19.0 — `ini-audit` ganha score + HTML; `log-diagnose` ganha cross-link + HTML (PRs externos)
 
 - **`ini-audit` score 0–100 + selo** (`compliant`/`partial`/`non_compliant`) ponderado por severidade (crit ×3.0/warn ×1.5/info ×0.5), persistido em `ini_files` (migration 017+018) na mesma transação dos findings. Aparece no CLI: `Score AppServer_TSS.ini: 34.7 (non_compliant)` — [@tbarbito](https://github.com/tbarbito), PR [#21](https://github.com/JoniPraia/plugadvpl/pull/21)
