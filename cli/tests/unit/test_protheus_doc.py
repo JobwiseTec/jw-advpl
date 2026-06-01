@@ -245,8 +245,8 @@ class TestModuleInference:
     def test_module_from_client_prefix_plus_totvs(self) -> None:
         """v0.6.1: prefixo de cliente (3 chars) + prefixo TOTVS standard.
 
-        Pattern típico: cliente prefixa fontes custom com 3 letras (ABC, ABC,
-        XYZ) seguido do prefixo TOTVS que indica módulo: ABCCOM01 = COM custom
+        Pattern típico: cliente prefixa fontes custom com 3 letras (ABC, XYZ,
+        ZZZ) seguido do prefixo TOTVS que indica módulo: ABCCOM01 = COM custom
         do cliente = SIGACOM.
         """
         assert infer_module("ABCCOM01.prw", None) == "SIGACOM"
@@ -254,8 +254,8 @@ class TestModuleInference:
         assert infer_module("ABCFIN78.prw", None) == "SIGAFIN"
         assert infer_module("ABCGFE40.prw", None) == "SIGAGFE"
         assert infer_module("ABCCTB06.prw", None) == "SIGACTB"
-        # Cliente ABC com mesmo padrão
-        assert infer_module("ABCCOM01.prw", None) == "SIGACOM"
+        # Cliente XYZ com mesmo padrão
+        assert infer_module("XYZCOM01.prw", None) == "SIGACOM"
 
 
 # --- Edge cases -----------------------------------------------------------

@@ -337,7 +337,7 @@ na lista. Cada entry recebe `via_execauto: bool`.
 - [Mastersiga MATA103](https://mastersiga.tomticket.com/kb/compras/sigacom-documento-de-entrada-rotina-automatica-mata103-execauto)
 - [advpl-protheus.blogspot rotinas-automaticas](http://advpl-protheus.blogspot.com/2011/03/rotinas-automaticas.html)
 
-### Customizado local (customizados-local)
+### Customizado local (exemplos sanitizados)
 - ABCCOMBO.prw:621 (MATA410), ABCCOMBM.PRW:165 (MATA103 11-arg),
   ABCCOM35.tlpp:1178 (MATA120 com nTipo prefixo), ABCEEC83.PRW:940
   (aninhado MsAguarde), ABCCOM14.prw:1493 (sem args), ABCCRM57.PRW:1370

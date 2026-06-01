@@ -91,7 +91,7 @@ O que **não existe** e será criado:
 4. **Saída JSON estruturada** seguindo padrão do plugin (`--format json` → `{rows: [...], summary: {...}, next_steps: [...]}`).
 5. **Credenciais via env var, nunca em arquivo commitado**. Config TOML referencia **nome** da env var (`user_env = "PROTHEUS_USER"`), nunca o valor.
 6. **Fail visivelmente, sem retry mágico**. Network blip → erro claro. CI decide retry.
-7. **Pasta de cliente nunca citada**. Fixtures sintéticas ou sanitizadas. `customizados-local` pode ser usado pra teste local mas jamais aparece em commits/docs/output.
+7. **Pasta de cliente nunca citada**. Fixtures sintéticas ou sanitizadas. A pasta de customizados do cliente pode ser usada pra teste local mas jamais aparece em commits/docs/output.
 
 ---
 

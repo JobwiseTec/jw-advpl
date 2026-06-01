@@ -3691,8 +3691,8 @@ anexo?". Agora 1 comando responde tudo: `/plugadvpl:workflow`.
   no topo. `_write_claude_md_fragment` substitui `__VERSION__` por
   `__version__` real na hora de gravar.
 - `gaps/PLUGADVPL_QA_REPORT copy.md` (committed acidentalmente em v0.3.22)
-  foi anonimizado (`CLIENTE_X`/`cliente` → `CLIENTE_X`/`cliente real`,
-  `D:\PrjProtheus\TESTE` → `D:\Projetos`) e renomeado pra
+  foi anonimizado (nome do cliente → `CLIENTE_X`/`cliente real`,
+  paths locais → genéricos) e renomeado pra
   `gaps/PLUGADVPL_QA_REPORT_V3.md` — consistente com nomenclatura do
   V1 e V2.
 
@@ -4125,7 +4125,7 @@ anexo?". Agora 1 comando responde tudo: `/plugadvpl:workflow`.
 
 ## [0.3.15] - 2026-05-14
 
-### Correctness pack — 5 fixes derivados do `gaps/PLUGADVPL_QA_REPORT.md` (relatorio QA exploratorio rodado num projeto real cliente com 1.992 fontes + dicionario SX completo, 421k registros). Foco nos achados de severidade alta/critica que **bugs reais** com fix surgical (parser heuristicas e melhorias de UX maiores ficam pra v0.3.16+).
+### Correctness pack — 5 fixes derivados do `gaps/PLUGADVPL_QA_REPORT.md` (relatorio QA exploratorio rodado num projeto real de cliente com 1.992 fontes + dicionario SX completo, 421k registros). Foco nos achados de severidade alta/critica que **bugs reais** com fix surgical (parser heuristicas e melhorias de UX maiores ficam pra v0.3.16+).
 
 ### Fixed
 - **#8 (CRITICO) — `callees` totalmente quebrado**: `chamadas_funcao.funcao_origem`
