@@ -1,5 +1,5 @@
 ---
-description: Roda lint plugadvpl em um arquivo (13 regras MVP)
+description: Roda lint plugadvpl em um arquivo (41 regras); com --target-build inclui BUILD-001 (uso de método FW*/Ms* ausente na build Protheus alvo)
 disable-model-invocation: true
 arguments: [arquivo]
 allowed-tools: [Bash]
@@ -12,13 +12,14 @@ Roda lint plugadvpl em um arquivo ADVPL/TLPP, aplicando o catalogo de regras con
 ## Uso
 
 ```
-/plugadvpl:lint <arquivo> [--severity error|warn|info] [--rule <id>]
+/plugadvpl:lint <arquivo> [--severity error|warn|info] [--regra <id>] [--target-build <build>]
 ```
 
 ## Opcoes
 
 - `--severity <nivel>` — filtra por severidade minima (`error`, `warn`, `info`)
-- `--rule <id>` — roda apenas a regra com este id (ex: `--rule reclock-without-msunlock`)
+- `--regra <id>` — roda apenas a regra com este id (ex: `--regra BP-001`)
+- `--target-build <build>` — inclui findings `BUILD-001`: uso de metodo `FW*`/`Ms*`/`FWBrowse` ausente na build Protheus alvo (ex: `24.3.0.5`), via catalogo `apis_por_build`. Use quando o cliente roda uma build especifica.
 
 ## Execucao
 

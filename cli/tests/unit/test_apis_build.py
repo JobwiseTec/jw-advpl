@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from plugadvpl.parsing.apis_build import (
     check_build,
+    check_build_lint_rows,
     compare_builds,
     load_apis_catalog,
 )
@@ -117,6 +118,16 @@ class TestCheckBuild:
         assert len(findings) == 1
         assert findings[0]["metodo"] == "OldMethod"
 
+    def test_finding_includes_funcao(self) -> None:
+        src = (
+            "User Function ZZUI()\n"
+            "  Local oBrowse := FWMarkBrowse():New()\n"
+            '  oBrowse:SetBlkBackColor({|| "RED"})\n'
+            "Return\n"
+        )
+        findings = check_build(src, [_CAT_SETBLK], "24.3.0.5")
+        assert findings[0]["funcao"] == "ZZUI"
+
     def test_negative_instantiation_in_other_function(self) -> None:
         """var instanciada na função A não resolve chamada na função B (escopo)."""
         src = (
@@ -128,3 +139,28 @@ class TestCheckBuild:
             "Return\n"
         )
         assert check_build(src, [_CAT_SETBLK], "24.3.0.5") == []
+
+
+class TestCheckBuildLintRows:
+    _SRC = (
+        "User Function ZZUI()\n"
+        "  Local oBrowse := FWMarkBrowse():New()\n"
+        '  oBrowse:SetBlkBackColor({|| "RED"})\n'
+        "Return\n"
+    )
+
+    def test_maps_to_lint_row_shape(self) -> None:
+        rows = check_build_lint_rows(self._SRC, [_CAT_SETBLK], "24.3.0.5", "ZZUI.prw")
+        assert len(rows) == 1
+        r = rows[0]
+        # mesmo shape do lint_query (mergeável no output do lint)
+        for key in ("arquivo", "funcao", "linha", "regra_id", "severidade", "snippet", "sugestao_fix"):
+            assert key in r
+        assert r["regra_id"] == "BUILD-001"
+        assert r["severidade"] == "warning"
+        assert r["arquivo"] == "ZZUI.prw"
+        assert r["funcao"] == "ZZUI"
+        assert r["linha"] == 3
+
+    def test_empty_when_build_ok(self) -> None:
+        assert check_build_lint_rows(self._SRC, [_CAT_SETBLK], "24.3.1.4", "ZZUI.prw") == []

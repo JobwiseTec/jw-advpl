@@ -249,10 +249,20 @@ plugadvpl lint                              # todos
 plugadvpl lint FATA050.prw                  # apenas um arquivo
 plugadvpl lint --severity critical          # filtra severidade
 plugadvpl lint --regra BP-001               # filtra regra
-plugadvpl lint --severity error --regra SEC-001
+plugadvpl lint --target-build 24.3.0.5      # + BUILD-001 (método ausente na build)
 ```
 
-**Regras catalogadas (24 no `lint_rules`)** com categorias: `BP-*` (best practice), `SEC-*` (security), `PERF-*` (performance), `MOD-*` (modernization). O parser implementa 13 regras single-file ativas; restantes vêm em v0.2+.
+**Regras catalogadas (`lint_rules`)** com categorias: `BP-*` (best practice), `SEC-*` (security), `PERF-*` (performance), `MOD-*` (modernization), `SX-*`, `WS-*`, `ENC-*`, `SQL-*`. Com `--target-build`, inclui também findings `BUILD-001` (uso de método `FW*`/`Ms*` ausente na build alvo) via catálogo `apis_por_build` — vide `check-build`.
+
+---
+
+### <a id="check-build"></a>`check-build <fonte> --target-build <build>`
+
+Sinaliza uso de método `FW*`/`MsDialog`/`FWBrowse` ausente na build Protheus alvo, antes de compilar. Resolve `oVar := Classe():New()` por função e só reporta quando a classe é confirmada no catálogo `apis_por_build` (zero falso-positivo). Não precisa de índice.
+
+```
+plugadvpl check-build PAINEL01.prw --target-build 24.3.0.5
+```
 
 ---
 
@@ -439,6 +449,16 @@ gatilho que mexe em Z).
 ### <a id="sx-status"></a>`sx-status`
 
 Counts por tabela do dicionário SX ingerido. Sanity check de cobertura.
+
+---
+
+### <a id="semantica"></a>`semantica <campo>`
+
+Semântica contextual de um campo SX cujo significado muda conforme um discriminador (TIPO/PODER3/STATUS) — não óbvia pelo nome nem pelo `X3_DESCRIC`. Lê o catálogo `campos_semantica` (só semântica padrão Protheus). Não precisa de índice.
+
+```
+plugadvpl semantica D2_NFORI   # mesma coluna, semântica oposta por D2_TIPO
+```
 
 ---
 

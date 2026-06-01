@@ -1287,6 +1287,39 @@ def arch(
 # ---------------------------------------------------------------------------
 
 
+def _lint_build_check_rows(
+    root: Path,
+    arquivo: str | None,
+    severity: str | None,
+    regra: str | None,
+    target_build: str,
+) -> list[dict[str, object]]:
+    """Roda o check de build (catálogo ``apis_por_build``) nos fontes do ``root``
+    e devolve rows ``BUILD-001`` no shape do lint, filtradas por severidade/regra."""
+    catalog = apis_build_module.load_apis_catalog()
+    if arquivo:
+        cand = root / arquivo
+        paths = [cand] if cand.exists() else sorted(root.rglob(arquivo))
+    else:
+        paths = sorted(p for ext in ("*.prw", "*.prx", "*.tlpp", "*.apw") for p in root.rglob(ext))
+    out: list[dict[str, object]] = []
+    for p in paths:
+        try:
+            data = p.read_bytes()
+        except OSError:
+            continue
+        try:
+            content = data.decode("utf-8")
+        except UnicodeDecodeError:
+            content = data.decode("cp1252", errors="replace")
+        out.extend(apis_build_module.check_build_lint_rows(content, catalog, target_build, p.name))
+    if severity:
+        out = [r for r in out if r["severidade"] == severity]
+    if regra:
+        out = [r for r in out if str(r["regra_id"]).upper() == regra.upper()]
+    return out
+
+
 @app.command()
 def lint(
     ctx: typer.Context,
@@ -1309,8 +1342,22 @@ def lint(
             ),
         ),
     ] = False,
+    target_build: Annotated[
+        str | None,
+        typer.Option(
+            "--target-build",
+            help=(
+                "Build Protheus alvo (ex: 24.3.0.5). Quando passado, inclui findings "
+                "BUILD-001 (método FW*/Ms* ausente na build) via catálogo apis_por_build."
+            ),
+        ),
+    ] = None,
 ) -> None:
-    """Lista lint findings (filtros por arquivo/severidade/regra; ``--cross-file`` reavalia SX-*)."""
+    """Lista lint findings (filtros por arquivo/severidade/regra; ``--cross-file`` reavalia SX-*).
+
+    Com ``--target-build`` inclui também findings ``BUILD-001`` (uso de método
+    ausente na build alvo) — lê os fontes do ``--root`` ao vivo.
+    """
     if cross_file:
         # Modo write: precisa de conexão writable, recompute e persiste.
         db_path: Path = ctx.obj["db"]
@@ -1335,6 +1382,14 @@ def lint(
             )
 
     rows = _with_ro_db(ctx, lambda c: lint_query(c, arquivo, severity, regra))
+
+    if target_build:
+        build_rows = _lint_build_check_rows(ctx.obj["root"], arquivo, severity, regra, target_build)
+        rows = sorted(
+            [*rows, *build_rows],
+            key=lambda r: (str(r["arquivo"]), int(r["linha"])),
+        )
+
     _render_from_ctx(
         ctx,
         rows,

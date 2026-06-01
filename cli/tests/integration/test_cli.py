@@ -1666,6 +1666,34 @@ class TestLint:
         # Pode estar vazio mas tem que retornar JSON válido.
         json.loads(result.stdout)
 
+    def test_lint_target_build_includes_build001(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        """--target-build inclui findings BUILD-001 (método ausente na build) via
+        catálogo apis_por_build, resolvendo oVar := Classe():New() por função."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ZZUI.prw").write_bytes(
+            b"User Function ZZUI()\n"
+            b"  Local oBrowse := FWMarkBrowse():New()\n"
+            b'  oBrowse:SetBlkBackColor({|| "RED"})\n'
+            b"Return\n"
+        )
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        result = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "lint", "--target-build", "24.3.0.5"],
+        )
+        assert result.exit_code == 0, result.stderr
+        rows = json.loads(result.stdout)["rows"]
+        build = [r for r in rows if r.get("regra_id") == "BUILD-001"]
+        assert len(build) == 1, f"esperado 1 BUILD-001, rows={rows}"
+        assert build[0]["linha"] == 3
+        # sem a flag: nenhum BUILD-001
+        result2 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
+        rows2 = json.loads(result2.stdout)["rows"]
+        assert not [r for r in rows2 if r.get("regra_id") == "BUILD-001"]
+
     def test_callers_flags_is_self_call(
         self, tmp_path: Path, runner: CliRunner
     ) -> None:

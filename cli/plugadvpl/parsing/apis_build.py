@@ -4,6 +4,7 @@ Catálogo `apis_por_build` (denylist): método não-catalogado = assume que exis
 Detecção resolve `oVar := Classe():New()` por função e só sinaliza
 `oVar:Metodo(` quando a classe é confirmada — zero falso-positivo.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,11 +19,10 @@ from plugadvpl.parsing.stripper import strip_advpl
 def load_apis_catalog() -> list[dict[str, Any]]:
     """Carrega o catálogo apis_por_build do lookup embarcado (sem precisar de DB/ingest)."""
     raw = (
-        ir.files("plugadvpl")
-        .joinpath("lookups", "apis_por_build.json")
-        .read_text(encoding="utf-8")
+        ir.files("plugadvpl").joinpath("lookups", "apis_por_build.json").read_text(encoding="utf-8")
     )
     return json.loads(raw)
+
 
 _DIGITS_RE = re.compile(r"\d+")
 
@@ -73,9 +73,7 @@ def check_build(
     target_build cai fora da janela [build_min, build_max]. Var não-resolvível
     → silêncio (zero falso-positivo).
     """
-    cat_idx = {
-        (str(c["classe"]).lower(), str(c["metodo"]).lower()): c for c in catalog
-    }
+    cat_idx = {(str(c["classe"]).lower(), str(c["metodo"]).lower()): c for c in catalog}
     funcs = add_function_ranges(extract_functions(content), content)
     lines = strip_advpl(content).split("\n")
     findings: list[dict[str, Any]] = []
@@ -98,6 +96,7 @@ def check_build(
                     findings.append(
                         {
                             "linha": ln,
+                            "funcao": f.get("nome", "") or "",
                             "classe": cat["classe"],
                             "metodo": cat["metodo"],
                             "var": m.group(1),
@@ -106,3 +105,31 @@ def check_build(
                         }
                     )
     return findings
+
+
+def check_build_lint_rows(
+    content: str, catalog: list[dict[str, Any]], target_build: str, arquivo: str
+) -> list[dict[str, Any]]:
+    """Converte os findings de :func:`check_build` para o shape de linha do lint.
+
+    Mergeável no output do ``lint`` (mesmas chaves do ``lint_query``), com
+    ``regra_id='BUILD-001'`` e severidade ``warning``. Não é uma regra do
+    ``lint_rules.json`` — é o catálogo ``apis_por_build`` exposto via ``lint``.
+    """
+    rows: list[dict[str, Any]] = []
+    for f in check_build(content, catalog, target_build):
+        rows.append(
+            {
+                "arquivo": arquivo,
+                "funcao": f.get("funcao", ""),
+                "linha": f["linha"],
+                "regra_id": "BUILD-001",
+                "severidade": "warning",
+                "snippet": f"{f['var']}:{f['metodo']}",
+                "sugestao_fix": (
+                    f"{f['classe']}:{f['metodo']} ausente na build {target_build}. {f['nota']}"
+                ),
+                "sonar_rules": "[]",
+            }
+        )
+    return rows

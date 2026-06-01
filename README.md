@@ -324,7 +324,7 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ## Comandos disponíveis
 
-O CLI Python expõe **40 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **42 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -776,7 +776,7 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **40 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
+- **42 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
 - **57 skills** (22 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v20** — 20 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` v0.19.0)
 - **41 lint rules** (29 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
