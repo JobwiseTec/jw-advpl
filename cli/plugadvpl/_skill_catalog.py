@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 54 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 55 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -66,6 +66,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "advpl-refactoring": _PRW,
     "advpl-tlpp": _PRW,
     "advpl-tlpp-named-params": _PRW,
+    "advpl-ui-patterns": _PRW,
     "advpl-web": _PRW,
     "advpl-webservice": _PRW,
     # SX dictionary skills (incluindo CSV)
