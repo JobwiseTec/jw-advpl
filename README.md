@@ -780,7 +780,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **57 skills** (22 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v21** — 21 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência do catálogo `ini_rules` `fonte`/`verificado`/`condicional` v0.21.0)
 - **42 lint rules** (30 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1339 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1383 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -796,6 +796,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.21.0 — `ini-audit` confiável: procedência + correção de dados fabricados (bug de segurança SSL)
+
+- **Correção da base de 487 regras** (gerada em lote sem procedência): 🔒 **segurança** — `TSS-SSLCONFIGURE-SSL2`/`SSL3` recomendavam **habilitar** protocolo legado inseguro (`=1`) → corrigido (`=0`); enum fabricado `MaxStringSize='1|Maior|Menor'` e **71 `range_check`** sem range real (no-ops silenciosos) saneados.
+- **Procedência no catálogo `ini_rules`** (migration 021, schema **v20 → v21**): `fonte` estruturada (455/487), `verificado` (curada sim/não), `condicional` — chave opcional-de-feature ausente **não vira mais finding** (encerra o falso-positivo "inventou tag", 48 regras de `[Mail]`/`[FTP]`/`[WebApp]`/`[WebAgent]`/`[SQLiteServer]`).
+- **Guard `test_ini_rules_consistency`** barra dado quebrado no CI (range sem `..`, enum misto, gêmeas críticas contraditórias, `verificado=1` sem `fonte`).
+- **`ini-audit --format html`**: encoding real no relatório + `info`/`warning`-missing não derrubam o selo indevidamente — [@tbarbito](https://github.com/tbarbito), PR [#37](https://github.com/JoniPraia/plugadvpl/pull/37)
 
 ### v0.20.0 — lint `SQL-001`/`SQL-002` + build-check (`apis_por_build`) + semântica de campos + skill UI
 

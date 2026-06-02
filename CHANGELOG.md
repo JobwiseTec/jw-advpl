@@ -4,9 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-02
+
+Release de **confiabilidade do `ini-audit`**: a base de 487 regras tinha sido gerada em lote sem trilha de procedência e continha valores fabricados (inclusive 1 bug de segurança). Esta versão corrige os dados quebrados, dá rastreabilidade ao catálogo e encerra a classe de falso-positivo "inventou tag".
+
 ### Fixed
 
-- **`ini-audit` — correção de dados fabricados no catálogo `ini_rules`** (a base de 487 regras foi gerada em lote sem trilha de procedência; estes valores não procediam):
+- **`ini-audit --format html` — encoding real no relatório** ([#37](https://github.com/JoniPraia/plugadvpl/pull/37)): o relatório lia o INI já decodificado (`str`) e o parser devolvia o placeholder `"str"`; agora lê **bytes** → detecção real (`ascii`/`cp1252`/`utf-8-bom`).
+- **`ini-audit` — score não penaliza mais boa-prática ausente** ([#37](https://github.com/JoniPraia/plugadvpl/pull/37)): chave `info` ausente não vira `missing` (nice-to-have); chave `warning` ausente é flagada mas **não derruba o score** (só `critical`-missing pune). Evitava selo "FORA DE CONFORMIDADE" indevido.
+- **`ini-audit` — correção de dados fabricados no catálogo `ini_rules`** (estes valores não procediam):
   - 🔒 **Segurança:** `TSS-SSLCONFIGURE-SSL2`/`SSL3` recomendavam `=1` (habilitar protocolo legado inseguro), divergindo da regra APP gêmea (`=0`, "INSEGURO. Deve estar desabilitado"). Um TSS já seguro (SSL2=0) era marcado **crítico → FORA DE CONFORMIDADE** e o fix mandava ligar. Corrigido para `=0`.
   - `APP-GENERAL-MAXSTRINGSIZE`: enum fabricado `1|Maior|Menor` (a regra recomendava `10`, que nem estava no próprio enum) → `key_present`.
   - **71 regras `range_check` sem range real** (`expected` sem `..`) eram no-ops silenciosos — `_evaluate_value` sempre retornava `True`. Rebaixadas para `key_present` pendente curadoria (5 delas tinham um valor recomendado mal-aplicado como mínimo, ex: `THREADMAX=50` ⇒ "≥50").
@@ -19,6 +25,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
   - `condicional` — `1`=chave opcional-de-feature (`[Mail]`/`[FTP]`/`[WebApp]`/`[WebAgent]`/`[SQLiteServer]`, 48 regras); **ausência NÃO vira finding** (a feature pode simplesmente não ser usada) — encerra a classe de falso-positivo "inventou tag". Valor presente-e-errado ainda é flagado.
   - `default_totvs` / `versao_min` — reservados para a curadoria (default vazio).
 - **Guard `test_ini_rules_consistency`**: barra no CI dado quebrado voltando ao catálogo `ini_rules` — `range_check` sem range, `value_in` misturando número e texto, regras `critical` `value_eq` contraditórias na mesma (seção, chave), e `verificado=1` sem `fonte`. Espelha o `test_lint_catalog_consistency`.
+
+### Changed
+
+- **Schema v20 → v21** (migration 021 `ini_rules` procedência: `fonte`/`verificado`/`condicional`/`default_totvs`/`versao_min`).
 
 > Próximo: curadoria incremental das 487 regras (eleva `verificado` por lote validado contra TDN) + uso de `verificado` no selo de conformidade quando a cobertura de verificação for significativa.
 
