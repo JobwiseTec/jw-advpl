@@ -1499,15 +1499,6 @@ def semantica(
 # ---------------------------------------------------------------------------
 
 
-def _read_ini_text(caminho: str) -> str:
-    """Lê o INI original (UTF-8 com fallback CP1252) para gerar o sugerido."""
-    data = Path(caminho).read_bytes()
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return data.decode("cp1252", errors="replace")
-
-
 _COMPLIANCE_LABELS = {
     "compliant": "EM CONFORMIDADE",
     "partial": "PARCIALMENTE CONFORME",
@@ -1524,10 +1515,16 @@ def _render_ini_audit_html(conn: sqlite3.Connection, arquivo: str | None) -> str
     reports: list[dict[str, Any]] = []
     for sc in ini_audit_scores(conn, arquivo):
         try:
-            content = _read_ini_text(str(sc["caminho"]))
+            raw = Path(str(sc["caminho"])).read_bytes()
         except OSError:
-            content = ""
-        parsed_obj = parse_ini_file(content, filename=str(sc["arquivo"]))
+            raw = b""
+        # Passa BYTES pro parser: só assim ele detecta o encoding real
+        # (ascii/cp1252/utf-8-bom). Com str ele devolve placeholder "str".
+        parsed_obj = parse_ini_file(raw, filename=str(sc["arquivo"]))
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            content = raw.decode("cp1252", errors="replace")
 
         sections_map: dict[str, dict[str, str]] = {
             sec.name_raw: {} for sec in parsed_obj.sections if not sec.commented

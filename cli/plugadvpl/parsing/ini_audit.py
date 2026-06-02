@@ -477,11 +477,15 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                 continue
 
             if key_row is None:
-                # Chave ausente. Só vira finding se a regra exigir presença.
-                if (
-                    rule.detection_kind in {"key_present", "value_eq", "value_in", "range_check"}
-                    and rule.expected
-                ):
+                # Chave ausente vira finding APENAS para critical/warning — info é
+                # "nice to have" e não conta como missing (evita inflar missing com
+                # dezenas de chaves info e derrubar o selo indevidamente).
+                if rule.severidade in ("critical", "warning") and rule.detection_kind in {
+                    "key_present",
+                    "value_eq",
+                    "value_in",
+                    "range_check",
+                }:
                     findings.append(
                         (
                             file_id,
@@ -496,8 +500,11 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                         )
                     )
                     n_missing += 1
-                    # Missing bloqueante: peso no denominador; crítico recebe boost 2x.
-                    score_weight += weight * (2.0 if rule.severidade == "critical" else 1.0)
+                    # Só missing CRÍTICO penaliza o score (peso 2x). Warning-missing
+                    # é flagado (aparece no relatório) mas não pune — falta de
+                    # boa-prática não-obrigatória não derruba a conformidade.
+                    if rule.severidade == "critical":
+                        score_weight += weight * 2.0
                 continue
 
             _kid, key_name, value, linha, c_inline, c_above = key_row
