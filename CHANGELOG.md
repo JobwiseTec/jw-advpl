@@ -13,7 +13,14 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ### Added
 
-- **Guard `test_ini_rules_consistency`**: barra no CI dado quebrado voltando ao catálogo `ini_rules` — `range_check` sem range, `value_in` misturando número e texto, e regras `critical` `value_eq` contraditórias na mesma (seção, chave). Espelha o `test_lint_catalog_consistency`.
+- **`ini-audit` — procedência e verificação no catálogo `ini_rules`** (migration 021, schema v20 → v21). 5 campos novos por regra:
+  - `fonte` — URL/pageId TDN **estruturado** (antes vivia solto no `fix_guidance`); populado em 455/487 regras.
+  - `verificado` — `0`=não-curada (default), `1`=validada (5 regras SSL/TLS de segurança já marcadas). Guard exige `fonte` quando `verificado=1`.
+  - `condicional` — `1`=chave opcional-de-feature (`[Mail]`/`[FTP]`/`[WebApp]`/`[WebAgent]`/`[SQLiteServer]`, 48 regras); **ausência NÃO vira finding** (a feature pode simplesmente não ser usada) — encerra a classe de falso-positivo "inventou tag". Valor presente-e-errado ainda é flagado.
+  - `default_totvs` / `versao_min` — reservados para a curadoria (default vazio).
+- **Guard `test_ini_rules_consistency`**: barra no CI dado quebrado voltando ao catálogo `ini_rules` — `range_check` sem range, `value_in` misturando número e texto, regras `critical` `value_eq` contraditórias na mesma (seção, chave), e `verificado=1` sem `fonte`. Espelha o `test_lint_catalog_consistency`.
+
+> Próximo: curadoria incremental das 487 regras (eleva `verificado` por lote validado contra TDN) + uso de `verificado` no selo de conformidade quando a cobertura de verificação for significativa.
 
 ## [0.20.0] - 2026-06-01
 

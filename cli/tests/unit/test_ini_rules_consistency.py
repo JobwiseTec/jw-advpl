@@ -79,3 +79,23 @@ def test_value_in_tem_pelo_menos_duas_opcoes(rules: list[dict]) -> None:
         and len([t for t in r.get("expected", "").split("|") if t.strip()]) < 2
     ]
     assert not offenders, f"value_in com <2 opções (use value_eq): {offenders}"
+
+
+def test_verificado_tem_fonte(rules: list[dict]) -> None:
+    """Regra marcada verificado=1 PRECISA apontar a fonte que a validou."""
+    offenders = [
+        r["regra_id"]
+        for r in rules
+        if int(r.get("verificado", 0)) == 1 and not r.get("fonte", "").strip()
+    ]
+    assert not offenders, f"verificado=1 sem fonte (procedência): {offenders}"
+
+
+def test_condicional_e_inteiro_valido(rules: list[dict]) -> None:
+    """condicional/verificado devem ser 0/1 inteiros (coluna INTEGER no schema)."""
+    offenders = [
+        r["regra_id"]
+        for r in rules
+        if r.get("condicional", 0) not in (0, 1) or r.get("verificado", 0) not in (0, 1)
+    ]
+    assert not offenders, f"condicional/verificado fora de {{0,1}}: {offenders}"

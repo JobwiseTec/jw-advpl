@@ -55,6 +55,9 @@ def _insert_rule(
     applies_to_role: str = "",
     descricao: str = "test rule",
     fix_guidance: str = "",
+    condicional: int = 0,
+    verificado: int = 0,
+    fonte: str = "",
 ) -> None:
     """Insere uma regra extra no catálogo (pra testar detection_kinds isoladamente)."""
     conn.execute(
@@ -62,13 +65,15 @@ def _insert_rule(
         INSERT INTO ini_rules (
             regra_id, section_glob, key_name, expected, severidade,
             detection_kind, descricao, fix_guidance,
-            applies_to_tipo, applies_to_role, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            applies_to_tipo, applies_to_role, status,
+            condicional, verificado, fonte
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
         """,
         (
             regra_id, section_glob, key_name, expected, severidade,
             detection_kind, descricao, fix_guidance,
             applies_to_tipo, applies_to_role,
+            condicional, verificado, fonte,
         ),
     )
 
@@ -562,3 +567,58 @@ class TestDbSources:
             "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='INI-DB-CONFLICT'"
         ).fetchone()[0]
         assert n == 0
+
+
+# =============================================================================
+# Procedência / verificação (migration 021)
+# =============================================================================
+
+
+class TestCondicional:
+    """Chave opcional-de-feature ausente NÃO vira finding (fim do 'inventa tag')."""
+
+    def _findings(
+        self, conn: sqlite3.Connection, tmp_path: Path, *, condicional: int
+    ) -> int:
+        _clear_rules(conn)
+        # Seção [Mail] existe no INI, mas a chave SmtpServer está AUSENTE.
+        _insert_rule(
+            conn, regra_id="X-MAIL-SMTP", section_glob="Mail", key_name="SmtpServer",
+            severidade="warning", detection_kind="key_present",
+            applies_to_tipo="appserver", condicional=condicional,
+        )
+        p = _write(tmp_path, "appserver.ini", "[Mail]\nEnable=1\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        return conn.execute(
+            "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='X-MAIL-SMTP'"
+        ).fetchone()[0]
+
+    def test_condicional_ausente_nao_flaga(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        assert self._findings(conn, tmp_path, condicional=1) == 0
+
+    def test_nao_condicional_ausente_flaga(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        # Mesma regra SEM condicional -> warning-missing É flagado (discrimina o teste).
+        assert self._findings(conn, tmp_path, condicional=0) == 1
+
+    def test_condicional_presente_errado_ainda_flaga(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        # condicional isenta só a AUSÊNCIA; valor presente-e-errado ainda conta.
+        _clear_rules(conn)
+        _insert_rule(
+            conn, regra_id="X-MAIL-PROTO", section_glob="Mail", key_name="Protocol",
+            expected="smtps", severidade="warning", detection_kind="value_eq",
+            applies_to_tipo="appserver", condicional=1,
+        )
+        p = _write(tmp_path, "appserver.ini", "[Mail]\nProtocol=plain\n")
+        r = ingest_ini_paths(conn, [p])
+        audit_files(conn, r.file_ids)
+        n = conn.execute(
+            "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='X-MAIL-PROTO'"
+        ).fetchone()[0]
+        assert n == 1

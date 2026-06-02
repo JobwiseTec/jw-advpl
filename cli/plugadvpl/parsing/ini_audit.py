@@ -54,6 +54,10 @@ class _Rule:
     applies_to_tipo: str
     applies_to_role: str
     status: str
+    # v0.21.0 (migration 021): procedência + verificação.
+    fonte: str = ""
+    verificado: int = 0
+    condicional: int = 0
 
 
 @dataclass(slots=True)
@@ -207,7 +211,8 @@ def _load_rules_for_target(
         """
         SELECT regra_id, section_glob, key_name, expected, severidade,
                detection_kind, descricao, fix_guidance,
-               applies_to_tipo, applies_to_role, status
+               applies_to_tipo, applies_to_role, status,
+               fonte, verificado, condicional
         FROM ini_rules
         WHERE status = 'active'
               AND (applies_to_tipo = '' OR applies_to_tipo = ?)
@@ -477,6 +482,10 @@ def audit_one_file(conn: sqlite3.Connection, file_id: int) -> int:  # noqa: PLR0
                 continue
 
             if key_row is None:
+                # Chave opcional-de-feature ([Mail]/[FTP]/...): a feature pode
+                # simplesmente não ser usada, então ausência NÃO é finding.
+                if rule.condicional:
+                    continue
                 # Chave ausente vira finding APENAS para critical/warning — info é
                 # "nice to have" e não conta como missing (evita inflar missing com
                 # dezenas de chaves info e derrubar o selo indevidamente).

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "20"
+SCHEMA_VERSION = "21"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -79,6 +79,12 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
             "applies_to_tipo",
             "applies_to_role",
             "status",
+            # v0.21.0 (migration 021): procedência + verificação.
+            "fonte",
+            "verificado",
+            "condicional",
+            "default_totvs",
+            "versao_min",
         ],
     ),
     "ini_roles.json": (
