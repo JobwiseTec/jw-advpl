@@ -780,7 +780,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **57 skills** (22 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v21** — 21 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência do catálogo `ini_rules` `fonte`/`verificado`/`condicional` v0.21.0)
 - **42 lint rules** (30 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1383 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1384 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -796,6 +796,12 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.21.1 — 🔒 patch de segurança: TLS 1.0 legado + 1º lote de curadoria
+
+- **TLS 1.0 não é mais recomendado habilitado**: `TSS-SSLCONFIGURE-TLS1` (`=1`→`0`) e `SSLPROTOCOLMIN` (`TLSv1.0`→`TLSv1.2`) — BEAST/POODLE, PCI-DSS exige ≥ TLS 1.2. Mesma classe do bug SSL2/SSL3.
+- **Guard de segurança** `test_ssl_tls_protocolo_legado_desabilitado`: SSL2/3 + TLS1.0/1.1 → `0`, TLS1.2/1.3 → `1` (trava regressão).
+- **Curadoria — 1º lote**: família de protocolos SSL/TLS on/off marcada `verificado=1` (5 → 12 regras).
 
 ### v0.21.0 — `ini-audit` confiável: procedência + correção de dados fabricados (bug de segurança SSL)
 

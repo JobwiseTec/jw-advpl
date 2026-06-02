@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-06-02
+
+Patch de **segurança** — continuação do hardening SSL/TLS da v0.21.0 (mesma classe do bug SSL2/SSL3), surfado pelo meta-audit.
+
 ### Fixed
 
 - **`ini-audit` 🔒 — TLS 1.0 legado não é mais recomendado habilitado**: `TSS-SSLCONFIGURE-TLS1` recomendava `=1` (TLS 1.0 ligado), divergindo da gêmea `APP-SSLCONFIGURE-TLS1='0'`; e `TSS-TSSREST_SERVER-SSLPROTOCOLMIN` aceitava mínimo `TLSv1.0`. Corrigidos para `0` / `TLSv1.2` (BEAST/POODLE; PCI-DSS exige ≥ TLS 1.2). Mesma classe do bug SSL2/SSL3 da v0.21.0.
