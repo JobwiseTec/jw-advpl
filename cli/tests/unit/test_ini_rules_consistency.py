@@ -99,3 +99,27 @@ def test_condicional_e_inteiro_valido(rules: list[dict]) -> None:
         if r.get("condicional", 0) not in (0, 1) or r.get("verificado", 0) not in (0, 1)
     ]
     assert not offenders, f"condicional/verificado fora de {{0,1}}: {offenders}"
+
+
+# Protocolos legados inseguros (POODLE/BEAST; PCI-DSS proíbe < TLS 1.2) → devem
+# estar DESABILITADOS. TLS 1.2/1.3 → HABILITADOS. Invariante de segurança
+# inequívoco (padrão de indústria, não Protheus-específico).
+_TLS_DESLIGAR = {"ssl2", "ssl3", "tls1", "tls1_0", "tls1_1"}
+_TLS_LIGAR = {"tls1_2", "tls1_3"}
+
+
+def test_ssl_tls_protocolo_legado_desabilitado(rules: list[dict]) -> None:
+    """value_eq de SSL2/3 + TLS1.0/1.1 deve ser '0'; TLS1.2/1.3 deve ser '1'."""
+    offenders = []
+    for r in rules:
+        if r.get("detection_kind") != "value_eq":
+            continue
+        key = r.get("key_name", "").lower()
+        exp = r.get("expected", "").strip()
+        if not exp:
+            continue
+        if key in _TLS_DESLIGAR and exp != "0":
+            offenders.append(f"{r['regra_id']}={exp!r} (legado inseguro, deveria ser '0')")
+        elif key in _TLS_LIGAR and exp != "1":
+            offenders.append(f"{r['regra_id']}={exp!r} (moderno, deveria ser '1')")
+    assert not offenders, "SSL/TLS protocolo inseguro recomendado: " + "; ".join(offenders)

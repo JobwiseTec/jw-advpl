@@ -1724,7 +1724,7 @@
     "applies_to_role": "",
     "status": "active",
     "fonte": "https://tdn.totvs.com/display/tec/TLS1",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -1740,7 +1740,7 @@
     "applies_to_role": "",
     "status": "active",
     "fonte": "https://tdn.totvs.com/display/tec/TLS1_0",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -1756,7 +1756,7 @@
     "applies_to_role": "",
     "status": "active",
     "fonte": "https://tdn.totvs.com/display/tec/TLS1_1",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -1772,7 +1772,7 @@
     "applies_to_role": "",
     "status": "active",
     "fonte": "https://tdn.totvs.com/display/tec/TLS1_2",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -1788,7 +1788,7 @@
     "applies_to_role": "",
     "status": "active",
     "fonte": "https://tdn.totvs.com/display/tec/TLS1_3",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -6083,16 +6083,16 @@
     "regra_id": "TSS-SSLCONFIGURE-TLS1",
     "section_glob": "SSLCONFIGURE",
     "key_name": "TLS1",
-    "expected": "1",
+    "expected": "0",
     "severidade": "warning",
     "detection_kind": "value_eq",
-    "descricao": "Configuração da seção [SSLCONFIGURE] do TSS Protheus (extraído da TDN).",
-    "fix_guidance": "Recomendado: 1 | Ref: https://tdn.totvs.com/pages/viewpage.action?pageId=239015980",
+    "descricao": "TLS 1.0 — protocolo legado inseguro (BEAST/POODLE). Deve estar desabilitado.",
+    "fix_guidance": "Recomendado: 0 (TLS 1.0 legado; PCI-DSS exige >= TLS 1.2). | Ref: https://tdn.totvs.com/display/tec/TLS1",
     "applies_to_tipo": "tss",
     "applies_to_role": "tss",
     "status": "active",
-    "fonte": "https://tdn.totvs.com/pages/viewpage.action?pageId=239015980",
-    "verificado": 0,
+    "fonte": "https://tdn.totvs.com/display/tec/TLS1",
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -6108,7 +6108,7 @@
     "applies_to_role": "tss",
     "status": "active",
     "fonte": "https://centraldeatendimento.totvs.com/hc/pt-br/articles/1500002745522",
-    "verificado": 0,
+    "verificado": 1,
     "condicional": 0
   },
   {
@@ -7251,11 +7251,11 @@
     "regra_id": "TSS-TSSREST_SERVER-SSLPROTOCOLMIN",
     "section_glob": "TSSREST_SERVER",
     "key_name": "SslprotocolMin",
-    "expected": "TLSv1.0",
+    "expected": "TLSv1.2",
     "severidade": "info",
     "detection_kind": "value_eq",
     "descricao": "Configuração da seção [TSSREST_SERVER] do TSS Protheus (extraído da TDN).",
-    "fix_guidance": "Recomendado: TLSv1.0 | Ref: https://tdn.totvs.com/pages/viewpage.action?pageId=861294953",
+    "fix_guidance": "Recomendado: TLSv1.2 (mínimo seguro; TLS 1.0/1.1 legados). | Ref: https://tdn.totvs.com/pages/viewpage.action?pageId=861294953",
     "applies_to_tipo": "tss",
     "applies_to_role": "tss",
     "status": "active",

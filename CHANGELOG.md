@@ -4,6 +4,18 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ini-audit` 🔒 — TLS 1.0 legado não é mais recomendado habilitado**: `TSS-SSLCONFIGURE-TLS1` recomendava `=1` (TLS 1.0 ligado), divergindo da gêmea `APP-SSLCONFIGURE-TLS1='0'`; e `TSS-TSSREST_SERVER-SSLPROTOCOLMIN` aceitava mínimo `TLSv1.0`. Corrigidos para `0` / `TLSv1.2` (BEAST/POODLE; PCI-DSS exige ≥ TLS 1.2). Mesma classe do bug SSL2/SSL3 da v0.21.0.
+
+### Added
+
+- **Guard `test_ssl_tls_protocolo_legado_desabilitado`**: invariante de segurança no CI — `value_eq` de SSL2/3 + TLS1.0/1.1 deve recomendar `0`; TLS1.2/1.3 deve recomendar `1`. Inequívoco (padrão de indústria, não Protheus-específico) — pega regressão de protocolo inseguro.
+
+### Changed
+
+- **Curadoria `ini_rules` — 1º lote (segurança SSL/TLS)**: família de protocolos on/off marcada `verificado=1` (5 → **12** regras curadas, todas guard-protegidas).
+
 ## [0.21.0] - 2026-06-02
 
 Release de **confiabilidade do `ini-audit`**: a base de 487 regras tinha sido gerada em lote sem trilha de procedência e continha valores fabricados (inclusive 1 bug de segurança). Esta versão corrige os dados quebrados, dá rastreabilidade ao catálogo e encerra a classe de falso-positivo "inventou tag".
