@@ -115,7 +115,15 @@ Espelhar o `test_lint_catalog_consistency` (que já protege o catálogo de lint)
 - regra `critical`/`warning` **gêmea** (mesmo key_name em tipos diferentes) com `expected` **contraditório** (pega o caso SSL2);
 - `verificado=1` sem `fonte` preenchida.
 
-**Meta-audit script** (`scripts/audit_ini_rules.py`) que lista regras suspeitas por heurística (descricao genérica "extraído da TDN", expected vazio, etc.) → fila de curadoria priorizada.
+**Meta-audit script** ✅ implementado — `scripts/audit_ini_rules.py` (read-only) lista as regras `verificado=0` por **prioridade de risco** (P1 críticas → P2 warning → P3 info; dentro da faixa, mais sinais de suspeita primeiro). Sinais heurísticos: `descricao-generica` (boilerplate "Configuração da seção"/"extraído da TDN"), `fonte-generica` (mesma URL em ≥5 regras), `sem-fonte`, `expected-vazio`. É a **fila de curadoria**: a turma valida lote a lote contra o TDN e eleva `verificado=1`.
+
+```bash
+python scripts/audit_ini_rules.py                      # fila completa (P1 inteira + top P2/P3)
+python scripts/audit_ini_rules.py --severity critical  # só as 18 críticas (validar primeiro)
+python scripts/audit_ini_rules.py --severity warning --top 50
+```
+
+Snapshot inicial (v0.21.0): 482 a curar (18 critical / 97 warning / 367 info); 243 com ≥1 sinal de suspeita. Já surfou um candidato de segurança a mais: `TSS-SSLCONFIGURE-TLS1='1'` (TLS 1.0 legado habilitado).
 
 ---
 
