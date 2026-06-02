@@ -1,4 +1,5 @@
 """Testes de cli/plugadvpl/parsing/ini_suggest.py (geração do INI sugerido)."""
+
 from __future__ import annotations
 
 from plugadvpl.parsing.ini_suggest import generate_suggested_ini
@@ -78,13 +79,109 @@ class TestGenerateSuggestedIni:
         original = "[General]\nConnString=server=A;db=B;user=C\n"
         out = generate_suggested_ini(
             original,
-            [{"section": "General", "key": "ConnString",
-              "expected": "server=X;db=Y;user=Z"}],
+            [{"section": "General", "key": "ConnString", "expected": "server=X;db=Y;user=Z"}],
         )
         # Valor novo preservado integralmente (com `;` e `=`)
         assert "ConnString=server=X;db=Y;user=Z" in out
         # Anterior preservado no comment (não corta no `;`)
         assert "valor anterior: server=A;db=B;user=C" in out
+
+    def test_unknown_key_commented_with_revisar(self) -> None:
+        """Chave fora do catálogo é comentada com [REVISAR], preservando valor."""
+        original = "[protheus]\ntomate=1\nSourcePath=/apo\n"
+        out = generate_suggested_ini(
+            original,
+            [],
+            unknown_keys=[{"section": "protheus", "key_name": "tomate"}],
+        )
+        assert ";tomate=1  ; [REVISAR] chave nao reconhecida" in out
+        # chave reconhecida intocada
+        assert "SourcePath=/apo" in out
+
+    def test_warning_missing_not_injected(self) -> None:
+        """Warning ausente NÃO é injetado (só crítico ausente vira [ADICIONADO])."""
+        original = "[General]\nConsoleLog=1\n"
+        out = generate_suggested_ini(
+            original,
+            [
+                {
+                    "section": "General",
+                    "key": "LogTimeStamp",
+                    "expected": "1",
+                    "severidade": "warning",
+                }
+            ],
+        )
+        assert "[ADICIONADO]" not in out
+        assert "LogTimeStamp" not in out
+
+    def test_warning_mismatch_still_corrected(self) -> None:
+        """Warning PRESENTE com valor divergente ainda recebe [CORRECAO]."""
+        original = "[General]\nLogTimeStamp=0\n"
+        out = generate_suggested_ini(
+            original,
+            [
+                {
+                    "section": "General",
+                    "key": "LogTimeStamp",
+                    "expected": "1",
+                    "severidade": "warning",
+                }
+            ],
+        )
+        assert "LogTimeStamp=1  ; [CORRECAO] valor anterior: 0" in out
+
+    def test_critical_missing_injected_with_severidade(self) -> None:
+        """Crítico ausente é injetado mesmo com severidade explícita."""
+        original = "[General]\nConsoleLog=1\n"
+        out = generate_suggested_ini(
+            original,
+            [
+                {
+                    "section": "General",
+                    "key": "MaxStringSize",
+                    "expected": "10",
+                    "severidade": "critical",
+                }
+            ],
+        )
+        assert "MaxStringSize=10  ; [ADICIONADO]" in out
+
+    def test_placeholder_value_with_description_in_comment(self) -> None:
+        """Crítico obrigatório sem valor → ``<CONFIGURAR>``; a descrição da regra
+        vai no comentário ``[ADICIONADO]``."""
+        original = "[protheus_cmp]\nRootPath=/data\n"
+        out = generate_suggested_ini(
+            original,
+            [
+                {
+                    "section": "protheus_cmp",
+                    "key": "SourcePath",
+                    "expected": "<CONFIGURAR>",
+                    "severidade": "critical",
+                    "descricao": "Diretório dos fontes RPO.",
+                }
+            ],
+        )
+        assert "SourcePath=<CONFIGURAR>  ; [ADICIONADO] Diretório dos fontes RPO." in out
+
+    def test_addition_without_description_trims_trailing_space(self) -> None:
+        """Sem descrição, o comentário termina em ``[ADICIONADO]`` (sem espaço sobrando)."""
+        original = "[General]\nConsoleLog=1\n"
+        out = generate_suggested_ini(
+            original,
+            [
+                {
+                    "section": "General",
+                    "key": "MaxStringSize",
+                    "expected": "10",
+                    "severidade": "critical",
+                    "descricao": "",
+                }
+            ],
+        )
+        assert "MaxStringSize=10  ; [ADICIONADO]" in out
+        assert "[ADICIONADO] " not in out  # sem espaço pendurado
 
     def test_commented_section_treated_as_absent(self) -> None:
         """`;[General]` é seção comentada; injeção cria seção nova no fim

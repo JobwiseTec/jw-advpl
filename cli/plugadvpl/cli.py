@@ -1576,7 +1576,11 @@ def _render_ini_audit_html(conn: sqlite3.Connection, arquivo: str | None) -> str
         summ["unknown_keys"] = len(unknown)
 
         fix_items = ini_audit_fix_items(conn, int(sc["id"]))
-        suggested = generate_suggested_ini(content, fix_items) if (fix_items and content) else ""
+        suggested = (
+            generate_suggested_ini(content, fix_items, unknown)
+            if ((fix_items or unknown) and content)
+            else ""
+        )
 
         comp = {
             "score": sc["score"],

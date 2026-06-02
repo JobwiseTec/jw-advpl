@@ -518,20 +518,57 @@ def ini_rules_keys(conn: sqlite3.Connection) -> dict[str, set[str]]:
 
 
 def ini_audit_fix_items(conn: sqlite3.Connection, file_id: int) -> list[dict[str, Any]]:
-    """Itens p/ o INI sugerido: findings ativos critical/warning cuja regra tem
-    valor esperado (``expected``). Devolve ``section`` / ``key`` / ``expected``."""
+    """Itens p/ o INI sugerido: findings ativos critical/warning. Devolve
+    ``section`` / ``key`` / ``expected`` / ``severidade`` / ``descricao``.
+
+    A severidade filtra adição: só ``critical`` ausente é injetada; ``warning``
+    ausente é descartada pelo gerador. ``descricao`` vai no comentário
+    ``[ADICIONADO]``.
+
+    ``expected`` aqui é o valor **gravável** no INI sugerido:
+
+    * Regras ``value_in`` guardam em ``expected`` o conjunto de valores aceitos
+      (``a|b|c``), que não é gravável → usa ``Recomendado: X`` do ``fix_guidance``.
+    * Regras obrigatórias sem valor recomendado (``expected`` vazio, ex.
+      ``key_present``) → ``<CONFIGURAR>`` (placeholder), para a chave crítica ser
+      injetada mesmo sem valor canônico."""
     sql = """
-        SELECT f.section_raw, f.key_name, r.expected
+        SELECT f.section_raw, f.key_name, r.expected, f.severidade,
+               r.fix_guidance, r.descricao
         FROM ini_audit_findings f
         JOIN ini_rules r ON r.regra_id = f.regra_id
         WHERE f.file_id = ?
               AND f.status = 'active'
               AND f.severidade IN ('critical', 'warning')
-              AND r.expected != ''
     """
     rows = conn.execute(sql, (file_id,)).fetchall()
-    cols = ["section", "key", "expected"]
-    return [dict(zip(cols, r, strict=True)) for r in rows]
+    out: list[dict[str, Any]] = []
+    for section, key, expected, severidade, fix_guidance, descricao in rows:
+        out.append(
+            {
+                "section": section,
+                "key": key,
+                "expected": _writable_expected(str(expected), str(fix_guidance or "")),
+                "severidade": severidade,
+                "descricao": str(descricao or ""),
+            }
+        )
+    return out
+
+
+_RECOMENDADO_RE = re.compile(r"Recomendado:\s*([^|]+?)(?:\s*\||$)")
+
+
+def _writable_expected(expected: str, fix_guidance: str) -> str:
+    """Valor gravável no INI sugerido.
+
+    * ``expected`` escalar (sem ``|``, não vazio) → ele próprio.
+    * ``expected`` com ``|`` (conjunto ``value_in``) ou vazio → extrai
+      ``Recomendado: X`` do ``fix_guidance``; se não houver, ``<CONFIGURAR>``."""
+    if expected and "|" not in expected:
+        return expected
+    m = _RECOMENDADO_RE.search(fix_guidance)
+    return m.group(1).strip() if m else "<CONFIGURAR>"
 
 
 def lint_query(

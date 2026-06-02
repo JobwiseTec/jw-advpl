@@ -1,4 +1,5 @@
 """Testes de plugadvpl/query.py — funções de consulta sobre DB ingerido."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -8,6 +9,7 @@ import pytest
 
 from plugadvpl.ingest import ingest
 from plugadvpl.query import (
+    _writable_expected,
     arch,
     callees,
     callers,
@@ -22,6 +24,38 @@ from plugadvpl.query import (
     status,
     tables_query,
 )
+
+
+class TestWritableExpected:
+    """Valor gravável no INI sugerido a partir do ``expected`` do catálogo."""
+
+    def test_scalar_expected_passes_through(self) -> None:
+        assert _writable_expected("1", "qualquer guidance") == "1"
+
+    def test_empty_expected_without_recomendado_is_placeholder(self) -> None:
+        """Obrigatória sem valor canônico nem ``Recomendado:`` → ``<CONFIGURAR>``
+        (a chave crítica é injetada como placeholder)."""
+        assert _writable_expected("", "Ref: https://tdn.totvs.com/x") == "<CONFIGURAR>"
+
+    def test_empty_expected_uses_recomendado_when_present(self) -> None:
+        """Obrigatória sem ``expected`` mas com ``Recomendado: X`` no guidance
+        (ex. caminho de certificado) usa esse valor."""
+        out = _writable_expected(
+            "", "Recomendado: C:\\TSS\\certs\\000001_all.pem | Chave OBRIGATÓRIA."
+        )
+        assert out == "C:\\TSS\\certs\\000001_all.pem"
+
+    def test_value_in_uses_recomendado_from_guidance(self) -> None:
+        """``expected`` com ``|`` é conjunto value_in (não gravável); usa o
+        ``Recomendado:`` do fix_guidance."""
+        out = _writable_expected(
+            "1|Maior|Menor",
+            "Recomendado: 10 | Valores aceitos: 1, Maior, Menor | Chave OBRIGATÓRIA.",
+        )
+        assert out == "10"
+
+    def test_value_in_without_recomendado_falls_back_to_placeholder(self) -> None:
+        assert _writable_expected("a|b|c", "sem recomendacao aqui") == "<CONFIGURAR>"
 
 
 @pytest.fixture
@@ -51,10 +85,7 @@ def db_with_three_sources(tmp_path: Path) -> tuple[Path, sqlite3.Connection]:
         b"Return\n"
     )
     (src / "WSReg.tlpp").write_bytes(
-        b"Namespace api\n"
-        b"User Function WSReg()\n"
-        b'  HttpPost("http://api.foo/x", oJson)\n'
-        b"Return\n"
+        b'Namespace api\nUser Function WSReg()\n  HttpPost("http://api.foo/x", oJson)\nReturn\n'
     )
     ingest(src, workers=0)
     conn = sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
@@ -108,18 +139,14 @@ class TestCallers:
 
 
 class TestCallees:
-    def test_callees_of_file(
-        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
-    ) -> None:
+    def test_callees_of_file(self, db_with_three_sources: tuple[Path, sqlite3.Connection]) -> None:
         _, conn = db_with_three_sources
         # `funcao_origem` está vazio no MVP — fallback via basename.
         rows = callees(conn, "MATA010.prw")
         destinos = {r["destino"] for r in rows}
         assert "FATA050" in destinos
 
-    def test_callees_resolves_innermost_chunk_with_nested_methods(
-        self, tmp_path: Path
-    ) -> None:
+    def test_callees_resolves_innermost_chunk_with_nested_methods(self, tmp_path: Path) -> None:
         """v0.3.22 — Bug #19 do QA round 2: docstring v0.3.15 fala de
         "chunk MAIS INTERNO em caso de nesting (Class > Method > Static)"
         mas test era happy-path. Aqui forcamos cenario com 2 funcoes
@@ -132,13 +159,13 @@ class TestCallees:
 
         src = tmp_path / "AbcA.prw"
         src.write_text(
-            'Method M1() Class A\n'                      # 1
-            '    Local x := U_ExtA()\n'                  # 2 — chamada DENTRO de M1
-            'Return\n'                                    # 3
-            '\n'                                          # 4
-            'Static Function helper()\n'                  # 5
-            '    Local y := U_ExtB()\n'                  # 6 — chamada DENTRO de helper
-            'Return\n',                                   # 7
+            "Method M1() Class A\n"  # 1
+            "    Local x := U_ExtA()\n"  # 2 — chamada DENTRO de M1
+            "Return\n"  # 3
+            "\n"  # 4
+            "Static Function helper()\n"  # 5
+            "    Local y := U_ExtB()\n"  # 6 — chamada DENTRO de helper
+            "Return\n",  # 7
             encoding="cp1252",
         )
         do_ingest(tmp_path, workers=0)
@@ -231,9 +258,7 @@ class TestArch:
 
 
 class TestLintQuery:
-    def test_lint_all(
-        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
-    ) -> None:
+    def test_lint_all(self, db_with_three_sources: tuple[Path, sqlite3.Connection]) -> None:
         _, conn = db_with_three_sources
         rows = lint_query(conn)
         # Pode estar vazio em fontes simples; só deve retornar list.
@@ -251,6 +276,7 @@ class TestLintQuery:
     ) -> None:
         """Finding deve trazer sonar_rules como lista parseada da regra correspondente."""
         import json
+
         _, conn = db_with_three_sources
         conn.execute(
             "UPDATE lint_rules SET sonar_rules = ? WHERE regra_id = ?",
@@ -316,6 +342,7 @@ class TestStatus:
         # db_with_three_sources grava plugadvpl_version via init_meta — vamos forçar
         # algo antigo pra simular upgrade do binário sem reingest.
         from plugadvpl.db import set_meta
+
         set_meta(conn, "plugadvpl_version", "0.2.0")
         rows = status(conn, str(src), runtime_version="0.3.11")
         s = rows[0]
@@ -380,6 +407,7 @@ class TestDoctor:
         """v0.9.5 (QA PERF 2026-05-18 #2): com meta basename_collisions
         populado, doctor reporta status=warn com contagem e exemplos."""
         import json as _json
+
         _, conn = db_with_three_sources
         conn.execute(
             "UPDATE meta SET valor=? WHERE chave='basename_collisions'",
