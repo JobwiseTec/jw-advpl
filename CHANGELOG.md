@@ -4,6 +4,17 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ini-audit` — correção de dados fabricados no catálogo `ini_rules`** (a base de 487 regras foi gerada em lote sem trilha de procedência; estes valores não procediam):
+  - 🔒 **Segurança:** `TSS-SSLCONFIGURE-SSL2`/`SSL3` recomendavam `=1` (habilitar protocolo legado inseguro), divergindo da regra APP gêmea (`=0`, "INSEGURO. Deve estar desabilitado"). Um TSS já seguro (SSL2=0) era marcado **crítico → FORA DE CONFORMIDADE** e o fix mandava ligar. Corrigido para `=0`.
+  - `APP-GENERAL-MAXSTRINGSIZE`: enum fabricado `1|Maior|Menor` (a regra recomendava `10`, que nem estava no próprio enum) → `key_present`.
+  - **71 regras `range_check` sem range real** (`expected` sem `..`) eram no-ops silenciosos — `_evaluate_value` sempre retornava `True`. Rebaixadas para `key_present` pendente curadoria (5 delas tinham um valor recomendado mal-aplicado como mínimo, ex: `THREADMAX=50` ⇒ "≥50").
+
+### Added
+
+- **Guard `test_ini_rules_consistency`**: barra no CI dado quebrado voltando ao catálogo `ini_rules` — `range_check` sem range, `value_in` misturando número e texto, e regras `critical` `value_eq` contraditórias na mesma (seção, chave). Espelha o `test_lint_catalog_consistency`.
+
 ## [0.20.0] - 2026-06-01
 
 ### Added
