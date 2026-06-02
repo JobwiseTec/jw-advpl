@@ -49,6 +49,27 @@
 +--------------------------------------------------------------------------+
 */
 
+// v1.2.0 (2026-05-28): compacta o bundle num unico .zip antes de enviar pra
+// ESTACAO SmartClient. CSVs grandes (SX3, RECORD_COUNTS) estouravam o limite
+// de transferencia do CpyS2T por arquivo e nao baixavam. Agora ColetorExecutar
+// chama CompactaBundle (FZip) e copia 1 unico coletadb_bundle.zip via
+// CpyS2T(...,.F.) -- lCompress=.F. porque o zip ja esta comprimido (evita
+// dupla compressao). Fallback seguro: se FZip indisponivel/falhar (build
+// antiga ou erro de IO), cai na copia CSV a CSV da v1.1.0. A estacao recebe
+// o .zip e descompacta localmente. REST (CDBRun/CDBFile) inalterado -- o
+// cliente externo ja baixa em chunks de 4MB via /file.
+//
+// v1.1.0 (2026-05-28): opcao de salvar o bundle na ESTACAO SmartClient
+// (cliente), nao so no servidor. Na UI U_COLETADB: checkbox "Salvar na
+// estacao" + picker de pasta local (cGetFile com GETF_LOCALHARD). Quando
+// ligado, ColetorExecutar copia cada CSV servidor->estacao via CpyS2T e,
+// se TODAS copiarem, remove o bundle do servidor (FErase + DirRemove) =
+// move efetivo. Em falha de copia, mantem no servidor (fallback seguro).
+// Helpers OS-aware: CDBSepOS/CDBTempPad (Windows \temp\ vs Linux /tmp/
+// via IsSrvUnix). Path da estacao vem no separador nativo do cGetFile,
+// sem normalizacao no servidor. REST (CDBRun/CDBFile) inalterado --
+// cliente externo ja baixa via /file.
+//
 // v1.0.1 (2026-05-24, plugadvpl): 2 fixes que destravavam smoke contra
 // AppServer Protheus 7.00.240223P-20251003:
 //
@@ -66,43 +87,7 @@
 //
 // Ambos descobertos rodando smoke contra base de teste sem schema MSSQL
 // completo, com leitura de protheus.log expondo a stack real.
-//
-// v1.0.2 (2026-05-24, plugadvpl): 3 fixes da issue #9 (bugs do reference-impl
-// reportados pela IA da fabrica TBarbito apos smoke ponta-a-ponta):
-//
-//   3) HashSha256Arquivo agora hasheia o CONTEUDO via MemoRead em vez do
-//      path literal. Sha2_256(cStr, nFmt) espera string como input (nFmt
-//      controla so o formato de saida: 1=hex lower). v1.0.1 passava cPath
-//      e gerava hash do path string -- "valido" mas inutil pra integrity
-//      check. Manifest agora traz sha256 real do conteudo.
-//
-//   4) DiretorioBundle agora detecta SO via IsSrvUnix() e usa "/" em
-//      Linux ou "\" em Windows. v1.0.1 forcava "\" em qualquer SO -- em
-//      AppServer Linux o manifest saia com bundle_dir "\temp\xxx\" que
-//      cliente Python tinha que normalizar pra "/". Tambem normaliza
-//      separadores misturados no cBase passado pelo caller.
-//
-//   5) InventarioCarregar agora devolve Nil em falha real (DBMS desconhecido
-//      ou TOPCONN caiu, capturado via ErrorBlock+BEGIN SEQUENCE) vs {}
-//      quando query rodou mas threshold filtrou tudo. ColetaCoreExecutar
-//      diferencia: Nil -> aborta com mensagem de erro de DB; {} -> apenas
-//      avisa "threshold filtrou tudo, bundle sera parcial" e continua.
-//      Antes v1.0.1: threshold=999999 em healthcheck dava "Falha ao
-//      carregar inventario" enganoso (DB estava bem, so filtrou tudo).
-//
-// Bug "Postgres ENCODE syntax invalida" (#9 item 2) tambem reportado
-// mas era falso alarme: codigo usa Postgres substring(... FROM N FOR M)
-// que NAO tem virgulas internas (palavras-chave FROM/FOR), e encode(blob,
-// 'escape') ja tem a virgula correta. Reporter leu errado a sintaxe.
-//
-// v1.0.3 (2026-05-24, plugadvpl): smoke real revelou que build 7.00.240223P
-// nao tem Sha2_256/HashStr/tHash -- so Sha1/MD5/CRC32. HashSha256Arquivo
-// virou HashArquivo retornando { hash, algo } com fallback ordenado.
-// Manifest agora emite hash + hash_algo + hash_partial.
-// Limitacao: MemoRead trunca em 64KB nessa build, hash de arquivos maiores
-// e parcial (suficiente pra detectar corrupcao de transfer, mas nao prova
-// integridade total). Cliente Python precisa replicar leitura limitada.
-#DEFINE CDB_VERSION      "1.0.3"
+#DEFINE CDB_VERSION      "1.2.0"
 #DEFINE CDB_THRESHOLD    10           // minimo de linhas pra tabela contar como ativa
 #DEFINE CDB_LOG_PREFIX   "[COLETADB] "
 #DEFINE CDB_API_CHUNK    4194304      // 4MB por chunk -- limite REST default e 8MB; ficamos com folga
@@ -164,11 +149,17 @@ STATIC __oLog := Nil
 User Function COLETADB()
     Local oDlg
     Local oModo, oDirOut, oDirIni
+    Local oSalvaEst, oDirEst
     Local oFont    := TFont():New("Courier New",, 12,, .F.)
     Local cModo    := "enxuto"
-    Local cBaseDir := PadR("\temp\", 200)
+    Local cBaseDir := PadR(CDBTempPad(.T.), 200)
     Local cIniDir  := PadR(DescobreRootPath(), 200)
     Local nThreshold := CDB_THRESHOLD
+    // v1.1.0: opcao de salvar o bundle direto na estacao SmartClient
+    // (cliente) em vez de deixar so no servidor. Quando ligado, os CSV
+    // sao COPIADOS pro disco local da estacao e REMOVIDOS do servidor.
+    Local lSalvaEst := .F.
+    Local cDirEst   := Space(200)
 
     // FWGetDialogSize retorna {top, left, bottom, right} relativos a
     // janela principal. Em contextos sem oMainWnd ativo vem array vazio
@@ -187,8 +178,11 @@ User Function COLETADB()
 
     // Escala /2 confirmada na comunidade ADVPL: dialog 780 externo -> 390
     // de cliente interno. Conteudo usa cols 010..380 + 10 de margem.
+    // Altura externa 740 PIXEL -> ~370 cliente interno, suficiente pros
+    // botoes em row 330+18 caberem. Tamanho fixo (aCoors so era usado
+    // pra origem, mas ACTIVATE CENTERED ja resolve posicionamento).
     DEFINE MSDIALOG oDlg TITLE "Coleta de Dicionario Protheus v" + CDB_VERSION ;
-        FROM aCoors[1]/1.15, 0 TO aCoors[3]/1.15, 780 PIXEL ;
+        FROM 0, 0 TO 800, 780 PIXEL ;
         STYLE DS_MODALFRAME
 
     // Modo de extracao
@@ -203,7 +197,7 @@ User Function COLETADB()
     // Pastas: saida do bundle + pasta dos AppServer*.ini (origem dos jobs).
     // Defaults: \temp\ (output) e RootPath atual (jobs). Usuario pode trocar
     // via TGet ou botao "..." (cGetFile com GETF_RETDIRECTORY).
-    @ 060, 010 TO 108, 380 LABEL " Pastas " OF oDlg PIXEL
+    @ 060, 010 TO 152, 380 LABEL " Pastas " OF oDlg PIXEL
 
     @ 072, 020 SAY "Saida:"         SIZE 040, 008 PIXEL OF oDlg
     @ 070, 060 MSGET oDirOut VAR cBaseDir SIZE 260, 010 PIXEL OF oDlg
@@ -215,19 +209,32 @@ User Function COLETADB()
     @ 088, 325 BUTTON "..."     SIZE 040, 010 PIXEL OF oDlg ;
         ACTION PromptDirAtualiza(oDirIni)
 
+    // v1.1.0: salvar na estacao SmartClient (cliente). Quando marcado, o
+    // bundle e copiado pro disco local da estacao (CpyS2T) e removido do
+    // servidor. O botao "..." navega o disco LOCAL da estacao
+    // (GETF_LOCALHARD) e o path retornado ja vem no separador nativo.
+    @ 108, 020 CHECKBOX oSalvaEst VAR lSalvaEst ;
+        PROMPT "Salvar na estacao (cliente) - remove do servidor" ;
+        SIZE 320, 008 PIXEL OF oDlg
+
+    @ 126, 020 SAY "Estacao:"       SIZE 040, 008 PIXEL OF oDlg
+    @ 124, 060 MSGET oDirEst VAR cDirEst SIZE 260, 010 PIXEL OF oDlg
+    @ 124, 325 BUTTON "..."     SIZE 040, 010 PIXEL OF oDlg ;
+        ACTION PromptDirEstacao(oDirEst)
+
     // Console de log em tempo real (TMultiGet readonly, fonte monoespacada).
     // Log ocupa toda a metade inferior do dialog (208 PIXEL de altura).
-    @ 114, 010 TO 322, 380 LABEL " Log " OF oDlg PIXEL
+    @ 158, 010 TO 366, 380 LABEL " Log " OF oDlg PIXEL
 
-    __oLog := TMultiGet():New(124, 015, ;
+    __oLog := TMultiGet():New(168, 015, ;
         {|u| If(PCount() > 0, __cLog := u, __cLog)}, ;
         oDlg, 365, 194, oFont, .F., , , , .T.)
     __oLog:lReadOnly := .T.
 
     // Botoes
-    @ 330, 125 BUTTON "&Gerar CSV"   SIZE 075, 018 PIXEL OF oDlg ;
-        ACTION ColetorExecutar(cModo, nThreshold, AllTrim(cBaseDir), AllTrim(cIniDir))
-    @ 330, 215 BUTTON "&Sair"        SIZE 075, 018 PIXEL OF oDlg ACTION oDlg:End()
+    @ 374, 125 BUTTON "&Gerar CSV"   SIZE 075, 018 PIXEL OF oDlg ;
+        ACTION ColetorExecutar(cModo, nThreshold, AllTrim(cBaseDir), AllTrim(cIniDir), lSalvaEst, AllTrim(cDirEst))
+    @ 374, 215 BUTTON "&Sair"        SIZE 075, 018 PIXEL OF oDlg ACTION oDlg:End()
 
     ACTIVATE MSDIALOG oDlg CENTERED
 Return
@@ -238,8 +245,14 @@ Return
 | Reseta o console, delega pra ColetaCoreExecutar e mostra MsgInfo/Alert.|
 +--------------------------------------------------------------------------+
 */
-Static Function ColetorExecutar(cModo, nThreshold, cBaseDir, cIniDir)
+Static Function ColetorExecutar(cModo, nThreshold, cBaseDir, cIniDir, lSalvaEst, cDirEst)
     Local aRet
+    Local aCopia
+    Local aZip
+    Local cDestino := ""
+
+    Default lSalvaEst := .F.
+    Default cDirEst   := ""
 
     // Limpa o console pra nova execucao (so na variante UI)
     __cLog := ""
@@ -253,7 +266,55 @@ Static Function ColetorExecutar(cModo, nThreshold, cBaseDir, cIniDir)
         Return
     EndIf
 
-    MsgInfo("Arquivos gerados em:" + Chr(13) + Chr(10) + aRet[2], "ColetaDB")
+    // v1.1.0: sem opcao de estacao -> comportamento classico (so servidor).
+    If !lSalvaEst
+        MsgInfo("Arquivos gerados em:" + Chr(13) + Chr(10) + aRet[2], "ColetaDB")
+        Return
+    EndIf
+
+    // Salvar na estacao: copia o bundle (aRet[3] = { {sx_type, path}, ... })
+    // pro disco local da estacao via CpyS2T e, se TUDO copiar, remove do
+    // servidor (move). Em falha de qualquer copia, NAO apaga o servidor.
+    If Empty(cDirEst)
+        MsgAlert("Marque a pasta da estacao antes de gerar.", "ColetaDB")
+        Return
+    EndIf
+
+    // v1.2.0: compacta o bundle inteiro num unico .zip antes de enviar.
+    // CSVs grandes estouravam o CpyS2T por arquivo; o zip envia 1 arquivo
+    // menor. lCompress=.F. no CpyS2T pois o zip ja esta comprimido.
+    // Fallback: FZip indisponivel/falhar -> copia CSV a CSV (v1.1.0).
+    aZip := CompactaBundle(aRet[3], aRet[2], aRet[1])
+    If aZip[1]
+        LogColetor("Copiando zip pra estacao: " + aZip[2])
+        If CpyS2T(aZip[2], cDirEst, .F.)
+            aCopia   := { .T., "" }
+            cDestino := "coletadb_bundle.zip (descompacte na estacao)"
+            // Remove o zip do servidor junto com os CSV (move efetivo)
+            FErase(aZip[2])
+        Else
+            aCopia := { .F., "CpyS2T do zip falhou (" + aZip[2] + ")" }
+        EndIf
+    Else
+        LogColetor("WARN: compactacao indisponivel (" + aZip[3] + ;
+            ") -- copiando CSV a CSV")
+        aCopia   := CopiaBundleEstacao(aRet[3], cDirEst)
+        cDestino := "CSVs individuais"
+    EndIf
+
+    If !aCopia[1]
+        MsgAlert("Falha ao copiar pra estacao:" + Chr(13) + Chr(10) + ;
+            aCopia[2] + Chr(13) + Chr(10) + ;
+            "Arquivos mantidos no servidor: " + aRet[2], "ColetaDB")
+        Return
+    EndIf
+
+    // Tudo copiou -> remove do servidor (move efetivo)
+    RemoveBundleServidor(aRet[3], aRet[2])
+
+    MsgInfo("Bundle salvo na estacao em:" + Chr(13) + Chr(10) + ;
+        cDirEst + cDestino + Chr(13) + Chr(10) + ;
+        "(removido do servidor)", "ColetaDB")
 Return
 
 /*
@@ -298,23 +359,13 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
 
     LogColetor("Carregando inventario de tabelas...")
     aInventario := InventarioCarregar(nThreshold)
-    // v1.0.2: Nil = falha real (DBMS desconhecido / TOPCONN caiu).
-    //         {}  = consulta ok mas threshold filtrou todas as tabelas
-    //               (ex: threshold=999999 em healthcheck). Continua com
-    //               bundle parcial (manifest com 0 SX rows e MPMENU ainda
-    //               extraido caso schema permita) em vez de reportar erro
-    //               de DB enganoso.
-    If aInventario == Nil
-        LogColetor("ERRO: falha ao carregar inventario. Verifique conexao TOPCONN e permissao em catalogos do DBMS.")
+    If Empty(aInventario)
+        LogColetor("ERRO: falha ao carregar inventario. Verifique acesso ao banco.")
         Return { cBundleId, cBundleDir, {}, "Falha ao carregar inventario de tabelas. Verifique acesso ao banco." }
     EndIf
 
     aTabAtivas := InventarioFiltrar(aInventario, nThreshold)
-    If Len(aInventario) == 0
-        LogColetor("AVISO: inventario carregado vazio -- threshold=" + LTrim(Str(nThreshold)) + " filtrou TODAS as tabelas. Bundle sera parcial.")
-    Else
-        LogColetor("Inventario carregado: " + LTrim(Str(Len(aTabAtivas))) + " tabelas ativas de " + LTrim(Str(Len(aInventario))) + " totais.")
-    EndIf
+    LogColetor("Inventario carregado: " + LTrim(Str(Len(aTabAtivas))) + " tabelas ativas de " + LTrim(Str(Len(aInventario))) + " totais.")
 
     If !MakeDir(cBundleDir)
         LogColetor("ERRO: falha ao criar diretorio: " + cBundleDir)
@@ -331,16 +382,16 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
     BEGIN SEQUENCE
         aFilesGerados := ExtrairDicionarioSx(cBundleDir, aTabAtivas, lEnxuto)
     RECOVER
-        LogColetor("WARN: ExtrairDicionarioSx falhou — bundle continuara sem SX")
+        LogColetor("WARN: ExtrairDicionarioSx falhou ? bundle continuara sem SX")
         aFilesGerados := {}
     END SEQUENCE
 
     // --- Extracao MPMENU ----------------------------------------------
-    LogColetor("Extraindo MPMENU...")
+/*     LogColetor("Extraindo MPMENU...")
     BEGIN SEQUENCE
         aEval(ExtrairMpMenu(cBundleDir), {|x| aAdd(aFilesGerados, x)})
     RECOVER
-        LogColetor("WARN: ExtrairMpMenu falhou — bundle continuara sem MPMENU")
+        LogColetor("WARN: ExtrairMpMenu falhou ? bundle continuara sem MPMENU")
     END SEQUENCE
 
     // --- Extracao Schedules (via DBSelectArea) ------------------------
@@ -350,7 +401,7 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
             aAdd(aFilesGerados, { "SCHEDULES", cBundleDir + "SCHEDULES.csv" })
         EndIf
     RECOVER
-        LogColetor("WARN: ExtrairSchedules falhou (tabela XX* inexistente?) — bundle continuara sem SCHEDULES")
+        LogColetor("WARN: ExtrairSchedules falhou (tabela XX* inexistente?) ? bundle continuara sem SCHEDULES")
     END SEQUENCE
 
     // --- Extracao Jobs (appserver.ini) --------------------------------
@@ -360,9 +411,9 @@ Static Function ColetaCoreExecutar(cModo, nThreshold, cBaseDir, cIniDir, cBundle
             aAdd(aFilesGerados, { "JOBS", cBundleDir + "JOBS.csv" })
         EndIf
     RECOVER
-        LogColetor("WARN: ExtrairJobs falhou — bundle continuara sem JOBS")
+        LogColetor("WARN: ExtrairJobs falhou ? bundle continuara sem JOBS")
     END SEQUENCE
-
+ */
     // --- RECORD_COUNTS (reaproveita inventario) -----------------------
     LogColetor("Gerando RECORD_COUNTS...")
     GravarRecordCounts(cBundleDir + "RECORD_COUNTS.csv", aInventario)
@@ -392,8 +443,6 @@ Static Function InventarioCarregar(nThreshold)
     Local cQry := ""
     Local cAlias := GetNextAlias()
     Local cTh := LTrim(Str(Iif(nThreshold == Nil, 0, nThreshold), 10, 0))
-    Local bOldErr
-    Local lFalhou := .F.
 
     Do Case
         Case cDb == "ORACLE"
@@ -412,20 +461,11 @@ Static Function InventarioCarregar(nThreshold)
                     "FROM pg_stat_user_tables " + ;
                     "WHERE n_live_tup >= " + cTh
         Otherwise
-            LogColetor("DBMS desconhecido: " + cDb + " -- inventario indisponivel")
-            // v1.0.2: Nil sinaliza "nao consegui carregar"; {} sinaliza
-            // "carregou ok mas threshold filtrou tudo". Caller distingue.
-            Return Nil
+            LogColetor("DBMS desconhecido: " + cDb + " -- inventario vazio")
+            Return aRet
     EndCase
 
     LogColetor("Inventario DBMS=" + cDb + " threshold=" + cTh)
-
-    // v1.0.2: ErrorBlock + BEGIN SEQUENCE pra capturar erro do TOPCONN
-    // (catalogo sem permissao, conexao caiu, etc) e diferenciar de
-    // "consulta retornou 0 rows". Sem isso, falha de conexao caia em
-    // excecao nativa sem trace.
-    bOldErr := ErrorBlock({|e| Break(e)})
-    BEGIN SEQUENCE
     // Nao usa ChangeQuery: ela uppercaseia identificadores e quebra catalogos
     // system case-sensitive (sys.tables/sys.partitions no MSSQL com collation CS).
     DbUseArea(.T., "TOPCONN", TcGenQry(,, cQry), cAlias, .T., .T.)
@@ -434,16 +474,6 @@ Static Function InventarioCarregar(nThreshold)
         (cAlias)->(DbSkip())
     EndDo
     (cAlias)->(DBCloseArea())
-    RECOVER
-        LogColetor("ERRO: query de inventario falhou no TOPCONN (catalogo sem permissao? conexao caiu?)")
-        lFalhou := .T.
-    END SEQUENCE
-    ErrorBlock(bOldErr)
-
-    If lFalhou
-        Return Nil
-    EndIf
-
     LogColetor("Inventario: " + LTrim(Str(Len(aRet))) + " tabelas encontradas")
 Return aRet
 
@@ -831,9 +861,9 @@ Static Function SchedulesEscreverCsv(cQry, cCsv)
     EndDo
     (cAlias)->(DBCloseArea())
     RECOVER
-        // v1.0.1: tabela XX0/XX1/XX2 inexistente fisicamente — desiste do
+        // v1.0.1: tabela XX0/XX1/XX2 inexistente fisicamente ? desiste do
         // Schedules e devolve 0 rows pro caller continuar bundle parcial.
-        LogColetor("WARN: SchedulesEscreverCsv falhou (tabela XX* inexistente?) — 0 rows")
+        LogColetor("WARN: SchedulesEscreverCsv falhou (tabela XX* inexistente?) ? 0 rows")
         nRows := 0
     END SEQUENCE
     ErrorBlock(bOldErr)
@@ -1026,6 +1056,192 @@ Static Function RecorrFormataData(cAaaammdd)
     cM := SubStr(cAaaammdd, 5, 2)
     cD := SubStr(cAaaammdd, 7, 2)
 Return cD + "/" + cM + "/" + cA
+
+/*
++--------------------------------------------------------------------------+
+| CDBSepOS -- separador de path conforme o SO.                             |
+|   lServer = .T. (default) -> SO do servidor via IsSrvUnix().            |
+|   Estacao informa o proprio path via cGetFile, entao aqui so o servidor |
+|   importa. Retorna "/" no Linux/Unix, "\" caso contrario.               |
++--------------------------------------------------------------------------+
+*/
+Static Function CDBSepOS(lServer)
+    Default lServer := .T.
+    If lServer .And. IsSrvUnix()
+        Return "/"
+    EndIf
+Return "\"
+
+/*
++--------------------------------------------------------------------------+
+| CDBTempPad -- pasta temp default conforme SO do servidor.                |
+|   Windows -> \temp\ ; Linux/Unix -> /tmp/                               |
++--------------------------------------------------------------------------+
+*/
+Static Function CDBTempPad(lServer)
+    Default lServer := .T.
+    If lServer .And. IsSrvUnix()
+        Return "/tmp/"
+    EndIf
+Return "\temp\"
+
+/*
++--------------------------------------------------------------------------+
+| PromptDirEstacao -- igual PromptDirAtualiza, mas navega o disco LOCAL    |
+| da estacao SmartClient (GETF_LOCALHARD) e retorna so a pasta            |
+| (GETF_RETDIRECTORY). O path retornado ja vem no separador nativo da     |
+| estacao (\ no Windows, / no Linux), entao nao normalizamos aqui.        |
++--------------------------------------------------------------------------+
+*/
+Static Function PromptDirEstacao(oGet)
+    Local cAtual := ""
+    Local cNovo  := ""
+    // GETF_LOCALHARD + GETF_RETDIRECTORY -- definidos em FILEIO.CH (ja
+    // incluido no topo). Lista o(s) HD(s) local(is) da estacao e retorna
+    // apenas a pasta.
+    Local nFlags := nOR(GETF_LOCALHARD, GETF_RETDIRECTORY)
+
+    If ValType(oGet:bSetGet) == "B"
+        cAtual := AllTrim(cValToChar(Eval(oGet:bSetGet)))
+    EndIf
+    If Empty(cAtual) .And. ValType(oGet:cText) == "C"
+        cAtual := AllTrim(oGet:cText)
+    EndIf
+
+    cNovo := cGetFile("", "Pasta na estacao", 0, cAtual, .T., nFlags, .T.)
+    If Empty(cNovo) ; Return ; EndIf
+
+    // Garante separador final no formato que a estacao devolveu
+    If !(Right(cNovo, 1) $ "\/")
+        cNovo += Iif("/" $ cNovo, "/", "\")
+    EndIf
+
+    cNovo := PadR(cNovo, 200)
+
+    If ValType(oGet:bSetGet) == "B"
+        Eval(oGet:bSetGet, cNovo)
+    ElseIf ValType(oGet:cText) == "C"
+        oGet:cText := cNovo
+    EndIf
+Return
+
+/*
++--------------------------------------------------------------------------+
+| CopiaBundleEstacao -- copia cada CSV do bundle (servidor) pro disco      |
+| local da estacao via CpyS2T. cDestino do CpyS2T e um DIRETORIO na        |
+| estacao; o arquivo mantem o nome de origem.                             |
+|                                                                          |
+| aFiles -- { {sx_type, path_servidor}, ... } (igual aRet[3])            |
+| cDirEst -- pasta destino na estacao (separador nativo da estacao)       |
+|                                                                          |
+| Retorna { lOk, cMsgErro }. lOk=.T. so se TODAS copiarem.               |
++--------------------------------------------------------------------------+
+*/
+Static Function CopiaBundleEstacao(aFiles, cDirEst)
+    Local i
+    Local cSrv := ""
+    Local lOk  := .T.
+    Local cErr := ""
+
+    LogColetor("Copiando " + LTrim(Str(Len(aFiles))) + " arquivo(s) pra estacao: " + cDirEst)
+    For i := 1 To Len(aFiles)
+        cSrv := aFiles[i, 2]
+        // CpyS2T(origemServidor, destinoEstacao) -- origem NAO pode ter
+        // drive letter; paths do bundle sao relativos ao RootPath, ok.
+        If !CpyS2T(cSrv, cDirEst)
+            lOk := .F.
+            cErr := aFiles[i, 1] + " (" + cSrv + ")"
+            LogColetor("ERRO: CpyS2T falhou para " + cErr)
+            Exit
+        EndIf
+        LogColetor("  OK: " + aFiles[i, 1])
+    Next i
+Return { lOk, cErr }
+
+/*
++--------------------------------------------------------------------------+
+| RemoveBundleServidor -- apaga os CSV do bundle no servidor (FErase) e    |
+| tenta remover o diretorio do bundle (DirRemove). Best-effort: falha em   |
+| apagar nao interrompe (arquivos ja estao na estacao).                   |
++--------------------------------------------------------------------------+
+*/
+Static Function RemoveBundleServidor(aFiles, cBundleDir)
+    Local i
+    For i := 1 To Len(aFiles)
+        FErase(aFiles[i, 2])
+    Next i
+    // DirRemove so remove pasta vazia -- ok, ja apagamos os CSV acima
+    If !Empty(cBundleDir)
+        DirRemove(cBundleDir)
+    EndIf
+    LogColetor("Bundle removido do servidor: " + cBundleDir)
+Return
+
+/*
++--------------------------------------------------------------------------+
+| CompactaBundle -- compacta TODOS os CSV do bundle num unico .zip no      |
+| servidor (FZip nativo), pra enviar 1 arquivo menor pra estacao em vez    |
+| de N CSVs. Resolve a falha de CpyS2T por arquivo grande (SX3 /          |
+| RECORD_COUNTS estouravam o limite de transferencia).                    |
+|                                                                          |
+| aFiles     -- { {sx_type, path_servidor}, ... } (igual aRet[3])        |
+| cBundleDir -- diretorio do bundle. Vira cBaseDir do FZip: o prefixo e   |
+|               removido das entradas, deixando nome plano (SX3.csv).     |
+| cBundleId  -- so pra log.                                                |
+|                                                                          |
+| FZip( cArquivoZip, aArquivos, cBaseDir ) retorna 0 se OK. Protegido por |
+| BEGIN SEQUENCE: build antiga sem FZip (< 7.00.131227) ou erro de IO     |
+| caem no RECOVER e o chamador faz fallback pra copia CSV a CSV.          |
+|                                                                          |
+| Retorna { lOk, cZipPath, cErr }.                                        |
++--------------------------------------------------------------------------+
+*/
+Static Function CompactaBundle(aFiles, cBundleDir, cBundleId)
+    Local i
+    Local aArqs := {}
+    Local cZip  := ""
+    Local nRet  := -1
+    Local lOk   := .F.
+    Local cErr  := ""
+    Local oErr
+
+    Default cBundleId := ""
+
+    If Empty(aFiles)
+        Return { .F., "", "bundle vazio" }
+    EndIf
+
+    // Normaliza separador final do diretorio (OS-aware)
+    If !(Right(cBundleDir, 1) $ "\/") ; cBundleDir += CDBSepOS() ; EndIf
+    cZip := cBundleDir + "coletadb_bundle.zip"
+
+    For i := 1 To Len(aFiles)
+        aAdd(aArqs, aFiles[i, 2])
+    Next i
+
+    LogColetor("Compactando " + LTrim(Str(Len(aArqs))) + ;
+        " arquivo(s) em " + cZip + " (bundle " + cBundleId + ")")
+
+    BEGIN SEQUENCE
+        // cBaseDir = cBundleDir -> entradas ficam com nome plano, sem caminho
+        nRet := FZip(cZip, aArqs, cBundleDir)
+        lOk  := (nRet == 0 .And. File(cZip))
+        If !lOk
+            cErr := "FZip retornou " + LTrim(Str(nRet))
+        EndIf
+    RECOVER USING oErr
+        lOk  := .F.
+        cErr := "excecao em FZip"
+        If ValType(oErr) == "O" .And. AttIsMemberOf(oErr, "Description")
+            cErr := AllTrim(oErr:Description)
+        EndIf
+    END SEQUENCE
+
+    If lOk
+        LogColetor("Bundle compactado OK: " + ;
+            LTrim(Str(TamanhoArquivo(cZip))) + " bytes")
+    EndIf
+Return { lOk, cZip, cErr }
 
 /*
 +--------------------------------------------------------------------------+
@@ -1402,7 +1618,7 @@ Static Function QueryExportarCsv(cQry, cCsv)
 
     (cAlias)->(DBCloseArea())
     RECOVER
-        LogColetor("WARN: QueryExportarCsv falhou (objeto SQL inexistente?) — 0 rows")
+        LogColetor("WARN: QueryExportarCsv falhou (objeto SQL inexistente?) ? 0 rows")
         nRows := 0
     END SEQUENCE
     ErrorBlock(bOldErr)
@@ -1470,61 +1686,28 @@ Return nSize
 
 /*
 +--------------------------------------------------------------------------+
-| HashSha256Arquivo -- SHA-256 hex de arquivo (v1.0.2).                    |
-| Sha2_256(cStr, nFmt) recebe CONTEUDO da string, nao path -- o nFmt 1    |
-| controla formato de SAIDA (hex lower), nao input. v1.0.1 passava cPath  |
-| literal e retornava o hash do PATH STRING (inutil pra integrity check). |
-| Fix: MemoRead do arquivo, hash do conteudo. Tem limite ~256MB do        |
-| MemoRead em builds recentes; pra arquivos maiores retorna "" e cliente  |
-| pula a validacao com warning.                                           |
+| HashSha256Arquivo -- SHA-256 hex de arquivo. Usa Sha2_256 nativo do TLPP.|
+| Se Sha2_256 nao existir nessa build, retorna "" (sem hash -- cliente    |
+| pode pular validacao).                                                  |
 +--------------------------------------------------------------------------+
 */
-/*
-+--------------------------------------------------------------------------+
-| HashArquivo -- hash hex do arquivo + algoritmo usado.                    |
-|                                                                          |
-| Retorna array { cHash, cAlgo } onde:                                     |
-|   cHash = hex lowercase ou "" se nenhuma funcao de hash existe na build |
-|   cAlgo = "sha256" | "sha1" | "md5" | "" (vazio sse cHash vazio)        |
-|                                                                          |
-| Estrategia ordenada por preferencia:                                     |
-|   1. Sha2_256(cContent, 1)  -> "sha256"  (tlpp-core recente)             |
-|   2. Sha1(cContent)          -> "sha1"    (Protheus 12.1+ universal)     |
-|   3. MD5(cContent)           -> "md5"     (Protheus 12.1+ universal)    |
-|                                                                          |
-| LIMITACAO: MemoRead trunca em ~64KB nessa build. Pra arquivos maiores   |
-| o hash e dos PRIMEIROS 64KB apenas (suficiente pra detectar corrupcao  |
-| de transfer mas nao prova integridade total). Cliente precisa replicar |
-| a leitura limitada -- ver hash_partial no manifest.                     |
-+--------------------------------------------------------------------------+
-*/
-Static Function HashArquivo(cPath)
+Static Function HashSha256Arquivo(cPath)
     Local cHash := ""
-    Local cAlgo := ""
-    Local cContent := ""
+    Local oHash
 
-    If !File(cPath)
-        Return { "", "" }
+    If FindFunction("Sha2_256")
+        // Sha2_256(cInput, nFlag) -- nFlag 1 = input e caminho de arquivo
+        cHash := Sha2_256(cPath, 1)
     EndIf
 
-    cContent := MemoRead(cPath)
-    If Empty(cContent)
-        Return { "", "" }
+    If Empty(cHash) .And. FindFunction("tHash")
+        // Fallback: tHash():Digest sobre MemoRead (Protheus 12 R23+)
+        oHash := tHash():New("SHA256")
+        If !Empty(oHash)
+            cHash := oHash:Digest(MemoRead(cPath))
+        EndIf
     EndIf
-
-    Do Case
-        Case FindFunction("Sha2_256")
-            cHash := Sha2_256(cContent, 1)
-            cAlgo := "sha256"
-        Case FindFunction("Sha1")
-            cHash := Sha1(cContent)
-            cAlgo := "sha1"
-        Case FindFunction("MD5")
-            cHash := MD5(cContent)
-            cAlgo := "md5"
-    EndCase
-
-Return { Lower(cHash), Iif(Empty(cHash), "", cAlgo) }
+Return Lower(cHash)
 
 /*
 +--------------------------------------------------------------------------+
@@ -1605,29 +1788,12 @@ Static Function DiretorioBundle(cBundleId, cBase)
     Local cTs := DToS(Date()) + "_" + StrTran(Time(), ":", "")
     Local cShort := SubStr(cBundleId, 1, 8)
     Local cDir
-    Local cSep
-    Local lUnix := .F.
 
-    Default cBase := ""
+    Default cBase := "\temp\"
+    // Normaliza separador final
+    If !(Right(cBase, 1) $ "\/") ; cBase += "\" ; EndIf
 
-    // v1.0.2: separador de path OS-aware. AppServer Linux usa "/"; antes
-    // v1.0.1 forcava "\" em qualquer SO -- manifest cliente recebia path
-    // com mistura "\temp\fake\" rodando em Linux e tinha que normalizar.
-    If FindFunction("IsSrvUnix")
-        lUnix := IsSrvUnix()
-    EndIf
-
-    cSep := Iif(lUnix, "/", "\")
-    If Empty(cBase)
-        cBase := cSep + "temp" + cSep
-    EndIf
-
-    // Normaliza separadores misturados (caller passou path Windows num
-    // server Linux ou vice-versa) e garante separador final.
-    cBase := StrTran(cBase, Iif(lUnix, "\", "/"), cSep)
-    If !(Right(cBase, 1) $ "\/") ; cBase += cSep ; EndIf
-
-    cDir := cBase + cTs + "_" + cShort + cSep
+    cDir := cBase + cTs + "_" + cShort + "\"
 
     // Cria a arvore garantindo cada nivel; MakeDir e idempotente
     MakeDir(cBase)
@@ -1742,8 +1908,7 @@ User Function CDBRun()
     Local cIni   := DescobreRootPath()
     Local aRet, aFiles, oFile
     Local cResp  := ""
-    Local i, nSize, nChunks, cPath
-    Local aHash                                                      // v1.0.3: { hash_hex, algo }
+    Local i, nSize, nChunks, cHash, cPath
     Local oException                                                 // v1.0.1: RECOVERY
 
     // v1.0.1: BEGIN SEQUENCE captura excecoes nativas (DB driver,
@@ -1814,21 +1979,14 @@ User Function CDBRun()
         cPath   := oFile[2]
         nSize   := TamanhoArquivo(cPath)
         nChunks := Iif(nSize <= 0, 0, Int((nSize - 1) / CDB_API_CHUNK) + 1)
-        // v1.0.3: HashArquivo retorna { hash, algo }. Build sem Sha2_256
-        // usa Sha1 ou MD5 com fallback em ordem; cliente checa via algo.
-        // Pra arquivos > ~64KB hash e parcial (MemoRead trunca) -- flag
-        // hash_partial avisa o cliente.
-        aHash   := HashArquivo(cPath)
+        cHash   := HashSha256Arquivo(cPath)
 
         If i > 1 ; cResp += "," ; EndIf
         cResp += '{"name":"' + oFile[1] + '.csv"' + ;
                  ',"path":"' + StrTran(cPath, '\', '\\') + '"' + ;
                  ',"size_bytes":' + LTrim(Str(nSize)) + ;
                  ',"chunks":' + LTrim(Str(nChunks)) + ;
-                 ',"hash":"' + aHash[1] + '"' + ;
-                 ',"hash_algo":"' + aHash[2] + '"' + ;
-                 ',"hash_partial":' + Iif(nSize > 65535 .And. !Empty(aHash[1]), "true", "false") + ;
-                 ',"sha256":"' + Iif(aHash[2] == "sha256", aHash[1], "") + '"}'
+                 ',"sha256":"' + cHash + '"}'
     Next
     cResp += ']}'
 
