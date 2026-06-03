@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "22"
+SCHEMA_VERSION = "23"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.

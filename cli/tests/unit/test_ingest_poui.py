@@ -82,6 +82,73 @@ def test_ingest_cache_skip(conn: sqlite3.Connection, tmp_path: Path) -> None:
     assert res2.ingested == 0 and res2.skipped == 1
 
 
+def test_tabela_poui_datasources_existe(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(poui_datasources)")}
+    assert {"caminho", "linha", "verbo", "path_norm", "url_raw"} <= cols
+
+
+def test_ingest_extrai_datasources(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    from plugadvpl.ingest_poui import ingest_poui_dir
+
+    proj = tmp_path / "front"
+    proj.mkdir()
+    (proj / "package.json").write_text(
+        '{"dependencies": {"@po-ui/ng-components": "15.0.0"}}', encoding="utf-8"
+    )
+    svc = proj / "src" / "app" / "services"
+    svc.mkdir(parents=True)
+    (svc / "pedido.service.ts").write_text(
+        "getAll(){return this.http.get<X[]>('/pedidos');}", encoding="utf-8"
+    )
+    ingest_poui_dir(conn, tmp_path)
+    rows = conn.execute(
+        "SELECT verbo, path_norm FROM poui_datasources"
+    ).fetchall()
+    assert ("GET", "/pedidos") in rows
+
+
+def test_poui_bridge_casa_front_e_back(conn: sqlite3.Connection) -> None:
+    from plugadvpl.query import poui_bridge
+
+    # back (rest_endpoints já existe no schema): rota TLPP @Get /pedidos
+    conn.execute(
+        "INSERT INTO rest_endpoints (arquivo, classe, funcao, verbo, path, annotation_style) "
+        "VALUES ('PEDREST.tlpp', '', 'getPedidos', 'GET', '/pedidos', '@verb_tlpp')"
+    )
+    # front: chamada Angular casável
+    conn.execute(
+        "INSERT INTO poui_datasources (caminho, linha, verbo, url_raw, path_norm) "
+        "VALUES ('src/app/services/pedido.service.ts', 10, 'GET', '/pedidos', '/pedidos')"
+    )
+    conn.commit()
+    rows = poui_bridge(conn)
+    assert len(rows) == 1
+    b = rows[0]
+    assert b["verbo"] == "GET"
+    assert b["path"] == "/pedidos"
+    assert b["back_arquivo"] == "PEDREST.tlpp"
+    assert "pedido.service.ts" in b["front_arquivo"]
+
+
+def test_poui_bridge_sufixo_e_verbo_opcional(conn: sqlite3.Connection) -> None:
+    from plugadvpl.query import poui_bridge
+
+    # back tem path completo com prefixo de base; front tem o curto + verbo
+    # desconhecido (URL montada em variável -> verbo='').
+    conn.execute(
+        "INSERT INTO rest_endpoints (arquivo, classe, funcao, verbo, path, annotation_style) "
+        "VALUES ('REST.tlpp', '', 'm', 'GET', '/api/v2/base/pedidos', '@verb_tlpp')"
+    )
+    conn.execute(
+        "INSERT INTO poui_datasources (caminho, linha, verbo, url_raw, path_norm) "
+        "VALUES ('p.service.ts', 5, '', '/pedidos', '/pedidos')"
+    )
+    conn.commit()
+    rows = poui_bridge(conn)
+    assert len(rows) == 1  # casa por sufixo, mesmo com verbo='' no front
+    assert rows[0]["path"] == "/pedidos"
+
+
 def test_query_poui_projetos(conn: sqlite3.Connection, tmp_path: Path) -> None:
     from plugadvpl.ingest_poui import ingest_poui_dir
     from plugadvpl.query import poui_projetos

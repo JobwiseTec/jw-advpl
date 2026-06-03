@@ -3,6 +3,7 @@
 Portado e adaptado de parser interno anterior do autor
 (validado em aproximadamente 2.000 fontes ADVPL).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,11 +60,11 @@ _DBDELETE_RE = re.compile(r"(\w{2,3})\s*->\s*\(\s*dbDelete", re.IGNORECASE)
 # Grupo 3: default em pos 3 (vírgula+arg+vírgula+string).
 _MV_READ_RE = re.compile(
     r'(?:SuperGetMV|GetMv|GetNewPar|GetMVDef|FWMVPar)\s*\(\s*["\']([A-Z][A-Z0-9_]{2,})["\']'
-    r'(?:'
+    r"(?:"
     r'\s*,\s*["\']([^"\']*)["\']\s*\)'  # default na pos 2: ("MV_X", "default")
-    r'|'
+    r"|"
     r'\s*,\s*[^,)]+\s*,\s*["\']([^"\']*)["\']'  # default na pos 3: ("MV_X", lDef, "default")
-    r')?',
+    r")?",
     re.IGNORECASE,
 )
 _MV_WRITE_RE = re.compile(
@@ -104,9 +105,10 @@ _WSMETHOD_REST_RE = re.compile(
     r"^[ \t]*WSMETHOD[ \t]+(GET|POST|PUT|DELETE|PATCH)[ \t]+(\w+)[ \t]+WSSERVICE[ \t]+(\w+)",
     re.IGNORECASE | re.MULTILINE,
 )
-# Anotação TLPP: @Get("/api/path") em linha própria
+# Anotação TLPP: @Get("/api/path") posicional OU @Get(endpoint="/api/path", ...)
+# named-arg (tlppCore aceita `endpoint=` — visto em código real).
 _TLPP_ANNOTATION_RE = re.compile(
-    r'^[ \t]*@(Get|Post|Put|Delete|Patch)\s*\(\s*["\']([^"\']+)["\']',
+    r'^[ \t]*@(Get|Post|Put|Delete|Patch)\s*\(\s*(?:endpoint\s*=\s*)?["\']([^"\']+)["\']',
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -131,21 +133,15 @@ _SQL_TABLE_UPDATE_RE = re.compile(r"\bUPDATE\s+(\w+)", re.IGNORECASE)
 _SQL_TABLE_DELETE_RE = re.compile(r"\bDELETE\s+FROM\s+(\w+)", re.IGNORECASE)
 
 # TLPP Namespace: "Namespace x.y.z"
-_NAMESPACE_RE = re.compile(
-    r"^[ \t]*Namespace[ \t]+([A-Za-z_][\w.]*)", re.IGNORECASE | re.MULTILINE
-)
+_NAMESPACE_RE = re.compile(r"^[ \t]*Namespace[ \t]+([A-Za-z_][\w.]*)", re.IGNORECASE | re.MULTILINE)
 
 # WebService structures: WSSTRUCT / WSSERVICE / WSDATA / WSMETHOD
 _WSSTRUCT_HEADER_RE = re.compile(r"^[ \t]*WSSTRUCT[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
-_WSSERVICE_HEADER_RE = re.compile(
-    r"^[ \t]*WSSERVICE[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE
-)
+_WSSERVICE_HEADER_RE = re.compile(r"^[ \t]*WSSERVICE[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
 # v0.3.16 (#5/#7 do QA report): WSRESTFUL é a versão REST do WSSERVICE.
 # Antes nem aparecia no parser → REST classes "puras" (com WSMETHOD GET WSSERVICE,
 # sem WSMETHOD GET <name> WSSERVICE) caíam pra source_type=user_function.
-_WSRESTFUL_HEADER_RE = re.compile(
-    r"^[ \t]*WSRESTFUL[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE
-)
+_WSRESTFUL_HEADER_RE = re.compile(r"^[ \t]*WSRESTFUL[ \t]+(\w+)", re.IGNORECASE | re.MULTILINE)
 _END_WSRESTFUL_RE = re.compile(
     r"^[ \t]*(?:ENDWSRESTFUL|END[ \t]+WSRESTFUL)", re.IGNORECASE | re.MULTILINE
 )
@@ -342,9 +338,7 @@ def extract_functions(content: str) -> list[dict[str, Any]]:
     return _extract_functions_from_stripped(stripped)
 
 
-def _add_function_ranges(
-    funcs: list[dict[str, Any]], content: str
-) -> list[dict[str, Any]]:
+def _add_function_ranges(funcs: list[dict[str, Any]], content: str) -> list[dict[str, Any]]:
     """Core: preenche linha_fim (não precisa de strip — só do raw para contagem)."""
     if not funcs:
         return funcs
@@ -527,9 +521,7 @@ def _extract_calls_execblock_from_stripped(
                 "destino": m.group(1).upper(),
                 "tipo": "execblock",
                 "linha_origem": _line_at(stripped_keep_strings, m.start()),
-                "contexto": stripped_keep_strings[
-                    max(0, m.start() - 30) : m.end() + 30
-                ][:200],
+                "contexto": stripped_keep_strings[max(0, m.start() - 30) : m.end() + 30][:200],
             }
         )
     return result
@@ -551,9 +543,7 @@ def _extract_calls_fwloadmodel_from_stripped(
                 "destino": m.group(1).upper(),
                 "tipo": "fwloadmodel",
                 "linha_origem": _line_at(stripped_keep_strings, m.start()),
-                "contexto": stripped_keep_strings[
-                    max(0, m.start() - 30) : m.end() + 30
-                ][:200],
+                "contexto": stripped_keep_strings[max(0, m.start() - 30) : m.end() + 30][:200],
             }
         )
     return result
@@ -575,9 +565,7 @@ def _extract_calls_fwexecview_from_stripped(
                 "destino": m.group(1).upper(),
                 "tipo": "fwexecview",
                 "linha_origem": _line_at(stripped_keep_strings, m.start()),
-                "contexto": stripped_keep_strings[
-                    max(0, m.start() - 30) : m.end() + 30
-                ][:200],
+                "contexto": stripped_keep_strings[max(0, m.start() - 30) : m.end() + 30][:200],
             }
         )
     return result
@@ -1003,8 +991,7 @@ def _extract_ws_structures_from_stripped(
         end = _next_end_offset(stripped_keep_strings, m.end(), _END_WSSTRUCT_RE)
         body = stripped_keep_strings[m.end() : end]
         fields = [
-            {"nome": fm.group(1), "tipo": fm.group(2)}
-            for fm in _WSDATA_FIELD_RE.finditer(body)
+            {"nome": fm.group(1), "tipo": fm.group(2)} for fm in _WSDATA_FIELD_RE.finditer(body)
         ]
         result["ws_structs"].append({"nome": name, "campos": fields})
 
@@ -1017,8 +1004,7 @@ def _extract_ws_structures_from_stripped(
         body = stripped_keep_strings[m.end() : end]
         metodos = [mm.group(1) for mm in _WSMETHOD_BARE_RE.finditer(body)]
         dados = [
-            {"nome": dm.group(1), "tipo": dm.group(2)}
-            for dm in _WSDATA_FIELD_RE.finditer(body)
+            {"nome": dm.group(1), "tipo": dm.group(2)} for dm in _WSDATA_FIELD_RE.finditer(body)
         ]
         result["ws_services"].append({"nome": name, "metodos": metodos, "dados": dados})
 
@@ -1034,8 +1020,7 @@ def _extract_ws_structures_from_stripped(
         body = stripped_keep_strings[m.end() : end]
         metodos = [mm.group(1) for mm in _WSMETHOD_BARE_RE.finditer(body)]
         dados = [
-            {"nome": dm.group(1), "tipo": dm.group(2)}
-            for dm in _WSDATA_FIELD_RE.finditer(body)
+            {"nome": dm.group(1), "tipo": dm.group(2)} for dm in _WSDATA_FIELD_RE.finditer(body)
         ]
         result["ws_restfuls"].append({"nome": name, "metodos": metodos, "dados": dados})
 
@@ -1187,9 +1172,7 @@ _PE_NAME_RE = re.compile(r"^[A-Z]{2,4}\d{2,4}[A-Z_]{2,}$")
 _PARAMIXB_USAGE_RE = re.compile(r"\bPARAMIXB\s*\[", re.IGNORECASE)
 
 
-def _derive_pontos_entrada(
-    funcoes: list[dict[str, Any]], content_lines: list[str]
-) -> list[str]:
+def _derive_pontos_entrada(funcoes: list[dict[str, Any]], content_lines: list[str]) -> list[str]:
     """Detecta User Functions que sao Pontos de Entrada Protheus.
 
     Sinais (basta um):
@@ -1219,6 +1202,8 @@ def _derive_pontos_entrada(
         if _PARAMIXB_USAGE_RE.search(body):
             result.add(nome)
     return sorted(result)
+
+
 _COMPATIB_NAME_RE = re.compile(r"^U_UPD", re.IGNORECASE)
 _TESTE_UNIT_ANNOTATION_RE = re.compile(r"@Test\b", re.IGNORECASE)
 _FW_BROWSE_RE = re.compile(r"\b(?:FWFormBrowse|FWBrowse)\b", re.IGNORECASE)
@@ -1233,9 +1218,7 @@ _JSON_AWARE_RE = re.compile(
     r"\bJsonObject\s*\(\s*\)\s*:\s*New|\bFWJsonSerialize|\bFWJsonDeserialize",
     re.IGNORECASE,
 )
-_MULTI_FILIAL_RE = re.compile(
-    r"\b(?:xFilial|FwxFilial|cFilAnt|cEmpAnt)\b", re.IGNORECASE
-)
+_MULTI_FILIAL_RE = re.compile(r"\b(?:xFilial|FwxFilial|cFilAnt|cEmpAnt)\b", re.IGNORECASE)
 _TLPP_UNIT_RE = re.compile(r"tlpp\.unit\.suite|tlpp\.unit\b", re.IGNORECASE)
 
 
@@ -1264,8 +1247,7 @@ def _derive_capabilities(parsed: dict[str, Any], content: str) -> list[str]:  # 
     namespace: str = parsed.get("namespace", "") or ""
 
     has_mvc_hook = any(
-        c.get("tipo") == "mvc_hook"
-        and c.get("destino") in ("bCommit", "bTudoOk", "bLineOk")
+        c.get("tipo") == "mvc_hook" and c.get("destino") in ("bCommit", "bTudoOk", "bLineOk")
         for c in chamadas
     )
     has_modeldef_or_viewdef = bool(_MODEL_DEF_RE.search(content)) or any(
@@ -1371,9 +1353,7 @@ def _derive_capabilities(parsed: dict[str, Any], content: str) -> list[str]:  # 
         caps.add("MULTI_FILIAL")
 
     # namespace check para MVC (caso TLPP module-style)
-    if namespace and any(
-        f.get("nome", "").upper() in ("MODELDEF", "VIEWDEF") for f in funcoes
-    ):
+    if namespace and any(f.get("nome", "").upper() in ("MODELDEF", "VIEWDEF") for f in funcoes):
         caps.add("MVC")
 
     return sorted(caps)
@@ -1418,11 +1398,7 @@ def _derive_source_type(parsed: dict[str, Any]) -> str:  # noqa: PLR0911
     rest_endpoints: list[dict[str, Any]] = parsed.get("rest_endpoints", []) or []
     ws_structures: dict[str, Any] = parsed.get("ws_structures") or {}
 
-    if (
-        rest_endpoints
-        or ws_structures.get("ws_services")
-        or ws_structures.get("ws_restfuls")
-    ):
+    if rest_endpoints or ws_structures.get("ws_services") or ws_structures.get("ws_restfuls"):
         return "webservice"
     if "MVC" in capabilities:
         return "mvc"

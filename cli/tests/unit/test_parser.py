@@ -448,6 +448,14 @@ class TestExtractRestEndpoints:
         assert "/api/real" in paths
         assert "/api/fake" not in paths
 
+    def test_tlpp_annotation_named_arg(self) -> None:
+        # tlppCore aceita @Get(endpoint="/path", ...) — forma vista em código real.
+        src = '@Get(endpoint="/v1/pedidos", description="lista")\nMethod m() Class C\nReturn'
+        result = extract_rest_endpoints(src)
+        assert any(
+            e["verbo"] == "GET" and e["path"] == "/v1/pedidos" for e in result
+        )
+
 
 class TestExtractHttpCalls:
     def test_httppost(self) -> None:

@@ -3150,3 +3150,37 @@ def poui_projetos(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def poui_bridge(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Cruza datasources POUI (front) com rest_endpoints (back TLPP) por path.
+
+    Casa por **sufixo nos dois sentidos** (o front costuma ter o path curto
+    `/pedidos` e o back o completo `/v1/.../pedidos`, ou vice-versa). O verbo é
+    **opcional**: quando o front não consegue determiná-lo (URL em variável,
+    verbo='') ainda casa por path; quando ambos têm verbo, eles precisam bater."""
+    rows = conn.execute(
+        """
+        SELECT ds.caminho, ds.linha, ds.verbo, ds.path_norm,
+               re.arquivo, re.funcao, re.path
+        FROM poui_datasources ds
+        JOIN rest_endpoints re
+          ON re.path != '' AND ds.path_norm != ''
+         AND (ds.path_norm = re.path
+              OR re.path LIKE '%' || ds.path_norm
+              OR ds.path_norm LIKE '%' || re.path)
+         AND (ds.verbo = '' OR re.verbo = '' OR UPPER(ds.verbo) = UPPER(re.verbo))
+        ORDER BY ds.caminho, ds.linha
+        """
+    ).fetchall()
+    return [
+        {
+            "front_arquivo": c,
+            "front_linha": ln,
+            "verbo": v,
+            "path": p,
+            "back_arquivo": ra,
+            "back_funcao": rf,
+        }
+        for c, ln, v, p, ra, rf, rp in rows
+    ]

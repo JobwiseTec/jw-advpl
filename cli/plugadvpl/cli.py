@@ -118,6 +118,9 @@ from plugadvpl.query import (
     trace_query,
 )
 from plugadvpl.query import (
+    poui_bridge as q_poui_bridge,
+)
+from plugadvpl.query import (
     poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
@@ -2346,6 +2349,33 @@ def ingest_poui_cmd(
         linhas,
         columns=["arquivo", "poui", "angular", "compativel", "pacotes"],
         title="PO UI projetos",
+    )
+
+
+@app.command(name="poui-bridge")
+def poui_bridge(ctx: typer.Context) -> None:
+    """Cruza datasources POUI (front Angular) com rotas REST do Protheus (back TLPP)."""
+    db_path: Path = ctx.obj["db"]
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        rows = q_poui_bridge(conn)
+    finally:
+        close_db(conn)
+    linhas = [
+        {
+            "verbo": r["verbo"],
+            "path": r["path"],
+            "front": f"{r['front_arquivo']}:{r['front_linha']}",
+            "back": f"{r['back_arquivo']} ({r['back_funcao']})",
+        }
+        for r in rows
+    ]
+    _render_from_ctx(
+        ctx,
+        linhas,
+        columns=["verbo", "path", "front", "back"],
+        title="POUI ↔ Protheus (ponte REST)",
     )
 
 

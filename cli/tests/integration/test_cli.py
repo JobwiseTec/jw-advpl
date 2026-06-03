@@ -275,7 +275,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 58
+        assert len(rules) == 59
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -311,7 +311,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 58
+        assert len(rules) == 59
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -326,7 +326,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 58
+        assert len(rules) == 59
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
@@ -451,7 +451,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 58
+        assert len(instructions) == 59
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -494,7 +494,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 58
+        assert len(instructions) == 59
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -512,7 +512,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 58
+        assert len(instructions) == 59
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -583,7 +583,7 @@ class TestInitGeminiSkills:
         self, synthetic_project: Path, runner: CliRunner,
         monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """`.gemini/` no projeto → project MD + 58 skills."""
+        """`.gemini/` no projeto → project MD + 59 skills."""
         fake_home = synthetic_project.parent / "fake_home_gemini2"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -598,7 +598,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 58
+        assert len(skill_files) == 59
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -656,7 +656,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 58
+        assert len(skill_files) == 59
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -675,7 +675,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 58
+        assert len(skill_files) == 59
         arch_content = (
             synthetic_project
             / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
@@ -917,15 +917,15 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 58
+        assert len(cursor_files) == 59
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 58
+        assert len(copilot_files) == 59
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 58
+        assert len(gemini_files) == 59
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -3582,3 +3582,27 @@ class TestIngestPoui:
         combined = (result.stderr or "") + result.stdout
         assert "21.18.0" in combined
         assert "NAO" in combined or "19" in combined  # compativel=NAO ou angular major 19
+
+
+class TestPouiBridge:
+    def test_bridge_lista_match(self, runner: CliRunner, tmp_path: Path) -> None:
+        # Front: projeto POUI com 1 service chamando /pedidos
+        proj = tmp_path / "front"
+        (proj / "src").mkdir(parents=True)
+        (proj / "package.json").write_text(
+            '{"dependencies": {"@po-ui/ng-components": "15.0.0"}}', encoding="utf-8"
+        )
+        (proj / "src" / "p.service.ts").write_text(
+            "f(){return this.http.get('/pedidos');}", encoding="utf-8"
+        )
+        # Back: fonte TLPP com @Get /pedidos
+        (tmp_path / "PEDREST.tlpp").write_text(
+            '@Get("/pedidos")\nMethod getPed() Class P\nReturn\nEndMethod\n', encoding="utf-8"
+        )
+        # ingere os dois lados no MESMO índice, depois cruza
+        runner.invoke(app, ["--root", str(tmp_path), "ingest-poui", str(proj)])
+        runner.invoke(app, ["--root", str(tmp_path), "ingest"])
+        result = runner.invoke(app, ["--root", str(tmp_path), "poui-bridge"])
+        assert result.exit_code == 0
+        out = (result.stderr or "") + result.stdout
+        assert "/pedidos" in out and "PEDREST" in out

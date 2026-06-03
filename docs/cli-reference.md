@@ -25,8 +25,9 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
   - [`tq`](#tq)
 - [Auditoria — INI & Logs (v0.11+)](#auditoria)
   - [`ini-audit`](#ini-audit), [`log-diagnose`](#log-diagnose)
-- [PO UI — Frontend Angular TOTVS (v0.22)](#poui)
+- [PO UI — Frontend Angular TOTVS (v0.22+)](#poui)
   - [`ingest-poui`](#ingest-poui)
+  - [`poui-bridge`](#poui-bridge)
 - [Exit codes](#exit-codes)
 
 ---
@@ -661,13 +662,13 @@ plugadvpl log-diagnose console.log
 
 ---
 
-## <a id="poui"></a>PO UI — Frontend Angular TOTVS (v0.22)
+## <a id="poui"></a>PO UI — Frontend Angular TOTVS (v0.22+)
 
-Detecta projetos PO UI: família `@po-ui/*`, versão, Angular exigido e flag de incompatibilidade.
+Detecta projetos PO UI: família `@po-ui/*`, versão, Angular exigido e flag de incompatibilidade. Extrai chamadas HttpClient dos `.ts` e cruza com rotas TLPP.
 
 ### <a id="ingest-poui"></a>`ingest-poui <dir>`
 
-Descobre todos os `package.json` abaixo de `<dir>` (ignora `node_modules`, `dist`, `.angular`), extrai dependências `@po-ui/*` e Angular, persiste na tabela `poui_projetos`, e exibe resumo tabelar.
+Descobre todos os `package.json` abaixo de `<dir>` (ignora `node_modules`, `dist`, `.angular`), extrai dependências `@po-ui/*` e Angular, persiste na tabela `poui_projetos`, e exibe resumo tabelar. A partir da Fase 2, também varre os `.ts` do projeto extraindo chamadas `HttpClient` para a tabela `poui_datasources`.
 
 ```
 plugadvpl ingest-poui <dir>
@@ -701,6 +702,37 @@ plugadvpl --format json ingest-poui /path/to/monorepo
 - Bootstrapa o DB sozinho (não exige `init` prévio).
 - Cache por hash+mtime — re-rodar em projeto sem mudanças zera ingestão (skipped=N).
 - Compatibilidade: `poui_major == angular_major` (alinhamento TOTVS de versão >= 12).
+- Fase 2 (v0.22+): extrai chamadas `this.http.get/post/...` dos `.ts` → `poui_datasources`.
+
+---
+
+### <a id="poui-bridge"></a>`poui-bridge`
+
+Cruza os datasources REST do frontend Angular (tabela `poui_datasources`) com as rotas
+REST do Protheus (tabela `rest_endpoints`, populada pelo `ingest`). Exibe os matches
+front↔back por verbo+path.
+
+```
+plugadvpl poui-bridge
+```
+
+**Pré-requisito:** executar `ingest-poui <dir>` (extrai datasources) e `ingest` (indexa TLPP).
+
+**Saída:**
+
+| Coluna | Descrição |
+|---|---|
+| `verbo` | Verbo HTTP do match (GET, POST, …) |
+| `path` | Path REST casado (ex: `/pedidos`) |
+| `front` | Arquivo TypeScript + linha da chamada Angular |
+| `back` | Fonte TLPP + função que implementa a rota |
+
+**Exemplos:**
+
+```bash
+plugadvpl poui-bridge
+plugadvpl --format json poui-bridge
+```
 
 ---
 

@@ -434,9 +434,9 @@ A detecção de WAL-incompatibilidade (network drives, SMB) é feita no momento 
 
 ---
 
-## PO UI (migration 022)
+## PO UI (migrations 022–023)
 
-### `poui_projetos`
+### `poui_projetos` (migration 022)
 
 1 row por `package.json` com dependência `@po-ui/*`. Populada por `plugadvpl ingest-poui`.
 
@@ -453,6 +453,21 @@ A detecção de WAL-incompatibilidade (network drives, SMB) é feita no momento 
 | `mtime_ns` | INTEGER | mtime em nanosegundos (cache de re-ingestão) |
 
 Índice: `idx_poui_compat` em `compativel` (consulta rápida de incompatíveis).
+
+### `poui_datasources` (migration 023)
+
+1 row por chamada `HttpClient` encontrada nos `.ts` de um projeto PO UI. Populada por
+`plugadvpl ingest-poui` (Fase 2). Cruzada com `rest_endpoints` via `plugadvpl poui-bridge`.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `caminho` | TEXT | Path absoluto do arquivo `.ts` onde a chamada está |
+| `linha` | INTEGER | Número da linha da chamada |
+| `verbo` | TEXT | Verbo HTTP: `GET`, `POST`, `PUT`, `DELETE`, `PATCH` |
+| `url_raw` | TEXT | URL literal/template capturada |
+| `path_norm` | TEXT | Path estático normalizado casável com `rest_endpoints.path` |
+
+Índice: `idx_poui_ds_path` em `path_norm` (JOIN com `rest_endpoints`).
 
 ---
 

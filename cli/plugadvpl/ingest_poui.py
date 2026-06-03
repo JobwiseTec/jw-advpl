@@ -1,6 +1,7 @@
 """Ingestão de projetos PO UI: descobre package.json com @po-ui/*, persiste.
 
 Cache por hash+mtime (modelo ingest_ini). Ignora node_modules/dist/.angular.
+Fase 2: também extrai chamadas HttpClient dos .ts -> poui_datasources.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from plugadvpl.parsing.poui import parse_poui_package_json
+from plugadvpl.parsing.poui import extract_angular_http_calls, parse_poui_package_json
 
 if TYPE_CHECKING:
     import sqlite3
@@ -23,6 +24,27 @@ _SKIP_DIRS = {"node_modules", "dist", ".angular", ".git", "tmp"}
 class IngestPouiResult:
     ingested: int = 0
     skipped: int = 0
+
+
+def _ingest_datasources(conn: sqlite3.Connection, proj_root: Path) -> None:
+    """Varre .ts do projeto, extrai HttpClient calls -> poui_datasources.
+
+    Limpa as do projeto antes (rebuild atômico por projeto)."""
+    proj_abs = str(proj_root.resolve())
+    conn.execute("DELETE FROM poui_datasources WHERE caminho LIKE ?", (proj_abs + "%",))
+    for ts in proj_root.rglob("*.ts"):
+        if any(part in _SKIP_DIRS for part in ts.relative_to(proj_root).parts):
+            continue
+        try:
+            txt = ts.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for call in extract_angular_http_calls(txt):
+            conn.execute(
+                "INSERT INTO poui_datasources (caminho, linha, verbo, url_raw, path_norm) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (str(ts.resolve()), call["linha"], call["verbo"], call["url"], call["path_norm"]),
+            )
 
 
 def _discover(root: Path) -> list[Path]:
@@ -84,6 +106,7 @@ def ingest_poui_dir(
                 mtime,
             ),
         )
+        _ingest_datasources(conn, pkg_path.parent)
         res.ingested += 1
     conn.commit()
     return res

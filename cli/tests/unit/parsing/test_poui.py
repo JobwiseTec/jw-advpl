@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from plugadvpl.parsing.poui import parse_poui_package_json
+from plugadvpl.parsing.poui import extract_angular_http_calls, parse_poui_package_json
 
 
 def test_detecta_poui_e_versao() -> None:
@@ -67,3 +67,40 @@ def test_versao_nao_numerica_vira_major_none() -> None:
     assert p is not None
     assert p.poui_major is None
     assert p.compativel is True  # sem major comparável → não flag
+
+
+def test_http_call_literal_e_template() -> None:
+    ts = """
+    getPedidos() { return this.http.get<Pedido[]>('/pedidos'); }
+    salvar(p) { return this.http.post(`${environment.api}/processar`, p); }
+    del(id) { return this.http.delete(`${env.base}/pedidos/${id}`); }
+    """
+    calls = extract_angular_http_calls(ts)
+    verbos = {(c["verbo"], c["path_norm"]) for c in calls}
+    assert ("GET", "/pedidos") in verbos
+    assert ("POST", "/processar") in verbos
+    assert ("DELETE", "/pedidos") in verbos  # ${id} dinâmico é descartado do path_norm
+
+
+def test_http_call_ignora_nao_http() -> None:
+    assert extract_angular_http_calls("foo.get('/x'); array.post(1)") == []
+
+
+def test_http_call_url_em_variavel_via_harvest() -> None:
+    # Código real monta a URL numa variável; o path-literal está solto no arquivo.
+    ts = """
+    getAll() {
+      const url = `${this.base}/v1/pedidos`;
+      return this.http.get<any>(url, { headers });
+    }
+    """
+    paths = {c["path_norm"] for c in extract_angular_http_calls(ts)}
+    assert "/v1/pedidos" in paths  # colhido mesmo não sendo literal no http.get()
+
+
+def test_harvest_ignora_import_relativo() -> None:
+    # './model' (import) NÃO deve virar datasource; precisa de http + path /seg.
+    ts = "import { X } from './pedido.model';\nthis.http.get(u);\nconst p = '/pedidos';"
+    paths = {c["path_norm"] for c in extract_angular_http_calls(ts)}
+    assert "/pedidos" in paths
+    assert "/pedido" not in paths  # o import relativo não entra

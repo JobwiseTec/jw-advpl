@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 57 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 59 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -97,6 +97,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "setup": [],
     "ingest-poui": [],
     "ingest-protheus": [],
+    "poui-bridge": [],
 }
 
 # v0.16.5 — Meta-skills sem glob específico mas que carregam contexto
