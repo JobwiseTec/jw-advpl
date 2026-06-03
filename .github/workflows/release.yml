@@ -29,7 +29,7 @@ jobs:
           uv build --sdist
           uv build --wheel
       - name: Upload wheel + sdist as artifact (for github-release job)
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: cli/dist/*
