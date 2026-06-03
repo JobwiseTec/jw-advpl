@@ -28,6 +28,7 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
 - [PO UI — Frontend Angular TOTVS (v0.22+)](#poui)
   - [`ingest-poui`](#ingest-poui)
   - [`poui-bridge`](#poui-bridge)
+  - [`poui-componentes`](#poui-componentes)
 - [Exit codes](#exit-codes)
 
 ---
@@ -732,6 +733,36 @@ plugadvpl poui-bridge
 ```bash
 plugadvpl poui-bridge
 plugadvpl --format json poui-bridge
+```
+
+### <a id="poui-componentes"></a>`poui-componentes [componente]`
+
+Consulta o catálogo de bindings `p-*` (inputs e outputs) de componentes PO UI.
+O catálogo embarcado (`poui_componentes.json`) contém 948 entradas extraídas do
+código-fonte do `po-angular` — não inventa atributos. Não precisa de índice de
+projeto (bootstraps o DB local automaticamente).
+
+**Argumento:**
+
+| Argumento | Tipo | Descrição |
+|---|---|---|
+| `componente` | TEXT (opcional) | Nome do componente Angular (ex: `po-table`). Omita para listar todos. |
+
+**Colunas de saída:**
+
+| Coluna | Descrição |
+|---|---|
+| `componente` | Nome do componente (ex: `po-table`) |
+| `kind` | `input` (atributo de entrada) ou `output` (evento emitido) |
+| `binding` | Atributo HTML `p-*` (ex: `p-columns`) |
+| `propriedade` | Nome TypeScript da propriedade (ex: `columns`) |
+
+**Exemplos:**
+
+```bash
+plugadvpl poui-componentes po-table
+plugadvpl --format md poui-componentes po-input
+plugadvpl --limit 0 poui-componentes  # todos os 948 bindings
 ```
 
 ---

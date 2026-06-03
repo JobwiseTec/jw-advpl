@@ -121,6 +121,9 @@ from plugadvpl.query import (
     poui_bridge as q_poui_bridge,
 )
 from plugadvpl.query import (
+    poui_componentes as q_poui_componentes,
+)
+from plugadvpl.query import (
     poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
@@ -1498,6 +1501,40 @@ def semantica(
         rows,
         columns=["campo", "tabela", "discriminador", "semantica", "fonte"],
         title=f"Semântica de {campo.strip().upper()}",
+    )
+
+
+@app.command(name="poui-componentes")
+def poui_componentes(
+    ctx: typer.Context,
+    componente: Annotated[
+        str | None,
+        typer.Argument(help="Componente PO UI (ex: po-table). Omita para listar todos."),
+    ] = None,
+) -> None:
+    """Lista bindings `p-*` (inputs/outputs) do catálogo PO UI por componente.
+
+    Consulta o catálogo embarcado ``poui_componentes`` (948 bindings extraídos
+    do po-angular) — não precisa de índice de projeto. Use para verificar
+    quais propriedades um componente aceita antes de escrever templates Angular,
+    evitando inventar atributos inexistentes.
+    """
+    db_path: Path = ctx.obj["db"]
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        seed_lookups(conn)
+        rows = q_poui_componentes(conn, componente=componente)
+    finally:
+        close_db(conn)
+    title = (
+        f"Bindings PO UI — {componente}" if componente else "Catálogo PO UI — todos os componentes"
+    )
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["componente", "kind", "binding", "propriedade"],
+        title=title,
     )
 
 

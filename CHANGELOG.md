@@ -8,6 +8,7 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 - **`ingest-poui`** — detecção de projetos PO UI (frontend Angular TOTVS): lê `package.json`, extrai família `@po-ui/*`, major do Angular exigido e flag de incompatibilidade. Cache hash+mtime; ignora `node_modules`. Tabela `poui_projetos` (migration 022, schema v22). Skill `ingest-poui`. Docs: `docs/schema.md`, `docs/cli-reference.md`.
 - **`poui-bridge`** (Fase 2) — cruza chamadas `HttpClient` Angular (`this.http.get/post/...`) com rotas REST do Protheus (`@Get`/`@Post` TLPP indexadas em `rest_endpoints`), entregando rastreabilidade ponta-a-ponta front↔back. Tabela `poui_datasources` (migration 023, schema v23). Skill `poui-bridge`. `ingest-poui` agora também extrai datasources dos `.ts`.
+- **`poui-componentes`** (Fase 3a) — catálogo verificado de bindings `p-*` (inputs/outputs) por componente PO UI Angular. 948 entradas extraídas do código-fonte do `po-angular`. Tabela `poui_componentes` (migration 024, schema v24). Comando `plugadvpl poui-componentes [componente]`. Skill `poui-componentes` (anti-alucinação: IA verifica atributos antes de escrever templates). Guard `test_poui_componentes_consistency` (6 invariantes). Docs: `docs/schema.md`, `docs/cli-reference.md`.
 
 ## [0.21.1] - 2026-06-02
 

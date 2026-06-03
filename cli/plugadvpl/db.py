@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "23"
+SCHEMA_VERSION = "24"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -139,6 +139,11 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "campos_semantica.json": (
         "campos_semantica",
         ["chave", "tabela", "campo", "discriminador", "semantica", "fonte"],
+    ),
+    # v0.22.0 (migration 024): catálogo de bindings PO UI (inputs/outputs p-*).
+    "poui_componentes.json": (
+        "poui_componentes",
+        ["chave", "componente", "kind", "binding", "propriedade", "fonte"],
     ),
 }
 

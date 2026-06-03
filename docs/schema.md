@@ -469,6 +469,24 @@ A detecção de WAL-incompatibilidade (network drives, SMB) é feita no momento 
 
 Índice: `idx_poui_ds_path` em `path_norm` (JOIN com `rest_endpoints`).
 
+### `poui_componentes` (migration 024)
+
+Catálogo de bindings `p-*` (inputs e outputs) por componente Angular do
+`po-angular`. Populada por `seed_lookups` via `lookups/poui_componentes.json`
+(948 entradas). Usada pelo comando `plugadvpl poui-componentes` para consulta
+rápida de quais atributos um componente aceita.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `chave` | TEXT PK | PK sintética: `{componente}:{kind}:{binding}` |
+| `componente` | TEXT | Nome do componente Angular (ex: `po-table`) |
+| `kind` | TEXT | `input` ou `output` |
+| `binding` | TEXT | Atributo HTML `p-*` (ex: `p-columns`) |
+| `propriedade` | TEXT | Nome da propriedade TypeScript (ex: `columns`) |
+| `fonte` | TEXT | Arquivo `.ts` de origem no repositório `po-angular` |
+
+Índice: `idx_poui_componentes_comp` em `componente`.
+
 ---
 
 ## Reservado para v0.2+

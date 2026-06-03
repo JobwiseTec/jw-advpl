@@ -3184,3 +3184,41 @@ def poui_bridge(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         }
         for c, ln, v, p, ra, rf, rp in rows
     ]
+
+
+def poui_componentes(
+    conn: sqlite3.Connection,
+    componente: str | None = None,
+) -> list[dict[str, Any]]:
+    """Bindings `p-*` do catálogo PO UI (migration 024).
+
+    Args:
+        conn: conexão SQLite (RO ok).
+        componente: nome do componente Angular (ex: ``po-table``). Filtro
+            case-insensitive. ``None`` = todos os componentes.
+
+    Returns:
+        Lista de dicts ``{componente, kind, binding, propriedade}`` ordenada
+        por ``componente, kind, binding``. Vazia se ``componente`` não existe
+        no catálogo.
+    """
+    if componente is not None:
+        rows = conn.execute(
+            """
+            SELECT componente, kind, binding, propriedade
+            FROM poui_componentes
+            WHERE lower(componente) = lower(?)
+            ORDER BY componente, kind, binding
+            """,
+            (componente,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT componente, kind, binding, propriedade
+            FROM poui_componentes
+            ORDER BY componente, kind, binding
+            """
+        ).fetchall()
+    cols = ["componente", "kind", "binding", "propriedade"]
+    return [dict(zip(cols, r, strict=True)) for r in rows]

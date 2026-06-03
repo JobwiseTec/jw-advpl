@@ -282,6 +282,8 @@ class TestSeedLookups:
             "apis_por_build.json",
             # v0.20.0: semântica contextual de campos SX (#27)
             "campos_semantica.json",
+            # v0.22.0: catálogo de bindings PO UI (#29)
+            "poui_componentes.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 
