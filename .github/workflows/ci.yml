@@ -75,6 +75,7 @@ jobs:
         plugadvpl/ingest.py
         plugadvpl/ingest_ini.py
         plugadvpl/ingest_log.py
+        plugadvpl/ingest_poui.py
         plugadvpl/ingest_rest.py
         plugadvpl/ingest_sx.py
         plugadvpl/migrate_tlpp.py
@@ -97,6 +98,7 @@ jobs:
         plugadvpl/parsing/ini_report.py
         plugadvpl/parsing/ini_suggest.py
         plugadvpl/parsing/log_report.py
+        plugadvpl/parsing/poui.py
         plugadvpl/query.py
         plugadvpl/runtime_config.py
         plugadvpl/scan.py

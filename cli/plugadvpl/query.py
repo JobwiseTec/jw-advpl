@@ -3120,3 +3120,33 @@ def trace_query(
     # field_definition, n_fields, defined_in) vem no topo.
     hits.sort(key=_trace_sort_key)
     return hits
+
+
+# ---------------------------------------------------------------------------
+# PO UI
+# ---------------------------------------------------------------------------
+
+
+def poui_projetos(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Projetos PO UI ingeridos. `pacotes` desserializado de pacotes_json."""
+    rows = conn.execute(
+        """
+        SELECT caminho, poui_version, poui_major, angular_version, angular_major,
+               compativel, pacotes_json
+        FROM poui_projetos ORDER BY compativel ASC, caminho
+        """
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for caminho, pv, pm, av, am, compat, pacotes_json in rows:
+        out.append(
+            {
+                "caminho": caminho,
+                "poui_version": pv,
+                "poui_major": pm,
+                "angular_version": av,
+                "angular_major": am,
+                "compativel": compat,
+                "pacotes": json.loads(pacotes_json or "[]"),
+            }
+        )
+    return out

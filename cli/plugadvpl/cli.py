@@ -57,6 +57,7 @@ from plugadvpl.ingest_log import (
     discover_log_paths,
     ingest_log_paths,
 )
+from plugadvpl.ingest_poui import ingest_poui_dir
 from plugadvpl.ingest_rest import ingest_via_rest as do_ingest_via_rest
 from plugadvpl.ingest_sx import ingest_sx as do_ingest_sx
 from plugadvpl.output import render
@@ -115,6 +116,9 @@ from plugadvpl.query import (
     sx_status,
     tables_query,
     trace_query,
+)
+from plugadvpl.query import (
+    poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
     status as q_status,
@@ -2306,6 +2310,42 @@ def ingest_sx_cmd(
             "plugadvpl impacto A1_COD",
             "plugadvpl gatilho A1_COD",
         ],
+    )
+
+
+@app.command(name="ingest-poui")
+def ingest_poui_cmd(
+    ctx: typer.Context,
+    caminho: Annotated[str, typer.Argument(help="Diretório raiz do projeto PO UI")],
+) -> None:
+    """Ingere projeto(s) PO UI: detecta @po-ui/* + Angular exigido e flag de compatibilidade."""
+    db_path: Path = ctx.obj["db"]
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        seed_lookups(conn)  # idempotente
+        res = ingest_poui_dir(conn, Path(caminho))
+        rows = q_poui_projetos(conn)
+    finally:
+        close_db(conn)
+    linhas = [
+        {
+            "arquivo": r["caminho"],
+            "poui": r["poui_version"],
+            "angular": r["angular_major"],
+            "compativel": "sim" if r["compativel"] else "NAO",
+            "pacotes": ", ".join(r["pacotes"]),
+        }
+        for r in rows
+    ]
+    if not ctx.obj.get("quiet"):
+        typer.secho(f"PO UI: {res.ingested} ingerido(s), {res.skipped} cache", err=True)
+    _render_from_ctx(
+        ctx,
+        linhas,
+        columns=["arquivo", "poui", "angular", "compativel", "pacotes"],
+        title="PO UI projetos",
     )
 
 

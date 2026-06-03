@@ -95,6 +95,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "migrate-tlpp": [],
     "trace": [],
     "setup": [],
+    "ingest-poui": [],
     "ingest-protheus": [],
 }
 

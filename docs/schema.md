@@ -434,6 +434,28 @@ A detecção de WAL-incompatibilidade (network drives, SMB) é feita no momento 
 
 ---
 
+## PO UI (migration 022)
+
+### `poui_projetos`
+
+1 row por `package.json` com dependência `@po-ui/*`. Populada por `plugadvpl ingest-poui`.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `caminho` | TEXT UNIQUE | Path absoluto do `package.json` |
+| `poui_version` | TEXT | Versão exata de `@po-ui/ng-components` (ou primeiro pacote) |
+| `poui_major` | INTEGER | Major extraído da versão (`^21.18.0` → 21) |
+| `angular_version` | TEXT | Range de `@angular/core` (`^21.0.3`) |
+| `angular_major` | INTEGER | Major do Angular exigido |
+| `compativel` | INTEGER | 1 se `poui_major == angular_major` (ou um deles é null); 0 se incompatível |
+| `pacotes_json` | TEXT | JSON array dos pacotes `@po-ui/*` encontrados |
+| `hash` | TEXT | SHA-256 do `package.json` (cache de re-ingestão) |
+| `mtime_ns` | INTEGER | mtime em nanosegundos (cache de re-ingestão) |
+
+Índice: `idx_poui_compat` em `compativel` (consulta rápida de incompatíveis).
+
+---
+
 ## Reservado para v0.2+
 
 Schema futuro (não implementado na migration 001):

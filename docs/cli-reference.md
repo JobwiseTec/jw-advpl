@@ -25,6 +25,8 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
   - [`tq`](#tq)
 - [Auditoria — INI & Logs (v0.11+)](#auditoria)
   - [`ini-audit`](#ini-audit), [`log-diagnose`](#log-diagnose)
+- [PO UI — Frontend Angular TOTVS (v0.22)](#poui)
+  - [`ingest-poui`](#ingest-poui)
 - [Exit codes](#exit-codes)
 
 ---
@@ -656,6 +658,49 @@ Diagnostica logs Protheus (`console.log`/`error.log`/`profile.log`/`compila.log`
 ```
 plugadvpl log-diagnose console.log
 ```
+
+---
+
+## <a id="poui"></a>PO UI — Frontend Angular TOTVS (v0.22)
+
+Detecta projetos PO UI: família `@po-ui/*`, versão, Angular exigido e flag de incompatibilidade.
+
+### <a id="ingest-poui"></a>`ingest-poui <dir>`
+
+Descobre todos os `package.json` abaixo de `<dir>` (ignora `node_modules`, `dist`, `.angular`), extrai dependências `@po-ui/*` e Angular, persiste na tabela `poui_projetos`, e exibe resumo tabelar.
+
+```
+plugadvpl ingest-poui <dir>
+```
+
+**Argumento:**
+
+| Nome | Obrigatório | Descrição |
+|---|---|---|
+| `<dir>` | sim | Diretório raiz do projeto PO UI (ou monorepo) |
+
+**Saída:**
+
+| Coluna | Descrição |
+|---|---|
+| `arquivo` | Path absoluto do `package.json` |
+| `poui` | Versão `@po-ui/ng-components` (ou primeiro pacote) |
+| `angular` | Major do Angular exigido |
+| `compativel` | `sim` / `NAO` — `NAO` quando `poui_major != angular_major` |
+| `pacotes` | Lista de pacotes `@po-ui/*` encontrados |
+
+**Exemplos:**
+
+```bash
+plugadvpl ingest-poui ./frontend
+plugadvpl --format json ingest-poui /path/to/monorepo
+```
+
+**Notas:**
+
+- Bootstrapa o DB sozinho (não exige `init` prévio).
+- Cache por hash+mtime — re-rodar em projeto sem mudanças zera ingestão (skipped=N).
+- Compatibilidade: `poui_major == angular_major` (alinhamento TOTVS de versão >= 12).
 
 ---
 

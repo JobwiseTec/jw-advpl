@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **`ingest-poui`** — detecção de projetos PO UI (frontend Angular TOTVS): lê `package.json`, extrai família `@po-ui/*`, major do Angular exigido e flag de incompatibilidade. Cache hash+mtime; ignora `node_modules`. Tabela `poui_projetos` (migration 022, schema v22). Skill `ingest-poui`. Docs: `docs/schema.md`, `docs/cli-reference.md`.
+
 ## [0.21.1] - 2026-06-02
 
 Patch de **segurança** — continuação do hardening SSL/TLS da v0.21.0 (mesma classe do bug SSL2/SSL3), surfado pelo meta-audit.
