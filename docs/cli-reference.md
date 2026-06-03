@@ -29,6 +29,7 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
   - [`ingest-poui`](#ingest-poui)
   - [`poui-bridge`](#poui-bridge)
   - [`poui-componentes`](#poui-componentes)
+  - [`poui-lint`](#poui-lint)
 - [Exit codes](#exit-codes)
 
 ---
@@ -763,6 +764,30 @@ projeto (bootstraps o DB local automaticamente).
 plugadvpl poui-componentes po-table
 plugadvpl --format md poui-componentes po-input
 plugadvpl --limit 0 poui-componentes  # todos os 948 bindings
+```
+
+### <a id="poui-lint"></a>`poui-lint`
+
+Lint de templates PO UI: detecta bindings `p-*` usados em `<po-*>` que **não
+existem no catálogo** `poui_componentes` (regra `POUI-PROP` — anti-alucinação).
+
+**Pré-requisito:** `plugadvpl ingest-poui <dir>` para popular `poui_componentes_uso`.
+
+**Saída:**
+
+| Coluna | Descrição |
+|---|---|
+| `arquivo` | Template HTML com o binding suspeito |
+| `linha` | Linha do componente no arquivo |
+| `componente` | Componente Angular (`po-button`, `po-table`, …) |
+| `binding` | Binding `p-*` não encontrado no catálogo |
+
+**Exemplos:**
+
+```bash
+plugadvpl poui-lint
+plugadvpl --format md poui-lint
+plugadvpl --format json poui-lint
 ```
 
 ---

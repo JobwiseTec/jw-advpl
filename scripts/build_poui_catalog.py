@@ -33,8 +33,10 @@ _DEC_STR = re.compile(r"@(Input|Output)\(\s*['\"](p-[\w-]+)['\"]\s*\)\s+(?:set\s
 _DEC_OBJ = re.compile(
     r"@(Input|Output)\(\s*\{[^}]*?alias:\s*['\"](p-[\w-]+)['\"][^}]*?\}\s*\)\s+(?:set\s+|get\s+)?(\w+)"
 )
+# signal: prop = input<T>({alias:'p-x'}) OU input<T>(defaultValue, {alias:'p-x'})
+# (o default antes do objeto de opções é comum — ex po-button: input<string>(undefined, {...})).
 _SIGNAL = re.compile(
-    r"(\w+)\s*=\s*(input|output)(?:\.required)?\s*<[^>]*>\s*\(\s*\{[^}]*?alias:\s*['\"](p-[\w-]+)['\"]"
+    r"(\w+)\s*=\s*(input|output)(?:\.required)?\s*<[^>]*>\s*\([^{]*\{[^}]*?alias:\s*['\"](p-[\w-]+)['\"]"
 )
 
 

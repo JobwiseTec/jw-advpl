@@ -2,6 +2,7 @@
 
 Cache por hash+mtime (modelo ingest_ini). Ignora node_modules/dist/.angular.
 Fase 2: também extrai chamadas HttpClient dos .ts -> poui_datasources.
+Fase 3b: também extrai uso de componentes <po-*> dos .html -> poui_componentes_uso.
 """
 
 from __future__ import annotations
@@ -11,7 +12,11 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from plugadvpl.parsing.poui import extract_angular_http_calls, parse_poui_package_json
+from plugadvpl.parsing.poui import (
+    extract_angular_http_calls,
+    extract_poui_template_usage,
+    parse_poui_package_json,
+)
 
 if TYPE_CHECKING:
     import sqlite3
@@ -44,6 +49,33 @@ def _ingest_datasources(conn: sqlite3.Connection, proj_root: Path) -> None:
                 "INSERT INTO poui_datasources (caminho, linha, verbo, url_raw, path_norm) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (str(ts.resolve()), call["linha"], call["verbo"], call["url"], call["path_norm"]),
+            )
+
+
+def _ingest_template_usage(conn: sqlite3.Connection, proj_root: Path) -> None:
+    """Varre .html do projeto, extrai uso de componentes po-* -> poui_componentes_uso.
+
+    Limpa os do projeto antes (rebuild atômico por projeto)."""
+    proj_abs = str(proj_root.resolve())
+    conn.execute("DELETE FROM poui_componentes_uso WHERE caminho LIKE ?", (proj_abs + "%",))
+    for html in proj_root.rglob("*.html"):
+        if any(part in _SKIP_DIRS for part in html.relative_to(proj_root).parts):
+            continue
+        try:
+            txt = html.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for usage in extract_poui_template_usage(txt):
+            conn.execute(
+                "INSERT INTO poui_componentes_uso (caminho, linha, componente, binding, kind) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    str(html.resolve()),
+                    usage["linha"],
+                    usage["componente"],
+                    usage["binding"],
+                    usage["kind"],
+                ),
             )
 
 
@@ -107,6 +139,7 @@ def ingest_poui_dir(
             ),
         )
         _ingest_datasources(conn, pkg_path.parent)
+        _ingest_template_usage(conn, pkg_path.parent)
         res.ingested += 1
     conn.commit()
     return res

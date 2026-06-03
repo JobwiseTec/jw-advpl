@@ -124,6 +124,9 @@ from plugadvpl.query import (
     poui_componentes as q_poui_componentes,
 )
 from plugadvpl.query import (
+    poui_lint as q_poui_lint,
+)
+from plugadvpl.query import (
     poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
@@ -2413,6 +2416,35 @@ def poui_bridge(ctx: typer.Context) -> None:
         linhas,
         columns=["verbo", "path", "front", "back"],
         title="POUI ↔ Protheus (ponte REST)",
+    )
+
+
+@app.command(name="poui-lint")
+def poui_lint_cmd(ctx: typer.Context) -> None:
+    """Lint de templates PO UI: bindings p-* não catalogados (regra POUI-PROP).
+
+    Requer ``ingest-poui`` prévia para popular ``poui_componentes_uso``."""
+    db_path: Path = ctx.obj["db"]
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        rows = q_poui_lint(conn)
+    finally:
+        close_db(conn)
+    linhas = [
+        {
+            "arquivo": r["arquivo"],
+            "linha": r["linha"],
+            "componente": r["componente"],
+            "binding": r["binding"],
+        }
+        for r in rows
+    ]
+    _render_from_ctx(
+        ctx,
+        linhas,
+        columns=["arquivo", "linha", "componente", "binding"],
+        title="POUI-PROP — bindings não catalogados",
     )
 
 

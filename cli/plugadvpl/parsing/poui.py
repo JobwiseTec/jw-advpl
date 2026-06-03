@@ -3,6 +3,7 @@
 Detecta a família @po-ui/* no package.json e deriva versão + major do Angular
 exigido. Ver docs/poui-pesquisa-e-plano.md (Fase 1).
 Fase 2: extrai chamadas HttpClient Angular (verbo+path) para cruzamento REST.
+Fase 3b: extrai uso de componentes <po-*> + bindings p-* de templates HTML.
 """
 
 from __future__ import annotations
@@ -26,6 +27,41 @@ _PATH_SEG_RE = re.compile(r"/[A-Za-z][\w-]*")
 _HTTP_USAGE_RE = re.compile(r"\bhttp\s*\.\s*(get|post|put|delete|patch)\b", re.IGNORECASE)
 # Literal de path REST: começa com / (ou ${...}/) — exclui import relativo (./x).
 _REST_PATH_LITERAL_RE = re.compile(r"[`'\"]((?:\$\{[^}]*\})?/[A-Za-z][^`'\"]*)[`'\"]")
+
+# Template component usage extraction (Fase 3b)
+# Tag <po-*>: captura nome + blob de atributos (lazy, sem cruzar '>').
+_PO_TAG_RE = re.compile(r"<(po-[\w-]+)((?:[^>])*?)/?>", re.DOTALL)
+# Atributo p-* com prefixo opcional: [(, [, ( → kind; sem prefixo → input.
+_PO_ATTR_RE = re.compile(r"(\[\(|\[|\()?\s*(p-[\w-]+)")
+
+
+def extract_poui_template_usage(content: str) -> list[dict[str, object]]:
+    """Extrai uso de componentes ``<po-*>`` + bindings ``p-*`` de templates HTML.
+
+    Para cada tag ``<po-X>``: ``componente`` = tag name; para cada atributo
+    ``p-*`` no blob de atributos: ``kind`` = ``"output"`` se o prefixo for
+    exatamente ``(``, senão ``"input"`` (inclui ``[``, ``[(``, plain).
+    Dedup por (componente, binding, kind, linha).
+
+    Returns:
+        Lista de dicts com ``{componente, binding, kind, linha}``.
+    """
+    seen: set[tuple[str, str, str, int]] = set()
+    out: list[dict[str, object]] = []
+    for tag in _PO_TAG_RE.finditer(content):
+        componente = tag.group(1)
+        blob = tag.group(2)
+        linha = content.count("\n", 0, tag.start()) + 1
+        for attr in _PO_ATTR_RE.finditer(blob):
+            prefix = attr.group(1) or ""
+            binding = attr.group(2)
+            kind = "output" if prefix == "(" else "input"
+            key = (componente, binding, kind, linha)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"componente": componente, "binding": binding, "kind": kind, "linha": linha})
+    return out
 
 
 @dataclass(slots=True)

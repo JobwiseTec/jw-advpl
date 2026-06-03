@@ -87,6 +87,11 @@ def test_tabela_poui_datasources_existe(conn: sqlite3.Connection) -> None:
     assert {"caminho", "linha", "verbo", "path_norm", "url_raw"} <= cols
 
 
+def test_tabela_poui_componentes_uso_existe(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(poui_componentes_uso)")}
+    assert {"caminho", "linha", "componente", "binding", "kind"} <= cols
+
+
 def test_ingest_extrai_datasources(conn: sqlite3.Connection, tmp_path: Path) -> None:
     from plugadvpl.ingest_poui import ingest_poui_dir
 
@@ -105,6 +110,26 @@ def test_ingest_extrai_datasources(conn: sqlite3.Connection, tmp_path: Path) -> 
         "SELECT verbo, path_norm FROM poui_datasources"
     ).fetchall()
     assert ("GET", "/pedidos") in rows
+
+
+def test_ingest_extrai_template_usage(conn: sqlite3.Connection, tmp_path: Path) -> None:
+    from plugadvpl.ingest_poui import ingest_poui_dir
+
+    proj = tmp_path / "front"
+    proj.mkdir()
+    (proj / "package.json").write_text(
+        '{"dependencies": {"@po-ui/ng-components": "21.0.0"}}', encoding="utf-8"
+    )
+    src = proj / "src"
+    src.mkdir()
+    (src / "app.component.html").write_text(
+        "<po-button [p-label]='Salvar'></po-button>", encoding="utf-8"
+    )
+    ingest_poui_dir(conn, tmp_path)
+    rows = conn.execute(
+        "SELECT componente, binding, kind FROM poui_componentes_uso"
+    ).fetchall()
+    assert ("po-button", "p-label", "input") in rows
 
 
 def test_poui_bridge_casa_front_e_back(conn: sqlite3.Connection) -> None:

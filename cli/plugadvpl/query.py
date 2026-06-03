@@ -3222,3 +3222,38 @@ def poui_componentes(
         ).fetchall()
     cols = ["componente", "kind", "binding", "propriedade"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def poui_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """POUI-PROP: binding ``p-*`` usado que NÃO existe no catálogo ``poui_componentes``.
+
+    Só flagra se o COMPONENTE é conhecido no catálogo (componentes custom não
+    têm metadados — seria falso-positivo).
+
+    Returns:
+        Lista de dicts ``{arquivo, linha, componente, binding, kind, regra, mensagem}``.
+    """
+    rows = conn.execute(
+        """
+        SELECT u.caminho, u.linha, u.componente, u.binding, u.kind
+        FROM poui_componentes_uso u
+        WHERE NOT EXISTS (
+            SELECT 1 FROM poui_componentes c
+            WHERE c.componente = u.componente AND c.binding = u.binding )
+          AND EXISTS (
+            SELECT 1 FROM poui_componentes c2 WHERE c2.componente = u.componente )
+        ORDER BY u.caminho, u.linha
+        """
+    ).fetchall()
+    return [
+        {
+            "arquivo": caminho,
+            "linha": linha,
+            "componente": componente,
+            "binding": binding,
+            "kind": kind,
+            "regra": "POUI-PROP",
+            "mensagem": (f"binding `{binding}` não existe em `{componente}` (catálogo po-angular)"),
+        }
+        for caminho, linha, componente, binding, kind in rows
+    ]

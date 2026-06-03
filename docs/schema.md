@@ -487,6 +487,24 @@ rápida de quais atributos um componente aceita.
 
 Índice: `idx_poui_componentes_comp` em `componente`.
 
+### `poui_componentes_uso` (migration 025)
+
+Registra uso de componentes `<po-*>` + bindings `p-*` encontrados nos templates
+HTML do projeto. Populada por `plugadvpl ingest-poui` (Fase 3b). Cruzada com
+`poui_componentes` pela query `poui_lint` para detectar bindings inexistentes
+(regra `POUI-PROP`).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | INTEGER PK | Chave primária autoincrement |
+| `caminho` | TEXT | Caminho absoluto do arquivo `.html` |
+| `linha` | INTEGER | Linha onde o componente aparece no template |
+| `componente` | TEXT | Nome do componente Angular (ex: `po-button`) |
+| `binding` | TEXT | Atributo `p-*` usado (ex: `p-label`) |
+| `kind` | TEXT | `input` ou `output` |
+
+Índice: `idx_poui_uso_comp` em `componente`.
+
 ---
 
 ## Reservado para v0.2+

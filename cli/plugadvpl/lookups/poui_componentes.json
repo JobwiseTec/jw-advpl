@@ -160,6 +160,14 @@
     "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
   },
   {
+    "chave": "po-button:input:p-aria-label",
+    "componente": "po-button",
+    "kind": "input",
+    "binding": "p-aria-label",
+    "propriedade": "ariaLabel",
+    "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
+  },
+  {
     "chave": "po-button:input:p-danger",
     "componente": "po-button",
     "kind": "input",
@@ -184,6 +192,14 @@
     "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
   },
   {
+    "chave": "po-button:input:p-label",
+    "componente": "po-button",
+    "kind": "input",
+    "binding": "p-label",
+    "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
+  },
+  {
     "chave": "po-button:input:p-loading",
     "componente": "po-button",
     "kind": "input",
@@ -197,6 +213,14 @@
     "kind": "input",
     "binding": "p-tabindex",
     "propriedade": "tabindex",
+    "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
+  },
+  {
+    "chave": "po-button:input:p-type",
+    "componente": "po-button",
+    "kind": "input",
+    "binding": "p-type",
+    "propriedade": "type",
     "fonte": "projects/ui/src/lib/components/po-button/po-button-base.component.ts"
   },
   {
@@ -520,6 +544,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
   },
   {
+    "chave": "po-checkbox:input:p-compact-label",
+    "componente": "po-checkbox",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
+  },
+  {
     "chave": "po-checkbox:input:p-disabled",
     "componente": "po-checkbox",
     "kind": "input",
@@ -544,11 +576,27 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
   },
   {
+    "chave": "po-checkbox:input:p-helper",
+    "componente": "po-checkbox",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
+  },
+  {
     "chave": "po-checkbox:input:p-label",
     "componente": "po-checkbox",
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
+  },
+  {
+    "chave": "po-checkbox:input:p-label-text-wrap",
+    "componente": "po-checkbox",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox/po-checkbox-base.component.ts"
   },
   {
@@ -624,6 +672,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
   },
   {
+    "chave": "po-checkbox-group:input:p-compact-label",
+    "componente": "po-checkbox-group",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
+  },
+  {
     "chave": "po-checkbox-group:input:p-disabled",
     "componente": "po-checkbox-group",
     "kind": "input",
@@ -656,6 +712,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
   },
   {
+    "chave": "po-checkbox-group:input:p-helper",
+    "componente": "po-checkbox-group",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
+  },
+  {
     "chave": "po-checkbox-group:input:p-indeterminate",
     "componente": "po-checkbox-group",
     "kind": "input",
@@ -669,6 +733,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
+  },
+  {
+    "chave": "po-checkbox-group:input:p-label-text-wrap",
+    "componente": "po-checkbox-group",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-checkbox-group/po-checkbox-group-base.component.ts"
   },
   {
@@ -808,6 +880,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
   },
   {
+    "chave": "po-combo:input:p-compact-label",
+    "componente": "po-combo",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
+  },
+  {
     "chave": "po-combo:input:p-control-value-with-label",
     "componente": "po-combo",
     "kind": "input",
@@ -928,6 +1008,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
   },
   {
+    "chave": "po-combo:input:p-helper",
+    "componente": "po-combo",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
+  },
+  {
     "chave": "po-combo:input:p-icon",
     "componente": "po-combo",
     "kind": "input",
@@ -957,6 +1045,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
+  },
+  {
+    "chave": "po-combo:input:p-label-text-wrap",
+    "componente": "po-combo",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-combo/po-combo-base.component.ts"
   },
   {
@@ -1112,6 +1208,22 @@
     "fonte": "projects/ui/src/lib/components/po-container/po-container-base.component.ts"
   },
   {
+    "chave": "po-context-menu:input:p-context-title",
+    "componente": "po-context-menu",
+    "kind": "input",
+    "binding": "p-context-title",
+    "propriedade": "contextTitle",
+    "fonte": "projects/ui/src/lib/components/po-context-menu/po-context-menu-base.component.ts"
+  },
+  {
+    "chave": "po-context-menu:input:p-title",
+    "componente": "po-context-menu",
+    "kind": "input",
+    "binding": "p-title",
+    "propriedade": "title",
+    "fonte": "projects/ui/src/lib/components/po-context-menu/po-context-menu-base.component.ts"
+  },
+  {
     "chave": "po-context-menu:output:p-item-selected",
     "componente": "po-context-menu",
     "kind": "output",
@@ -1149,6 +1261,14 @@
     "kind": "input",
     "binding": "p-clean",
     "propriedade": "setClean",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datepicker:input:p-compact-label",
+    "componente": "po-datepicker",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
   },
   {
@@ -1200,6 +1320,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
   },
   {
+    "chave": "po-datepicker:input:p-helper",
+    "componente": "po-datepicker",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
+  },
+  {
     "chave": "po-datepicker:input:p-iso-format",
     "componente": "po-datepicker",
     "kind": "input",
@@ -1213,6 +1341,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datepicker:input:p-label-text-wrap",
+    "componente": "po-datepicker",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker/po-datepicker-base.component.ts"
   },
   {
@@ -1384,6 +1520,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
   },
   {
+    "chave": "po-datepicker-range:input:p-compact-label",
+    "componente": "po-datepicker-range",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
+  },
+  {
     "chave": "po-datepicker-range:input:p-disabled",
     "componente": "po-datepicker-range",
     "kind": "input",
@@ -1424,11 +1568,27 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
   },
   {
+    "chave": "po-datepicker-range:input:p-helper",
+    "componente": "po-datepicker-range",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
+  },
+  {
     "chave": "po-datepicker-range:input:p-label",
     "componente": "po-datepicker-range",
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
+  },
+  {
+    "chave": "po-datepicker-range:input:p-label-text-wrap",
+    "componente": "po-datepicker-range",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
   },
   {
@@ -1574,6 +1734,246 @@
     "binding": "p-keydown",
     "propriedade": "keydown",
     "fonte": "projects/ui/src/lib/components/po-field/po-datepicker-range/po-datepicker-range-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-append-in-body",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-append-in-body",
+    "propriedade": "appendBox",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-auto-focus",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-auto-focus",
+    "propriedade": "autoFocus",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-clean",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-clean",
+    "propriedade": "clean",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-compact-label",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-disabled",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-disabled",
+    "propriedade": "disabled",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-error-limit",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-error-limit",
+    "propriedade": "errorLimit",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-error-pattern",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-error-pattern",
+    "propriedade": "errorPattern",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-format-date",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-format-date",
+    "propriedade": "dateFormat",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-format-time",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-format-time",
+    "propriedade": "timerFormat",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-help",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-help",
+    "propriedade": "help",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-helper",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-label",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-label",
+    "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-label-text-wrap",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-loading",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-loading",
+    "propriedade": "loading",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-locale",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-locale",
+    "propriedade": "localeInput",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-max-date",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-max-date",
+    "propriedade": "maxDateInput",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-max-time",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-max-time",
+    "propriedade": "maxTime",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-min-date",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-min-date",
+    "propriedade": "minDateInput",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-min-time",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-min-time",
+    "propriedade": "minTime",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-minute-interval",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-minute-interval",
+    "propriedade": "minuteInterval",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-no-autocomplete",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-no-autocomplete",
+    "propriedade": "noAutocomplete",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-optional",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-optional",
+    "propriedade": "optional",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-placeholder",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-placeholder",
+    "propriedade": "placeholder",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-readonly",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-readonly",
+    "propriedade": "readonly",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-required",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-required",
+    "propriedade": "required",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-required-field-error-message",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-required-field-error-message",
+    "propriedade": "showErrorMessageRequired",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-second-interval",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-second-interval",
+    "propriedade": "secondInterval",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-show-required",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-show-required",
+    "propriedade": "showRequired",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-show-seconds",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-show-seconds",
+    "propriedade": "showSeconds",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
+  },
+  {
+    "chave": "po-datetimepicker:input:p-size",
+    "componente": "po-datetimepicker",
+    "kind": "input",
+    "binding": "p-size",
+    "propriedade": "size",
+    "fonte": "projects/ui/src/lib/components/po-field/po-datetimepicker/po-datetimepicker-base.component.ts"
   },
   {
     "chave": "po-datetimepicker:output:p-blur",
@@ -1824,6 +2224,14 @@
     "fonte": "projects/ui/src/lib/components/po-dropdown/po-dropdown-base.component.ts"
   },
   {
+    "chave": "po-field-container:input:p-compact-label",
+    "componente": "po-field-container",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
+  },
+  {
     "chave": "po-field-container:input:p-disabled",
     "componente": "po-field-container",
     "kind": "input",
@@ -1837,6 +2245,14 @@
     "kind": "input",
     "binding": "p-help",
     "propriedade": "help",
+    "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
+  },
+  {
+    "chave": "po-field-container:input:p-helper",
+    "componente": "po-field-container",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
     "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
   },
   {
@@ -1872,6 +2288,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
   },
   {
+    "chave": "po-field-container:input:p-show-helper",
+    "componente": "po-field-container",
+    "kind": "input",
+    "binding": "p-show-helper",
+    "propriedade": "showHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
+  },
+  {
     "chave": "po-field-container:input:p-show-required",
     "componente": "po-field-container",
     "kind": "input",
@@ -1886,6 +2310,38 @@
     "binding": "p-size",
     "propriedade": "size",
     "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
+  },
+  {
+    "chave": "po-field-container:input:p-text-wrap",
+    "componente": "po-field-container",
+    "kind": "input",
+    "binding": "p-text-wrap",
+    "propriedade": "textWrap",
+    "fonte": "projects/ui/src/lib/components/po-field/po-field-container/po-field-container.component.ts"
+  },
+  {
+    "chave": "po-filter-chip:input:p-disabled",
+    "componente": "po-filter-chip",
+    "kind": "input",
+    "binding": "p-disabled",
+    "propriedade": "disabled",
+    "fonte": "projects/ui/src/lib/components/po-filter-chip/po-filter-chip-base.component.ts"
+  },
+  {
+    "chave": "po-filter-chip:input:p-label",
+    "componente": "po-filter-chip",
+    "kind": "input",
+    "binding": "p-label",
+    "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-filter-chip/po-filter-chip-base.component.ts"
+  },
+  {
+    "chave": "po-filter-chip:input:p-selected",
+    "componente": "po-filter-chip",
+    "kind": "input",
+    "binding": "p-selected",
+    "propriedade": "selected",
+    "fonte": "projects/ui/src/lib/components/po-filter-chip/po-filter-chip-base.component.ts"
   },
   {
     "chave": "po-filter-chip:output:p-selected-change",
@@ -2088,12 +2544,52 @@
     "fonte": "projects/ui/src/lib/components/po-header/po-header-base.component.ts"
   },
   {
+    "chave": "po-header:input:p-size",
+    "componente": "po-header",
+    "kind": "input",
+    "binding": "p-size",
+    "propriedade": "sizeInput",
+    "fonte": "projects/ui/src/lib/components/po-header/po-header-base.component.ts"
+  },
+  {
     "chave": "po-header:output:p-colapsed-menu",
     "componente": "po-header",
     "kind": "output",
     "binding": "p-colapsed-menu",
     "propriedade": "colapsedMenuEvent",
     "fonte": "projects/ui/src/lib/components/po-header/po-header-base.component.ts"
+  },
+  {
+    "chave": "po-helper:input:p-append-in-body",
+    "componente": "po-helper",
+    "kind": "input",
+    "binding": "p-append-in-body",
+    "propriedade": "appendBox",
+    "fonte": "projects/ui/src/lib/components/po-helper/po-helper-base.component.ts"
+  },
+  {
+    "chave": "po-helper:input:p-disabled",
+    "componente": "po-helper",
+    "kind": "input",
+    "binding": "p-disabled",
+    "propriedade": "disabled",
+    "fonte": "projects/ui/src/lib/components/po-helper/po-helper-base.component.ts"
+  },
+  {
+    "chave": "po-helper:input:p-helper",
+    "componente": "po-helper",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "helper",
+    "fonte": "projects/ui/src/lib/components/po-helper/po-helper-base.component.ts"
+  },
+  {
+    "chave": "po-helper:input:p-size",
+    "componente": "po-helper",
+    "kind": "input",
+    "binding": "p-size",
+    "propriedade": "size",
+    "fonte": "projects/ui/src/lib/components/po-helper/po-helper-base.component.ts"
   },
   {
     "chave": "po-icon:input:p-icon",
@@ -2216,6 +2712,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
   },
   {
+    "chave": "po-input:input:p-compact-label",
+    "componente": "po-input",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
+  },
+  {
     "chave": "po-input:input:p-disabled",
     "componente": "po-input",
     "kind": "input",
@@ -2264,6 +2768,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
   },
   {
+    "chave": "po-input:input:p-helper",
+    "componente": "po-input",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
+  },
+  {
     "chave": "po-input:input:p-icon",
     "componente": "po-input",
     "kind": "input",
@@ -2277,6 +2789,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
+  },
+  {
+    "chave": "po-input:input:p-label-text-wrap",
+    "componente": "po-input",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-input/po-input-base.component.ts"
   },
   {
@@ -2485,6 +3005,14 @@
     "kind": "input",
     "binding": "p-requirement",
     "propriedade": "requirement",
+    "fonte": "projects/ui/src/lib/components/po-label/po-label.component.ts"
+  },
+  {
+    "chave": "po-label:input:p-text-wrap",
+    "componente": "po-label",
+    "kind": "input",
+    "binding": "p-text-wrap",
+    "propriedade": "textWrap",
     "fonte": "projects/ui/src/lib/components/po-label/po-label.component.ts"
   },
   {
@@ -3112,6 +3640,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
   },
   {
+    "chave": "po-lookup:input:p-compact-label",
+    "componente": "po-lookup",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
+  },
+  {
     "chave": "po-lookup:input:p-disabled",
     "componente": "po-lookup",
     "kind": "input",
@@ -3184,6 +3720,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
   },
   {
+    "chave": "po-lookup:input:p-helper",
+    "componente": "po-lookup",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
+  },
+  {
     "chave": "po-lookup:input:p-hide-columns-manager",
     "componente": "po-lookup",
     "kind": "input",
@@ -3205,6 +3749,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
+  },
+  {
+    "chave": "po-lookup:input:p-label-text-wrap",
+    "componente": "po-lookup",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-lookup/po-lookup-base.component.ts"
   },
   {
@@ -3640,6 +4192,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
   },
   {
+    "chave": "po-multiselect:input:p-compact-label",
+    "componente": "po-multiselect",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
+  },
+  {
     "chave": "po-multiselect:input:p-control-value-with-label",
     "componente": "po-multiselect",
     "kind": "input",
@@ -3720,6 +4280,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
   },
   {
+    "chave": "po-multiselect:input:p-helper",
+    "componente": "po-multiselect",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
+  },
+  {
     "chave": "po-multiselect:input:p-hide-search",
     "componente": "po-multiselect",
     "kind": "input",
@@ -3741,6 +4309,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
+  },
+  {
+    "chave": "po-multiselect:input:p-label-text-wrap",
+    "componente": "po-multiselect",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-multiselect/po-multiselect-base.component.ts"
   },
   {
@@ -4928,6 +5504,14 @@
     "fonte": "projects/ui/src/lib/components/po-popover/po-popover-base.component.ts"
   },
   {
+    "chave": "po-popover:input:p-custom-classes",
+    "componente": "po-popover",
+    "kind": "input",
+    "binding": "p-custom-classes",
+    "propriedade": "customClasses",
+    "fonte": "projects/ui/src/lib/components/po-popover/po-popover-base.component.ts"
+  },
+  {
     "chave": "po-popover:input:p-hide-arrow",
     "componente": "po-popover",
     "kind": "input",
@@ -5120,6 +5704,22 @@
     "fonte": "projects/ui/src/lib/components/po-progress/po-progress-base.component.ts"
   },
   {
+    "chave": "po-progress:input:p-radius",
+    "componente": "po-progress",
+    "kind": "input",
+    "binding": "p-radius",
+    "propriedade": "radius",
+    "fonte": "projects/ui/src/lib/components/po-progress/po-progress-base.component.ts"
+  },
+  {
+    "chave": "po-progress:input:p-shape",
+    "componente": "po-progress",
+    "kind": "input",
+    "binding": "p-shape",
+    "propriedade": "shape",
+    "fonte": "projects/ui/src/lib/components/po-progress/po-progress-base.component.ts"
+  },
+  {
     "chave": "po-progress:input:p-show-percentage",
     "componente": "po-progress",
     "kind": "input",
@@ -5264,6 +5864,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-radio-group/po-radio-group-base.component.ts"
   },
   {
+    "chave": "po-radio-group:input:p-compact-label",
+    "componente": "po-radio-group",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-radio-group/po-radio-group-base.component.ts"
+  },
+  {
     "chave": "po-radio-group:input:p-disabled",
     "componente": "po-radio-group",
     "kind": "input",
@@ -5285,6 +5893,22 @@
     "kind": "input",
     "binding": "p-field-error-message",
     "propriedade": "fieldErrorMessage",
+    "fonte": "projects/ui/src/lib/components/po-field/po-radio-group/po-radio-group-base.component.ts"
+  },
+  {
+    "chave": "po-radio-group:input:p-helper",
+    "componente": "po-radio-group",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-radio-group/po-radio-group-base.component.ts"
+  },
+  {
+    "chave": "po-radio-group:input:p-label-text-wrap",
+    "componente": "po-radio-group",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-radio-group/po-radio-group-base.component.ts"
   },
   {
@@ -5368,6 +5992,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
   },
   {
+    "chave": "po-rich-text:input:p-compact-label",
+    "componente": "po-rich-text",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
+  },
+  {
     "chave": "po-rich-text:input:p-disabled",
     "componente": "po-rich-text",
     "kind": "input",
@@ -5416,6 +6048,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
   },
   {
+    "chave": "po-rich-text:input:p-helper",
+    "componente": "po-rich-text",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
+  },
+  {
     "chave": "po-rich-text:input:p-hide-toolbar-actions",
     "componente": "po-rich-text",
     "kind": "input",
@@ -5429,6 +6069,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
+  },
+  {
+    "chave": "po-rich-text:input:p-label-text-wrap",
+    "componente": "po-rich-text",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-rich-text/po-rich-text-base.component.ts"
   },
   {
@@ -5712,6 +6360,14 @@
     "fonte": "projects/ui/src/lib/components/po-search/po-search-base.component.ts"
   },
   {
+    "chave": "po-select:input:p-compact-label",
+    "componente": "po-select",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-select/po-select.component.ts"
+  },
+  {
     "chave": "po-select:input:p-control-value-with-label",
     "componente": "po-select",
     "kind": "input",
@@ -5733,6 +6389,22 @@
     "kind": "input",
     "binding": "p-field-value",
     "propriedade": "fieldValue",
+    "fonte": "projects/ui/src/lib/components/po-field/po-select/po-select.component.ts"
+  },
+  {
+    "chave": "po-select:input:p-helper",
+    "componente": "po-select",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-select/po-select.component.ts"
+  },
+  {
+    "chave": "po-select:input:p-label-text-wrap",
+    "componente": "po-select",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-select/po-select.component.ts"
   },
   {
@@ -5774,6 +6446,70 @@
     "binding": "p-blur",
     "propriedade": "blur",
     "fonte": "projects/ui/src/lib/components/po-field/po-select/po-select.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-animation",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-animation",
+    "propriedade": "animation",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-aria-label",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-aria-label",
+    "propriedade": "ariaLabel",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-border-radius",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-border-radius",
+    "propriedade": "borderRadius",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-height",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-height",
+    "propriedade": "height",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-size",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-size",
+    "propriedade": "size",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-type",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-type",
+    "propriedade": "type",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-variant",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-variant",
+    "propriedade": "variant",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
+  },
+  {
+    "chave": "po-skeleton:input:p-width",
+    "componente": "po-skeleton",
+    "kind": "input",
+    "binding": "p-width",
+    "propriedade": "width",
+    "fonte": "projects/ui/src/lib/components/po-skeleton/po-skeleton-base.component.ts"
   },
   {
     "chave": "po-slide:input:p-height",
@@ -5896,6 +6632,14 @@
     "fonte": "projects/ui/src/lib/components/po-stepper/po-stepper-base.component.ts"
   },
   {
+    "chave": "po-switch:input:p-compact-label",
+    "componente": "po-switch",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-switch/po-switch.component.ts"
+  },
+  {
     "chave": "po-switch:input:p-error-limit",
     "componente": "po-switch",
     "kind": "input",
@@ -5917,6 +6661,14 @@
     "kind": "input",
     "binding": "p-format-model",
     "propriedade": "formatModel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-switch/po-switch.component.ts"
+  },
+  {
+    "chave": "po-switch:input:p-helper",
+    "componente": "po-switch",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
     "fonte": "projects/ui/src/lib/components/po-field/po-switch/po-switch.component.ts"
   },
   {
@@ -5957,6 +6709,14 @@
     "kind": "input",
     "binding": "p-label-position",
     "propriedade": "labelPosition",
+    "fonte": "projects/ui/src/lib/components/po-field/po-switch/po-switch.component.ts"
+  },
+  {
+    "chave": "po-switch:input:p-label-text-wrap",
+    "componente": "po-switch",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-switch/po-switch.component.ts"
   },
   {
@@ -6464,6 +7224,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
   },
   {
+    "chave": "po-textarea:input:p-compact-label",
+    "componente": "po-textarea",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
+  },
+  {
     "chave": "po-textarea:input:p-disabled",
     "componente": "po-textarea",
     "kind": "input",
@@ -6496,11 +7264,27 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
   },
   {
+    "chave": "po-textarea:input:p-helper",
+    "componente": "po-textarea",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
+  },
+  {
     "chave": "po-textarea:input:p-label",
     "componente": "po-textarea",
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
+  },
+  {
+    "chave": "po-textarea:input:p-label-text-wrap",
+    "componente": "po-textarea",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-textarea/po-textarea-base.component.ts"
   },
   {
@@ -6648,6 +7432,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-timepicker/po-timepicker-base.component.ts"
   },
   {
+    "chave": "po-timepicker:input:p-compact-label",
+    "componente": "po-timepicker",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-timepicker/po-timepicker-base.component.ts"
+  },
+  {
     "chave": "po-timepicker:input:p-disabled",
     "componente": "po-timepicker",
     "kind": "input",
@@ -6677,6 +7469,22 @@
     "kind": "input",
     "binding": "p-format",
     "propriedade": "format",
+    "fonte": "projects/ui/src/lib/components/po-field/po-timepicker/po-timepicker-base.component.ts"
+  },
+  {
+    "chave": "po-timepicker:input:p-helper",
+    "componente": "po-timepicker",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-timepicker/po-timepicker-base.component.ts"
+  },
+  {
+    "chave": "po-timepicker:input:p-label-text-wrap",
+    "componente": "po-timepicker",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-timepicker/po-timepicker-base.component.ts"
   },
   {
@@ -7136,6 +7944,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
   },
   {
+    "chave": "po-upload:input:p-compact-label",
+    "componente": "po-upload",
+    "kind": "input",
+    "binding": "p-compact-label",
+    "propriedade": "compactLabel",
+    "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
+  },
+  {
     "chave": "po-upload:input:p-custom-action",
     "componente": "po-upload",
     "kind": "input",
@@ -7216,6 +8032,14 @@
     "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
   },
   {
+    "chave": "po-upload:input:p-helper",
+    "componente": "po-upload",
+    "kind": "input",
+    "binding": "p-helper",
+    "propriedade": "poHelperComponent",
+    "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
+  },
+  {
     "chave": "po-upload:input:p-hide-restrictions-info",
     "componente": "po-upload",
     "kind": "input",
@@ -7245,6 +8069,14 @@
     "kind": "input",
     "binding": "p-label",
     "propriedade": "label",
+    "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
+  },
+  {
+    "chave": "po-upload:input:p-label-text-wrap",
+    "componente": "po-upload",
+    "kind": "input",
+    "binding": "p-label-text-wrap",
+    "propriedade": "labelTextWrap",
     "fonte": "projects/ui/src/lib/components/po-field/po-upload/po-upload-base.component.ts"
   },
   {
@@ -7405,6 +8237,14 @@
     "kind": "input",
     "binding": "p-actions",
     "propriedade": "actions",
+    "fonte": "projects/ui/src/lib/components/po-widget/po-widget-base.component.ts"
+  },
+  {
+    "chave": "po-widget:input:p-avatar",
+    "componente": "po-widget",
+    "kind": "input",
+    "binding": "p-avatar",
+    "propriedade": "avatar",
     "fonte": "projects/ui/src/lib/components/po-widget/po-widget-base.component.ts"
   },
   {
