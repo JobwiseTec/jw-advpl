@@ -20,7 +20,7 @@ jobs:
           python-version: '3.12'
       - name: Bump versions
         run: python scripts/bump_marketplace_version.py ${{ github.event.inputs.version }}
-      - uses: peter-evans/create-pull-request@v7
+      - uses: peter-evans/create-pull-request@v8
         with:
           title: "Release v${{ github.event.inputs.version }}"
           branch: "release/v${{ github.event.inputs.version }}"
