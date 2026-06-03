@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Changed
+
+- **`ini-audit` — curadoria das regras (lotes 1-2):** primeiras regras `critical` validadas contra a documentação TDN real (via fetch). `verificado=1` em RootPath/SourcePath (obrigatórias), JOB_WS ENVIRONMENT. Rebaixadas `critical`→`warning` as que têm default documentado (DBAccess Port→7890, MaxStringSize, LogClient Port). Cobertura de verificação 12→25 (10 das 18 críticas curadas; as 8 restantes — TSS SPED/JOB_WS/cert — precisam do Manual de Configuração TSS). Meta-audit (`scripts/audit_ini_rules.py`) guia a fila.
+
 ### Added
 
 - **`ingest-poui`** — detecção de projetos PO UI (frontend Angular TOTVS): lê `package.json`, extrai família `@po-ui/*`, major do Angular exigido e flag de incompatibilidade. Cache hash+mtime; ignora `node_modules`. Tabela `poui_projetos` (migration 022, schema v22). Skill `ingest-poui`. Docs: `docs/schema.md`, `docs/cli-reference.md`.
