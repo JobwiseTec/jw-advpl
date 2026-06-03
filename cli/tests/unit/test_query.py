@@ -57,6 +57,19 @@ class TestWritableExpected:
     def test_value_in_without_recomendado_falls_back_to_placeholder(self) -> None:
         assert _writable_expected("a|b|c", "sem recomendacao aqui") == "<CONFIGURAR>"
 
+    def test_recomendado_trailing_period_stripped(self) -> None:
+        """Guidance é texto livre; ``Recomendado: 10.`` (com ponto final) não pode
+        virar valor ``10.`` no INI — a pontuação de fim de frase é removida."""
+        out = _writable_expected(
+            "",
+            "Chave que define o tamanho máximo de string (MB). Recomendado: 10. | Ref: x",
+        )
+        assert out == "10"
+
+    def test_recomendado_only_punctuation_falls_back(self) -> None:
+        """Se sobra só pontuação após limpar, cai no placeholder."""
+        assert _writable_expected("", "Recomendado: . | Ref: x") == "<CONFIGURAR>"
+
 
 @pytest.fixture
 def db_with_three_sources(tmp_path: Path) -> tuple[Path, sqlite3.Connection]:

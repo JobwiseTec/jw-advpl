@@ -462,13 +462,24 @@ def ini_audit_query(
 def ini_audit_scores(
     conn: sqlite3.Connection,
     arquivo: str | None = None,
+    file_ids: list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """Score de conformidade + selo por INI auditado (cli ``ini-audit --format html``)."""
-    where = ""
+    """Score de conformidade + selo por INI auditado (cli ``ini-audit --format html``).
+
+    ``file_ids`` escopa o resultado aos arquivos auditados nesta execução (o
+    relatório HTML reflete só o que o usuário pediu, não todo o índice). ``arquivo``
+    filtra adicionalmente por basename. Sem nenhum dos dois, devolve todos."""
+    clauses: list[str] = []
     params: list[Any] = []
     if arquivo:
-        where = "WHERE arquivo = ? COLLATE NOCASE"
+        clauses.append("arquivo = ? COLLATE NOCASE")
         params.append(arquivo)
+    if file_ids is not None:
+        placeholders = ",".join("?" for _ in file_ids)
+        # Lista vazia -> nenhum arquivo (escopo explicitamente vazio).
+        clauses.append(f"id IN ({placeholders})" if file_ids else "0")
+        params.extend(file_ids)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = f"""
         SELECT id, caminho, arquivo, tipo, role, score, compliance, summary_json
         FROM ini_files
@@ -564,11 +575,19 @@ def _writable_expected(expected: str, fix_guidance: str) -> str:
 
     * ``expected`` escalar (sem ``|``, não vazio) → ele próprio.
     * ``expected`` com ``|`` (conjunto ``value_in``) ou vazio → extrai
-      ``Recomendado: X`` do ``fix_guidance``; se não houver, ``<CONFIGURAR>``."""
+      ``Recomendado: X`` do ``fix_guidance``; se não houver, ``<CONFIGURAR>``.
+
+    O valor extraído tem pontuação de fim de frase removida — o guidance é texto
+    livre e pode terminar em ``.`` (ex.: ``"Recomendado: 10."`` → ``10``, não
+    ``10.``)."""
     if expected and "|" not in expected:
         return expected
     m = _RECOMENDADO_RE.search(fix_guidance)
-    return m.group(1).strip() if m else "<CONFIGURAR>"
+    if m:
+        val = m.group(1).strip().rstrip(".").strip()
+        if val:
+            return val
+    return "<CONFIGURAR>"
 
 
 def lint_query(

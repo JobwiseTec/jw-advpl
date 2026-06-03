@@ -1554,13 +1554,19 @@ _COMPLIANCE_LABELS = {
 _ENV_INDICATOR_KEYS = frozenset({"rootpath", "sourcepath", "rpodb", "rpoversion", "startpath"})
 
 
-def _render_ini_audit_html(conn: sqlite3.Connection, arquivo: str | None) -> str:
+def _render_ini_audit_html(
+    conn: sqlite3.Connection,
+    arquivo: str | None,
+    file_ids: list[int] | None = None,
+) -> str:
     """Monta o relatório HTML do ini-audit: re-parseia cada INI (encoding,
     seções comentadas, linhas malformadas) e combina com score/findings/INI
-    sugerido do índice — cobrindo todas as seções do relatório."""
+    sugerido do índice — cobrindo todas as seções do relatório.
+
+    ``file_ids`` escopa o relatório aos arquivos auditados nesta execução."""
     rules_keys = ini_rules_keys(conn)
     reports: list[dict[str, Any]] = []
-    for sc in ini_audit_scores(conn, arquivo):
+    for sc in ini_audit_scores(conn, arquivo, file_ids):
         try:
             raw = Path(str(sc["caminho"])).read_bytes()
         except OSError:
@@ -1786,7 +1792,7 @@ def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mut
     if ctx.obj["format"] == "html":
         report = _with_ro_db(
             ctx,
-            lambda c: _render_ini_audit_html(c, arquivo),
+            lambda c: _render_ini_audit_html(c, arquivo, ing_res.file_ids),
         )
         typer.echo(report)
         return

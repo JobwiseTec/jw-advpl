@@ -8,6 +8,7 @@ Cobertura:
     - ok_with_note quando comment_above contém intent_pattern
     - Chave ausente vira finding quando expected exists
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -70,10 +71,19 @@ def _insert_rule(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
         """,
         (
-            regra_id, section_glob, key_name, expected, severidade,
-            detection_kind, descricao, fix_guidance,
-            applies_to_tipo, applies_to_role,
-            condicional, verificado, fonte,
+            regra_id,
+            section_glob,
+            key_name,
+            expected,
+            severidade,
+            detection_kind,
+            descricao,
+            fix_guidance,
+            applies_to_tipo,
+            applies_to_role,
+            condicional,
+            verificado,
+            fonte,
         ),
     )
 
@@ -168,8 +178,13 @@ class TestAuditTypeFiltering:
 class TestDetectionKinds:
     def test_value_eq_matches_recommended(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _insert_rule(
-            conn, regra_id="X-EQ-OK", section_glob="General", key_name="K1",
-            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-EQ-OK",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
         r = ingest_ini_paths(conn, [p])
@@ -181,8 +196,13 @@ class TestDetectionKinds:
 
     def test_value_eq_finding_when_diff(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _insert_rule(
-            conn, regra_id="X-EQ-FAIL", section_glob="General", key_name="K1",
-            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-EQ-FAIL",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
         r = ingest_ini_paths(conn, [p])
@@ -195,8 +215,13 @@ class TestDetectionKinds:
     def test_value_eq_boolean_equivalence(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         # expected=1, atual=true → deve ser equivalente (não finding)
         _insert_rule(
-            conn, regra_id="X-BOOL", section_glob="General", key_name="K1",
-            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-BOOL",
+            section_glob="General",
+            key_name="K1",
+            expected="1",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=true\n")
         r = ingest_ini_paths(conn, [p])
@@ -208,8 +233,12 @@ class TestDetectionKinds:
 
     def test_value_in_enum(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _insert_rule(
-            conn, regra_id="X-IN-OK", section_glob="General", key_name="Mode",
-            expected="master|slave|standalone", detection_kind="value_in",
+            conn,
+            regra_id="X-IN-OK",
+            section_glob="General",
+            key_name="Mode",
+            expected="master|slave|standalone",
+            detection_kind="value_in",
             applies_to_tipo="appserver",
         )
         p_ok = _write(tmp_path, "appserver.ini", "[General]\nMode=slave\n")
@@ -224,8 +253,12 @@ class TestDetectionKinds:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-IN-FAIL", section_glob="General", key_name="Mode",
-            expected="master|slave", detection_kind="value_in",
+            conn,
+            regra_id="X-IN-FAIL",
+            section_glob="General",
+            key_name="Mode",
+            expected="master|slave",
+            detection_kind="value_in",
             applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nMode=banana\n")
@@ -238,8 +271,13 @@ class TestDetectionKinds:
 
     def test_range_check_min_max(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _insert_rule(
-            conn, regra_id="X-RANGE", section_glob="General", key_name="Threads",
-            expected="1..100", detection_kind="range_check", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-RANGE",
+            section_glob="General",
+            key_name="Threads",
+            expected="1..100",
+            detection_kind="range_check",
+            applies_to_tipo="appserver",
         )
         # OK: dentro do range
         p_ok = _write(tmp_path, "appserver.ini", "[General]\nThreads=50\n")
@@ -263,8 +301,12 @@ class TestDetectionKinds:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-PRESENT", section_glob="General", key_name="MustExist",
-            detection_kind="key_present", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-PRESENT",
+            section_glob="General",
+            key_name="MustExist",
+            detection_kind="key_present",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nOther=v\n")
         r = ingest_ini_paths(conn, [p])
@@ -287,15 +329,16 @@ class TestOkWithNote:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-NOTE", section_glob="General", key_name="K",
-            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-NOTE",
+            section_glob="General",
+            key_name="K",
+            expected="1",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         # Valor diverge MAS comentário acima documenta justificativa
-        content = (
-            "[General]\n"
-            "; intencional: cliente exige K=0 pra integracao legada\n"
-            "K=0\n"
-        )
+        content = "[General]\n; intencional: cliente exige K=0 pra integracao legada\nK=0\n"
         p = _write(tmp_path, "appserver.ini", content)
         r = ingest_ini_paths(conn, [p])
         audit_files(conn, r.file_ids)
@@ -309,8 +352,13 @@ class TestOkWithNote:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-NO-NOTE", section_glob="General", key_name="K",
-            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-NO-NOTE",
+            section_glob="General",
+            key_name="K",
+            expected="1",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         # Sem justificativa
         p = _write(tmp_path, "appserver.ini", "[General]\nK=0\n")
@@ -333,8 +381,13 @@ class TestKeyMissing:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-MISSING", section_glob="General", key_name="MaxStringSize",
-            expected="10", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-MISSING",
+            section_glob="General",
+            key_name="MaxStringSize",
+            expected="10",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nOther=v\n")
         r = ingest_ini_paths(conn, [p])
@@ -355,8 +408,13 @@ class TestRoleFiltering:
         self, conn: sqlite3.Connection, tmp_path: Path
     ) -> None:
         _insert_rule(
-            conn, regra_id="X-ROLE", section_glob="General", key_name="K",
-            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="X-ROLE",
+            section_glob="General",
+            key_name="K",
+            expected="1",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
             applies_to_role="broker_http",
         )
         # INI cujo role NÃO é broker_http (vira 'standalone' por default)
@@ -387,9 +445,7 @@ def _score_of(conn: sqlite3.Connection, file_id: int) -> tuple[float, str]:
 
 
 class TestScore:
-    def test_score_persisted_and_in_range(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_score_persisted_and_in_range(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         p = _write(tmp_path, "appserver.ini", "[General]\nMaxStringSize=1\n")
         r = ingest_ini_paths(conn, [p])
         res = audit_files(conn, r.file_ids)
@@ -400,13 +456,16 @@ class TestScore:
         assert res.score_by_file[fid] == score
         assert res.compliance_by_file[fid] == compliance
 
-    def test_perfect_compliance_scores_100(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_perfect_compliance_scores_100(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _clear_rules(conn)
         _insert_rule(
-            conn, regra_id="S-OK", section_glob="General", key_name="K1",
-            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="S-OK",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
         r = ingest_ini_paths(conn, [p])
@@ -420,8 +479,13 @@ class TestScore:
     ) -> None:
         _clear_rules(conn)
         _insert_rule(
-            conn, regra_id="S-CRIT", section_glob="General", key_name="K1",
-            expected="42", severidade="critical", detection_kind="value_eq",
+            conn,
+            regra_id="S-CRIT",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            severidade="critical",
+            detection_kind="value_eq",
             applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
@@ -436,8 +500,13 @@ class TestScore:
     ) -> None:
         _clear_rules(conn)
         _insert_rule(
-            conn, regra_id="S-INFO", section_glob="General", key_name="K1",
-            expected="42", severidade="info", detection_kind="value_eq",
+            conn,
+            regra_id="S-INFO",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            severidade="info",
+            detection_kind="value_eq",
             applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
@@ -452,12 +521,22 @@ class TestScore:
         _clear_rules(conn)
         # 1 regra conforme (warning, peso 1.5) + 1 crítica ausente (peso 3.0 × 2).
         _insert_rule(
-            conn, regra_id="S-PASS", section_glob="General", key_name="K1",
-            expected="1", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="S-PASS",
+            section_glob="General",
+            key_name="K1",
+            expected="1",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         _insert_rule(
-            conn, regra_id="S-MISS", section_glob="General", key_name="K2",
-            expected="5", severidade="critical", detection_kind="value_eq",
+            conn,
+            regra_id="S-MISS",
+            section_glob="General",
+            key_name="K2",
+            expected="5",
+            severidade="critical",
+            detection_kind="value_eq",
             applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=1\n")
@@ -467,9 +546,7 @@ class TestScore:
         # score_ok=1.5 ; score_weight = 1.5 + 3.0×2 = 7.5 → 20.0
         assert score == 20.0
 
-    def test_no_rules_scores_100(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_no_rules_scores_100(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _clear_rules(conn)
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=99\n")
         r = ingest_ini_paths(conn, [p])
@@ -478,15 +555,18 @@ class TestScore:
         assert score == 100.0
         assert compliance == "compliant"
 
-    def test_ini_audit_scores_query(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_ini_audit_scores_query(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         from plugadvpl.query import ini_audit_scores
 
         _clear_rules(conn)
         _insert_rule(
-            conn, regra_id="S-Q", section_glob="General", key_name="K1",
-            expected="42", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="S-Q",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         p = _write(tmp_path, "appserver.ini", "[General]\nK1=42\n")
         r = ingest_ini_paths(conn, [p])
@@ -497,6 +577,38 @@ class TestScore:
         assert scores[0]["score"] == 100.0
         assert scores[0]["compliance"] == "compliant"
 
+    def test_ini_audit_scores_scoped_by_file_ids(
+        self, conn: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        """``file_ids`` escopa o relatório só aos arquivos auditados nesta
+        execução — não despeja todos os INIs do índice."""
+        from plugadvpl.query import ini_audit_scores
+
+        _clear_rules(conn)
+        _insert_rule(
+            conn,
+            regra_id="S-Q",
+            section_glob="General",
+            key_name="K1",
+            expected="42",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
+        )
+        p1 = _write(tmp_path, "appserver_a.ini", "[General]\nK1=42\n")
+        p2 = _write(tmp_path, "appserver_b.ini", "[General]\nK1=42\n")
+        r = ingest_ini_paths(conn, [p1, p2])
+        audit_files(conn, r.file_ids)
+
+        # Sem escopo → ambos.
+        assert len(ini_audit_scores(conn)) == 2
+        # Escopado a 1 id → só ele.
+        one = r.file_ids[:1]
+        scoped = ini_audit_scores(conn, file_ids=one)
+        assert len(scoped) == 1
+        assert scoped[0]["id"] == one[0]
+        # Lista vazia → nenhum (escopo explicitamente vazio, não "todos").
+        assert ini_audit_scores(conn, file_ids=[]) == []
+
 
 # =============================================================================
 # Detecção de fonte de banco
@@ -504,9 +616,7 @@ class TestScore:
 
 
 class TestDbSources:
-    def test_db_conflict_emits_warning(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_db_conflict_emits_warning(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _clear_rules(conn)
         content = (
             "[General]\nConsoleLog=1\n"
@@ -530,8 +640,13 @@ class TestDbSources:
         _clear_rules(conn)
         # [TopConnect] é a fonte; [DBAccess] presente mas sem chaves de conexão.
         _insert_rule(
-            conn, regra_id="S-DBA", section_glob="DBAccess", key_name="SomeKey",
-            expected="right", detection_kind="value_eq", applies_to_tipo="appserver",
+            conn,
+            regra_id="S-DBA",
+            section_glob="DBAccess",
+            key_name="SomeKey",
+            expected="right",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
         )
         content = (
             "[General]\nConsoleLog=1\n"
@@ -551,9 +666,7 @@ class TestDbSources:
         ).fetchone()[0]
         assert n == 0
 
-    def test_no_conflict_for_dbaccess_role(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_no_conflict_for_dbaccess_role(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         _clear_rules(conn)
         content = (
             "[General]\nConsoleLog=1\n"
@@ -577,15 +690,18 @@ class TestDbSources:
 class TestCondicional:
     """Chave opcional-de-feature ausente NÃO vira finding (fim do 'inventa tag')."""
 
-    def _findings(
-        self, conn: sqlite3.Connection, tmp_path: Path, *, condicional: int
-    ) -> int:
+    def _findings(self, conn: sqlite3.Connection, tmp_path: Path, *, condicional: int) -> int:
         _clear_rules(conn)
         # Seção [Mail] existe no INI, mas a chave SmtpServer está AUSENTE.
         _insert_rule(
-            conn, regra_id="X-MAIL-SMTP", section_glob="Mail", key_name="SmtpServer",
-            severidade="warning", detection_kind="key_present",
-            applies_to_tipo="appserver", condicional=condicional,
+            conn,
+            regra_id="X-MAIL-SMTP",
+            section_glob="Mail",
+            key_name="SmtpServer",
+            severidade="warning",
+            detection_kind="key_present",
+            applies_to_tipo="appserver",
+            condicional=condicional,
         )
         p = _write(tmp_path, "appserver.ini", "[Mail]\nEnable=1\n")
         r = ingest_ini_paths(conn, [p])
@@ -594,14 +710,10 @@ class TestCondicional:
             "SELECT COUNT(*) FROM ini_audit_findings WHERE regra_id='X-MAIL-SMTP'"
         ).fetchone()[0]
 
-    def test_condicional_ausente_nao_flaga(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_condicional_ausente_nao_flaga(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         assert self._findings(conn, tmp_path, condicional=1) == 0
 
-    def test_nao_condicional_ausente_flaga(
-        self, conn: sqlite3.Connection, tmp_path: Path
-    ) -> None:
+    def test_nao_condicional_ausente_flaga(self, conn: sqlite3.Connection, tmp_path: Path) -> None:
         # Mesma regra SEM condicional -> warning-missing É flagado (discrimina o teste).
         assert self._findings(conn, tmp_path, condicional=0) == 1
 
@@ -611,9 +723,15 @@ class TestCondicional:
         # condicional isenta só a AUSÊNCIA; valor presente-e-errado ainda conta.
         _clear_rules(conn)
         _insert_rule(
-            conn, regra_id="X-MAIL-PROTO", section_glob="Mail", key_name="Protocol",
-            expected="smtps", severidade="warning", detection_kind="value_eq",
-            applies_to_tipo="appserver", condicional=1,
+            conn,
+            regra_id="X-MAIL-PROTO",
+            section_glob="Mail",
+            key_name="Protocol",
+            expected="smtps",
+            severidade="warning",
+            detection_kind="value_eq",
+            applies_to_tipo="appserver",
+            condicional=1,
         )
         p = _write(tmp_path, "appserver.ini", "[Mail]\nProtocol=plain\n")
         r = ingest_ini_paths(conn, [p])
