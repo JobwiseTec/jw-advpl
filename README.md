@@ -322,9 +322,70 @@ Se aparecer output com counters do índice, o plugin está instalado e funcionan
 
 ---
 
+## Como funciona
+
+O plugadvpl segue sempre o mesmo fluxo: **várias fontes** são **ingeridas** (cada uma por um comando) para um **índice SQLite local**, e os comandos de **análise** consultam esse índice — barato, offline e versão-independente. O agente Claude (skills + slash commands) consome tudo por cima.
+
+```mermaid
+flowchart LR
+    subgraph SRC["1 · Fontes"]
+        direction TB
+        S1["ADVPL / TLPP<br/>.prw .tlpp .apw"]
+        S2["Dicionário SX<br/>CSV (SX1..SXG)"]
+        S3["INIs Protheus<br/>appserver / dbaccess / tss"]
+        S4["Protheus ao vivo<br/>REST · COLETADB.tlpp"]
+        S5["POUI<br/>package.json · .ts · .html"]
+        S6["Logs<br/>console / error / profile"]
+    end
+
+    subgraph ING["2 · Ingestão"]
+        direction TB
+        I1["ingest"]
+        I2["ingest-sx"]
+        I3["ini-audit"]
+        I4["ingest-protheus"]
+        I5["ingest-poui"]
+        I6["log-diagnose"]
+    end
+
+    subgraph DB["3 · Índice SQLite (.plugadvpl/index.db)"]
+        direction TB
+        D1["fontes · simbolos · chamadas<br/>tabelas · <b>rest_endpoints</b>"]
+        D2["SX1..SXG · SIX<br/>gatilhos · MV_ params"]
+        D3["ini_files · ini_audit_findings"]
+        D4["poui_projetos · <b>poui_datasources</b><br/>poui_componentes(_uso)"]
+    end
+
+    subgraph QRY["4 · Análise / consulta"]
+        direction TB
+        Q1["find · callers · arch · lint"]
+        Q2["impacto · gatilho · trace"]
+        Q3["<b>poui-bridge</b> 🌉 · poui-lint"]
+    end
+
+    AG(["Claude Code<br/>skills + slash commands"])
+
+    S1 --> I1 --> D1
+    S2 --> I2 --> D2
+    S3 --> I3 --> D3
+    S4 --> I4 --> D2
+    S5 --> I5 --> D4
+    S6 --> I6
+
+    D1 --> Q1
+    D2 --> Q2
+    D1 -.->|cruza front × back| Q3
+    D4 -.->|cruza front × back| Q3
+    Q1 & Q2 & Q3 --> AG
+```
+
+> A seta pontilhada é o diferencial do POUI: o `poui-bridge` cruza os **datasources REST do front Angular** (`poui_datasources`) com as **rotas REST do Protheus** (`rest_endpoints`) — front ↔ back num índice só.
+
+---
+
 ## Comandos disponíveis
 
-O CLI Python expõe **42 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **46 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -448,6 +509,19 @@ Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info convers
 | Hash dinâmico | Manifest emite `hash`+`hash_algo`+`hash_partial` (algumas builds Protheus não têm `Sha2_256`). Cliente escolhe `hashlib.new(algo)` (sha256/sha1/md5) e respeita partial-hash pra arquivos > 64KB onde `MemoRead` trunca. Mantém compat com campo `sha256` legado |
 
 Reference impl do servidor: [`docs/reference-impl/coletadb.tlpp`](docs/reference-impl/coletadb.tlpp) (MIT, ~1900 linhas). Reference completa dos subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
+
+### Interfaces POUI (frontend Angular TOTVS)
+
+[PO UI](https://po-ui.io) é a lib de componentes Angular oficial da TOTVS. O plugadvpl entende projetos POUI **de ponta a ponta** — e cruza o front com o backend Protheus que ele já indexa.
+
+| Comando | Função |
+|---|---|
+| `/plugadvpl:ingest-poui <dir>` | Detecta projeto(s) PO UI: lê `package.json` → família `@po-ui/*` + **major do Angular exigido** (versão npm == major Angular) + flag de incompatibilidade. Varre `.ts` (datasources `HttpClient`) e `.html` (uso de `<po-*>`). Tabelas `poui_projetos`/`poui_datasources`/`poui_componentes_uso` (migrations 022/023/025) |
+| `/plugadvpl:poui-bridge` | **🌉 Ponte REST front↔back** — cruza as chamadas `HttpClient` do Angular (`this.http.get/post/...`) com as rotas REST do Protheus (`@Get`/`@Post` TLPP já em `rest_endpoints`), por path. Rastreabilidade ponta-a-ponta: *"essa tela consome esse WSRESTFUL/TLPP"* |
+| `/plugadvpl:poui-componentes [componente]` | Referência **verificada** dos bindings `p-*` (inputs/outputs) por componente — **1053 bindings de 79 componentes**, extraídos do *source* do po-angular (não inventados). Anti-alucinação: `poui-componentes po-table` → `p-columns`, `p-sort`, … |
+| `/plugadvpl:poui-lint` | Lint **`POUI-PROP`** — acusa binding `p-*` usado num `<po-*>` que **não existe** no catálogo (= alucinação), só pra componente conhecido (zero falso-positivo em custom) |
+
+Catálogo regenerável via `scripts/build_poui_catalog.py`. Pesquisa + design: [docs/poui-pesquisa-e-plano.md](docs/poui-pesquisa-e-plano.md).
 
 ---
 
@@ -776,11 +850,12 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **42 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo e auditoria de INI + log
-- **57 skills** (22 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
-- **Schema SQLite v21** — 21 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência do catálogo `ini_rules` `fonte`/`verificado`/`condicional` v0.21.0)
-- **42 lint rules** (30 single-file + 11 cross-file + 1 encoding) cobrindo best-practice, security, performance, modernization, dicionário SX, webservice
-- **1384 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **46 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, e **interfaces POUI** (frontend Angular TOTVS)
+- **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
+- **61 skills** (26 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **Schema SQLite v25** — 25 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso`)
+- **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
+- **1449 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
