@@ -246,6 +246,8 @@ plugadvpl tables SC5 --mode reclock
 
 **`--catalog` (#64):** em vez do *uso*, mostra o **catálogo de campos** da tabela (do dicionário SX3) — tipo (`C(1)`, `N(14,2)`), título e o **X3_CBOX decodificado** (`1=Item, 2=Cabeçalho`), marcando os **discriminadores** (`C(1)`/`C(2)` com cbox). Responde "que valores `XX_TIPO` aceita?" sem ir ao banco. Requer dicionário indexado (`ingest-sx`).
 
+**Alerta de mantenedor invisível (#65):** se `--mode write` vier vazio mas a tabela é lida em ≥ 3 fontes, um aviso em **stderr** sinaliza que pode haver mantenedor não detectado (stdout/JSON intactos). `--no-hints` silencia.
+
 ```
 plugadvpl --format md tables SZT --catalog
 ```

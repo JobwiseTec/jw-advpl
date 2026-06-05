@@ -1282,6 +1282,10 @@ def callees(
 # ---------------------------------------------------------------------------
 
 
+# #65: só alerta "write vazio mas há reads" quando há reads suficientes (evita ruído).
+_MIN_READS_FOR_HINT = 3
+
+
 @app.command()
 def tables(
     ctx: typer.Context,
@@ -1300,6 +1304,10 @@ def tables(
             "--catalog",
             help="Catálogo de campos (tipo, título, X3_CBOX decodificado, discriminadores) em vez de uso.",
         ),
+    ] = False,
+    no_hints: Annotated[
+        bool,
+        typer.Option("--no-hints", help="Silencia o alerta proativo de 'write' vazio."),
     ] = False,
 ) -> None:
     """Lista quem usa a tabela ``T`` (lookup em ``fonte_tabela``).
@@ -1328,6 +1336,23 @@ def tables(
 
     modo = mode.value if mode else None
     rows = _with_ro_db(ctx, lambda c: tables_query(c, tabela, modo))
+    # #65: alerta proativo — 'write' vazio mas a tabela é lida em vários fontes
+    # costuma ser mantenedor invisível, não tabela read-only. Só stderr (stdout
+    # intacto → determinismo). Como #61 já cobre MVC/ExecAuto, o que sobra é
+    # read-only genuíno OU padrão de gravação ainda não detectado.
+    if modo == "write" and not rows and not no_hints:
+        n_read = len(_with_ro_db(ctx, lambda c: tables_query(c, tabela, "read")))
+        if n_read >= _MIN_READS_FOR_HINT:
+            t = tabela.upper()
+            typer.secho(
+                f"\n⚠ Tabela {t} aparece {n_read}x como 'read' mas 0x como gravação "
+                "(write/write_mvc/write_execauto).\n"
+                "   Provável: (1) tabela read-only de catálogo; ou (2) mantenedor "
+                "ainda não detectado pela análise estática.\n"
+                f'   Investigue: plugadvpl grep "FWLoadModel.*{t}" -m identifier',
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
     _render_from_ctx(
         ctx,
         rows,

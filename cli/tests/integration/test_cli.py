@@ -3669,3 +3669,41 @@ class TestPouiBridge:
         assert result.exit_code == 0
         out = (result.stderr or "") + result.stdout
         assert "/pedidos" in out and "PEDREST" in out
+
+
+class TestWriteEmptyAlert:
+    """#65: alerta proativo quando 'tables --mode write' vazio mas há reads."""
+
+    @pytest.fixture
+    def proj_readonly(self, tmp_path: Path, runner: CliRunner) -> Path:
+        """3 fontes que LEEM SXA, nenhum grava."""
+        src = tmp_path / "src"
+        src.mkdir()
+        for i in range(3):
+            (src / f"ABCRD{i}.prw").write_bytes(
+                f'User Function ABCRD{i}()\n  DbSelectArea("SXA")\n'
+                f'  DbSeek(xFilial("SXA"))\n  cN := SXA->XA_DESCRI\nReturn\n'.encode()
+            )
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        return src
+
+    def test_alerta_quando_write_vazio_com_reads(
+        self, proj_readonly: Path, runner: CliRunner
+    ) -> None:
+        r = runner.invoke(app, ["--root", str(proj_readonly), "tables", "SXA", "--mode", "write"])
+        assert r.exit_code == 0
+        assert "mas 0x" in (r.stderr or "") and "SXA" in (r.stderr or "")
+
+    def test_no_hints_silencia(self, proj_readonly: Path, runner: CliRunner) -> None:
+        r = runner.invoke(
+            app, ["--root", str(proj_readonly), "tables", "SXA", "--mode", "write", "--no-hints"]
+        )
+        assert "mas 0x" not in (r.stderr or "")
+
+    def test_sem_alerta_quando_ha_write(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        # SC5 tem write clássico (RecLock) no synthetic_project -> sem alerta
+        r = runner.invoke(app, ["--root", str(indexed_project), "tables", "SC5", "--mode", "write"])
+        assert "mas 0x" not in (r.stderr or "")
