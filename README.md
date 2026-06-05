@@ -911,7 +911,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **65 skills** (26 knowledge + 39 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1839 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1845 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -927,6 +927,10 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.25.1 — fix `catalog --resolve-callers` (normaliza expressão de chamada)
+
+- **`catalog --resolve-callers`** (#78): o campo `*_FUNCAO` do dump traz a chamada (`U_MODxxx("88")`); agora extrai o **nome** da função, soma os argumentos e resolve o fonte (`U_MODxxx`→`MODxxx.prw`) em vez de cair em "não-resolvido" por causa do `("88")`. A visão por argumento continua em `--group-by`.
 
 ### v0.25.0 — `ingest-tsv` + `catalog` (conteúdo de tabelas-catálogo)
 

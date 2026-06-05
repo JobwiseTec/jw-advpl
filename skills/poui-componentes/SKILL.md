@@ -29,7 +29,7 @@ componente (case-insensitive).
 ## Execução
 
 ```bash
-uvx plugadvpl@0.25.0 --format md poui-componentes $ARGUMENTS
+uvx plugadvpl@0.25.1 --format md poui-componentes $ARGUMENTS
 ```
 
 ## Exemplo
