@@ -378,6 +378,12 @@ class TestExtractCallsExecBlock:
         result = extract_calls_execblock(src)
         assert any(c["destino"] == "MT410GRV" for c in result)
 
+    def test_existblock(self) -> None:
+        # #83: ExistBlock referencia o PE -> entra no call graph (callers/callees)
+        src = 'If ExistBlock("MT410LOK")\n  x := 1\nEndIf'
+        result = extract_calls_execblock(src)
+        assert any(c["destino"] == "MT410LOK" for c in result)
+
 
 class TestExtractCallsFWLoadModel:
     def test_fwloadmodel(self) -> None:

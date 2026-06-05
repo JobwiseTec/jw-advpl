@@ -6,6 +6,7 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ### Added
 
+- **Parser captura `ExistBlock` como referência de Ponto de Entrada** ([#83](https://github.com/JoniPraia/plugadvpl/issues/83)): `ExistBlock("MT410LOK")` (checa se o PE existe) agora entra no call graph junto do `ExecBlock` — completa `callers`/`callees` de PEs. **2.738** referências `ExistBlock` literais nas 4 bases reais passam a ser visíveis. (Da auditoria de cobertura do parser; verificado que o arg é literal em 99,7% dos casos.)
 - **Parser captura tabela em query TCQuery legada via `RetSqlName`/`RetSqlTab`/`RetSqlDel`/`RetSqlFil`** ([#81](https://github.com/JoniPraia/plugadvpl/issues/81)): queries legadas nomeiam a tabela física por `RetSqlName("SA1")` + concatenação, padrão que o extrator SQL (FROM literal) não pegava — então `tables`/`impacto`/`arch` ficavam **cegos** pra esses fontes. Agora o arg lógico vira tabela `read` no `fonte_tabela`. Surfado pela auditoria de cobertura do parser (varredura de 7.293 fontes reais). Primeiro de uma série de "quebras" novas (#81–#88) pra fechar lacunas de precisão.
 
 ## [0.25.1] - 2026-06-05

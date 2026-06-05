@@ -91,7 +91,9 @@ _EXECAUTO_RE = re.compile(
     r"MsExecAuto\s*\(\s*\{\s*\|[^|]*\|\s*(\w+)\s*\(",
     re.IGNORECASE,
 )
-_EXECBLOCK_RE = re.compile(r'ExecBlock\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
+# #83: ExecBlock executa um PE; ExistBlock checa se existe — ambos REFERENCIAM o
+# PE por nome literal. Capturar os dois completa callers/callees de Pontos de Entrada.
+_EXECBLOCK_RE = re.compile(r'Ex(?:ec|ist)Block\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWLOADMODEL_RE = re.compile(r'FWLoadModel\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWEXECVIEW_RE = re.compile(r'FWExecView\s*\([^,)]+,\s*["\'](\w+)["\']', re.IGNORECASE)
 # #61: tabela master de um ModelDef via FWFormStruct(1, 'XXX') — 1º arg = 1 é a
