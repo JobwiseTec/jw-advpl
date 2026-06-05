@@ -1,0 +1,37 @@
+# gitleaks — secret scanning (Camada 0: prevenção).
+# Impede que segredos (senha, token, chave, connection string) entrem no
+# repositório. Roda no pre-commit (local) e no CI. Serve também de template
+# para o repositório do cliente (ver docs/seguranca-gitleaks-cliente.md).
+title = "plugadvpl secret-scan"
+
+[extend]
+useDefault = true  # ~170 regras nativas (AWS/GCP/Azure, tokens, chaves privadas, JWT...)
+
+# ---------------------------------------------------------------------------
+# Regras ADVPL/Protheus (úteis também no repo do cliente)
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "advpl-hardcoded-password"
+description = "Senha/credencial hardcoded em ADVPL/INI (senha|psw|pwd|password = \"valor\")"
+regex = '''(?i)\b(senha|psw|pwd|password)\b\s*:?=\s*["'][^"'\s]{4,}["']'''
+keywords = ["senha", "psw", "pwd", "password"]
+
+[[rules]]
+id = "conn-url-credentials"
+description = "Credencial embutida em URL/connection string (user:pass@host)"
+regex = '''[a-z][a-z0-9+.\-]*://[^:\s/@]+:[^@\s]+@'''
+keywords = ["://"]
+
+# ---------------------------------------------------------------------------
+# Allowlist: exemplos SINTÉTICOS (testes/docs) e o catálogo de padrões de
+# redação — não são segredos reais.
+# ---------------------------------------------------------------------------
+[allowlist]
+description = "Fixtures de teste, documentação e catálogo de padrões (exemplos, não segredos)"
+paths = [
+  '''cli/tests/.*''',
+  '''docs/.*''',
+  '''\.claude/.*''',
+  '''.*\.md$''',
+  '''.*redact_patterns\.json''',
+]

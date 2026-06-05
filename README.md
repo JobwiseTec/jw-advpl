@@ -565,6 +565,31 @@ Sem mapeamento, `sonar_rules` vem como `[]` — não quebra parsers downstream. 
 
 ---
 
+## Segurança & Privacidade
+
+Camada **opt-in** (desligada por padrão — sem ela, o output é idêntico ao de sempre) que protege dados
+sensíveis em **camadas** (defesa em profundidade):
+
+- **Camada 0 — Prevenção:** `gitleaks` (pre-commit + CI) impede **segredo** de entrar no repositório.
+- **Camada 3 — Input:** `PLUGADVPL_INJECTION_SCAN=1` detecta **instrução embutida** (prompt injection,
+  OWASP LLM01) em conteúdo de terceiros — marca o trecho e alerta, sinalizando à IA que é dado, não comando.
+- **Camada 2 — Egress:** `--privacy` mascara **PII/segredo** que sai para o LLM — CPF/CNPJ/e-mail viram
+  token estável (HMAC), segredo vira `***REDACTED***`, valor financeiro vira faixa (`~10k-100k`),
+  estrutura/flags ficam intactas. Classificação de campo pela verdade do **SX3** (dicionário + PICTURE).
+- **Relativização:** `plugadvpl diagnose <fonte> --record-file <json>` avalia os pontos de decisão de
+  uma rotina contra um registro e devolve o **desfecho exato** com o valor sensível **relativizado**
+  (`saldo ~103% de limite -> VERDADEIRO`), sem o R$ real.
+
+```bash
+plugadvpl --privacy grep <termo>     # mascara na saída
+plugadvpl diagnose ABCLibPed.prw --record-file registro.json
+```
+
+Custo < 1 ms no uso real, **determinístico** (mesmo input → mesma saída). Fluxo completo, pré-requisitos
+de instalação e como ligar cada parte em **[docs/seguranca.md](docs/seguranca.md)**.
+
+---
+
 ## Skills incluídas
 
 Além dos 33 command wrappers (1 por subcomando do CLI + `help` + `setup`), o plugin traz **21 knowledge skills** carregadas pelo Claude conforme contexto:
@@ -850,12 +875,13 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **46 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, e **interfaces POUI** (frontend Angular TOTVS)
+- **47 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS) e **`diagnose`** (relativização de valor sensível em pontos de decisão)
+- **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **61 skills** (26 knowledge + 35 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **62 skills** (26 knowledge + 36 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v25** — 25 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso`)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1449 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1751 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 

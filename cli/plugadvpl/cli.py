@@ -271,8 +271,18 @@ def main_callback(
         bool,
         typer.Option("--no-next-steps", help="Desliga sugestões de próximo comando."),
     ] = False,
+    privacy: Annotated[
+        bool | None,
+        typer.Option(
+            "--privacy/--no-privacy",
+            help="Mascara dados sensíveis (CPF/CNPJ/e-mail/segredo) na saída. "
+            "Default: variável de ambiente PLUGADVPL_PRIVACY.",
+        ),
+    ] = None,
 ) -> None:
     """Opções globais aplicadas a todos os subcomandos via ``ctx.obj``."""
+    from .privacy import PrivacyConfig
+
     ctx.ensure_object(dict)
     resolved_root = root.resolve()
     ctx.obj["root"] = resolved_root
@@ -283,6 +293,7 @@ def main_callback(
     ctx.obj["offset"] = offset
     ctx.obj["compact"] = compact
     ctx.obj["next_steps_enabled"] = not no_next_steps
+    ctx.obj["privacy"] = PrivacyConfig.from_env(enabled_override=privacy)
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +339,21 @@ def _render_from_ctx(
         offset=obj["offset"],
         compact=obj["compact"],
         next_steps=next_steps if obj["next_steps_enabled"] else None,
+        privacy=obj.get("privacy"),
     )
+
+
+def _mask_text_if_privacy(ctx: typer.Context, text: str) -> str:
+    """Mascara um texto cru (ex.: relatório HTML montado fora do ``render``)
+    quando a camada de privacidade está ligada. Cobre os caminhos que NÃO
+    passam por ``_render_from_ctx`` — ini-audit/log-diagnose ``--format html``.
+    """
+    priv = ctx.obj.get("privacy")
+    if priv is not None and priv.enabled:
+        from .privacy import Masker
+
+        return Masker(priv).mask_text(text)
+    return text
 
 
 def _with_ro_db(
@@ -1296,6 +1321,66 @@ def arch(
     )
 
 
+@app.command()
+def diagnose(
+    ctx: typer.Context,
+    arquivo: Annotated[str, typer.Argument(help="Fonte ADVPL (path ou basename).")],
+    record: Annotated[
+        str | None,
+        typer.Option("--record", help="Registro JSON, ex.: '{\"A1_LC\": 50000}'."),
+    ] = None,
+    record_file: Annotated[
+        Path | None,
+        typer.Option("--record-file", help="Arquivo JSON com o registro."),
+    ] = None,
+    fields_file: Annotated[
+        Path | None,
+        typer.Option("--fields-file", help="JSON de campos financeiros (SX3) p/ relativizar."),
+    ] = None,
+) -> None:
+    """Avalia os pontos de decisão de um fonte contra um registro: desfecho EXATO +
+    explicação relativizada (números sensíveis viram razão, ex.: 'saldo ~103% de limite')."""
+    from .privacy.diagnose import diagnose as run_diagnose
+
+    root: Path = ctx.obj["root"]
+    cand = Path(arquivo) if Path(arquivo).is_absolute() else root / arquivo
+    if not cand.exists():
+        matches = sorted(root.rglob(arquivo))
+        if not matches:
+            typer.secho(f"Fonte '{arquivo}' não encontrado.", fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(code=1)
+        cand = matches[0]
+    data = cand.read_bytes()
+    try:
+        source = data.decode("utf-8")
+    except UnicodeDecodeError:
+        source = data.decode("cp1252", errors="replace")
+
+    raw_record: dict[str, object] = {}
+    financial: frozenset[str] = frozenset()
+    try:
+        if record_file is not None:
+            raw_record = json.loads(record_file.read_text(encoding="utf-8"))
+        elif record:
+            raw_record = json.loads(record)
+        if fields_file is not None:
+            loaded = json.loads(fields_file.read_text(encoding="utf-8"))
+            financial = frozenset(str(f).strip().upper() for f in loaded if str(f).strip())
+    except (json.JSONDecodeError, OSError) as exc:
+        typer.secho(f"Entrada inválida: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+    results = run_diagnose(source, raw_record, financial_fields=financial)
+    rows: list[dict[str, object]] = [
+        {"linha": d.line, "condicao": d.condition, "explicacao": c.explain}
+        for d in results
+        for c in d.comparisons
+    ]
+    if not rows:
+        typer.secho("Nenhum ponto de decisão encontrado.", fg=typer.colors.YELLOW, err=True)
+    _render_from_ctx(ctx, rows, columns=["linha", "explicacao"], title=f"Diagnóstico: {cand.name}")
+
+
 # ---------------------------------------------------------------------------
 # lint
 # ---------------------------------------------------------------------------
@@ -1794,7 +1879,7 @@ def ini_audit(  # noqa: PLR0912, PLR0915 -- typer command com varios filtros mut
             ctx,
             lambda c: _render_ini_audit_html(c, arquivo, ing_res.file_ids),
         )
-        typer.echo(report)
+        typer.echo(_mask_text_if_privacy(ctx, report))
         return
 
     rows = _with_ro_db(
@@ -2130,7 +2215,7 @@ def log_diagnose(  # noqa: PLR0912, PLR0915 -- typer command com filtros (severi
             ctx,
             lambda c: _render_log_diagnose_html(c, arquivo, severity, category, rule, link_info),
         )
-        typer.echo(report)
+        typer.echo(_mask_text_if_privacy(ctx, report))
         return
 
     rows = _with_ro_db(

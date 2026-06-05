@@ -2,37 +2,43 @@
   {
     "id": "password_assignment",
     "description": "password=foo, PASSWORD: foo, etc",
-    "pattern": "(?i)(password)\\s*[:=]\\s*\\S+",
+    "pattern": "(?i)(password)\\s*[:=]+\\s*\\S+",
     "replacement": "\\1=***REDACTED***"
   },
   {
     "id": "psw_assignment",
     "description": "psw=foo (advpls .ini canonical)",
-    "pattern": "(?i)(psw)\\s*[:=]\\s*\\S+",
+    "pattern": "(?i)(psw)\\s*[:=]+\\s*\\S+",
     "replacement": "\\1=***REDACTED***"
   },
   {
     "id": "senha_assignment_pt",
     "description": "senha=foo (pt-BR)",
-    "pattern": "(?i)(senha)\\s*[:=]\\s*\\S+",
+    "pattern": "(?i)(senha)\\s*[:=]+\\s*\\S+",
     "replacement": "\\1=***REDACTED***"
   },
   {
     "id": "pwd_assignment",
     "description": "pwd=foo (common alias)",
-    "pattern": "(?i)(pwd)\\s*[:=]\\s*\\S+",
+    "pattern": "(?i)(pwd)\\s*[:=]+\\s*\\S+",
     "replacement": "\\1=***REDACTED***"
   },
   {
     "id": "hex_key_long",
-    "description": "Hex keys >16 chars (tokens, signatures)",
-    "pattern": "\\b[0-9a-fA-F]{16,}\\b",
+    "description": "Hex keys >=16 chars com ao menos uma letra a-f (tokens/assinaturas; numero puro = ID/chave NFe e preservado)",
+    "pattern": "\\b(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{16,}\\b",
     "replacement": "***HEX_REDACTED***"
   },
   {
     "id": "aut_file_value",
     "description": "Path/conteúdo do arquivo .aut (chave de autorização TOTVS)",
-    "pattern": "(?i)(aut_file|authorization)\\s*[:=]\\s*\\S+",
+    "pattern": "(?i)(aut_file|authorization)\\s*[:=]+\\s*\\S+",
     "replacement": "\\1=***REDACTED***"
+  },
+  {
+    "id": "url_credentials",
+    "description": "URL com credencial embutida (scheme://user:pass@host)",
+    "pattern": "(?i)([a-z][a-z0-9+.-]*://)[^:\\s/@]+:[^@\\s]+@",
+    "replacement": "\\1[REDACTED]@"
   }
 ]

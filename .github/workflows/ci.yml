@@ -93,6 +93,14 @@ jobs:
         plugadvpl/migrate_tlpp_recipes/rename_extension.py
         plugadvpl/migrate_tlpp_recipes/user_function.py
         plugadvpl/output.py
+        plugadvpl/parsing/decisions.py
+        plugadvpl/privacy/__init__.py
+        plugadvpl/privacy/brdocs.py
+        plugadvpl/privacy/buckets.py
+        plugadvpl/privacy/config.py
+        plugadvpl/privacy/diagnose.py
+        plugadvpl/privacy/engine.py
+        plugadvpl/privacy/injection.py
         plugadvpl/parsing/ini_audit.py
         plugadvpl/parsing/ini_known_keys.py
         plugadvpl/parsing/ini_report.py
@@ -191,3 +199,21 @@ jobs:
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl init
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl ingest
       - run: uvx --from ./cli plugadvpl --root ./docs/reference-impl --format json arch coletadb.tlpp
+
+  secret-scan:
+    # Camada 0 (prevencao): varre a arvore de trabalho atras de segredos.
+    # --no-git scaneia os arquivos atuais (sem historico) -> deterministico,
+    # nao falha por commits antigos. Config + allowlist em .gitleaks.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install gitleaks
+        run: |
+          set -e
+          VERSION=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: gitleaks (secret scanning)
+        run: gitleaks detect --no-git --redact --config .gitleaks.toml --source . --verbose
