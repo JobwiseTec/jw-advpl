@@ -34,6 +34,9 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar, cast
 import typer
 
 from plugadvpl import __version__
+from plugadvpl.catalog import catalog_list
+from plugadvpl.catalog import catalog_query as q_catalog
+from plugadvpl.catalog import ingest_tsv as do_ingest_tsv
 from plugadvpl.db import (
     apply_migrations,
     close_db,
@@ -1146,6 +1149,15 @@ def status(
     root: Path = ctx.obj["root"]
     rows = _with_ro_db(ctx, lambda c: q_status(c, str(root), __version__))
     _render_from_ctx(ctx, rows, title="Status do índice")
+
+    # #75: catálogos importados via ingest-tsv (se houver).
+    if not ctx.obj["quiet"]:
+        cats = _with_ro_db(ctx, catalog_list)
+        if cats:
+            typer.secho("\nCatálogos (ingest-tsv):", err=True)
+            for cat in cats:
+                sx = f" ↔ SX {cat['sx_table']}" if cat["sx_table"] else ""
+                typer.secho(f"  {cat['alias']}: {cat['row_count']} linhas{sx}", err=True)
 
     # Aviso de divergência runtime ↔ índice — fecha o gap "binário foi atualizado
     # via uv tool upgrade mas o status ainda mostra a versão antiga gravada".
@@ -2569,6 +2581,128 @@ def ingest_sx_cmd(
             "plugadvpl gatilho A1_COD",
         ],
     )
+
+
+@app.command(name="ingest-tsv")
+def ingest_tsv_cmd(
+    ctx: typer.Context,
+    arquivo: Annotated[
+        Path,
+        typer.Argument(help="Dump TSV/CSV de tabela-catálogo (exportado do Oracle/SQL/DBeaver)."),
+    ],
+    alias: Annotated[
+        str, typer.Option("--as", help="Nome lógico do catálogo (ex: catalogo_regras).")
+    ],
+    encoding: Annotated[
+        str | None,
+        typer.Option("--encoding", help="Override de encoding (cp1252|utf-8). Auto se omitido."),
+    ] = None,
+    delimiter: Annotated[
+        str | None,
+        typer.Option("--delimiter", help="Override de delimiter (tab|csv). Auto se omitido."),
+    ] = None,
+) -> None:
+    """Importa um dump TSV/CSV de tabela-catálogo (Z*/X*) pro índice (#75).
+
+    Fecha o gap do *conteúdo* das tabelas-catálogo. Depois, consulte com ``catalog``.
+    """
+    db_path: Path = ctx.obj["db"]
+    if not arquivo.exists() or not arquivo.is_file():
+        typer.secho(f"Arquivo inválido: {arquivo}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    conn = open_db(db_path)
+    try:
+        apply_migrations(conn)
+        meta = do_ingest_tsv(conn, arquivo.resolve(), alias, encoding=encoding, delimiter=delimiter)
+    finally:
+        close_db(conn)
+    if not ctx.obj["quiet"]:
+        if meta["overwritten"]:
+            typer.secho(f"⚠ Catálogo '{alias}' já existia — sobrescrito.", fg="yellow", err=True)
+        sx_msg = f" · cruza com SX '{meta['sx_table']}'" if meta["sx_table"] else ""
+        typer.secho(
+            f"OK  {meta['rows']} linhas importadas em '{alias}' ({meta['columns']} colunas, "
+            f"{meta['encoding']}/{meta['delimiter']}){sx_msg}",
+            err=True,
+        )
+    _render_from_ctx(
+        ctx,
+        [
+            {
+                "alias": alias,
+                "rows": meta["rows"],
+                "columns": meta["columns"],
+                "sx_table": meta["sx_table"] or "",
+            }
+        ],
+        title=f"Catálogo importado: {alias}",
+        next_steps=[
+            f"plugadvpl catalog {alias} --limit 20",
+            f"plugadvpl catalog {alias} --group-by <COL> --count",
+        ],
+    )
+
+
+@app.command()
+def catalog(
+    ctx: typer.Context,
+    alias: Annotated[str, typer.Argument(help="Nome do catálogo (o --as do ingest-tsv).")],
+    filter_expr: Annotated[
+        str | None,
+        typer.Option(
+            "--filter", help="Filtro seguro: COL OP 'VAL' [AND/OR ...] (= != > < >= <= LIKE)."
+        ),
+    ] = None,
+    group_by: Annotated[
+        str | None,
+        typer.Option(
+            "--group-by", help="Agrupa por coluna(s), separadas por vírgula. Use com --count."
+        ),
+    ] = None,
+    count: Annotated[bool, typer.Option("--count", help="Conta registros por grupo.")] = False,
+    decode_cbox: Annotated[
+        bool,
+        typer.Option("--decode-cbox", help="Decoda valores via X3_CBOX da tabela SX correlata."),
+    ] = False,
+    funcao_field: Annotated[
+        str | None,
+        typer.Option(
+            "--funcao-field", help="Coluna com nome de função ADVPL (p/ --resolve-callers)."
+        ),
+    ] = None,
+    resolve_callers: Annotated[
+        bool,
+        typer.Option("--resolve-callers", help="Cruza --funcao-field com os fontes indexados."),
+    ] = False,
+) -> None:
+    """Consulta um catálogo importado (#75): lista / filtra / agrega / cruza com fontes."""
+    try:
+        rows = _with_ro_db(
+            ctx,
+            lambda c: q_catalog(
+                c,
+                alias,
+                filter_expr=filter_expr,
+                group_by=group_by,
+                count=count,
+                decode_cbox=decode_cbox,
+                funcao_field=funcao_field,
+                resolve_callers=resolve_callers,
+            ),
+        )
+    except ValueError as exc:  # filtro inválido
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    if not rows and not _with_ro_db(
+        ctx, lambda c: any(m["alias"] == alias for m in catalog_list(c))
+    ):
+        typer.secho(
+            f"Catálogo '{alias}' não encontrado (rode 'plugadvpl ingest-tsv <arq> --as {alias}').",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    _render_from_ctx(ctx, rows, title=f"Catálogo: {alias}")
 
 
 @app.command(name="ingest-poui")

@@ -527,6 +527,24 @@ do projeto (~0% a ~40% dos fontes).
 | `observacao` | TEXT | Costuma conter histórico de versões |
 | `raw_header` | TEXT | Bloco completo (fallback; omitido em `--no-content`) |
 
+### `catalog_meta` / `catalog_data` (migration 027)
+
+Dumps TSV/CSV de tabelas-catálogo (Z*/X*) importados via `ingest-tsv`, consultados por `catalog`. Modelo **row-JSON** (1 linha por registro, colunas em JSON) — schema arbitrário sem `ALTER TABLE` por dump; a agregação acontece em Python (dumps típicos ~N×k linhas).
+
+`catalog_meta`:
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `alias` | TEXT PK | Nome lógico do dump (`--as`) |
+| `source_file` | TEXT | Caminho do arquivo importado |
+| `sx_table` | TEXT | Tabela SX correlata (se o nome bate — habilita `--decode-cbox`) |
+| `columns_json` | TEXT | Lista ordenada de colunas (JSON) |
+| `row_count` | INTEGER | Nº de registros |
+| `ingested_at` | TEXT | Timestamp ISO |
+| `encoding` / `delimiter` | TEXT | Detectados na importação |
+
+`catalog_data`: `(alias, row_id, row_json)` — PK `(alias, row_id)`, índice em `alias`. `row_json` = `{coluna: valor}`.
+
 ---
 
 ## Reservado para v0.2+

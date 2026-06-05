@@ -9,7 +9,7 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
 - [Opções globais](#opcoes-globais)
 - [Universo 1 — Fontes (v0.1)](#universo-1)
   - **write-path**: [`init`](#init), [`ingest`](#ingest), [`reindex`](#reindex)
-  - **read-only**: [`status`](#status), [`find`](#find), [`family`](#family), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`check-build`](#check-build), [`doctor`](#doctor), [`grep`](#grep)
+  - **read-only**: [`status`](#status), [`find`](#find), [`family`](#family), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`catalog`](#catalog), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`check-build`](#check-build), [`doctor`](#doctor), [`grep`](#grep)
   - **utilitários**: [`version`](#version), [`help`](#help), [`edit-prw`](#edit-prw), [`compile`](#compile)
 - [Universo 2 — Dicionário SX (v0.3)](#universo-2)
   - [`ingest-sx`](#ingest-sx), [`impacto`](#impacto), [`gatilho`](#gatilho), [`sx-status`](#sx-status), [`semantica`](#semantica)
@@ -258,6 +258,36 @@ plugadvpl tables SC5 --mode reclock
 ```
 plugadvpl --format md tables SZT --catalog
 ```
+
+---
+
+### <a id="ingest-tsv"></a>`ingest-tsv <arquivo> --as <alias>`
+
+Importa um **dump TSV/CSV** de uma tabela-catálogo (Z*/X*) pro índice — o `tables --catalog` (#64) dá o *schema*; este traz o **conteúdo** (as N regras catalogadas). Encoding (cp1252/utf-8/utf-8-bom) e delimiter (tab/csv) **auto-detectados**; override com `--encoding`/`--delimiter`. Se o nome do arquivo bate com uma tabela SX (`SZT.tsv`→`SZT`), cruza pra habilitar `--decode-cbox`. Re-ingest do mesmo alias sobrescreve.
+
+```
+plugadvpl ingest-tsv dumps/SZT.tsv --as catalogo_regras
+```
+
+### <a id="catalog"></a>`catalog <alias>`
+
+Consulta o conteúdo de um catálogo importado. Determinístico, sem ir ao banco.
+
+```
+plugadvpl catalog catalogo_regras --limit 20
+plugadvpl catalog catalogo_regras --filter "ZT_MSBLQL='2' AND ZT_FILIAL='01'"
+plugadvpl --format md catalog catalogo_regras --group-by ZT_TIPO --count --decode-cbox
+plugadvpl catalog catalogo_regras --funcao-field ZT_FUNCAO --resolve-callers
+```
+
+| Opção | Efeito |
+|---|---|
+| `--filter "COL OP 'VAL'"` | Filtro **seguro** (OP: `= != > < >= <= LIKE`, unidos por `AND`/`OR`) — aplicado em Python, à prova de SQL injection |
+| `--group-by COL[,COL] --count` | Distribuição (contagem por grupo) |
+| `--decode-cbox` | Decoda valores via X3_CBOX da tabela SX correlata (`1=Fiscal`) |
+| `--funcao-field COL --resolve-callers` | Cruza o campo `*_FUNCAO` do dump com os fontes indexados (`U_MODxxx`→`MODxxx.prw`) |
+
+`plugadvpl status` lista os catálogos importados (alias + nº de linhas).
 
 ---
 

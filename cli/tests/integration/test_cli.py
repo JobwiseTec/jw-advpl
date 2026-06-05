@@ -275,7 +275,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 63
+        assert len(rules) == 65
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -311,7 +311,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 63
+        assert len(rules) == 65
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -326,7 +326,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 63
+        assert len(rules) == 65
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
@@ -451,7 +451,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 63
+        assert len(instructions) == 65
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -494,7 +494,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 63
+        assert len(instructions) == 65
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -512,7 +512,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 63
+        assert len(instructions) == 65
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -598,7 +598,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 63
+        assert len(skill_files) == 65
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -656,7 +656,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 63
+        assert len(skill_files) == 65
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -675,7 +675,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 63
+        assert len(skill_files) == 65
         arch_content = (
             synthetic_project
             / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
@@ -917,15 +917,15 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 63
+        assert len(cursor_files) == 65
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 63
+        assert len(copilot_files) == 65
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 63
+        assert len(gemini_files) == 65
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -3707,3 +3707,65 @@ class TestWriteEmptyAlert:
         # SC5 tem write clássico (RecLock) no synthetic_project -> sem alerta
         r = runner.invoke(app, ["--root", str(indexed_project), "tables", "SC5", "--mode", "write"])
         assert "mas 0x" not in (r.stderr or "")
+
+
+class TestCatalogCommands:
+    """#75: ingest-tsv + catalog via CLI."""
+
+    @pytest.fixture
+    def proj_catalog(self, tmp_path: Path, runner: CliRunner) -> tuple[Path, Path]:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ABCFN1.prw").write_bytes(b"User Function ABCFN1()\nReturn .T.\n")
+        runner.invoke(app, ["--root", str(src), "init"])
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        tsv = tmp_path / "dump.tsv"
+        tsv.write_bytes(
+            b"ZT_COD\tZT_TIPO\tZT_FUNCAO\n001\t1\tU_ABCFN1\n002\t1\tU_ABCFN1\n003\t2\t.F.\n"
+        )
+        r = runner.invoke(app, ["--root", str(src), "ingest-tsv", str(tsv), "--as", "regras"])
+        assert r.exit_code == 0, r.stderr or r.stdout
+        return src, tsv
+
+    def test_ingest_tsv_e_group_count(
+        self, proj_catalog: tuple[Path, Path], runner: CliRunner
+    ) -> None:
+        src, _ = proj_catalog
+        r = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "catalog", "regras", "--group-by", "ZT_TIPO", "--count"],
+        )
+        assert r.exit_code == 0
+        assert '"count": 2' in r.stdout and '"ZT_TIPO": "1"' in r.stdout
+
+    def test_resolve_callers_cli(
+        self, proj_catalog: tuple[Path, Path], runner: CliRunner
+    ) -> None:
+        src, _ = proj_catalog
+        r = runner.invoke(
+            app,
+            ["--root", str(src), "--format", "json", "catalog", "regras",
+             "--funcao-field", "ZT_FUNCAO", "--resolve-callers"],
+        )
+        assert "ABCFN1.prw" in r.stdout
+
+    def test_filtro_invalido_exit2(
+        self, proj_catalog: tuple[Path, Path], runner: CliRunner
+    ) -> None:
+        src, _ = proj_catalog
+        r = runner.invoke(app, ["--root", str(src), "catalog", "regras", "--filter", "DROP TABLE x"])
+        assert r.exit_code == 2
+
+    def test_alias_inexistente_exit1(
+        self, proj_catalog: tuple[Path, Path], runner: CliRunner
+    ) -> None:
+        src, _ = proj_catalog
+        r = runner.invoke(app, ["--root", str(src), "catalog", "naoexiste"])
+        assert r.exit_code == 1
+
+    def test_status_lista_catalogo(
+        self, proj_catalog: tuple[Path, Path], runner: CliRunner
+    ) -> None:
+        src, _ = proj_catalog
+        r = runner.invoke(app, ["--root", str(src), "status"])
+        assert "regras" in (r.stderr or "") and "3 linhas" in (r.stderr or "")

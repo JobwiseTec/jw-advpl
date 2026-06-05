@@ -56,6 +56,7 @@ jobs:
         plugadvpl/__main__.py
         plugadvpl/_skill_catalog.py
         plugadvpl/agent_doctor.py
+        plugadvpl/catalog.py
         plugadvpl/cli.py
         plugadvpl/codex_config.py
         plugadvpl/coletadb_client.py

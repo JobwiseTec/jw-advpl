@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 63 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 65 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -32,6 +32,7 @@ GEMINI_MARKER_PREFIX = "<!-- plugadvpl-gemini-version:"
 
 _PRW = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.apw"]
 _PRW_CSV = ["**/*.prw", "**/*.tlpp", "**/*.prx", "**/*.csv"]
+_TSV = ["**/*.tsv", "**/*.csv"]
 
 _SKILL_GLOBS: dict[str, list[str]] = {
     # ADVPL/TLPP source skills
@@ -39,6 +40,8 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "diagnose": _PRW,
     "find": _PRW,
     "family": _PRW,
+    "ingest-tsv": _TSV,
+    "catalog": [],
     "callers": _PRW,
     "callees": _PRW,
     "lint": _PRW,

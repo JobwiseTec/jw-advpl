@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **`ingest-tsv` + `catalog` — conteúdo de tabelas-catálogo (Z*/X*)** ([#75](https://github.com/JoniPraia/plugadvpl/issues/75)): `ingest-tsv <dump> --as <alias>` importa um dump TSV/CSV (exportado do Oracle/SQL/DBeaver) de uma tabela-catálogo pro índice (encoding cp1252/utf-8 + delimiter tab/csv auto-detectados; storage row-JSON). `catalog <alias>` consulta: `--filter "COL OP 'VAL'"` (parser **seguro**, aplicado em Python — à prova de SQL injection), `--group-by COL[,COL] --count`, `--decode-cbox` (decoda valores via X3_CBOX da tabela SX correlata, reusa #64) e `--funcao-field COL --resolve-callers` (cruza o campo `*_FUNCAO` do dump com os fontes indexados — `U_MODxxx` → `MODxxx.prw`). `status` lista os catálogos. Migration 027 (`catalog_meta`/`catalog_data`, schema **v26 → v27**). 2 skills novas (catálogo 63 → **65**). Fecha o gap do *conteúdo* das tabelas-catálogo (o `tables --catalog` do #64 já dá o schema).
+
 ## [0.24.0] - 2026-06-05
 
 Follow-up do épico de reconstrução (#72, surgido do uso do `family` em produção): panorama de tabelas da família inteira numa tela.
