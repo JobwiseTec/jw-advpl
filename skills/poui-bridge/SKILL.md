@@ -19,7 +19,7 @@ Protheus (anotações `@Get`/`@Post` TLPP indexadas em `rest_endpoints`).
 ## Execução
 
 ```bash
-uvx plugadvpl@0.25.1 --format md poui-bridge
+uvx plugadvpl@0.26.0 --format md poui-bridge
 ```
 
 ## Colunas de saída

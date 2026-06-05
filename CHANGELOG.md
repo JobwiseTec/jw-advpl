@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-06-05
+
+Precisão de cobertura do parser (lote 1, da auditoria #81–#88): captura acesso a tabela/PE em padrões **legados** que ficavam invisíveis. Cada quebra foi **verificada na prática** nas 4 bases reais (e o #82/DbUseArea foi descartado por ter arg dinâmico em 99% dos casos).
+
 ### Added
 
 - **Parser captura leitura de tabela via `GetAdvFVal`** ([#84](https://github.com/JoniPraia/plugadvpl/issues/84)): `GetAdvFVal("SA1","A1_NOME",...)` lê um campo por nome de tabela — agora vira `read` no `fonte_tabela`. **1.275** chamadas literais nas 4 bases. (Auditoria de cobertura; arg literal em 99,7%.)

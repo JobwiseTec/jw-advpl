@@ -911,7 +911,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **65 skills** (26 knowledge + 39 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1845 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1852 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -927,6 +927,15 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.26.0 — precisão de cobertura do parser (auditoria #81–#88, lote 1)
+
+Auditoria contra **7.293 fontes reais** cruzou o que o parser captura vs o que aparece na prática. Lote 1 fecha lacunas de **código legado**, cada uma verificada na base:
+
+- **`RetSqlName`/`RetSqlTab`/`RetSqlDel`/`RetSqlFil`** (#81): tabela em query **TCQuery legada** → `read`. **294 fontes** antes 100% cegos em `tables`/`impacto` recuperados.
+- **`ExistBlock`** (#83): referência de PE entra no call graph (junto do `ExecBlock`) → `callers`/`callees` completos. 2.738 refs.
+- **`GetAdvFVal`** (#84): leitura de campo por nome de tabela → `read`. 1.275 chamadas.
+- **`DbUseArea`** (#82): **descartado** — a auditoria mostrou arg dinâmico em 99% (sem tabela literal pra extrair). Decisão guiada por dado.
 
 ### v0.25.1 — fix `catalog --resolve-callers` (normaliza expressão de chamada)
 
