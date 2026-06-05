@@ -385,7 +385,7 @@ flowchart LR
 
 ## Comandos disponíveis
 
-O CLI Python expõe **46 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **47 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -565,28 +565,57 @@ Sem mapeamento, `sonar_rules` vem como `[]` — não quebra parsers downstream. 
 
 ---
 
-## Segurança & Privacidade
+## 🔒 Segurança & Privacidade
 
-Camada **opt-in** (desligada por padrão — sem ela, o output é idêntico ao de sempre) que protege dados
-sensíveis em **camadas** (defesa em profundidade):
+Camada **opt-in** de proteção de dados sensíveis em **camadas** (defesa em profundidade). **Desligada por
+padrão** — sem ligar nada, o output é **byte-idêntico** ao de sempre, sem overhead nem dependência nova.
+Cada camada age num **momento** diferente do fluxo:
 
-- **Camada 0 — Prevenção:** `gitleaks` (pre-commit + CI) impede **segredo** de entrar no repositório.
-- **Camada 3 — Input:** `PLUGADVPL_INJECTION_SCAN=1` detecta **instrução embutida** (prompt injection,
-  OWASP LLM01) em conteúdo de terceiros — marca o trecho e alerta, sinalizando à IA que é dado, não comando.
-- **Camada 2 — Egress:** `--privacy` mascara **PII/segredo** que sai para o LLM — CPF/CNPJ/e-mail viram
-  token estável (HMAC), segredo vira `***REDACTED***`, valor financeiro vira faixa (`~10k-100k`),
-  estrutura/flags ficam intactas. Classificação de campo pela verdade do **SX3** (dicionário + PICTURE).
-- **Relativização:** `plugadvpl diagnose <fonte> --record-file <json>` avalia os pontos de decisão de
-  uma rotina contra um registro e devolve o **desfecho exato** com o valor sensível **relativizado**
-  (`saldo ~103% de limite -> VERDADEIRO`), sem o R$ real.
+```mermaid
+flowchart LR
+    subgraph T0["① no commit"]
+        C0["<b>Camada 0 · gitleaks</b><br/>segredo não entra no repo<br/>pre-commit + CI"]
+    end
+    subgraph T1["② na consulta · egress para a IA"]
+        direction TB
+        C2["<b>Camada 2 · --privacy</b><br/>CPF/CNPJ/e-mail → token HMAC<br/>segredo → REDACTED<br/>R$ → faixa ~10k-100k · classifica por SX3"]
+        C3["<b>Camada 3 · INJECTION_SCAN</b><br/>instrução embutida → marca + alerta<br/>prompt injection · OWASP LLM01"]
+        CR["<b>diagnose · relativização</b><br/>desfecho EXATO sem o R$ real<br/>saldo ~103% de limite → VERDADEIRO"]
+    end
+    IA(["🤖 LLM / IA"])
 
-```bash
-plugadvpl --privacy grep <termo>     # mascara na saída
-plugadvpl diagnose ABCLibPed.prw --record-file registro.json
+    C0 ==>|código limpo| C2
+    C2 --> C3 --> IA
+    C2 -.->|debug seguro| CR -.-> IA
 ```
 
-Custo < 1 ms no uso real, **determinístico** (mesmo input → mesma saída). Fluxo completo, pré-requisitos
-de instalação e como ligar cada parte em **[docs/seguranca.md](docs/seguranca.md)**.
+> **Default desligado = byte-idêntico.** Você liga só as camadas que fazem sentido. Tudo
+> **determinístico** (mesmo input → mesma saída, sem chamada de LLM no caminho), custo < 1 ms.
+
+### Passo a passo para rodar
+
+```bash
+# ── Camada 0 · impedir segredo de entrar no repo (uma vez por máquina) ──
+winget install gitleaks                 # ou: brew install gitleaks
+pip install pre-commit && pre-commit install
+
+# ── Camada 2 · mascarar PII/segredo no que sai pra IA ──
+export PLUGADVPL_PRIVACY=1
+export PLUGADVPL_PRIVACY_KEY=<segredo-da-sessão>   # estabiliza os tokens entre comandos
+plugadvpl grep <termo>                  # saída já mascarada
+plugadvpl --privacy arch ABCLibPed.prw  # ou pontual, sem env var
+
+# ── Camada 3 · detectar prompt injection em conteúdo de terceiros ──
+export PLUGADVPL_INJECTION_SCAN=1
+plugadvpl grep <termo>                  # marca [!INJECAO?] + alerta no stderr
+
+# ── Relativização · debugar sem vazar o valor real ──
+plugadvpl diagnose ABCLibPed.prw --record-file registro.json
+#   saída:  ( nSaldo + nValPed ) ~103% de A1_LC -> VERDADEIRO
+```
+
+Fluxo completo, pré-requisitos de instalação e como gerar a lista de campos do **SX3** (para a
+classificação financeira exata) em **[docs/seguranca.md](docs/seguranca.md)**.
 
 ---
 
