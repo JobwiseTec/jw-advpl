@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-06-05
+
 ### Added
 
 - **4 capabilities novas (lote 2 da auditoria #85–#88)** — sinais de comportamento detectados por presença de função, mostrados no `arch` e filtráveis: **`SEQUENCER`** (gera numeração de documento via SXE/SXF: `GetSXENum`/`ConfirmSX8` — [#86](https://github.com/JoniPraia/plugadvpl/issues/86), 314 fontes), **`TRANSACTION`** (gravação ACID via `Begin Transaction`/`DisarmTransaction` — [#87](https://github.com/JoniPraia/plugadvpl/issues/87), 811), **`FILE_IO`** (I/O de arquivo via `MemoWrite`/`FErase`/`FCreate` — export/EDI/SPED, [#88](https://github.com/JoniPraia/plugadvpl/issues/88), 867), **`PARAMBOX`** (parâmetros interativos — [#85](https://github.com/JoniPraia/plugadvpl/issues/85), 396). (Do #88: JSON já era coberto por `JSON_AWARE`; tabelas de grid MVC já vêm do `FWFormStruct(1,X)` do #61.)

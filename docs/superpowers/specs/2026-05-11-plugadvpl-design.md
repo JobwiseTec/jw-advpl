@@ -588,7 +588,7 @@ Comandos que dependem dessas tabelas (`impacto`, `ingest-sx`, etc.) retornam men
 
 ### 4.4 Capabilities (JSON list em `fontes.capabilities`)
 
-Valores possíveis: `MVC`, `BROWSE`, `JOB`, `RPC`, `DIALOG`, `WS-REST`, `WS-SOAP`, `PE`, `TELA_CLASSICA`, `SCHEDULE`, `WORKFLOW`, `COMPATIBILIZADOR`, `TESTE_UNITARIO`, `WEBVIEW`, `REPORT_TR`, `REST_CLIENT`, `EXEC_AUTO_CALLER`, `ENV_OPENER`, `JSON_AWARE`, `MULTI_FILIAL`.
+Valores possíveis: `MVC`, `BROWSE`, `JOB`, `RPC`, `DIALOG`, `WS-REST`, `WS-SOAP`, `PE`, `TELA_CLASSICA`, `SCHEDULE`, `WORKFLOW`, `COMPATIBILIZADOR`, `TESTE_UNITARIO`, `WEBVIEW`, `REPORT_TR`, `REST_CLIENT`, `EXEC_AUTO_CALLER`, `ENV_OPENER`, `JSON_AWARE`, `MULTI_FILIAL`, `SEQUENCER`, `TRANSACTION`, `FILE_IO`, `PARAMBOX`.
 
 ### 4.5 Tipos em `chamadas_funcao.tipo`
 

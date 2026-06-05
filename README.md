@@ -928,6 +928,16 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.27.0 — capabilities de comportamento (auditoria #81–#88, lote 2)
+
+Lote 2 da auditoria: 4 **capabilities** novas (sinal de comportamento por presença de função, exibido no `arch` e filtrável). Detecção **aditiva** — fonte sem o padrão fica byte-idêntica; cada uma com volume medido nas 4 bases reais:
+
+- **`SEQUENCER`** (#86): gera numeração de documento via SXE/SXF (`GetSXENum`/`GetSXVNum`/`ConfirmSX8`) — 314 fontes.
+- **`TRANSACTION`** (#87): gravação transacional ACID (`Begin Transaction`/`DisarmTransaction`/`MsBeginTran`) — 811.
+- **`FILE_IO`** (#88): I/O de arquivo — export/EDI/SPED (`MemoWrite`/`MemoRead`/`FErase`/`FCreate`/`FWrite`) — 867.
+- **`PARAMBOX`** (#85): parâmetros interativos via `ParamBox` — 396.
+- Do #88: JSON já vinha de `JSON_AWARE`; tabelas de grid MVC já vêm do `FWFormStruct(1,X)` (#61); `DbSetOrder` ficou de fora (ruído).
+
 ### v0.26.0 — precisão de cobertura do parser (auditoria #81–#88, lote 1)
 
 Auditoria contra **7.293 fontes reais** cruzou o que o parser captura vs o que aparece na prática. Lote 1 fecha lacunas de **código legado**, cada uma verificada na base:
