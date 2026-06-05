@@ -407,6 +407,20 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
                 continue
             seen_ft.add(key)
             ft_rows.append(key)
+    # #61: gravação via MVC — o fonte com o ModelDef é o mantenedor (tabela master
+    # via FWFormStruct(1,'X')). Pula tabelas já vistas como write/reclock clássico
+    # (a detecção tradicional já as cobre; write_mvc serve pro que ela perde).
+    classic_write = set(tabelas_ref.get("write", []) or []) | set(
+        tabelas_ref.get("reclock", []) or []
+    )
+    for tabela in parsed.get("mvc_write_tables", []) or []:
+        if tabela in classic_write:
+            continue
+        key = (arquivo, tabela, "write_mvc")
+        if key in seen_ft:
+            continue
+        seen_ft.add(key)
+        ft_rows.append(key)
     if ft_rows:
         conn.executemany(
             "INSERT INTO fonte_tabela (arquivo, tabela, modo) VALUES (?, ?, ?)",
@@ -751,6 +765,22 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
             execauto_rows,
         )
         counters["execauto_calls"] = counters.get("execauto_calls", 0) + len(execauto_rows)
+
+        # #61: tabelas tocadas via MsExecAuto são gravação indireta — surface no
+        # fonte_tabela como write_execauto (a detecção clássica também as perde).
+        # Pula as já vistas como write/reclock clássico.
+        classic_w = {
+            t.upper()
+            for t in (tabelas_ref.get("write", []) or []) + (tabelas_ref.get("reclock", []) or [])
+        }
+        ea_tables = sorted(
+            {t.upper() for c in execauto for t in (c.get("tables_resolved") or [])} - classic_w
+        )
+        if ea_tables:
+            conn.executemany(
+                "INSERT OR IGNORE INTO fonte_tabela (arquivo, tabela, modo) VALUES (?, ?, ?)",
+                [(arquivo, t, "write_execauto") for t in ea_tables],
+            )
 
     # v0.4.2 (Universo 3 Feature C): protheus_docs
     # Usa o caminho relativo pra inferência de módulo (path-based regex).

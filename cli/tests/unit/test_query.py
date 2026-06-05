@@ -218,6 +218,62 @@ class TestFamilyAndGlob:
         assert len(find_file(db_family, "ABC")) == 3
 
 
+class TestMvcAndExecAutoWrite:
+    """#61: gravação via MVC (ModelDef) e ExecAuto vira write_mvc/write_execauto."""
+
+    @pytest.fixture
+    def db_mvc(self, tmp_path: Path) -> sqlite3.Connection:
+        src = tmp_path / "src"
+        src.mkdir()
+        # cadastro MVC: ModelDef com master SZ9 via FWFormStruct(1, ...)
+        (src / "ABCM01.prw").write_bytes(
+            b"#include 'protheus.ch'\n"
+            b"User Function ABCM01()\n"
+            b'  FWExecView("Cad", "ABCM01", 3)\n'
+            b"Return\n"
+            b"Static Function ModelDef()\n"
+            b'  Local oStruct := FWFormStruct(1, "SZ9")\n'
+            b'  Local oModel := MPFormModel():New("ABCM01")\n'
+            b'  oModel:AddFields("SZ9MASTER", , oStruct)\n'
+            b"Return oModel\n"
+        )
+        # fonte que grava via MsExecAuto MATA030 (-> SA1 no catalogo)
+        (src / "ABCEA.prw").write_bytes(
+            b"User Function ABCEA()\n"
+            b"  MSExecAuto({|x,y| MATA030(x,y)}, aDados, 3)\n"
+            b"Return\n"
+        )
+        # ModelDef read-only (SetOnlyView) NAO deve gravar
+        (src / "ABCRO.prw").write_bytes(
+            b"Static Function ModelDef()\n"
+            b'  Local oStruct := FWFormStruct(1, "SZ8")\n'
+            b'  Local oModel := MPFormModel():New("ABCRO")\n'
+            b"  oModel:SetOnlyView(.T.)\n"
+            b"Return oModel\n"
+        )
+        ingest(src, workers=0)
+        return sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
+
+    def test_write_mvc_detectado(self, db_mvc: sqlite3.Connection) -> None:
+        rows = tables_query(db_mvc, "SZ9", "write_mvc")
+        assert [r["arquivo"] for r in rows] == ["ABCM01.prw"]
+
+    def test_mode_write_e_abrangente_inclui_mvc(self, db_mvc: sqlite3.Connection) -> None:
+        modos = {r["modo"] for r in tables_query(db_mvc, "SZ9", "write")}
+        assert "write_mvc" in modos
+
+    def test_write_execauto_detectado(self, db_mvc: sqlite3.Connection) -> None:
+        rows = tables_query(db_mvc, "SA1", "write_execauto")
+        assert [r["arquivo"] for r in rows] == ["ABCEA.prw"]
+
+    def test_mode_write_inclui_execauto(self, db_mvc: sqlite3.Connection) -> None:
+        modos = {r["modo"] for r in tables_query(db_mvc, "SA1", "write")}
+        assert "write_execauto" in modos
+
+    def test_modelo_read_only_nao_grava(self, db_mvc: sqlite3.Connection) -> None:
+        assert tables_query(db_mvc, "SZ8", "write") == []
+
+
 class TestFindFunction:
     def test_finds_user_function_case_insensitive(
         self, db_with_three_sources: tuple[Path, sqlite3.Connection]

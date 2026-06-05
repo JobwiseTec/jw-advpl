@@ -240,7 +240,9 @@ plugadvpl tables ZA1 --mode write
 plugadvpl tables SC5 --mode reclock
 ```
 
-**Opção:** `--mode {read|write|reclock}` filtra por tipo de uso. Sem filtro retorna todos.
+**Opção:** `--mode {read|write|reclock|write_mvc|write_execauto}` filtra por tipo de uso. Sem filtro retorna todos.
+
+**`write` é abrangente (#61):** inclui gravação clássica (`RecLock`/`Replace`) **+ MVC** (`write_mvc` — o fonte que define o `ModelDef`, tabela master via `FWFormStruct(1,'X')`) **+ ExecAuto** (`write_execauto` — tabelas resolvidas do `MsExecAuto`). Isso evita o falso "tabela só-leitura" quando o mantenedor é um cadastro MVC ou um ExecAuto (que a detecção clássica não vê). Use `--mode write_mvc` / `write_execauto` para filtrar só esses.
 
 ---
 

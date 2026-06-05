@@ -961,3 +961,32 @@ class TestParseSource:
         assert call_count[0] <= 2, (
             f"strip_advpl called {call_count[0]} times, expected <=2"
         )
+
+
+class TestExtractMvcWriteTables:
+    """#61: tabela master de ModelDef via FWFormStruct(1, 'X')."""
+
+    @staticmethod
+    def _f(content: str) -> list[str]:
+        from plugadvpl.parsing.parser import _extract_mvc_write_tables_from_stripped
+
+        return _extract_mvc_write_tables_from_stripped(content)
+
+    def test_struct_modelo_arg1(self) -> None:
+        assert self._f('FWFormStruct(1, "SZ9")') == ["SZ9"]
+
+    def test_ignora_struct_view_arg2(self) -> None:
+        assert self._f('FWFormStruct(2, "SZ9")') == []
+
+    def test_master_mais_grid(self) -> None:
+        src = 'FWFormStruct(1, "SC5")\nFWFormStruct(1, "SC6")\nFWFormStruct(2, "SC5")'
+        assert self._f(src) == ["SC5", "SC6"]
+
+    def test_read_only_setonlyview(self) -> None:
+        assert self._f('FWFormStruct(1, "SZ8")\noModel:SetOnlyView(.T.)') == []
+
+    def test_aspas_simples_e_espacos(self) -> None:
+        assert self._f("FWFormStruct( 1 , 'ZAP' )") == ["ZAP"]
+
+    def test_sem_formstruct(self) -> None:
+        assert self._f("Local x := 1") == []

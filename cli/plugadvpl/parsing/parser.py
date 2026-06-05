@@ -91,6 +91,13 @@ _EXECAUTO_RE = re.compile(
 _EXECBLOCK_RE = re.compile(r'ExecBlock\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWLOADMODEL_RE = re.compile(r'FWLoadModel\s*\(\s*["\'](\w+)["\']', re.IGNORECASE)
 _FWEXECVIEW_RE = re.compile(r'FWExecView\s*\([^,)]+,\s*["\'](\w+)["\']', re.IGNORECASE)
+# #61: tabela master de um ModelDef via FWFormStruct(1, 'XXX') — 1º arg = 1 é a
+# struct do MODELO (2 = view). A tabela (2-3 chars) é o que o cadastro MVC grava.
+_FWFORMSTRUCT_MODEL_RE = re.compile(
+    r'FWFormStruct\s*\(\s*1\s*,\s*["\'](\w{2,3})["\']', re.IGNORECASE
+)
+# Modelo read-only não grava — não marca write_mvc.
+_SETONLYVIEW_RE = re.compile(r"SetOnlyView\s*\(\s*\.T\.", re.IGNORECASE)
 # Method names devem começar com letra ou underscore (identificadores reais).
 # Antes: `\w+:\w+` — aceitava `obj:9foo` (digit start) incorretamente.
 _METHOD_OBJ_RE = re.compile(r"\b(\w+:[A-Za-z_]\w*)\s*\(", re.IGNORECASE)
@@ -553,6 +560,22 @@ def _extract_calls_fwloadmodel_from_stripped(
 def extract_calls_fwloadmodel(content: str) -> list[dict[str, Any]]:
     """Extrai chamadas FWLoadModel("MODEL_ID") — model id em string literal."""
     return _extract_calls_fwloadmodel_from_stripped(strip_advpl(content, strip_strings=False))
+
+
+def _extract_mvc_write_tables_from_stripped(stripped_keep_strings: str) -> list[str]:
+    """Core (#61): tabelas master de um ModelDef via ``FWFormStruct(1, 'X')``.
+
+    O fonte que define o ModelDef é o **mantenedor** da tabela — grava via
+    FWLoadModel:Activate por baixo do framework MVC, gravação que a detecção
+    clássica (RecLock/Replace) não enxerga. Vazio se o modelo é read-only
+    (``SetOnlyView(.T.)``). Recebe conteúdo strip-keep-strings (precisa dos
+    literais de tabela).
+    """
+    if _SETONLYVIEW_RE.search(stripped_keep_strings):
+        return []
+    return sorted(
+        {m.group(1).upper() for m in _FWFORMSTRUCT_MODEL_RE.finditer(stripped_keep_strings)}
+    )
 
 
 def _extract_calls_fwexecview_from_stripped(
@@ -1526,4 +1549,11 @@ def parse_source(file_path: Path) -> dict[str, Any]:
     # v0.23.0 (#63): header doc declarativo (Programa/Autor/Descrição) extraído
     # do conteúdo cru — é comentário, então NÃO usa stripped. {} quando ausente.
     result["header_doc"] = extract_header_doc(content)
+    # v0.23.0 (#61): tabelas gravadas via MVC (o fonte com o ModelDef é o
+    # mantenedor). Só extrai quando há capability MVC — evita scan inútil.
+    result["mvc_write_tables"] = (
+        _extract_mvc_write_tables_from_stripped(stripped_keep_strings)
+        if "MVC" in result["capabilities"]
+        else []
+    )
     return result

@@ -228,9 +228,19 @@ def tables_query(
 ) -> list[dict[str, Any]]:
     """Quem usa a tabela ``X``? Lookup em ``fonte_tabela``.
 
-    ``modo`` pode ser ``read``, ``write``, ``reclock`` ou ``None`` (todos).
+    ``modo`` pode ser ``read``, ``write``, ``reclock``, ``write_mvc``,
+    ``write_execauto`` ou ``None`` (todos). **``write`` é abrangente** (#61):
+    inclui gravação clássica + MVC (``write_mvc``) + ExecAuto (``write_execauto``),
+    pra não esconder mantenedores que a detecção clássica não enxerga.
     """
-    if modo:
+    if modo == "write":
+        rows = conn.execute(
+            "SELECT arquivo, tabela, modo FROM fonte_tabela "
+            "WHERE tabela = upper(?) AND modo IN ('write','write_mvc','write_execauto') "
+            "ORDER BY arquivo, modo",
+            (tabela,),
+        ).fetchall()
+    elif modo:
         rows = conn.execute(
             "SELECT arquivo, tabela, modo FROM fonte_tabela "
             "WHERE tabela = upper(?) AND modo = ? "

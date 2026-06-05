@@ -173,11 +173,17 @@ class GrepMode(StrEnum):
 
 
 class TableMode(StrEnum):
-    """Modos do filtro ``--mode`` em ``tables``."""
+    """Modos do filtro ``--mode`` em ``tables``.
+
+    ``write`` é abrangente (#61): inclui ``write_mvc``/``write_execauto``. Os dois
+    últimos existem como filtro explícito quando se quer só gravação MVC/ExecAuto.
+    """
 
     read = "read"
     write = "write"
     reclock = "reclock"
+    write_mvc = "write_mvc"
+    write_execauto = "write_execauto"
 
 
 # v0.4.4 (UX #4): Enums pros filtros enumeráveis dos comandos Universo 3.
@@ -1279,7 +1285,11 @@ def tables(
     tabela: Annotated[str, typer.Argument(help="Nome da tabela ADVPL (ex: SA1, SC5, ZA1).")],
     mode: Annotated[
         TableMode | None,
-        typer.Option("--mode", "-m", help="Filtra por modo (read|write|reclock)."),
+        typer.Option(
+            "--mode",
+            "-m",
+            help="Filtra por modo. 'write' é abrangente (inclui write_mvc/write_execauto).",
+        ),
     ] = None,
 ) -> None:
     """Lista quem usa a tabela ``T`` (lookup em ``fonte_tabela``)."""

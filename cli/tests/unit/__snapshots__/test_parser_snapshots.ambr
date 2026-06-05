@@ -83,6 +83,8 @@
     'lines_of_code': 15,
     'log_calls': list([
     ]),
+    'mvc_write_tables': list([
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -159,6 +161,8 @@
     ]),
     'lines_of_code': 12,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -244,6 +248,8 @@
     ]),
     'lines_of_code': 10,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -369,6 +375,8 @@
         'nivel': 'conout',
       }),
     ]),
+    'mvc_write_tables': list([
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -449,6 +457,8 @@
         'linha': 13,
         'nivel': 'conout',
       }),
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -655,6 +665,9 @@
     'lines_of_code': 36,
     'log_calls': list([
     ]),
+    'mvc_write_tables': list([
+      'SA1',
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -799,6 +812,9 @@
     'lines_of_code': 19,
     'log_calls': list([
     ]),
+    'mvc_write_tables': list([
+      'SA1',
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -866,6 +882,8 @@
     ]),
     'lines_of_code': 11,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -941,6 +959,8 @@
         'nivel': 'conout',
       }),
     ]),
+    'mvc_write_tables': list([
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -1009,6 +1029,8 @@
     ]),
     'lines_of_code': 14,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -1081,6 +1103,8 @@
     'lines_of_code': 13,
     'log_calls': list([
     ]),
+    'mvc_write_tables': list([
+    ]),
     'namespace': '',
     'parametros_uso': list([
     ]),
@@ -1150,6 +1174,8 @@
     ]),
     'lines_of_code': 34,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
@@ -1261,6 +1287,8 @@
         'nivel': 'conout',
       }),
     ]),
+    'mvc_write_tables': list([
+    ]),
     'namespace': 'com.client.module',
     'parametros_uso': list([
     ]),
@@ -1346,6 +1374,8 @@
     ]),
     'lines_of_code': 17,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': 'api.clientes',
     'parametros_uso': list([
@@ -1437,6 +1467,8 @@
     ]),
     'lines_of_code': 17,
     'log_calls': list([
+    ]),
+    'mvc_write_tables': list([
     ]),
     'namespace': '',
     'parametros_uso': list([
