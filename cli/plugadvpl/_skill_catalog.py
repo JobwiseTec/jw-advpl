@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 62 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 63 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -38,6 +38,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "arch": _PRW,
     "diagnose": _PRW,
     "find": _PRW,
+    "family": _PRW,
     "callers": _PRW,
     "callees": _PRW,
     "lint": _PRW,

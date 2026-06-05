@@ -55,15 +55,43 @@ def find_function(conn: sqlite3.Connection, nome: str) -> list[dict[str, Any]]:
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+def _glob_to_like(termo: str) -> str | None:
+    """Converte glob (``*``/``?``) em padrão LIKE (``%``/``_``). ``None`` se não é glob.
+
+    ``*`` → ``%``, ``?`` → ``_``. Escapa ``%``/``_`` literais (raro em nomes de
+    fonte). Ancorado como o usuário escreveu: ``MOD12*`` → ``MOD12%`` (prefixo),
+    ``*FAT*`` → ``%FAT%``.
+    """
+    if "*" not in termo and "?" not in termo:
+        return None
+    out: list[str] = []
+    for ch in termo:
+        if ch == "*":
+            out.append("%")
+        elif ch == "?":
+            out.append("_")
+        elif ch in ("%", "_"):
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def find_file(conn: sqlite3.Connection, termo: str) -> list[dict[str, Any]]:
-    """Procura arquivo por basename ou parte do caminho relativo."""
-    pattern = f"%{termo}%"
+    """Procura arquivo por basename ou parte do caminho relativo.
+
+    Se ``termo`` contém glob (``*``/``?``), trata como padrão (``MOD12*`` →
+    arquivos que começam com ``MOD12``); senão, busca substring (``%termo%``).
+    """
+    glob = _glob_to_like(termo)
+    pattern = glob if glob is not None else f"%{termo}%"
+    esc = " ESCAPE '\\'" if glob is not None else ""
     rows = conn.execute(
-        """
+        f"""
         SELECT arquivo, caminho_relativo, source_type, lines_of_code
         FROM fontes
-        WHERE arquivo LIKE ? COLLATE NOCASE
-           OR caminho_relativo LIKE ? COLLATE NOCASE
+        WHERE arquivo LIKE ? COLLATE NOCASE{esc}
+           OR caminho_relativo LIKE ? COLLATE NOCASE{esc}
         ORDER BY arquivo
         LIMIT 200
         """,
@@ -71,6 +99,42 @@ def find_file(conn: sqlite3.Connection, termo: str) -> list[dict[str, Any]]:
     ).fetchall()
     cols = ["arquivo", "caminho_relativo", "source_type", "lines_of_code"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def family(conn: sqlite3.Connection, prefixo: str) -> list[dict[str, Any]]:
+    """Fontes da mesma **família** (basename começa com ``prefixo``).
+
+    Prefixo simples (``MOD12``) é ancorado no início (``MOD12%``); aceita glob
+    (``MOD*FAT``). Junta ``source_type``, LoC, ``capabilities`` e a ``descricao``
+    do header doc (#63, via LEFT JOIN — vazia se o fonte não tem header).
+    """
+    glob = _glob_to_like(prefixo)
+    pattern = glob if glob is not None else f"{prefixo}%"
+    esc = " ESCAPE '\\'" if glob is not None else ""
+    rows = conn.execute(
+        f"""
+        SELECT f.arquivo, f.source_type, f.lines_of_code, f.capabilities, h.descricao
+        FROM fontes f
+        LEFT JOIN fonte_header_doc h ON h.arquivo = f.arquivo
+        WHERE f.arquivo LIKE ? COLLATE NOCASE{esc}
+        ORDER BY f.arquivo
+        LIMIT 200
+        """,
+        (pattern,),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for arquivo, source_type, loc, caps_json, descricao in rows:
+        caps = _json_or_default(caps_json, [])
+        out.append(
+            {
+                "arquivo": arquivo,
+                "source_type": source_type,
+                "lines_of_code": loc,
+                "capabilities": ", ".join(caps),
+                "descricao": descricao or "",
+            }
+        )
+    return out
 
 
 def find_any(conn: sqlite3.Connection, termo: str) -> list[dict[str, Any]]:

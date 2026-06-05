@@ -9,11 +9,13 @@ import pytest
 
 from plugadvpl.ingest import ingest
 from plugadvpl.query import (
+    _glob_to_like,
     _writable_expected,
     arch,
     callees,
     callers,
     doctor_diagnostics,
+    family,
     find_any,
     find_file,
     find_function,
@@ -145,6 +147,75 @@ class TestHeaderDocIngest:
     def test_arch_com_flag_inclui_header(self, db_with_header: sqlite3.Connection) -> None:
         rows = arch(db_with_header, "ABC0001.prw", include_header=True)
         assert rows[0]["header_doc"]["autor"] == "Fulano de Tal"
+
+
+class TestGlobToLike:
+    def test_estrela_vira_porcento(self) -> None:
+        assert _glob_to_like("MOD12*") == "MOD12%"
+
+    def test_interrogacao_vira_underscore(self) -> None:
+        assert _glob_to_like("A?B") == "A_B"
+
+    def test_sem_glob_retorna_none(self) -> None:
+        assert _glob_to_like("plain") is None
+
+    def test_escapa_curinga_literal(self) -> None:
+        assert _glob_to_like("a%b*") == "a\\%b%"
+
+
+class TestFamilyAndGlob:
+    """#62: comando family + glob no find."""
+
+    @pytest.fixture
+    def db_family(self, tmp_path: Path) -> sqlite3.Connection:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ABC100.prw").write_bytes(
+            b"/*\nPrograma: ABC100\nDescricao: Cadastro base\n*/\nUser Function ABC100()\nReturn\n"
+        )
+        (src / "ABC101.prw").write_bytes(b"User Function ABC101()\nReturn\n")
+        (src / "ABC102.prw").write_bytes(b"User Function ABC102()\nReturn\n")
+        (src / "XYZ900.prw").write_bytes(b"User Function XYZ900()\nReturn\n")
+        ingest(src, workers=0)
+        return sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
+
+    def test_family_por_prefixo(self, db_family: sqlite3.Connection) -> None:
+        nomes = sorted(r["arquivo"] for r in family(db_family, "ABC"))
+        assert nomes == ["ABC100.prw", "ABC101.prw", "ABC102.prw"]
+
+    def test_family_join_descricao_do_header(self, db_family: sqlite3.Connection) -> None:
+        rows = family(db_family, "ABC100")
+        assert rows[0]["descricao"] == "Cadastro base"
+
+    def test_family_sem_header_descricao_vazia(self, db_family: sqlite3.Connection) -> None:
+        rows = family(db_family, "ABC101")
+        assert rows[0]["descricao"] == ""
+
+    def test_family_inclui_source_type_e_loc(self, db_family: sqlite3.Connection) -> None:
+        rows = family(db_family, "ABC100")
+        assert rows[0]["source_type"] == "user_function"
+        assert rows[0]["lines_of_code"] > 0
+
+    def test_family_glob(self, db_family: sqlite3.Connection) -> None:
+        assert len(family(db_family, "ABC10*")) == 3
+
+    def test_family_glob_question_e_match_exato(self, db_family: sqlite3.Connection) -> None:
+        # 'ABC10?' = ABC10 + 1 char (match exato): nao casa 'ABC100.prw' (tem .prw)
+        assert family(db_family, "ABC10?") == []
+
+    def test_family_prefixo_inexistente(self, db_family: sqlite3.Connection) -> None:
+        assert family(db_family, "ZZZ") == []
+
+    def test_find_file_glob_ancorado(self, db_family: sqlite3.Connection) -> None:
+        rows = find_file(db_family, "ABC10*")
+        assert len(rows) == 3
+        assert all(r["arquivo"].startswith("ABC10") for r in rows)
+
+    def test_find_file_glob_question(self, db_family: sqlite3.Connection) -> None:
+        assert len(find_file(db_family, "ABC10?.prw")) == 3
+
+    def test_find_file_substring_sem_glob(self, db_family: sqlite3.Connection) -> None:
+        assert len(find_file(db_family, "ABC")) == 3
 
 
 class TestFindFunction:

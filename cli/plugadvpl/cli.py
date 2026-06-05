@@ -118,6 +118,9 @@ from plugadvpl.query import (
     trace_query,
 )
 from plugadvpl.query import (
+    family as q_family,
+)
+from plugadvpl.query import (
     poui_bridge as q_poui_bridge,
 )
 from plugadvpl.query import (
@@ -1209,6 +1212,25 @@ def find(
     )
 
 
+@app.command()
+def family(
+    ctx: typer.Context,
+    prefixo: Annotated[str, typer.Argument(help="Prefixo do basename (ex: MOD12) ou glob (FAT*).")],
+) -> None:
+    """Descobre a família de fontes por prefixo de nome (tipo + LoC + capabilities + descrição)."""
+
+    rows = _with_ro_db(ctx, lambda c: q_family(c, prefixo))
+    if not rows:
+        typer.secho(f"Nenhum fonte com prefixo '{prefixo}'.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=1)
+    _render_from_ctx(
+        ctx,
+        rows,
+        title=f"Família '{prefixo}' ({len(rows)} fontes)",
+        next_steps=[f"plugadvpl arch {rows[0]['arquivo']} --include-header"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # callers / callees
 # ---------------------------------------------------------------------------
@@ -1317,15 +1339,15 @@ def arch(
             f"Arquivo '{arquivo}' não encontrado no índice.", fg=typer.colors.YELLOW, err=True
         )
         raise typer.Exit(code=1)
-    _render_from_ctx(
-        ctx,
-        rows,
-        title=f"Arquitetura: {arquivo}",
-        next_steps=[
-            f"plugadvpl callees {arquivo}",
-            f"plugadvpl lint {arquivo}",
-        ],
-    )
+    next_steps = [
+        f"plugadvpl callees {arquivo}",
+        f"plugadvpl lint {arquivo}",
+    ]
+    # Cross-link (P3): sugere a família pelo prefixo alfabético do nome.
+    fam = re.match(r"^[A-Za-z]{3,}", arquivo)
+    if fam:
+        next_steps.append(f"plugadvpl family {fam.group(0)}   # outros fontes da família")
+    _render_from_ctx(ctx, rows, title=f"Arquitetura: {arquivo}", next_steps=next_steps)
 
 
 @app.command()

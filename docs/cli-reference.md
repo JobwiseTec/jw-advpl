@@ -9,7 +9,7 @@ Use `plugadvpl --help` para ver a lista completa em runtime e `plugadvpl <subcom
 - [Opções globais](#opcoes-globais)
 - [Universo 1 — Fontes (v0.1)](#universo-1)
   - **write-path**: [`init`](#init), [`ingest`](#ingest), [`reindex`](#reindex)
-  - **read-only**: [`status`](#status), [`find`](#find), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`check-build`](#check-build), [`doctor`](#doctor), [`grep`](#grep)
+  - **read-only**: [`status`](#status), [`find`](#find), [`family`](#family), [`callers`](#callers), [`callees`](#callees), [`tables`](#tables), [`param`](#param), [`arch`](#arch), [`lint`](#lint), [`check-build`](#check-build), [`doctor`](#doctor), [`grep`](#grep)
   - **utilitários**: [`version`](#version), [`help`](#help), [`edit-prw`](#edit-prw), [`compile`](#compile)
 - [Universo 2 — Dicionário SX (v0.3)](#universo-2)
   - [`ingest-sx`](#ingest-sx), [`impacto`](#impacto), [`gatilho`](#gatilho), [`sx-status`](#sx-status), [`semantica`](#semantica)
@@ -171,9 +171,32 @@ Busca composta: tenta resolver `<termo>` primeiro como nome de função (case-in
 plugadvpl find FATA050
 plugadvpl find MaCntSA1
 plugadvpl find "RECLOCK SA1"
+plugadvpl find "MOD12*"          # glob: ancorado no início (MOD12...)
+plugadvpl find "*FAT*"           # glob: substring
 ```
 
 Retorna até `--limit` resultados, ordenados por categoria (função > arquivo > FTS).
+
+**Glob (#62):** quando `<termo>` contém `*` ou `?`, o match de arquivo vira padrão (`*`→qualquer, `?`→um char) em vez de substring. Para a visão estruturada de uma família inteira, use [`family`](#family).
+
+---
+
+### <a id="family"></a>`family <prefixo>`
+
+Descobre a **família** de fontes cujo basename começa com `<prefixo>` — numa tabela com `source_type`, LoC, `capabilities` e a **descrição do header doc** ([#63](#arch)). Evita `find` repetido ao mapear um processo customizado (convenção Protheus de prefixo: `MOD120`, `MOD121`...).
+
+```
+plugadvpl --format md family MOD12
+plugadvpl family "FAT*"           # aceita glob
+```
+
+| Coluna | Descrição |
+|---|---|
+| `arquivo` | Basename do fonte |
+| `source_type` | `mvc` / `user_function` / `pe` / `rpc` / ... |
+| `lines_of_code` | Linhas |
+| `capabilities` | MVC, DIALOG, PE, ... (lista) |
+| `descricao` | Descrição do header doc (vazia se o fonte não tem header) |
 
 ---
 
