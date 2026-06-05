@@ -61,7 +61,7 @@ Override: `--tipo arquivo` (ou outros) força quando a heurística erra.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.23.0 --format md trace $ARGUMENTS
+uvx plugadvpl@0.24.0 --format md trace $ARGUMENTS
 ```
 
 ## Saída — schema unificado

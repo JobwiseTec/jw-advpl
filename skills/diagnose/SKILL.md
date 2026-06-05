@@ -29,7 +29,7 @@ O registro e um JSON `{campo: valor}` (via `--record '{"A1_LC": 50000}'` ou `--r
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.23.0 --format md diagnose $arquivo --record-file registro.json
+uvx plugadvpl@0.24.0 --format md diagnose $arquivo --record-file registro.json
 ```
 
 > A flag `--format` vem **antes** do subcomando (e global no callback). Use `--format md` (ou `json`).

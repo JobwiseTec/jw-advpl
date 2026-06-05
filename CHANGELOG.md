@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-05
+
+Follow-up do épico de reconstrução (#72, surgido do uso do `family` em produção): panorama de tabelas da família inteira numa tela.
+
 ### Added
 
 - **`family <prefixo> --include-tables`** ([#72](https://github.com/JoniPraia/plugadvpl/issues/72)): acrescenta `tables_read` (top-N por relevância — custom `Z*`/`SZ*` antes de tabelas TOTVS comuns) e `tables_write` (todas, com tag `(mvc)`/`(execauto)` reusando a detecção do #61) a cada fonte da família. Dá o **panorama do processo inteiro numa tela** sem rodar `arch` por fonte: vê na hora quem é mantenedor (tem writes) vs consultor (só reads). Flags `--max-tables N` (top-N de reads) e `--custom-only` (só `Z*`/`SZ*`). Query-only (reusa `fonte_tabela`); saída do `family` sem a flag fica intacta. **Validado em base real** (writes com tags mvc/execauto inline).
