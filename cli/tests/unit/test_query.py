@@ -220,6 +220,69 @@ class TestFamilyAndGlob:
         assert len(find_file(db_family, "ABC")) == 3
 
 
+class TestFamilyIncludeTables:
+    """#72: family --include-tables — tables_read (top-N) + tables_write (com tag)."""
+
+    @pytest.fixture
+    def db_fam_tables(self, tmp_path: Path) -> sqlite3.Connection:
+        src = tmp_path / "src"
+        src.mkdir()
+        # lê SZV (custom), SC5 (comum), SA1 (comum)
+        (src / "MOD100.prw").write_bytes(
+            b"User Function MOD100()\n"
+            b'  DbSelectArea("SZV")\n  DbSeek(xFilial("SZV"))\n  c := SZV->ZV_COD\n'
+            b'  DbSelectArea("SC5")\n  c := SC5->C5_NUM\n'
+            b'  DbSelectArea("SA1")\n  c := SA1->A1_COD\n'
+            b"Return\n"
+        )
+        # cadastro MVC: master SZ9 via FWFormStruct(1, ...) -> write_mvc SZ9
+        (src / "MOD101.prw").write_bytes(
+            b"Static Function ModelDef()\n"
+            b'  Local oS := FWFormStruct(1, "SZ9")\n'
+            b'  Local oM := MPFormModel():New("MOD101")\n  oM:AddFields("SZ9MASTER", , oS)\n'
+            b"Return oM\n"
+        )
+        # grava via MsExecAuto MATA030 (-> SA1)
+        (src / "MOD102.prw").write_bytes(
+            b"User Function MOD102()\n  MSExecAuto({|x,y| MATA030(x,y)}, aD, 3)\nReturn\n"
+        )
+        ingest(src, workers=0)
+        return sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
+
+    def test_sem_flag_nao_tem_colunas_de_tabela(self, db_fam_tables: sqlite3.Connection) -> None:
+        r = family(db_fam_tables, "MOD10")[0]
+        assert "tables_read" not in r and "tables_write" not in r
+
+    def test_com_flag_anexa_colunas(self, db_fam_tables: sqlite3.Connection) -> None:
+        rows = family(db_fam_tables, "MOD10", include_tables=True)
+        assert all("tables_read" in r and "tables_write" in r for r in rows)
+
+    def test_reads_ranqueia_custom_primeiro(self, db_fam_tables: sqlite3.Connection) -> None:
+        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True)}
+        # SZV (custom) deve vir antes de SC5/SA1 (comuns)
+        assert by["MOD100.prw"]["tables_read"].split(", ")[0] == "SZV"
+
+    def test_write_mvc_com_tag(self, db_fam_tables: sqlite3.Connection) -> None:
+        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True)}
+        assert by["MOD101.prw"]["tables_write"] == "SZ9 (mvc)"
+
+    def test_write_execauto_com_tag(self, db_fam_tables: sqlite3.Connection) -> None:
+        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True)}
+        assert "SA1 (execauto)" in by["MOD102.prw"]["tables_write"]
+
+    def test_max_tables_trunca_com_indicador(self, db_fam_tables: sqlite3.Connection) -> None:
+        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True, max_tables=1)}
+        rd = by["MOD100.prw"]["tables_read"]
+        assert rd.startswith("SZV") and rd.endswith("+2")
+
+    def test_custom_only_esconde_padrao(self, db_fam_tables: sqlite3.Connection) -> None:
+        by = {
+            r["arquivo"]: r
+            for r in family(db_fam_tables, "MOD10", include_tables=True, custom_only=True)
+        }
+        assert by["MOD100.prw"]["tables_read"] == "SZV"  # SC5/SA1 escondidas
+
+
 class TestMvcAndExecAutoWrite:
     """#61: gravação via MVC (ModelDef) e ExecAuto vira write_mvc/write_execauto."""
 

@@ -1225,10 +1225,38 @@ def find(
 def family(
     ctx: typer.Context,
     prefixo: Annotated[str, typer.Argument(help="Prefixo do basename (ex: MOD12) ou glob (FAT*).")],
+    include_tables: Annotated[
+        bool,
+        typer.Option(
+            "--include-tables",
+            help="Acrescenta colunas tables_read (top-N) e tables_write (com tag mvc/execauto).",
+        ),
+    ] = False,
+    max_tables: Annotated[
+        int,
+        typer.Option("--max-tables", help="Top-N de reads por fonte (default 3)."),
+    ] = 3,
+    custom_only: Annotated[
+        bool,
+        typer.Option("--custom-only", help="Só tabelas custom (Z*/SZ*); esconde padrão TOTVS."),
+    ] = False,
 ) -> None:
-    """Descobre a família de fontes por prefixo de nome (tipo + LoC + capabilities + descrição)."""
+    """Descobre a família de fontes por prefixo de nome (tipo + LoC + capabilities + descrição).
 
-    rows = _with_ro_db(ctx, lambda c: q_family(c, prefixo))
+    Com ``--include-tables`` (#72): mostra também as tabelas lidas/gravadas de cada
+    fonte — panorama do processo inteiro numa tela, sem rodar ``arch`` por fonte.
+    """
+
+    rows = _with_ro_db(
+        ctx,
+        lambda c: q_family(
+            c,
+            prefixo,
+            include_tables=include_tables,
+            max_tables=max_tables,
+            custom_only=custom_only,
+        ),
+    )
     if not rows:
         typer.secho(f"Nenhum fonte com prefixo '{prefixo}'.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=1)

@@ -198,6 +198,13 @@ plugadvpl family "FAT*"           # aceita glob
 | `capabilities` | MVC, DIALOG, PE, ... (lista) |
 | `descricao` | Descrição do header doc (vazia se o fonte não tem header) |
 
+**`--include-tables` (#72):** acrescenta `tables_read` (top-N por relevância — custom `Z*`/`SZ*` antes das comuns) e `tables_write` (todas, com tag `(mvc)`/`(execauto)` da detecção do #61). Panorama do processo inteiro numa tela — quem grava (mantenedor) vs quem só lê. Flags `--max-tables N` (default 3) e `--custom-only` (só `Z*`/`SZ*`).
+
+```
+plugadvpl --format md family MOD12 --include-tables
+plugadvpl family MOD12 --include-tables --custom-only --max-tables 5
+```
+
 ---
 
 ### <a id="callers"></a>`callers <funcao>`

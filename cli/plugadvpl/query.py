@@ -101,12 +101,89 @@ def find_file(conn: sqlite3.Connection, termo: str) -> list[dict[str, Any]]:
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
-def family(conn: sqlite3.Connection, prefixo: str) -> list[dict[str, Any]]:
+# ~30 tabelas Protheus padrão muito reutilizadas — ficam ABAIXO das raras/custom
+# no ranking de relevância (a tabela rara/custom é onde mora a lógica do fonte).
+_COMMON_PROTHEUS = frozenset(
+    {
+        "SA1", "SA2", "SA3", "SB1", "SB2", "SB9", "SC5", "SC6", "SC7", "SC9",
+        "SD1", "SD2", "SD3", "SE1", "SE2", "SE5", "SF1", "SF2", "SF3", "SF4",
+        "SED", "SEV", "CT1", "CT2", "CTT", "SX1", "SX2", "SX3", "SX5", "SX6",
+        "SXA", "SXB",
+    }
+)  # fmt: skip
+
+# Tag por modo de gravação (reusa a detecção do #61).
+_WRITE_TAG = {"write": "", "reclock": "", "write_mvc": " (mvc)", "write_execauto": " (execauto)"}
+
+
+def _is_custom_table(t: str) -> bool:
+    """Tabela custom de cliente: range ``Z*`` ou ``SZ*`` (``X*`` = dicionário/sistema)."""
+    return t.startswith("Z") or t.startswith("SZ")
+
+
+def _table_relevance(t: str) -> int:
+    """Relevância p/ ranking: custom (2) > rara (1) > comum (0)."""
+    if _is_custom_table(t):
+        return 2
+    if t in _COMMON_PROTHEUS:
+        return 0
+    return 1
+
+
+def _attach_family_tables(
+    conn: sqlite3.Connection,
+    rows: list[dict[str, Any]],
+    *,
+    max_tables: int,
+    custom_only: bool,
+) -> None:
+    """Anexa ``tables_read`` (top-N por relevância) e ``tables_write`` (todas, com
+    tag ``(mvc)``/``(execauto)`` do #61) a cada linha de ``family`` (#72). Uma query só."""
+    arquivos = [r["arquivo"] for r in rows]
+    placeholders = ",".join("?" * len(arquivos))
+    trows = conn.execute(
+        f"SELECT arquivo, tabela, modo FROM fonte_tabela WHERE arquivo IN ({placeholders})",
+        arquivos,
+    ).fetchall()
+    reads: dict[str, set[str]] = {}
+    writes: dict[str, dict[str, str]] = {}
+    for arquivo, tabela, modo in trows:
+        if custom_only and not _is_custom_table(tabela):
+            continue
+        if modo == "read":
+            reads.setdefault(arquivo, set()).add(tabela)
+        elif modo in _WRITE_TAG:
+            cur = writes.setdefault(arquivo, {})
+            tag = _WRITE_TAG[modo]
+            if tabela not in cur or (tag and not cur[tabela]):
+                cur[tabela] = tag
+    for r in rows:
+        arq = r["arquivo"]
+        all_rd = sorted(reads.get(arq, set()), key=lambda t: (-_table_relevance(t), t))
+        rd = all_rd[:max_tables]
+        extra = len(all_rd) - len(rd)
+        r["tables_read"] = ", ".join(rd) + (f" +{extra}" if extra > 0 else "")
+        wr = sorted(writes.get(arq, {}).items(), key=lambda kv: (-_table_relevance(kv[0]), kv[0]))
+        r["tables_write"] = ", ".join(f"{t}{tag}" for t, tag in wr)
+
+
+def family(
+    conn: sqlite3.Connection,
+    prefixo: str,
+    *,
+    include_tables: bool = False,
+    max_tables: int = 3,
+    custom_only: bool = False,
+) -> list[dict[str, Any]]:
     """Fontes da mesma **família** (basename começa com ``prefixo``).
 
     Prefixo simples (``MOD12``) é ancorado no início (``MOD12%``); aceita glob
     (``MOD*FAT``). Junta ``source_type``, LoC, ``capabilities`` e a ``descricao``
     do header doc (#63, via LEFT JOIN — vazia se o fonte não tem header).
+
+    Com ``include_tables`` (#72): anexa ``tables_read`` (top-``max_tables`` por
+    relevância) e ``tables_write`` (todas, com tag ``(mvc)``/``(execauto)`` do
+    #61). ``custom_only`` filtra só tabelas custom (``Z*``/``SZ*``).
     """
     glob = _glob_to_like(prefixo)
     pattern = glob if glob is not None else f"{prefixo}%"
@@ -134,6 +211,8 @@ def family(conn: sqlite3.Connection, prefixo: str) -> list[dict[str, Any]]:
                 "descricao": descricao or "",
             }
         )
+    if include_tables and out:
+        _attach_family_tables(conn, out, max_tables=max_tables, custom_only=custom_only)
     return out
 
 

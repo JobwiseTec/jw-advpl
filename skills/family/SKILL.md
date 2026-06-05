@@ -23,10 +23,15 @@ entendimento arquitetural.
 
 `prefixo` simples (`MOD12`) e ancorado no inicio. Aceita glob: `family "FAT*"`, `family "MOD*FIM"`.
 
+`--include-tables` (#72) acrescenta `tables_read` (top-N por relevancia) e `tables_write` (com tag
+`(mvc)`/`(execauto)`) por fonte — panorama do processo numa tela, sem rodar `arch` por fonte.
+`--max-tables N` ajusta o top-N; `--custom-only` mostra so tabelas custom (`Z*`/`SZ*`).
+
 ## Execucao
 
 ```bash
 uvx plugadvpl@0.23.0 --format md family $prefixo
+uvx plugadvpl@0.23.0 --format md family $prefixo --include-tables
 ```
 
 > A flag `--format` vem **antes** do subcomando (e global no callback). Use `--format md` (ou `json`).
