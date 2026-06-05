@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Parser captura tabela em query TCQuery legada via `RetSqlName`/`RetSqlTab`/`RetSqlDel`/`RetSqlFil`** ([#81](https://github.com/JoniPraia/plugadvpl/issues/81)): queries legadas nomeiam a tabela física por `RetSqlName("SA1")` + concatenação, padrão que o extrator SQL (FROM literal) não pegava — então `tables`/`impacto`/`arch` ficavam **cegos** pra esses fontes. Agora o arg lógico vira tabela `read` no `fonte_tabela`. Surfado pela auditoria de cobertura do parser (varredura de 7.293 fontes reais). Primeiro de uma série de "quebras" novas (#81–#88) pra fechar lacunas de precisão.
+
 ## [0.25.1] - 2026-06-05
 
 Patch — fix do `catalog --resolve-callers` (#78, surfado ao testar a v0.25.0 num catálogo real).

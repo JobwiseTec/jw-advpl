@@ -231,6 +231,23 @@ class TestExtractTables:
         tables = extract_tables(src)
         assert "ABC" not in tables["read"]  # ABC não é código Protheus válido
 
+    def test_retsqlname_tcquery_legado(self) -> None:
+        # #81: tabela em query TCQuery via RetSqlName -> read
+        src = 'cQry := "SELECT * FROM " + RetSqlName("SA1")'
+        assert "SA1" in extract_tables(src)["read"]
+
+    def test_retsql_familia_tab_del_fil(self) -> None:
+        src = 'x := RetSqlTab("SC5") + RetSqlDel("SC6") + RetSqlFil("SE1")'
+        read = extract_tables(src)["read"]
+        assert {"SC5", "SC6", "SE1"} <= set(read)
+
+    def test_retsqlname_custom(self) -> None:
+        assert "SZ8" in extract_tables('y := RetSqlName("SZ8")')["read"]
+
+    def test_retsqlname_com_variavel_nao_captura(self) -> None:
+        # arg não-literal (variável) não casa — sem falso-positivo
+        assert extract_tables("z := RetSqlName(cTab)")["read"] == []
+
     def test_table_in_string_literal_not_captured_via_alias_arrow(self) -> None:
         """Alias->Field dentro de string literal não deve ser capturado como tabela referenciada."""
         src = 'cMsg := "Erro ao gravar SA1->A1_NOME"'

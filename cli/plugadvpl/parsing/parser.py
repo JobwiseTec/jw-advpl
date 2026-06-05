@@ -38,6 +38,9 @@ _METHOD_RE = re.compile(
 
 # Tabelas Protheus
 _DBSELECT_RE = re.compile(r'DbSelectArea\s*\(\s*["\'](\w{2,3})["\']', re.IGNORECASE)
+# #81: tabela em query TCQuery legada — RetSqlName/Tab/Del/Fil("SA1") nomeia a
+# tabela lógica que o extrator SQL (FROM literal) perde. 1º arg literal = read.
+_RETSQL_RE = re.compile(r'RetSql(?:Name|Tab|Del|Fil)\s*\(\s*["\'](\w{2,3})["\']', re.IGNORECASE)
 _XFILIAL_RE = re.compile(
     r'(?:xFilial|FwxFilial|Posicione|MsSeek|dbSetOrder|ChkFile)\s*\(\s*["\'](\w{2,3})["\']',
     re.IGNORECASE,
@@ -395,6 +398,8 @@ def _extract_tables_from_stripped(
 
     # Literal-arg patterns: usar variante que preserva strings
     for m in _DBSELECT_RE.finditer(stripped_keep_strings):
+        read.add(m.group(1).upper())
+    for m in _RETSQL_RE.finditer(stripped_keep_strings):  # #81: TCQuery legado
         read.add(m.group(1).upper())
     for m in _XFILIAL_RE.finditer(stripped_keep_strings):
         read.add(m.group(1).upper())
