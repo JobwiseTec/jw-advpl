@@ -258,6 +258,64 @@ def tables_query(
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+_DISCRIMINATOR_MAX_LEN = 2  # C(1)/C(2) com cbox = enum discriminador de negócio
+
+
+def _decode_cbox(raw: str) -> str:
+    """Decodifica X3_CBOX (``'1=Sim;2=Não'``) em forma legível (``'1=Sim, 2=Não'``).
+
+    String vazia se ``raw`` vazio. Tolera itens sem ``=`` (mantém como estão).
+    """
+    if not raw:
+        return ""
+    parts: list[str] = []
+    for raw_item in raw.split(";"):
+        item = raw_item.strip()
+        if not item:
+            continue
+        code, sep, label = item.partition("=")
+        parts.append(f"{code.strip()}={label.strip()}" if sep else item)
+    return ", ".join(parts)
+
+
+def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]]:
+    """Catálogo de campos da tabela ``X``: tipo, tamanho, título e **X3_CBOX
+    decodificado** (valores aceitos dos discriminadores).
+
+    Marca ``discriminador`` os campos ``C(1)``/``C(2)`` com cbox (enum de
+    negócio cujos valores ficam opacos só pelo schema). Lê de ``campos``
+    (populada por ``ingest-sx``). Vazio se a tabela não está no dicionário
+    indexado. Resolve a dor "que valores ``XX_TIPO`` aceita?" sem ir ao banco.
+    """
+    rows = conn.execute(
+        """
+        SELECT campo, tipo, tamanho, decimal, titulo, cbox
+        FROM campos WHERE tabela = upper(?) ORDER BY campo
+        """,
+        (tabela,),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for campo, tipo, tam, dec, titulo, cbox in rows:
+        cbox_dec = _decode_cbox(cbox or "")
+        if not tipo:
+            tipo_fmt = ""
+        elif dec:
+            tipo_fmt = f"{tipo}({tam},{dec})"
+        else:
+            tipo_fmt = f"{tipo}({tam})"
+        is_discr = bool(cbox_dec) and tipo == "C" and (tam or 0) <= _DISCRIMINATOR_MAX_LEN
+        out.append(
+            {
+                "campo": campo,
+                "tipo": tipo_fmt,
+                "titulo": titulo or "",
+                "cbox": cbox_dec,
+                "discriminador": "sim" if is_discr else "",
+            }
+        )
+    return out
+
+
 def param_query(conn: sqlite3.Connection, parametro: str) -> list[dict[str, Any]]:
     """Quem usa o parâmetro ``MV_*``? Lookup em ``parametros_uso``."""
     rows = conn.execute(

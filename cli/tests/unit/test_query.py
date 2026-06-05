@@ -9,6 +9,7 @@ import pytest
 
 from plugadvpl.ingest import ingest
 from plugadvpl.query import (
+    _decode_cbox,
     _glob_to_like,
     _writable_expected,
     arch,
@@ -25,6 +26,7 @@ from plugadvpl.query import (
     param_query,
     stale_files,
     status,
+    tables_catalog,
     tables_query,
 )
 
@@ -272,6 +274,64 @@ class TestMvcAndExecAutoWrite:
 
     def test_modelo_read_only_nao_grava(self, db_mvc: sqlite3.Connection) -> None:
         assert tables_query(db_mvc, "SZ8", "write") == []
+
+
+class TestTablesCatalog:
+    """#64: tables --catalog — campos + X3_CBOX decodificado + discriminadores."""
+
+    @pytest.fixture
+    def db_sx(self, tmp_path: Path) -> sqlite3.Connection:
+        from plugadvpl.db import apply_migrations, open_db
+
+        conn = open_db(tmp_path / "idx.db")
+        apply_migrations(conn)
+        conn.executemany(
+            "INSERT INTO campos (tabela, campo, tipo, tamanho, decimal, titulo, cbox) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("SZT", "ZT_COD", "C", 6, 0, "Codigo", ""),
+                ("SZT", "ZT_TIPO", "C", 1, 0, "Tipo", "1=Item;2=Cabecalho;3=Ambos"),
+                ("SZT", "ZT_VALOR", "N", 14, 2, "Valor", ""),
+                ("SZT", "ZT_BLOCK", "C", 1, 0, "Bloqueado", "1=Sim;2=Nao"),
+            ],
+        )
+        conn.commit()
+        return conn
+
+    def test_decode_cbox(self) -> None:
+        assert _decode_cbox("1=Sim;2=Nao") == "1=Sim, 2=Nao"
+        assert _decode_cbox("") == ""
+        assert _decode_cbox("1=A; 2=B ") == "1=A, 2=B"
+
+    def test_lista_campos_ordenada(self, db_sx: sqlite3.Connection) -> None:
+        assert [r["campo"] for r in tables_catalog(db_sx, "SZT")] == [
+            "ZT_BLOCK",
+            "ZT_COD",
+            "ZT_TIPO",
+            "ZT_VALOR",
+        ]
+
+    def test_tipo_formatado(self, db_sx: sqlite3.Connection) -> None:
+        by = {r["campo"]: r for r in tables_catalog(db_sx, "SZT")}
+        assert by["ZT_VALOR"]["tipo"] == "N(14,2)"
+        assert by["ZT_COD"]["tipo"] == "C(6)"
+
+    def test_cbox_decodificado(self, db_sx: sqlite3.Connection) -> None:
+        by = {r["campo"]: r for r in tables_catalog(db_sx, "SZT")}
+        assert by["ZT_TIPO"]["cbox"] == "1=Item, 2=Cabecalho, 3=Ambos"
+
+    def test_discriminador(self, db_sx: sqlite3.Connection) -> None:
+        by = {r["campo"]: r for r in tables_catalog(db_sx, "SZT")}
+        assert by["ZT_TIPO"]["discriminador"] == "sim"  # C(1) + cbox
+        assert by["ZT_BLOCK"]["discriminador"] == "sim"
+        assert by["ZT_COD"]["discriminador"] == ""  # C(6) sem cbox
+        assert by["ZT_VALOR"]["discriminador"] == ""  # N
+
+    def test_case_insensitive(self, db_sx: sqlite3.Connection) -> None:
+        assert len(tables_catalog(db_sx, "szt")) == 4
+
+    def test_tabela_inexistente(self, db_sx: sqlite3.Connection) -> None:
+        assert tables_catalog(db_sx, "SXX") == []
 
 
 class TestFindFunction:

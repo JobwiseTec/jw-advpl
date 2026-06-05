@@ -244,6 +244,12 @@ plugadvpl tables SC5 --mode reclock
 
 **`write` é abrangente (#61):** inclui gravação clássica (`RecLock`/`Replace`) **+ MVC** (`write_mvc` — o fonte que define o `ModelDef`, tabela master via `FWFormStruct(1,'X')`) **+ ExecAuto** (`write_execauto` — tabelas resolvidas do `MsExecAuto`). Isso evita o falso "tabela só-leitura" quando o mantenedor é um cadastro MVC ou um ExecAuto (que a detecção clássica não vê). Use `--mode write_mvc` / `write_execauto` para filtrar só esses.
 
+**`--catalog` (#64):** em vez do *uso*, mostra o **catálogo de campos** da tabela (do dicionário SX3) — tipo (`C(1)`, `N(14,2)`), título e o **X3_CBOX decodificado** (`1=Item, 2=Cabeçalho`), marcando os **discriminadores** (`C(1)`/`C(2)` com cbox). Responde "que valores `XX_TIPO` aceita?" sem ir ao banco. Requer dicionário indexado (`ingest-sx`).
+
+```
+plugadvpl --format md tables SZT --catalog
+```
+
 ---
 
 ### <a id="param"></a>`param <MV_*>`

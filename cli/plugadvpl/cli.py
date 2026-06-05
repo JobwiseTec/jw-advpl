@@ -135,6 +135,9 @@ from plugadvpl.query import (
 from plugadvpl.query import (
     status as q_status,
 )
+from plugadvpl.query import (
+    tables_catalog as q_tables_catalog,
+)
 from plugadvpl.scan import scan_sources
 
 if TYPE_CHECKING:
@@ -1291,8 +1294,37 @@ def tables(
             help="Filtra por modo. 'write' é abrangente (inclui write_mvc/write_execauto).",
         ),
     ] = None,
+    catalog: Annotated[
+        bool,
+        typer.Option(
+            "--catalog",
+            help="Catálogo de campos (tipo, título, X3_CBOX decodificado, discriminadores) em vez de uso.",
+        ),
+    ] = False,
 ) -> None:
-    """Lista quem usa a tabela ``T`` (lookup em ``fonte_tabela``)."""
+    """Lista quem usa a tabela ``T`` (lookup em ``fonte_tabela``).
+
+    Com ``--catalog`` (#64): mostra o **catálogo de campos** (do dicionário SX3)
+    com o ``X3_CBOX`` decodificado — os valores aceitos de cada discriminador.
+    """
+
+    if catalog:
+        rows = _with_ro_db(ctx, lambda c: q_tables_catalog(c, tabela))
+        if not rows:
+            typer.secho(
+                f"Tabela '{tabela.upper()}' não está no dicionário SX indexado "
+                "(rode 'plugadvpl ingest-sx').",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        _render_from_ctx(
+            ctx,
+            rows,
+            title=f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)",
+            next_steps=[f"plugadvpl tables {tabela.upper()} --mode write"],
+        )
+        return
 
     modo = mode.value if mode else None
     rows = _with_ro_db(ctx, lambda c: tables_query(c, tabela, modo))
