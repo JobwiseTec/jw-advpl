@@ -286,13 +286,28 @@ def _group_count(
     return out
 
 
+def _normalize_funcao_expr(raw: str) -> str:
+    """Nome da função de uma expressão de chamada, sem argumentos (#78).
+
+    ``U_MODxxx("88")`` / ``U_MODxxx( 88, .T. )`` → ``U_MODxxx``; nome puro fica
+    igual; literal (``.F.``/``.T.``/número/vazio) volta como veio (não resolve).
+    """
+    call = re.match(r"\s*([A-Za-z_]\w*)\s*\(", raw)  # nome seguido de '('
+    if call:
+        return call.group(1)
+    bare = re.fullmatch(r"\s*([A-Za-z_]\w*)\s*", raw)  # nome puro, sem parênteses
+    return bare.group(1) if bare else raw.strip()
+
+
 def _resolve_callers(
     conn: sqlite3.Connection, rows: list[dict[str, str]], funcao_field: str
 ) -> list[dict[str, Any]]:
-    """Pra cada valor de ``funcao_field``, conta no dump + acha o fonte que o define."""
+    """Conta no dump por **nome de função** (normalizado, sem args) + acha o fonte
+    que o define. Argumentos distintos (``U_X("88")`` vs ``U_X("89")``) somam no
+    mesmo nome (#78); a visão por argumento fica em ``--group-by <COL> --count``."""
     counter: collections.Counter[str] = collections.Counter()
     for row in rows:
-        counter[row.get(funcao_field, "")] += 1
+        counter[_normalize_funcao_expr(row.get(funcao_field, ""))] += 1
     out: list[dict[str, Any]] = []
     for funcao, n in counter.most_common():
         fonte = _find_source(conn, funcao) if funcao else ""

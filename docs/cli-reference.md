@@ -285,7 +285,7 @@ plugadvpl catalog catalogo_regras --funcao-field ZT_FUNCAO --resolve-callers
 | `--filter "COL OP 'VAL'"` | Filtro **seguro** (OP: `= != > < >= <= LIKE`, unidos por `AND`/`OR`) — aplicado em Python, à prova de SQL injection |
 | `--group-by COL[,COL] --count` | Distribuição (contagem por grupo) |
 | `--decode-cbox` | Decoda valores via X3_CBOX da tabela SX correlata (`1=Fiscal`) |
-| `--funcao-field COL --resolve-callers` | Cruza o campo `*_FUNCAO` do dump com os fontes indexados (`U_MODxxx`→`MODxxx.prw`) |
+| `--funcao-field COL --resolve-callers` | Cruza o campo `*_FUNCAO` do dump com os fontes indexados — extrai o **nome** da chamada (`U_MODxxx("88")`→`U_MODxxx`), soma argumentos e resolve o fonte (`U_MODxxx`→`MODxxx.prw`). Para a visão por argumento, use `--group-by COL --count` |
 
 `plugadvpl status` lista os catálogos importados (alias + nº de linhas).
 

@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **`catalog --resolve-callers` agora normaliza a expressão de chamada** ([#78](https://github.com/JoniPraia/plugadvpl/issues/78)): o campo `*_FUNCAO` do dump costuma trazer a **chamada** (`U_MODxxx("88")`), não o nome puro. Antes, o `("88")` impedia o match e caía em "literal/não-resolvido" mesmo pra função existente; e cada argumento virava uma linha. Agora extrai o **nome da função** (`U_MODxxx`), soma os argumentos distintos no mesmo nome e resolve o fonte (`U_MODxxx`→`MODxxx.prw`). A visão por argumento continua disponível em `catalog --group-by <COL> --count`.
+
 ## [0.25.0] - 2026-06-05
 
 Fecha o gap do **conteúdo** das tabelas-catálogo (#75, surgido do experimento V3 de reconstrução cega): importa o dump pro índice e cruza com os fontes — cobertura de reconstrução 90% → ~98%.

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from plugadvpl.catalog import (
+    _normalize_funcao_expr,
     _parse_filter,
     catalog_list,
     catalog_query,
@@ -83,6 +84,25 @@ class TestParseFilter:
             _parse_filter("DROP TABLE x")
 
 
+class TestNormalizeFuncaoExpr:
+    """#78: extrai o nome da função de uma expressão de chamada (sem args)."""
+
+    def test_call_com_arg(self) -> None:
+        assert _normalize_funcao_expr('U_MODxxx("88")') == "U_MODxxx"
+
+    def test_call_multi_arg_com_espacos(self) -> None:
+        assert _normalize_funcao_expr("U_MODxxx( 88, .T. )") == "U_MODxxx"
+
+    def test_nome_puro(self) -> None:
+        assert _normalize_funcao_expr("U_MODxxx") == "U_MODxxx"
+
+    def test_literal_falso(self) -> None:
+        assert _normalize_funcao_expr(".F.") == ".F."
+
+    def test_vazio(self) -> None:
+        assert _normalize_funcao_expr("") == ""
+
+
 class TestCatalogIntegration:
     @pytest.fixture
     def db_cat(self, tmp_path: Path) -> sqlite3.Connection:
@@ -136,6 +156,25 @@ class TestCatalogIntegration:
         assert by["U_ABCFN1"]["fonte"] == "ABCFN1.prw"
         assert by["U_ABCFN1"]["count_no_dump"] == 2
         assert by[".F."]["fonte"].startswith("(literal")  # não resolve
+
+    def test_resolve_callers_soma_args(
+        self, db_cat: sqlite3.Connection, tmp_path: Path
+    ) -> None:
+        # #78: U_ABCFN1("88") + ("89") + (...) somam no nome U_ABCFN1 -> ABCFN1.prw
+        tsv = tmp_path / "comargs.tsv"
+        tsv.write_bytes(
+            b'ZT_FUNCAO\nU_ABCFN1("88")\nU_ABCFN1("89")\nU_ABCFN1( 01 , .T. )\n.F.\n'
+        )
+        ingest_tsv(db_cat, tsv, "comargs")
+        by = {
+            r["ZT_FUNCAO"]: r
+            for r in catalog_query(db_cat, "comargs", funcao_field="ZT_FUNCAO", resolve_callers=True)
+        }
+        assert by["U_ABCFN1"]["fonte"] == "ABCFN1.prw"
+        assert by["U_ABCFN1"]["count_no_dump"] == 3  # somou os 3 args distintos
+        # a visão distinta-por-argumento continua disponível via --group-by
+        distinto = catalog_query(db_cat, "comargs", group_by="ZT_FUNCAO", count=True)
+        assert len(distinto) == 4  # 3 exprs distintas + .F.
 
     def test_alias_inexistente(self, db_cat: sqlite3.Connection) -> None:
         assert catalog_query(db_cat, "naoexiste") == []
