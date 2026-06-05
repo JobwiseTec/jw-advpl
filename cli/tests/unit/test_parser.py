@@ -248,6 +248,13 @@ class TestExtractTables:
         # arg não-literal (variável) não casa — sem falso-positivo
         assert extract_tables("z := RetSqlName(cTab)")["read"] == []
 
+    def test_getadvfval_le_tabela_por_nome(self) -> None:
+        # #84: GetAdvFVal("SA1","A1_NOME",...) -> read SA1
+        assert "SA1" in extract_tables('cN := GetAdvFVal("SA1","A1_NOME",nRec)')["read"]
+
+    def test_getadvfval_variavel_nao_captura(self) -> None:
+        assert extract_tables("x := GetAdvFVal(cTab, cCpo, 1)")["read"] == []
+
     def test_table_in_string_literal_not_captured_via_alias_arrow(self) -> None:
         """Alias->Field dentro de string literal não deve ser capturado como tabela referenciada."""
         src = 'cMsg := "Erro ao gravar SA1->A1_NOME"'
