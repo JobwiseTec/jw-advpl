@@ -192,6 +192,7 @@ def _delete_dependents(conn: sqlite3.Connection, arquivo: str) -> None:
         "execauto_calls",  # v0.4.1 — Universo 3 Feature B
         "protheus_docs",  # v0.4.2 — Universo 3 Feature C
         "fonte_metrics",  # v0.6.0 — Universo 4 Feature B
+        "fonte_header_doc",  # v0.23.0 (#63) — header doc declarativo
     ):
         conn.execute(f"DELETE FROM {table} WHERE arquivo=?", (arquivo,))
     conn.execute("DELETE FROM chamadas_funcao WHERE arquivo_origem=?", (arquivo,))
@@ -410,6 +411,32 @@ def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dep
         conn.executemany(
             "INSERT INTO fonte_tabela (arquivo, tabela, modo) VALUES (?, ?, ?)",
             ft_rows,
+        )
+
+    # fonte_header_doc — metadata declarativa do cabeçalho (#63). Só grava quando
+    # o parser reconheceu header (>= 2 labels). raw_header omitido em --no-content
+    # (é trecho cru do fonte). Campos estruturados são metadata, gravados sempre.
+    header = parsed.get("header_doc") or {}
+    if header:
+        conn.execute(
+            """
+            INSERT INTO fonte_header_doc (
+                arquivo, programa, autor, data_criacao, descricao,
+                doc_origem, solicitante, uso, observacao, raw_header
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                arquivo,
+                header.get("programa"),
+                header.get("autor"),
+                header.get("data_criacao"),
+                header.get("descricao"),
+                header.get("doc_origem"),
+                header.get("solicitante"),
+                header.get("uso"),
+                header.get("observacao"),
+                None if no_content else header.get("raw_header"),
+            ),
         )
 
     # chamadas_funcao

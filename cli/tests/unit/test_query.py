@@ -18,6 +18,7 @@ from plugadvpl.query import (
     find_file,
     find_function,
     grep_fts,
+    header_doc,
     lint_query,
     param_query,
     stale_files,
@@ -103,6 +104,47 @@ def db_with_three_sources(tmp_path: Path) -> tuple[Path, sqlite3.Connection]:
     ingest(src, workers=0)
     conn = sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
     return src, conn
+
+
+class TestHeaderDocIngest:
+    """Integração #63: ingest popula fonte_header_doc e arch anexa com flag."""
+
+    @pytest.fixture
+    def db_with_header(self, tmp_path: Path) -> sqlite3.Connection:
+        src = tmp_path / "src"
+        src.mkdir()
+        # fonte COM header declarativo (nomes ficticios)
+        (src / "ABC0001.prw").write_bytes(
+            b"/*\n"
+            b"Programa............: ABC0001\n"
+            b"Autor...............: Fulano de Tal\n"
+            b"Descricao/Objetivo..: Rotina exemplo\n"
+            b"Uso.................: Empresa Exemplo\n"
+            b"*/\n"
+            b"User Function ABC0001()\nReturn\n"
+        )
+        # fonte SEM header
+        (src / "ABC0002.prw").write_bytes(b"User Function ABC0002()\n  Local nX := 1\nReturn\n")
+        ingest(src, workers=0)
+        return sqlite3.connect(str(src / ".plugadvpl" / "index.db"))
+
+    def test_header_doc_populado(self, db_with_header: sqlite3.Connection) -> None:
+        h = header_doc(db_with_header, "ABC0001.prw")
+        assert h["programa"] == "ABC0001"
+        assert h["autor"] == "Fulano de Tal"
+        assert h["descricao"] == "Rotina exemplo"
+        assert h["uso"] == "Empresa Exemplo"
+
+    def test_fonte_sem_header_retorna_vazio(self, db_with_header: sqlite3.Connection) -> None:
+        assert header_doc(db_with_header, "ABC0002.prw") == {}
+
+    def test_arch_sem_flag_nao_inclui_header(self, db_with_header: sqlite3.Connection) -> None:
+        rows = arch(db_with_header, "ABC0001.prw")
+        assert "header_doc" not in rows[0]
+
+    def test_arch_com_flag_inclui_header(self, db_with_header: sqlite3.Connection) -> None:
+        rows = arch(db_with_header, "ABC0001.prw", include_header=True)
+        assert rows[0]["header_doc"]["autor"] == "Fulano de Tal"
 
 
 class TestFindFunction:

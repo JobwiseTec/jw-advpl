@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import chardet
 
+from plugadvpl.parsing.header import extract_header_doc
 from plugadvpl.parsing.stripper import strip_advpl
 
 if TYPE_CHECKING:
@@ -1522,4 +1523,7 @@ def parse_source(file_path: Path) -> dict[str, Any]:
     # conteúdo stripped (passado explicitamente, sem mutar o result dict).
     result["capabilities"] = _derive_capabilities(result, stripped_keep_strings)
     result["source_type"] = _derive_source_type(result)
+    # v0.23.0 (#63): header doc declarativo (Programa/Autor/Descrição) extraído
+    # do conteúdo cru — é comentário, então NÃO usa stripped. {} quando ausente.
+    result["header_doc"] = extract_header_doc(content)
     return result

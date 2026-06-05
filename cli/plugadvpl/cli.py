@@ -1301,10 +1301,17 @@ def param(
 def arch(
     ctx: typer.Context,
     arquivo: Annotated[str, typer.Argument(help="Basename do fonte (ex: FATA050.prw).")],
+    include_header: Annotated[
+        bool,
+        typer.Option(
+            "--include-header",
+            help="Anexa o header doc declarativo (Programa/Autor/Descrição) do topo do fonte.",
+        ),
+    ] = False,
 ) -> None:
     """Resumo arquitetural de UM fonte (capabilities + funções + tabelas + includes)."""
 
-    rows = _with_ro_db(ctx, lambda c: q_arch(c, arquivo))
+    rows = _with_ro_db(ctx, lambda c: q_arch(c, arquivo, include_header=include_header))
     if not rows:
         typer.secho(
             f"Arquivo '{arquivo}' não encontrado no índice.", fg=typer.colors.YELLOW, err=True

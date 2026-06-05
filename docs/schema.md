@@ -505,6 +505,28 @@ HTML do projeto. Populada por `plugadvpl ingest-poui` (Fase 3b). Cruzada com
 
 Índice: `idx_poui_uso_comp` em `componente`.
 
+### `fonte_header_doc` (migration 026)
+
+Header doc declarativo extraído do topo de fontes ADVPL/TLPP (bloco
+`Programa/Autor/Descrição` que muitos fontes Protheus trazem no cabeçalho),
+distinto do Protheus.doc. Populada no `ingest` por `parsing/header.py` — só grava
+quando reconhece o header (≥ 2 labels conhecidos); no-op gracioso quando ausente.
+Exposta via `arch <fonte> --include-header`. Cobertura varia muito por convenção
+do projeto (~0% a ~40% dos fontes).
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `arquivo` | TEXT PK | Basename do fonte (== `fontes.arquivo`) |
+| `programa` | TEXT | Nome declarado (pode diferir do arquivo) |
+| `autor` | TEXT | Autor/analista |
+| `data_criacao` | TEXT | String crua (formatos variados) |
+| `descricao` | TEXT | Descrição/Objetivo |
+| `doc_origem` | TEXT | Doc.Origem / GAP / Chamado |
+| `solicitante` | TEXT | Solicitante/Cliente |
+| `uso` | TEXT | Empresa/projeto onde roda |
+| `observacao` | TEXT | Costuma conter histórico de versões |
+| `raw_header` | TEXT | Bloco completo (fallback; omitido em `--no-content`) |
+
 ---
 
 ## Reservado para v0.2+

@@ -94,6 +94,7 @@ jobs:
         plugadvpl/migrate_tlpp_recipes/user_function.py
         plugadvpl/output.py
         plugadvpl/parsing/decisions.py
+        plugadvpl/parsing/header.py
         plugadvpl/privacy/__init__.py
         plugadvpl/privacy/brdocs.py
         plugadvpl/privacy/buckets.py

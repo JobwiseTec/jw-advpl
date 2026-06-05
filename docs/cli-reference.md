@@ -253,6 +253,14 @@ plugadvpl arch FATA050 --format md
 
 **Saída em md** é o formato preferido para enviar ao Claude — pronto para colar em contexto.
 
+**`--include-header`** (#63): anexa `header_doc` — o bloco declarativo do topo do
+fonte (`Programa/Autor/Data/Descrição/Doc.Origem/Solicitante/Uso/Obs`), quando
+presente. Distinto do Protheus.doc; extraído por `parsing/header.py`.
+
+```
+plugadvpl --format json arch FATA050.prw --include-header
+```
+
 ---
 
 ### <a id="lint"></a>`lint [arquivo]`

@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **`arch --include-header` + parser de header doc declarativo** ([#63](https://github.com/JoniPraia/plugadvpl/issues/63)): novo `parsing/header.py` extrai o bloco de metadados do topo de fontes ADVPL (`Programa/Autor/Data/Descrição/Doc.Origem/Solicitante/Uso/Obs`), distinto do Protheus.doc. Tabela `fonte_header_doc` (migration 026, schema **v25 → v26**), populada no ingest (no-op gracioso quando ausente). `arch <fonte> --include-header` anexa o `header_doc`. Tolerante a variações de pontuação/acento; **validado em base real** (cobertura ~0–40% conforme convenção do projeto). Decisões empíricas travadas em teste: escopo no 1º bloco de comentário (evita falso-positivo de `:=`), normalização de `DESCRIÇÃO / OBJETIVO`, mínimo de 2 labels.
+
 ## [0.22.0] - 2026-06-04
 
 🔒 Release **Segurança & Privacidade (opt-in)** + **POUI completo** (Fases 1–3b) + curadoria do `ini-audit`. A camada de segurança é **opt-in com default desligado** — sem ligar, o comportamento é **byte-idêntico** ao de sempre, sem overhead nem dependência nova.

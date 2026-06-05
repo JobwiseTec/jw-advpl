@@ -199,11 +199,44 @@ def param_query(conn: sqlite3.Connection, parametro: str) -> list[dict[str, Any]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
-def arch(conn: sqlite3.Connection, arquivo: str) -> list[dict[str, Any]]:
+def header_doc(conn: sqlite3.Connection, arquivo: str) -> dict[str, Any]:
+    """Header doc declarativo de UM fonte (Programa/Autor/Descrição). Dict vazio
+    se o fonte não tem header reconhecível ou não foi indexado com header (#63)."""
+    try:
+        row = conn.execute(
+            """
+            SELECT programa, autor, data_criacao, descricao, doc_origem,
+                   solicitante, uso, observacao, raw_header
+            FROM fonte_header_doc WHERE arquivo = ? COLLATE NOCASE
+            """,
+            (arquivo,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return {}  # base pré-#63 (sem a tabela)
+    if row is None:
+        return {}
+    cols = (
+        "programa",
+        "autor",
+        "data_criacao",
+        "descricao",
+        "doc_origem",
+        "solicitante",
+        "uso",
+        "observacao",
+        "raw_header",
+    )
+    return {c: v for c, v in zip(cols, row, strict=True) if v}
+
+
+def arch(
+    conn: sqlite3.Connection, arquivo: str, *, include_header: bool = False
+) -> list[dict[str, Any]]:
     """Resumo arquitetural de UM fonte. Retorna lista com 0 ou 1 dict.
 
     Inclui: ``source_type``, ``capabilities``, ``lines_of_code``, ``encoding``,
-    listas de funções/tabelas (read/write/reclock)/includes.
+    listas de funções/tabelas (read/write/reclock)/includes. Com
+    ``include_header``, anexa ``header_doc`` (metadata do cabeçalho, #63).
     """
     row = conn.execute(
         """
@@ -235,7 +268,7 @@ def arch(conn: sqlite3.Connection, arquivo: str) -> list[dict[str, Any]]:
         tipo_arquivo,
     ) = row
     capabilities = _json_or_default(caps_json, [])
-    return [
+    result: list[dict[str, Any]] = [
         {
             "arquivo": arquivo_,
             "tipo_arquivo": tipo_arquivo,
@@ -264,6 +297,9 @@ def arch(conn: sqlite3.Connection, arquivo: str) -> list[dict[str, Any]]:
             "includes": _json_or_default(incs_json, []),
         }
     ]
+    if include_header:
+        result[0]["header_doc"] = header_doc(conn, arquivo_)
+    return result
 
 
 def log_diagnose_query(
