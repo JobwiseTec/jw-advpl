@@ -26,7 +26,7 @@ Sem argumentos.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.22.0 sx-status
+uvx plugadvpl@0.23.0 sx-status
 ```
 
 ## Saida

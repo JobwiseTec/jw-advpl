@@ -26,7 +26,7 @@ entendimento arquitetural.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.22.0 --format md family $prefixo
+uvx plugadvpl@0.23.0 --format md family $prefixo
 ```
 
 > A flag `--format` vem **antes** do subcomando (e global no callback). Use `--format md` (ou `json`).

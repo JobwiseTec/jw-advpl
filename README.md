@@ -385,7 +385,7 @@ flowchart LR
 
 ## Comandos disponíveis
 
-O CLI Python expõe **47 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **48 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -904,13 +904,14 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **47 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS) e **`diagnose`** (relativização de valor sensível em pontos de decisão)
+- **48 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS), **`diagnose`** (relativização) e **`family`** (descoberta de família de fontes)
+- **Reconstrução de processos (#61–#65):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **62 skills** (26 knowledge + 36 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
-- **Schema SQLite v25** — 25 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso`)
+- **63 skills** (26 knowledge + 37 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **Schema SQLite v26** — 26 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1751 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1804 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -926,6 +927,16 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.23.0 — 🔎 Precisão de reconstrução de processos (épico #61–#65)
+
+Cinco melhorias para reconstruir o desenho técnico de um GAP customizado mais rápido e completo — todas **validadas em bases reais** de cliente:
+
+- **`tables --mode write` enxerga gravação via MVC e ExecAuto** (#61): o cadastro MVC (`ModelDef` + `FWFormStruct(1,'X')`) e o `MsExecAuto` viram **mantenedores** da tabela (`write_mvc`/`write_execauto`) — gravação que a detecção clássica não via. Numa base real, **81 tabelas** antes "só-leitura" ganharam mantenedor.
+- **`family <prefixo>` + glob no `find`** (#62): mapeia a família inteira de fontes (tipo + LoC + capabilities + descrição) numa tabela; `find "MOD12*"` aceita glob.
+- **`arch --include-header`** (#63): extrai o cabeçalho declarativo do fonte (`Programa/Autor/Descrição/...`), distinto do Protheus.doc. Tabela `fonte_header_doc` (schema v26).
+- **`tables --catalog`** (#64): catálogo de campos com o **X3_CBOX decodificado** (`1=Item, 2=Cabeçalho`) e discriminadores marcados — responde "que valores `XX_TIPO` aceita?" sem ir ao banco.
+- **Alerta de mantenedor invisível** (#65): `tables --mode write` vazio com leituras ≥ 3 avisa em stderr.
 
 ### v0.22.0 — 🔒 Segurança & Privacidade (opt-in) + POUI completo (Fases 1–3b)
 

@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-06-05
+
+Release **Precisão de Reconstrução** (épico #61–#65): cinco melhorias para reconstruir o desenho técnico de um processo customizado mais rápido e completo, todas **validadas em bases reais**.
+
 ### Added
 
 - **`tables --mode write` alerta proativo quando vazio mas há leituras** ([#65](https://github.com/JoniPraia/plugadvpl/issues/65)): se a tabela é lida em ≥ 3 fontes mas não tem nenhum gravador (`write`/`write_mvc`/`write_execauto`), emite um aviso em **stderr** — costuma ser mantenedor invisível, não tabela read-only. stdout/JSON ficam intactos (determinismo preservado). Flag `--no-hints` silencia. Como o #61 já cobre MVC/ExecAuto, o que sobra é read-only genuíno **ou** padrão de gravação ainda não detectado. **Validado em base real** (tabela lida 116× sem gravador → alerta dispara).
