@@ -733,6 +733,24 @@ class TestDeriveCapabilities:
         caps = derive_capabilities(p, "")
         assert "MVC" in caps
 
+    def test_capabilities_lote2(self) -> None:
+        # #85-#88: SEQUENCER, TRANSACTION, FILE_IO, PARAMBOX (presença no content)
+        from plugadvpl.parsing.parser import derive_capabilities
+
+        src = (
+            'nN := GetSXENum("SC5", "C5_NUM")\n'
+            "Begin Transaction\n  MemoWrite('out.txt', cTxt)\nEnd Transaction\n"
+            'ParamBox(aP, "Titulo")'
+        )
+        caps = set(derive_capabilities(self._empty_parsed(), src))
+        assert {"SEQUENCER", "TRANSACTION", "FILE_IO", "PARAMBOX"} <= caps
+
+    def test_capabilities_lote2_ausentes(self) -> None:
+        from plugadvpl.parsing.parser import derive_capabilities
+
+        caps = set(derive_capabilities(self._empty_parsed(), "Local x := 1\nReturn"))
+        assert not ({"SEQUENCER", "TRANSACTION", "FILE_IO", "PARAMBOX"} & caps)
+
     def test_ws_rest_and_soap(self) -> None:
         from plugadvpl.parsing.parser import derive_capabilities
         p_rest = self._empty_parsed()

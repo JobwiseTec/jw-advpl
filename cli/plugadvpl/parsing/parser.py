@@ -1254,6 +1254,13 @@ _JSON_AWARE_RE = re.compile(
     re.IGNORECASE,
 )
 _MULTI_FILIAL_RE = re.compile(r"\b(?:xFilial|FwxFilial|cFilAnt|cEmpAnt)\b", re.IGNORECASE)
+# Lote 2 da auditoria de cobertura (#85-#88): capabilities de comportamento.
+_SEQUENCER_RE = re.compile(r"\b(?:GetSXENum|GetSXVNum|ConfirmSX8)\s*\(", re.IGNORECASE)  # #86
+_TRANSACTION_RE = re.compile(
+    r"\bBegin\s+Transaction\b|\bDisarmTransaction\b|\bMsBeginTran\b", re.IGNORECASE
+)  # #87
+_FILE_IO_RE = re.compile(r"\b(?:MemoWrite|MemoRead|FErase|FCreate|FWrite)\s*\(", re.IGNORECASE)  # #88
+_PARAMBOX_RE = re.compile(r"\bParamBox\s*\(", re.IGNORECASE)  # #85
 _TLPP_UNIT_RE = re.compile(r"tlpp\.unit\.suite|tlpp\.unit\b", re.IGNORECASE)
 
 
@@ -1386,6 +1393,16 @@ def _derive_capabilities(parsed: dict[str, Any], content: str) -> list[str]:  # 
     # MULTI_FILIAL
     if _MULTI_FILIAL_RE.search(content):
         caps.add("MULTI_FILIAL")
+
+    # Lote 2 (#85-#88): capabilities de comportamento (presença de função).
+    if _SEQUENCER_RE.search(content):
+        caps.add("SEQUENCER")  # gera numeração de documento (SXE/SXF) — #86
+    if _TRANSACTION_RE.search(content):
+        caps.add("TRANSACTION")  # gravação transacional ACID — #87
+    if _FILE_IO_RE.search(content):
+        caps.add("FILE_IO")  # I/O de arquivo (export/EDI/SPED) — #88
+    if _PARAMBOX_RE.search(content):
+        caps.add("PARAMBOX")  # parâmetros interativos via ParamBox — #85
 
     # namespace check para MVC (caso TLPP module-style)
     if namespace and any(f.get("nome", "").upper() in ("MODELDEF", "VIEWDEF") for f in funcoes):
