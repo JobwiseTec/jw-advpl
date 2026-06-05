@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-04
+
+🔒 Release **Segurança & Privacidade (opt-in)** + **POUI completo** (Fases 1–3b) + curadoria do `ini-audit`. A camada de segurança é **opt-in com default desligado** — sem ligar, o comportamento é **byte-idêntico** ao de sempre, sem overhead nem dependência nova.
+
 ### Changed
 
 - **`ini-audit` — curadoria das regras (lotes 1-2):** primeiras regras `critical` validadas contra a documentação TDN real (via fetch). `verificado=1` em RootPath/SourcePath (obrigatórias), JOB_WS ENVIRONMENT. Rebaixadas `critical`→`warning` as que têm default documentado (DBAccess Port→7890, MaxStringSize, LogClient Port). Cobertura de verificação 12→25 (10 das 18 críticas curadas; as 8 restantes — TSS SPED/JOB_WS/cert — precisam do Manual de Configuração TSS). Meta-audit (`scripts/audit_ini_rules.py`) guia a fila.

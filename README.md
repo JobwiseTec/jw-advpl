@@ -898,6 +898,16 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.22.0 — 🔒 Segurança & Privacidade (opt-in) + POUI completo (Fases 1–3b)
+
+- **Camada de segurança opt-in** (default desligado = output **byte-idêntico** ao de sempre; determinístico; stdlib, sem dependência nova):
+  - **Camada 0 — `gitleaks`** (pre-commit + job `secret-scan` no CI): impede segredo de entrar no repo.
+  - **Camada 2 — `--privacy`**: mascara PII/segredo no egress — CPF/CNPJ/e-mail → token HMAC estável, segredo → `***REDACTED***`, valor financeiro → faixa (`~10k-100k`). Classificação pela verdade do **SX3** (`X3_TIPO`/`X3_DECIMAL` + `X3_PICTURE`), ~100% vs ~66% por heurística de nome.
+  - **Camada 3 — `PLUGADVPL_INJECTION_SCAN`**: detector determinístico de prompt injection (OWASP LLM01), 8 padrões PT+EN; marca `[!INJECAO?]` + alerta em `stderr`.
+  - **`diagnose`**: relativiza o valor sensível devolvendo o **desfecho exato** (`( nSaldo + nValPed ) ~103% de A1_LC -> VERDADEIRO`), sem o R$ real. Guia: [docs/seguranca.md](docs/seguranca.md).
+- **POUI completo** (frontend Angular TOTVS): `ingest-poui` + `poui-bridge` (rastreabilidade front↔back) + `poui-componentes` (catálogo verificado de bindings) + `poui-lint` (`POUI-PROP`). Schema v22→**v25**.
+- **`ini-audit` — curadoria lotes 1-2**: primeiras regras `critical` validadas contra a documentação TDN real.
+
 ### v0.21.1 — 🔒 patch de segurança: TLS 1.0 legado + 1º lote de curadoria
 
 - **TLS 1.0 não é mais recomendado habilitado**: `TSS-SSLCONFIGURE-TLS1` (`=1`→`0`) e `SSLPROTOCOLMIN` (`TLSv1.0`→`TLSv1.2`) — BEAST/POODLE, PCI-DSS exige ≥ TLS 1.2. Mesma classe do bug SSL2/SSL3.
