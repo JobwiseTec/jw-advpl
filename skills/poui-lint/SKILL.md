@@ -25,7 +25,7 @@ Popula `poui_componentes_uso` varrendo os `.html` do projeto.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.24.0 poui-lint
+uvx plugadvpl@0.25.0 poui-lint
 ```
 
 ## Colunas de saida
@@ -40,7 +40,7 @@ uvx plugadvpl@0.24.0 poui-lint
 ## Exemplo
 
 ```bash
-uvx plugadvpl@0.24.0 --format md poui-lint
+uvx plugadvpl@0.25.0 --format md poui-lint
 ```
 
 ## Relacionado

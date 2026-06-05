@@ -385,7 +385,7 @@ flowchart LR
 
 ## Comandos disponíveis
 
-O CLI Python expõe **48 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **50 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -904,14 +904,14 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **48 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS), **`diagnose`** (relativização) e **`family`** (descoberta de família de fontes)
-- **Reconstrução de processos (#61–#65, #72):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira, e `family --include-tables` mostra as tabelas read/write (com tag mvc/execauto) de cada fonte numa tela
+- **50 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS), **`diagnose`** (relativização), **`family`** (descoberta de família) e **`ingest-tsv`/`catalog`** (conteúdo de tabelas-catálogo via dump TSV/CSV)
+- **Reconstrução de processos (#61–#65, #72, #75):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira (`--include-tables` mostra read/write por fonte); e **`ingest-tsv` + `catalog`** importam o **conteúdo** das tabelas-catálogo (Z*/X*) pro índice e cruzam `*_FUNCAO` com os fontes — fechando a reconstrução em ~98%
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **63 skills** (26 knowledge + 37 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
-- **Schema SQLite v26** — 26 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`**)
+- **65 skills** (26 knowledge + 39 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1811 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- **1839 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
 - Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
@@ -927,6 +927,10 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.25.0 — `ingest-tsv` + `catalog` (conteúdo de tabelas-catálogo)
+
+- **`ingest-tsv <dump> --as <alias>` + `catalog <alias>`** (#75): importa um dump TSV/CSV (exportado do Oracle/SQL/DBeaver) de uma tabela-catálogo (Z*/X*) pro índice e cruza nativamente. `catalog` filtra (`--filter`, parser **seguro** à prova de injeção), agrega (`--group-by --count`), decoda (`--decode-cbox`, reusa o X3_CBOX do #64) e **cruza `*_FUNCAO` com os fontes indexados** (`--resolve-callers`: `U_MODxxx`→`MODxxx.prw`). Fecha o gap do *conteúdo* das tabelas-catálogo (o `tables --catalog` já dava o schema) — reconstrução cega 90% → ~98%. Migration 027 (`catalog_meta`/`catalog_data`, schema v27).
 
 ### v0.24.0 — `family --include-tables` (panorama de tabelas da família)
 
