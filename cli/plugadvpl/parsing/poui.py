@@ -25,6 +25,10 @@ _HTTP_CALL_RE = re.compile(
 _PATH_SEG_RE = re.compile(r"/[A-Za-z][\w-]*")
 # Uso de HttpClient no arquivo (verbo), p/ saber se vale colher path-literals.
 _HTTP_USAGE_RE = re.compile(r"\bhttp\s*\.\s*(get|post|put|delete|patch)\b", re.IGNORECASE)
+# PoHttpClientService: cliente REST do próprio PO UI (#100). Field costuma ter
+# nome fora do padrão `http` (ex.: `this.poHttp.get(...)`), escapando do pass-1;
+# a presença da classe habilita o pass-2 a colher os path-literals REST.
+_POHTTP_RE = re.compile(r"\bPoHttpClientService\b")
 # Literal de path REST: começa com / (ou ${...}/) — exclui import relativo (./x).
 _REST_PATH_LITERAL_RE = re.compile(r"[`'\"]((?:\$\{[^}]*\})?/[A-Za-z][^`'\"]*)[`'\"]")
 
@@ -277,9 +281,10 @@ def extract_angular_http_calls(content: str) -> list[dict[str, object]]:
                 "linha": content.count("\n", 0, m.start()) + 1,
             }
         )
-    # Pass 2: URL em variável — colhe path-literals do arquivo (se usa HttpClient).
+    # Pass 2: URL em variável — colhe path-literals do arquivo (se usa HttpClient
+    # ou PoHttpClientService). Cobre `http.get(fullUrl)` e `this.poHttp.get('/x')`.
     verbos = {m.group(1).upper() for m in _HTTP_USAGE_RE.finditer(content)}
-    if verbos:
+    if verbos or _POHTTP_RE.search(content):
         verbo_default = next(iter(verbos)) if len(verbos) == 1 else ""
         for m in _REST_PATH_LITERAL_RE.finditer(content):
             raw = m.group(1)

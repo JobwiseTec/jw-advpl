@@ -104,3 +104,21 @@ def test_harvest_ignora_import_relativo() -> None:
     paths = {c["path_norm"] for c in extract_angular_http_calls(ts)}
     assert "/pedidos" in paths
     assert "/pedido" not in paths  # o import relativo não entra
+
+
+def test_pohttpclientservice_harvest() -> None:
+    # #100: PoHttpClientService com field fora do padrão `http` (escapa do pass-1);
+    # a presença da classe habilita o pass-2 a colher o path REST.
+    ts = (
+        "import { PoHttpClientService } from '@po-ui/ng-http-client';\n"
+        "class S { constructor(private poHttp: PoHttpClientService) {}\n"
+        "  listar() { return this.poHttp.get('/api/v1/pedidos'); } }"
+    )
+    paths = {c["path_norm"] for c in extract_angular_http_calls(ts)}
+    assert "/api/v1/pedidos" in paths
+
+
+def test_pohttp_ausente_nao_colhe_path_solto() -> None:
+    # sem http nem PoHttpClientService, path-literal solto NÃO vira datasource.
+    ts = "class X { f() { const a = ['/nao/rest']; return a; } }"
+    assert extract_angular_http_calls(ts) == []

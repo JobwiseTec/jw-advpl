@@ -7,8 +7,9 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:poui-bridge`
 
-Lista os matches entre as chamadas HttpClient do Angular e as rotas REST do
-Protheus (anotações `@Get`/`@Post` TLPP indexadas em `rest_endpoints`).
+Lista os matches entre as chamadas REST do Angular (`HttpClient` e
+`PoHttpClientService`) e as rotas REST do Protheus (anotações `@Get`/`@Post`
+TLPP indexadas em `rest_endpoints`).
 
 ## Pré-requisito
 
