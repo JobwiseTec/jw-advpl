@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "29"
+SCHEMA_VERSION = "30"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -141,9 +141,10 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
         ["chave", "tabela", "campo", "discriminador", "semantica", "fonte"],
     ),
     # v0.22.0 (migration 024): catálogo de bindings PO UI (inputs/outputs p-*).
+    # v0.29.0 (migration 030, #97): + coluna `pacote` (ng-components|ng-templates).
     "poui_componentes.json": (
         "poui_componentes",
-        ["chave", "componente", "kind", "binding", "propriedade", "fonte"],
+        ["chave", "componente", "kind", "binding", "propriedade", "fonte", "pacote"],
     ),
     # v0.28.0 (migration 028, #96): catálogo de interfaces de config PO UI.
     "poui_interfaces.json": (

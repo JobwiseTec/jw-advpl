@@ -34,6 +34,27 @@ _PO_TAG_RE = re.compile(r"<(po-[\w-]+)((?:[^>])*?)/?>", re.DOTALL)
 # Atributo p-* com prefixo opcional: [(, [, ( → kind; sem prefixo → input.
 _PO_ATTR_RE = re.compile(r"(\[\(|\[|\()?\s*(p-[\w-]+)")
 
+# Import de pacote @po-ui/* num .ts (#97). `from '@po-ui/ng-components'` etc.
+_POUI_IMPORT_RE = re.compile(r"""from\s+['"](@po-ui/[\w-]+)['"]""")
+
+
+def extract_poui_imports(content: str) -> list[dict[str, object]]:
+    """Pacotes ``@po-ui/*`` importados num ``.ts``. Funções puras, zero I/O.
+
+    Returns:
+        Lista de dicts ``{pacote, linha}`` (dedup por pacote — 1ª ocorrência).
+    """
+    seen: set[str] = set()
+    out: list[dict[str, object]] = []
+    for m in _POUI_IMPORT_RE.finditer(content):
+        pacote = m.group(1)
+        if pacote in seen:
+            continue
+        seen.add(pacote)
+        out.append({"pacote": pacote, "linha": content.count("\n", 0, m.start()) + 1})
+    return out
+
+
 # Interface usage extraction (#96 passo 2)
 # Anotação de tipo `: PoX` / `: PoX[]` / `: Array<PoX>` seguida de `= [` ou `= {`.
 # Exigir o `=` antes do literal evita capturar corpo de função (`): PoX[] {`).

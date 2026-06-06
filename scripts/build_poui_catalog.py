@@ -65,9 +65,21 @@ def _list_dirs(api_path: str) -> list[str]:
     return [e["name"] for e in data if e.get("type") == "dir"]
 
 
+def _pacote_from_fonte(fonte: str) -> str:
+    """Deriva o pacote npm do path no po-angular (#97).
+
+    ``projects/ui/...`` -> ``@po-ui/ng-components`` (core);
+    ``projects/templates/...`` -> ``@po-ui/ng-templates`` (po-page-*, login, ...).
+    """
+    if "/templates/" in fonte or fonte.startswith("projects/templates"):
+        return "@po-ui/ng-templates"
+    return "@po-ui/ng-components"
+
+
 def _extract(text: str, componente: str, fonte: str) -> list[dict]:
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
+    pacote = _pacote_from_fonte(fonte)
 
     def add(kind: str, binding: str, prop: str) -> None:
         key = (binding, kind)
@@ -83,6 +95,7 @@ def _extract(text: str, componente: str, fonte: str) -> list[dict]:
                 "binding": binding,
                 "propriedade": prop,
                 "fonte": fonte,
+                "pacote": pacote,
             }
         )
 

@@ -3464,14 +3464,15 @@ def poui_componentes(
             case-insensitive. ``None`` = todos os componentes.
 
     Returns:
-        Lista de dicts ``{componente, kind, binding, propriedade}`` ordenada
-        por ``componente, kind, binding``. Vazia se ``componente`` não existe
-        no catálogo.
+        Lista de dicts ``{componente, kind, binding, propriedade, pacote}`` ordenada
+        por ``componente, kind, binding``. ``pacote`` é o npm que exporta o
+        componente (``@po-ui/ng-components`` | ``@po-ui/ng-templates``, #97). Vazia
+        se ``componente`` não existe no catálogo.
     """
     if componente is not None:
         rows = conn.execute(
             """
-            SELECT componente, kind, binding, propriedade
+            SELECT componente, kind, binding, propriedade, pacote
             FROM poui_componentes
             WHERE lower(componente) = lower(?)
             ORDER BY componente, kind, binding
@@ -3481,12 +3482,12 @@ def poui_componentes(
     else:
         rows = conn.execute(
             """
-            SELECT componente, kind, binding, propriedade
+            SELECT componente, kind, binding, propriedade, pacote
             FROM poui_componentes
             ORDER BY componente, kind, binding
             """
         ).fetchall()
-    cols = ["componente", "kind", "binding", "propriedade"]
+    cols = ["componente", "kind", "binding", "propriedade", "pacote"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
@@ -3645,4 +3646,70 @@ def poui_iface_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 }
             )
     out.sort(key=lambda r: (r["arquivo"], r["linha"]))
+    return out
+
+
+def poui_import_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """POUI-IMPORT: componente ``<po-*>`` usado cujo pacote não é importado (#97).
+
+    Cruza os componentes usados (``poui_componentes_uso``) com o pacote que cada
+    um exige (``poui_componentes.pacote``) e verifica se esse pacote aparece em
+    algum import ``@po-ui/*`` do projeto (``poui_imports``). Pega o erro clássico
+    de usar ``<po-page-dynamic-table>`` (de ``@po-ui/ng-templates``) importando só
+    ``@po-ui/ng-components``. Escopo por projeto (``poui_projetos``); só flagra
+    componente conhecido no catálogo (zero FP em componente custom).
+
+    Returns:
+        Lista de dicts ``{arquivo, linha, componente, binding, kind, regra, mensagem}``
+        (mesma forma de :func:`poui_lint`), 1 finding por (projeto, componente).
+    """
+    comp_pkg = dict(
+        conn.execute("SELECT DISTINCT componente, pacote FROM poui_componentes WHERE pacote != ''")
+    )
+    suffix = "package.json"
+    prefixes = sorted(
+        {
+            p[: -len(suffix)]
+            for (p,) in conn.execute("SELECT caminho FROM poui_projetos")
+            if p.endswith(suffix)
+        },
+        key=len,
+        reverse=True,
+    )
+    if not prefixes:
+        return []
+
+    def _proj(path: str) -> str | None:
+        return next((pref for pref in prefixes if path.startswith(pref)), None)
+
+    imports_by_proj: dict[str, set[str]] = {pref: set() for pref in prefixes}
+    for caminho, pacote in conn.execute("SELECT caminho, pacote FROM poui_imports"):
+        pref = _proj(caminho)
+        if pref is not None:
+            imports_by_proj[pref].add(pacote)
+
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for caminho, linha, comp in conn.execute(
+        "SELECT caminho, linha, componente FROM poui_componentes_uso ORDER BY caminho, linha"
+    ):
+        pkg = comp_pkg.get(comp)
+        pref = _proj(caminho)
+        if not pkg or pref is None or pkg in imports_by_proj.get(pref, set()):
+            continue
+        key = (pref, comp)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "arquivo": caminho,
+                "linha": linha,
+                "componente": comp,
+                "binding": "",
+                "kind": "import",
+                "regra": "POUI-IMPORT",
+                "mensagem": f"componente `{comp}` requer import de `{pkg}` — não encontrado no projeto",
+            }
+        )
     return out

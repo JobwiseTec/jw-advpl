@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Lint POUI-IMPORT + pacote por componente ([#97](https://github.com/JoniPraia/plugadvpl/issues/97))** — `poui-lint` agora também pega o erro de **import de pacote errado**: componente usado cujo pacote npm não é importado no projeto (ex.: `<po-page-dynamic-table>` é de `@po-ui/ng-templates`, mas o projeto só importa `@po-ui/ng-components` — quebra o build). O catálogo `poui_componentes` ganhou a coluna **`pacote`** (derivada do `fonte`: `projects/ui/` → `@po-ui/ng-components`, `projects/templates/` → `@po-ui/ng-templates`), exibida no `poui-componentes`. `ingest-poui` extrai os imports `@po-ui/*` dos `.ts` (`poui_imports`); a regra cruza uso × pacote × imports com **escopo por projeto** e só flagra componente conhecido (zero FP em custom). Migration 030 (schema v30).
+
 ## [0.28.0] - 2026-06-06
 
 ### Added

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from plugadvpl.parsing.poui import (
     extract_angular_http_calls,
     extract_poui_iface_usage,
+    extract_poui_imports,
     extract_poui_template_usage,
     parse_poui_package_json,
 )
@@ -107,6 +108,26 @@ def _ingest_iface_usage(conn: sqlite3.Connection, proj_root: Path) -> None:
             )
 
 
+def _ingest_imports(conn: sqlite3.Connection, proj_root: Path) -> None:
+    """Varre .ts do projeto, extrai imports @po-ui/* -> poui_imports.
+
+    Limpa os do projeto antes (rebuild atômico por projeto)."""
+    proj_abs = str(proj_root.resolve())
+    conn.execute("DELETE FROM poui_imports WHERE caminho LIKE ?", (proj_abs + "%",))
+    for ts in proj_root.rglob("*.ts"):
+        if any(part in _SKIP_DIRS for part in ts.relative_to(proj_root).parts):
+            continue
+        try:
+            txt = ts.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for imp in extract_poui_imports(txt):
+            conn.execute(
+                "INSERT INTO poui_imports (caminho, linha, pacote) VALUES (?, ?, ?)",
+                (str(ts.resolve()), imp["linha"], imp["pacote"]),
+            )
+
+
 def _discover(root: Path) -> list[Path]:
     out: list[Path] = []
     for pkg in root.rglob("package.json"):
@@ -169,6 +190,7 @@ def ingest_poui_dir(
         _ingest_datasources(conn, pkg_path.parent)
         _ingest_template_usage(conn, pkg_path.parent)
         _ingest_iface_usage(conn, pkg_path.parent)
+        _ingest_imports(conn, pkg_path.parent)
         res.ingested += 1
     conn.commit()
     return res

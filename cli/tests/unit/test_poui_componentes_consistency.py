@@ -91,3 +91,23 @@ def test_chaves_unicas(componentes: list[dict]) -> None:
             dupes.append(k)
         seen.add(k)
     assert not dupes, f"{len(dupes)} chaves duplicadas: {dupes[:5]}"
+
+
+def test_pacote_valido(componentes: list[dict]) -> None:
+    """`pacote` (#97) deve ser um dos pacotes npm conhecidos do po-angular."""
+    validos = {"@po-ui/ng-components", "@po-ui/ng-templates"}
+    offenders = [
+        e.get("chave", f"idx:{i}")
+        for i, e in enumerate(componentes)
+        if e.get("pacote") not in validos
+    ]
+    assert not offenders, f"{len(offenders)} entradas com pacote inválido: {offenders[:5]}"
+
+
+def test_pacote_consistente_por_componente(componentes: list[dict]) -> None:
+    """Todas as entradas de um mesmo componente devem ter o mesmo `pacote`."""
+    by_comp: dict[str, set[str]] = {}
+    for e in componentes:
+        by_comp.setdefault(e["componente"], set()).add(e.get("pacote", ""))
+    offenders = {c: pk for c, pk in by_comp.items() if len(pk) > 1}
+    assert not offenders, f"componentes com pacote inconsistente: {offenders}"

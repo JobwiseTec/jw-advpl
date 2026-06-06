@@ -1,5 +1,5 @@
 ---
-description: Lint PO UI — bindings p-* nao catalogados (POUI-PROP) e chaves/valores de interface .ts invalidos (POUI-IFACE), anti-alucinacao
+description: Lint PO UI — bindings p-* (POUI-PROP), chaves/valores de interface .ts (POUI-IFACE) e import de pacote ausente (POUI-IMPORT), anti-alucinacao
 disable-model-invocation: true
 arguments: []
 allowed-tools: [Bash]
@@ -7,7 +7,7 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:poui-lint`
 
-Detecta dois tipos de erro comuns de geracao de codigo PO UI, cruzando o uso
+Detecta tres tipos de erro comuns de geracao de codigo PO UI, cruzando o uso
 real com os catalogos verificados extraidos do `po-angular`:
 
 - **POUI-PROP** — binding `p-*` em template `<po-*>` que **nao existe** no
@@ -16,6 +16,9 @@ real com os catalogos verificados extraidos do `po-angular`:
   `cols: PoTableColumn[] = [...]`): **chave** que nao existe na interface
   (`field` em vez de `property`) ou **valor** fora do enum
   (`type: 'money'` em vez de `'currency'`). Cruza com `poui_interfaces`.
+- **POUI-IMPORT** — componente usado cujo **pacote** npm nao e importado no
+  projeto (ex.: `<po-page-dynamic-table>` e de `@po-ui/ng-templates`, mas o
+  projeto so importa `@po-ui/ng-components`). Escopo por projeto.
 
 So flagra interface/componente **conhecido** no catalogo (zero falso-positivo
 em tipo custom). Um achado indica alucinacao da IA ou erro de digitacao.
@@ -26,7 +29,8 @@ em tipo custom). Um achado indica alucinacao da IA ou erro de digitacao.
 plugadvpl ingest-poui <dir-frontend>
 ```
 
-Popula `poui_componentes_uso` (dos `.html`) e `poui_iface_uso` (dos `.ts`).
+Popula `poui_componentes_uso` (dos `.html`), `poui_iface_uso` e `poui_imports`
+(dos `.ts`).
 
 ## Execucao
 

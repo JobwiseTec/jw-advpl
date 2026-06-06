@@ -56,6 +56,10 @@ PoTableColumn   width        string   sim
 ...
 ```
 
+A coluna **`pacote`** mostra de qual npm o componente vem
+(`@po-ui/ng-components` ou `@po-ui/ng-templates`) — use para importar do pacote
+certo (os `po-page-dynamic-*`, `po-page-login` etc. são de `ng-templates`).
+
 > **Para agente IA:** consulte ANTES de gerar `<po-*>` (bindings) **e** ANTES de
 > montar o objeto de config tipado `Po*[]` no `.ts` (chaves/valores). Os catálogos
 > são gerados do código-fonte do po-angular e não inventam nada. Se um binding,
