@@ -1,30 +1,37 @@
 ---
-description: Referência verificada dos bindings p- (inputs/outputs) por componente PO UI — consulte antes de escrever templates Angular para não inventar atributos inexistentes
+description: Referência verificada PO UI (po-angular) — bindings p- por componente E propriedades das interfaces de config (PoTableColumn, PoDynamicFormField...); consulte antes de escrever Angular para não inventar atributo/chave/valor
 disable-model-invocation: true
-arguments: [componente]
+arguments: [alvo]
 allowed-tools: [Bash]
 ---
 
 # `/plugadvpl:poui-componentes`
 
-O catálogo `poui_componentes` contém **948 bindings `p-*`** (inputs e outputs)
-extraídos do repositório oficial `po-angular`. Cada entrada mapeia o atributo
-HTML (`p-columns`) para a propriedade TypeScript (`columns`) e o componente-pai
-(`po-table`).
+Referência verificada extraída do repositório oficial `po-angular`. Cobre duas
+camadas onde a IA mais alucina ao gerar PO UI:
 
-Use este comando **antes** de escrever templates Angular com componentes `po-*`
-para evitar inventar inputs/outputs que não existem — alucinação comum porque
-os nomes dos atributos PO UI seguem convenção própria e nem sempre são
-inferíveis pelo nome do componente.
+1. **Bindings `p-*`** (catálogo `poui_componentes`): o atributo HTML
+   (`p-columns`) → propriedade TypeScript (`columns`) → componente (`po-table`).
+2. **Interfaces de config** (catálogo `poui_interfaces`): o **objeto** que vai
+   dentro do binding — ex.: o `PoTableColumn[]` do `p-columns`, ou o
+   `PoDynamicFormField[]` do `p-fields`. Lista cada propriedade, se é opcional,
+   e os **valores válidos** quando enumerados (ex.: `PoTableColumn.type` ∈ 14
+   valores; escrever `type: 'money'` em vez de `'currency'` é erro comum).
+
+Consulte **antes** de escrever template `<po-*>` OU o objeto de config no `.ts`,
+para não inventar binding/chave/valor — alucinação comum porque PO UI segue
+convenção própria.
 
 ## Uso
 
 ```
-/plugadvpl:poui-componentes [componente]
+/plugadvpl:poui-componentes [alvo]
 ```
 
-Sem argumento, lista todos os componentes. Com argumento, filtra por nome de
-componente (case-insensitive).
+- Sem argumento → lista todos os componentes.
+- Argumento iniciando com minúscula (`po-table`) → bindings `p-*` do componente.
+- Argumento iniciando com maiúscula (`PoTableColumn`) → propriedades da interface
+  de config (com valores válidos quando enumerados).
 
 ## Execução
 
@@ -32,21 +39,27 @@ componente (case-insensitive).
 uvx plugadvpl@0.27.0 --format md poui-componentes $ARGUMENTS
 ```
 
-## Exemplo
+## Exemplos
 
 ```
 $ uvx plugadvpl poui-componentes po-table
 componente  kind    binding            propriedade
-po-table    input   p-actions          actions
 po-table    input   p-columns          columns
-po-table    input   p-items            items
 po-table    output  p-action-right     actionRight
+...
+
+$ uvx plugadvpl poui-componentes PoTableColumn
+interface       propriedade  tipo     opcional  valores
+PoTableColumn   property     string   sim
+PoTableColumn   type         string   sim       boolean, currency, date, dateTime, ...
+PoTableColumn   width        string   sim
 ...
 ```
 
-> **Para agente IA:** consulte ANTES de gerar template `<po-table>` ou qualquer
-> componente `po-*`. O catálogo é gerado do código-fonte do po-angular e não
-> inventa atributos. Se um binding não aparece aqui, ele não existe nesta versão.
+> **Para agente IA:** consulte ANTES de gerar `<po-*>` (bindings) **e** ANTES de
+> montar o objeto de config tipado `Po*[]` no `.ts` (chaves/valores). Os catálogos
+> são gerados do código-fonte do po-angular e não inventam nada. Se um binding,
+> propriedade ou valor de `type` não aparece aqui, ele não existe nesta versão.
 
 ## Relacionado
 

@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Catálogo de interfaces de config PO UI ([#96](https://github.com/JoniPraia/plugadvpl/issues/96), passo 1)** — `poui-componentes` agora também resolve **interfaces** além de bindings: `poui-componentes PoTableColumn` (ou `PoDynamicFormField`, `PoPageAction`, …) lista as propriedades do **objeto de config** que vai dentro do binding, com os **valores válidos** quando enumerados (ex.: `PoTableColumn.type` ∈ os 14 valores; escrever `'money'` em vez de `'currency'` vira erro detectável). Fecha a maior cegueira de geração: o catálogo cobria os `p-*` do template, não o objeto `.ts` dentro deles — onde a IA mais alucina. Catálogo `poui_interfaces` (**203 interfaces / 1967 propriedades**, `extends` resolvido, enum extraído do JSDoc) gerado de TODOS os `*.interface.ts` do po-angular via `scripts/build_poui_interfaces.py`. Migration 028 (schema v28). Argumento iniciando com maiúscula (`Po…`) é tratado como interface; minúscula (`po-…`) como componente. _(A regra de lint POUI-IFACE — validar object-literals `.ts` — é o passo 2.)_
+
 ## [0.27.0] - 2026-06-05
 
 ### Added

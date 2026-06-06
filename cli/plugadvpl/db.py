@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "27"
+SCHEMA_VERSION = "28"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -144,6 +144,20 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "poui_componentes.json": (
         "poui_componentes",
         ["chave", "componente", "kind", "binding", "propriedade", "fonte"],
+    ),
+    # v0.28.0 (migration 028, #96): catálogo de interfaces de config PO UI.
+    "poui_interfaces.json": (
+        "poui_interfaces",
+        [
+            "chave",
+            "interface_nome",
+            "propriedade",
+            "tipo",
+            "opcional",
+            "valores",
+            "herdado_de",
+            "fonte",
+        ],
     ),
 }
 

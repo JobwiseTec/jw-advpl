@@ -1,4 +1,5 @@
 """Testes de cli/plugadvpl/db.py."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -47,7 +48,7 @@ class TestOpenDb:
             assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
             assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
             assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-            assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2   # MEMORY
+            assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2  # MEMORY
             assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
         finally:
             conn.close()
@@ -65,6 +66,7 @@ class TestOpenDb:
     ) -> None:
         # Forçar detecção como network share
         from plugadvpl import db as db_module
+
         monkeypatch.setattr(db_module, "_is_network_share", lambda _: True)
 
         db_path = tmp_path / "test.db"
@@ -85,18 +87,33 @@ class TestApplyMigrations:
             tables = {
                 r[0]
                 for r in conn.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 )
             }
             expected_core = {
-                "fontes", "fonte_chunks", "chamadas_funcao", "parametros_uso",
-                "perguntas_uso", "operacoes_escrita", "sql_embedado", "funcao_docs",
-                "rest_endpoints", "http_calls", "env_openers", "log_calls", "defines",
-                "lint_findings", "fonte_tabela",
-                "funcoes_nativas", "funcoes_restritas", "lint_rules", "sql_macros",
-                "modulos_erp", "pontos_entrada_padrao",
-                "meta", "ingest_progress",
+                "fontes",
+                "fonte_chunks",
+                "chamadas_funcao",
+                "parametros_uso",
+                "perguntas_uso",
+                "operacoes_escrita",
+                "sql_embedado",
+                "funcao_docs",
+                "rest_endpoints",
+                "http_calls",
+                "env_openers",
+                "log_calls",
+                "defines",
+                "lint_findings",
+                "fonte_tabela",
+                "funcoes_nativas",
+                "funcoes_restritas",
+                "lint_rules",
+                "sql_macros",
+                "modulos_erp",
+                "pontos_entrada_padrao",
+                "meta",
+                "ingest_progress",
             }
             missing = expected_core - tables
             assert not missing, f"Tabelas faltando: {missing}"
@@ -109,9 +126,11 @@ class TestApplyMigrations:
         try:
             apply_migrations(conn)
             # FTS5 aparece em sqlite_master como type='table' com sql que contém 'fts5'
-            fts = list(conn.execute(
-                "SELECT name FROM sqlite_master WHERE sql LIKE '%fts5%' AND type='table'"
-            ))
+            fts = list(
+                conn.execute(
+                    "SELECT name FROM sqlite_master WHERE sql LIKE '%fts5%' AND type='table'"
+                )
+            )
             names = {r[0] for r in fts}
             assert "fonte_chunks_fts" in names
             assert "fonte_chunks_fts_tri" in names
@@ -153,9 +172,7 @@ class TestApplyMigrations:
         conn = open_db(db_path)
         try:
             apply_migrations(conn)
-            version = conn.execute(
-                "SELECT valor FROM meta WHERE chave='schema_version'"
-            ).fetchone()
+            version = conn.execute("SELECT valor FROM meta WHERE chave='schema_version'").fetchone()
             assert version == (SCHEMA_VERSION,)
         finally:
             close_db(conn)
@@ -174,9 +191,7 @@ class TestMeta:
         finally:
             conn.close()
 
-    def test_schema_version_after_apply_migrations_and_init_meta(
-        self, tmp_path: Path
-    ) -> None:
+    def test_schema_version_after_apply_migrations_and_init_meta(self, tmp_path: Path) -> None:
         """Após apply_migrations + init_meta, schema_version deve refletir SCHEMA_VERSION
         atual (gravado por apply_migrations, NÃO por init_meta)."""
         db_path = tmp_path / "test.db"
@@ -224,12 +239,14 @@ class TestSeedLookups:
             assert counts["pontos_entrada_padrao"] > 0
             # E os dados realmente foram persistidos
             for table in (
-                "funcoes_nativas", "funcoes_restritas", "lint_rules",
-                "sql_macros", "modulos_erp", "pontos_entrada_padrao",
+                "funcoes_nativas",
+                "funcoes_restritas",
+                "lint_rules",
+                "sql_macros",
+                "modulos_erp",
+                "pontos_entrada_padrao",
             ):
-                n = conn.execute(
-                    f"SELECT COUNT(*) FROM {table}"
-                ).fetchone()[0]
+                n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 assert n > 0, f"{table} should have rows"
         finally:
             close_db(conn)
@@ -240,13 +257,9 @@ class TestSeedLookups:
         try:
             apply_migrations(conn)
             seed_lookups(conn)
-            count_first = conn.execute(
-                "SELECT COUNT(*) FROM funcoes_restritas"
-            ).fetchone()[0]
+            count_first = conn.execute("SELECT COUNT(*) FROM funcoes_restritas").fetchone()[0]
             seed_lookups(conn)  # 2x — UPSERT idempotente
-            count_second = conn.execute(
-                "SELECT COUNT(*) FROM funcoes_restritas"
-            ).fetchone()[0]
+            count_second = conn.execute("SELECT COUNT(*) FROM funcoes_restritas").fetchone()[0]
             assert count_first == count_second
             assert count_first > 0
         finally:
@@ -272,18 +285,27 @@ class TestSeedLookups:
         custom_dir = tmp_path / "custom_lookups"
         custom_dir.mkdir()
         for fname in (
-            "funcoes_nativas.json", "funcoes_restritas.json", "lint_rules.json",
-            "sql_macros.json", "modulos_erp.json", "pontos_entrada_padrao.json",
+            "funcoes_nativas.json",
+            "funcoes_restritas.json",
+            "lint_rules.json",
+            "sql_macros.json",
+            "modulos_erp.json",
+            "pontos_entrada_padrao.json",
             # v0.11.0: auditor de INI
-            "ini_rules.json", "ini_roles.json",
+            "ini_rules.json",
+            "ini_roles.json",
             # v0.12.0: monitor de log
-            "log_rules.json", "log_tips.json", "log_categories.json",
+            "log_rules.json",
+            "log_tips.json",
+            "log_categories.json",
             # v0.20.0: catálogo de APIs por build (#26)
             "apis_por_build.json",
             # v0.20.0: semântica contextual de campos SX (#27)
             "campos_semantica.json",
             # v0.22.0: catálogo de bindings PO UI (#29)
             "poui_componentes.json",
+            # v0.28.0: catálogo de interfaces de config PO UI (#96)
+            "poui_interfaces.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 
@@ -299,9 +321,7 @@ class TestSeedLookups:
         finally:
             close_db(conn)
 
-    def test_seed_lookups_serializes_json_list_columns(
-        self, tmp_path: Path
-    ) -> None:
+    def test_seed_lookups_serializes_json_list_columns(self, tmp_path: Path) -> None:
         """``prefixos_tabelas`` etc. são gravadas como JSON string."""
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
@@ -313,6 +333,7 @@ class TestSeedLookups:
             ).fetchone()
             assert row is not None
             import json as _json
+
             tabelas = _json.loads(row[0])
             assert isinstance(tabelas, list)
             assert "SC1" in tabelas
@@ -326,9 +347,7 @@ class TestCloseDb:
         conn = open_db(db_path)
         try:
             apply_migrations(conn)
-            conn.execute(
-                "INSERT INTO meta (chave, valor) VALUES ('test', 'data')"
-            )
+            conn.execute("INSERT INTO meta (chave, valor) VALUES ('test', 'data')")
             conn.commit()
         finally:
             close_db(conn)
@@ -338,24 +357,18 @@ class TestCloseDb:
         if wal_path.exists():
             assert wal_path.stat().st_size < 100  # apenas header (ou zero)
 
-    def test_close_db_does_not_raise_with_uncommitted_writes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_close_db_does_not_raise_with_uncommitted_writes(self, tmp_path: Path) -> None:
         """Regression: close_db must commit pending writes before WAL checkpoint."""
         db_path = tmp_path / "test.db"
         conn = open_db(db_path)
         try:
             apply_migrations(conn)
             # Insert mas NÃO commit
-            conn.execute(
-                "INSERT INTO meta (chave, valor) VALUES ('uncommitted', 'data')"
-            )
+            conn.execute("INSERT INTO meta (chave, valor) VALUES ('uncommitted', 'data')")
         finally:
             close_db(conn)  # deve não levantar OperationalError
         # Verifica que o INSERT foi persistido (close_db committed before truncate)
         conn2 = sqlite3.connect(str(db_path))
-        val = conn2.execute(
-            "SELECT valor FROM meta WHERE chave='uncommitted'"
-        ).fetchone()
+        val = conn2.execute("SELECT valor FROM meta WHERE chave='uncommitted'").fetchone()
         conn2.close()
         assert val == ("data",)

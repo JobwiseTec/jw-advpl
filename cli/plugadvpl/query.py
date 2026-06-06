@@ -3490,6 +3490,57 @@ def poui_componentes(
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+def poui_interfaces(
+    conn: sqlite3.Connection,
+    interface: str | None = None,
+) -> list[dict[str, Any]]:
+    """Propriedades das interfaces de config PO UI do catálogo (migration 028).
+
+    Companion de :func:`poui_componentes`: aqui está o **objeto** que vai dentro
+    de um binding (ex.: o `PoTableColumn[]` do `p-columns`), com cada propriedade,
+    se é opcional, e — quando enumerado — os valores válidos. Serve de referência
+    verificada (po-angular) ao gerar config `.ts`, evitando inventar chave/valor.
+
+    Args:
+        conn: conexão SQLite (RO ok).
+        interface: nome da interface (ex.: ``PoTableColumn``). Filtro
+            case-insensitive. ``None`` = todas.
+
+    Returns:
+        Lista de dicts ``{interface, propriedade, tipo, opcional, valores,
+        herdado_de}`` ordenada por ``interface, propriedade``. ``valores`` é uma
+        lista de strings (vazia quando a propriedade não é enumerada).
+    """
+    base = (
+        "SELECT interface_nome, propriedade, tipo, opcional, valores, herdado_de "
+        "FROM poui_interfaces"
+    )
+    if interface is not None:
+        rows = conn.execute(
+            f"{base} WHERE lower(interface_nome) = lower(?) ORDER BY interface_nome, propriedade",
+            (interface,),
+        ).fetchall()
+    else:
+        rows = conn.execute(f"{base} ORDER BY interface_nome, propriedade").fetchall()
+    out: list[dict[str, Any]] = []
+    for nome, prop, tipo, opcional, valores, herdado in rows:
+        try:
+            vals = json.loads(valores) if valores else []
+        except (json.JSONDecodeError, TypeError):
+            vals = []
+        out.append(
+            {
+                "interface": nome,
+                "propriedade": prop,
+                "tipo": tipo,
+                "opcional": bool(opcional),
+                "valores": vals,
+                "herdado_de": herdado or "",
+            }
+        )
+    return out
+
+
 def poui_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """POUI-PROP: binding ``p-*`` usado que NÃO existe no catálogo ``poui_componentes``.
 

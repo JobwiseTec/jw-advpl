@@ -130,6 +130,9 @@ from plugadvpl.query import (
     poui_componentes as q_poui_componentes,
 )
 from plugadvpl.query import (
+    poui_interfaces as q_poui_interfaces,
+)
+from plugadvpl.query import (
     poui_lint as q_poui_lint,
 )
 from plugadvpl.query import (
@@ -1731,29 +1734,63 @@ def semantica(
 @app.command(name="poui-componentes")
 def poui_componentes(
     ctx: typer.Context,
-    componente: Annotated[
+    alvo: Annotated[
         str | None,
-        typer.Argument(help="Componente PO UI (ex: po-table). Omita para listar todos."),
+        typer.Argument(
+            help=(
+                "Componente PO UI (ex: po-table) → bindings `p-*`; OU interface de "
+                "config (ex: PoTableColumn) → propriedades. Omita p/ listar todos os componentes."
+            )
+        ),
     ] = None,
 ) -> None:
-    """Lista bindings `p-*` (inputs/outputs) do catálogo PO UI por componente.
+    """Referência PO UI verificada (po-angular): bindings `p-*` e interfaces de config.
 
-    Consulta o catálogo embarcado ``poui_componentes`` (948 bindings extraídos
-    do po-angular) — não precisa de índice de projeto. Use para verificar
-    quais propriedades um componente aceita antes de escrever templates Angular,
-    evitando inventar atributos inexistentes.
+    Consulta os catálogos embarcados ``poui_componentes`` (bindings) e
+    ``poui_interfaces`` (interfaces de config: ``PoTableColumn``,
+    ``PoDynamicFormField``, ``PoPageAction``, ...) — não precisa de índice de
+    projeto. Use antes de escrever Angular para não inventar atributo/chave/valor:
+
+    - ``poui-componentes po-table`` → bindings `p-*` que o componente aceita.
+    - ``poui-componentes PoTableColumn`` → propriedades do objeto de config
+      (com valores válidos quando enumerados, ex.: o `type` ∈ 14 valores).
+
+    O alvo iniciando com maiúscula (``Po...``) é tratado como interface.
     """
     db_path: Path = ctx.obj["db"]
+    is_interface = alvo is not None and alvo[:1].isupper()
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
         seed_lookups(conn)
-        rows = q_poui_componentes(conn, componente=componente)
+        if is_interface:
+            irows = q_poui_interfaces(conn, interface=alvo)
+        else:
+            rows = q_poui_componentes(conn, componente=alvo)
     finally:
         close_db(conn)
-    title = (
-        f"Bindings PO UI — {componente}" if componente else "Catálogo PO UI — todos os componentes"
-    )
+
+    if is_interface:
+        display = [
+            {
+                "interface": r["interface"],
+                "propriedade": r["propriedade"],
+                "tipo": r["tipo"],
+                "opcional": "sim" if r["opcional"] else "NÃO",
+                "valores": ", ".join(r["valores"]) if r["valores"] else "",
+                "herdado_de": r["herdado_de"],
+            }
+            for r in irows
+        ]
+        _render_from_ctx(
+            ctx,
+            display,
+            columns=["interface", "propriedade", "tipo", "opcional", "valores", "herdado_de"],
+            title=f"Interface PO UI — {alvo}",
+        )
+        return
+
+    title = f"Bindings PO UI — {alvo}" if alvo else "Catálogo PO UI — todos os componentes"
     _render_from_ctx(
         ctx,
         rows,
