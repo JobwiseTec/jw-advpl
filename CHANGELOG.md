@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-06-06
+
 ### Added
 
 - **Lint POUI-IFACE ([#96](https://github.com/JoniPraia/plugadvpl/issues/96), passo 2)** — `poui-lint` agora também valida o **objeto de config `.ts`** tipado por interface `Po*` (`cols: PoTableColumn[] = [{…}]`), não só os bindings `p-*` do template (POUI-PROP). Pega os dois erros mais comuns de geração: **chave inexistente** (`field` em vez de `property`) e **valor fora do enum** (`type: 'money'` em vez de `'currency'`, com a lista de válidos na mensagem). Parser puro `extract_poui_iface_usage` (captura só chaves diretas do literal anotado — ignora objeto aninhado e corpo de função), `ingest-poui` popula `poui_iface_uso` dos `.ts`, cruzamento com o catálogo `poui_interfaces`. Só flagra interface conhecida (zero FP em tipo custom). Migration 029 (schema v29). **Fecha #96.**

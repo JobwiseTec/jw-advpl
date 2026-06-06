@@ -928,6 +928,15 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.28.0 — PO UI: interfaces de config + lint POUI-IFACE (auditoria codegen, #96)
+
+Auditoria de geração de código PO-UI (Angular) achou que o suporte cobria os bindings `p-*` do template, mas era cego ao **objeto de config `.ts`** dentro deles — onde a IA mais alucina. #96 fecha isso em 2 frentes:
+
+- **Catálogo de interfaces** (`poui-componentes PoTableColumn`): props do objeto que vai no binding, com os **valores válidos** quando enumerados (`PoTableColumn.type` ∈ 14 valores; `PoDynamicFormField` 128 props). **203 interfaces / 1967 props** extraídas de TODOS os `*.interface.ts` do po-angular (`extends` resolvido, enum do JSDoc).
+- **Lint POUI-IFACE** (`poui-lint`): valida o objeto tipado `Po*` nos `.ts` — **chave inexistente** (`field` em vez de `property`) e **valor fora do enum** (`type: 'money'` em vez de `'currency'`). Só flagra interface conhecida (zero FP em tipo custom).
+
+Aditivo/determinístico. Migrations 028/029 (schema v29). Demais gaps da auditoria (import de pacote, versão-aware, schematics, datasources) ficam em #97–#100.
+
 ### v0.27.0 — capabilities de comportamento (auditoria #81–#88, lote 2)
 
 Lote 2 da auditoria: 4 **capabilities** novas (sinal de comportamento por presença de função, exibido no `arch` e filtrável). Detecção **aditiva** — fonte sem o padrão fica byte-idêntica; cada uma com volume medido nas 4 bases reais:

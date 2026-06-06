@@ -36,7 +36,7 @@ convenção própria.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.27.0 --format md poui-componentes $ARGUMENTS
+uvx plugadvpl@0.28.0 --format md poui-componentes $ARGUMENTS
 ```
 
 ## Exemplos
