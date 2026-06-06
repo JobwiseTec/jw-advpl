@@ -2287,6 +2287,135 @@ class TestWS003SetResponseNoEncode:
         assert "WS-003" not in _ids(findings)
 
 
+# --- WS-004: metodo inexistente no oRest (notation tlppCore) -----------------
+
+
+class TestWS004OrestInvalidMethod:
+    """Em endpoint notation (@Get/@Post/...), o objeto injetado oRest
+    (classe TLPP.REST.REST) NAO expoe SetContentType/GetUserName/GetUrlParam —
+    sao do WSRESTFUL classico (::Self). Em runtime da HTTP 500 'Cannot find
+    method TLPP.REST.REST:...'. Confirmado contra acervo TOTVS 2510.
+    """
+
+    def test_positive_setcontenttype(self) -> None:
+        src = (
+            '@Get(endpoint="/v1/ping")\n'
+            "User Function ZHPing()\n"
+            '  oRest:SetContentType("application/json")\n'
+            "  oRest:SetStatusCode(200)\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "ping.tlpp"), src)
+        ws004 = [f for f in findings if f["regra_id"] == "WS-004"]
+        assert len(ws004) == 1
+        assert ws004[0]["severidade"] == "error"
+
+    def test_positive_getusername(self) -> None:
+        src = (
+            '@Get(endpoint="/v1/ping")\n'
+            "User Function ZHPing()\n"
+            "  Local cUsr := oRest:GetUserName()\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "ping.tlpp"), src)
+        assert "WS-004" in _ids(findings)
+
+    def test_positive_geturlparam(self) -> None:
+        src = (
+            '@Get(endpoint="/v1/cliente/:codigo")\n'
+            "User Function ZHGetCli()\n"
+            '  Local cCod := oRest:GetUrlParam("codigo")\n'
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "cli.tlpp"), src)
+        assert "WS-004" in _ids(findings)
+
+    def test_negative_valid_orest_api(self) -> None:
+        """API real do oRest notation nao dispara."""
+        src = (
+            '@Get(endpoint="/v1/cliente/:codigo")\n'
+            "User Function ZHGetCli()\n"
+            "  Local jPath := oRest:GetPathParamsRequest()\n"
+            '  oRest:SetKeyHeaderResponse("Content-Type", "application/json")\n'
+            "  oRest:SetStatusCode(200)\n"
+            "  oRest:SetResponse(oResp:ToJson())\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "cli.tlpp"), src)
+        assert "WS-004" not in _ids(findings)
+
+    def test_negative_classic_self_setcontenttype(self) -> None:
+        """::SetContentType (WSRESTFUL classico) e valido — nao e oRest:."""
+        src = (
+            "CLASS API_Foo FROM WSRESTFUL\n"
+            "ENDCLASS\n"
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            '  ::SetContentType("application/json")\n'
+            "  ::SetResponse('{}')\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-004" not in _ids(findings)
+
+    def test_negative_in_comment(self) -> None:
+        """Metodo invalido dentro de comentario nao dispara (strip_advpl)."""
+        src = (
+            '@Get(endpoint="/v1/ping")\n'
+            "User Function ZHPing()\n"
+            '  // oRest:SetContentType("application/json") -- nao usar\n'
+            '  oRest:SetKeyHeaderResponse("Content-Type", "application/json")\n'
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "ping.tlpp"), src)
+        assert "WS-004" not in _ids(findings)
+
+    def test_positive_post_verb(self) -> None:
+        """Cobre verbo @Post (nao so @Get)."""
+        src = (
+            '@Post(endpoint="/v1/x")\n'
+            "User Function ZHPostX()\n"
+            "  Local cUsr := oRest:GetUserName()\n"
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "x.tlpp"), src)
+        assert "WS-004" in _ids(findings)
+
+    def test_negative_classic_orest_param(self) -> None:
+        """`oRest` como parametro do self em WSRESTFUL classico TEM SetContentType —
+        fora de funcao notation nao pode disparar (era o FP real do acervo 2510)."""
+        src = (
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            "  GetVld(oRest)\n"
+            "Return .T.\n"
+            "Static Function GetVld(oRest)\n"
+            '  oRest:SetContentType("application/json")\n'
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src, "api_foo.prw"), src)
+        assert "WS-004" not in _ids(findings)
+
+    def test_negative_outside_notation(self) -> None:
+        """User Function sem annotation notation: `oRest` nao e o objeto injetado."""
+        src = (
+            "User Function XYZHelper()\n"
+            '  oRest:SetContentType("application/json")\n'
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src, "x.tlpp"), src)
+        assert "WS-004" not in _ids(findings)
+
+    def test_negative_member_chain(self) -> None:
+        """Acesso encadeado (oWrapper:oRest:...) nao e o objeto injetado solto."""
+        src = (
+            '@Get(endpoint="/v1/x")\n'
+            "User Function ZHX()\n"
+            '  oWrapper:oRest:SetContentType("application/json")\n'
+            "Return .T.\n"
+        )
+        findings = lint_source(_parsed_for(src, "x.tlpp"), src)
+        assert "WS-004" not in _ids(findings)
+
+
 # --- ENC-001: .prw com encoding UTF-8 (quebra compilador appserver legado) --
 
 

@@ -2048,6 +2048,103 @@ def _check_ws003_setresponse_no_encode(
     return findings
 
 
+# Lookbehind `(?<![\w:.])` evita casar identificador maior (`fooRest:`) ou
+# acesso encadeado (`oWrapper:oRest:`) — so o objeto `oRest` "solto".
+_WS004_OREST_INVALID_RE = re.compile(
+    r"(?<![\w:.])oRest\s*:\s*(setContentType|getUserName|GetUrlParam)\s*\(",
+    re.IGNORECASE,
+)
+
+# Annotation de endpoint REST notation (tlppCore). O objeto oRest injetado so
+# existe no corpo de User Function decorada com uma destas.
+_WS004_NOTATION_ANNOT_RE = re.compile(
+    r"@(Get|Post|Put|Patch|Delete|Options)\b", re.IGNORECASE
+)
+
+# Sugestao de fix por metodo invalido do oRest (chave em minusculo).
+_WS004_FIX = {
+    "setcontenttype": (
+        "oRest:SetContentType nao existe no notation tlppCore (HTTP 500 "
+        "'Cannot find method TLPP.REST.REST:SETCONTENTTYPE'). Use "
+        'oRest:SetKeyHeaderResponse("Content-Type", ...). SetContentType existe '
+        "so no WSRESTFUL classico (::Self)."
+    ),
+    "getusername": (
+        "oRest:GetUserName nao existe no notation tlppCore (HTTP 500). Use a "
+        "funcao global GetUserName() ou a var de ambiente cUserName/__cUserID."
+    ),
+    "geturlparam": (
+        "oRest:GetUrlParam nao existe no notation tlppCore (HTTP 500). Use "
+        "oRest:getPathParamsRequest()['<param>'] para ler path param nomeado."
+    ),
+}
+
+
+def _ws004_notation_ranges(
+    funcoes: list[dict[str, Any]], content: str
+) -> list[tuple[int, int]]:
+    """Ranges (linha_inicio, linha_fim) de funcoes decoradas com annotation REST
+    notation (@Get/@Post/...).
+
+    A annotation fica na primeira linha nao-vazia imediatamente acima da
+    declaracao — comentario no meio invalida o decorator (regra tlppCore), entao
+    basta checar essa linha. Sem nenhuma funcao notation, WS-004 nao se aplica.
+    """
+    lines = content.splitlines()
+    ranges: list[tuple[int, int]] = []
+    for f in funcoes:
+        ini = int(f.get("linha_inicio", 0))
+        if ini <= 1:
+            continue
+        fim = int(f.get("linha_fim", ini))
+        idx = ini - 2  # 0-indexed: linha imediatamente acima da declaracao
+        while idx >= 0 and lines[idx].strip() == "":
+            idx -= 1
+        if idx >= 0 and _WS004_NOTATION_ANNOT_RE.search(lines[idx]):
+            ranges.append((ini, fim))
+    return ranges
+
+
+def _check_ws004_orest_invalid_method(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """WS-004 (error): metodo inexistente no objeto oRest injetado (notation tlppCore).
+
+    No corpo de uma User Function decorada com @Get/@Post/..., o objeto injetado
+    oRest (classe TLPP.REST.REST) NAO expoe SetContentType/GetUserName/GetUrlParam
+    — sao do WSRESTFUL classico (::Self). Em runtime da HTTP 500 'Cannot find
+    method TLPP.REST.REST:...'. Confirmado contra acervo TOTVS release 2510.
+
+    Escopo restrito a funcoes notation: em WSRESTFUL classico `oRest` pode ser um
+    parametro/local ligado ao self (que TEM esses metodos), e um client FwRest
+    tambem usa o nome `oRest` — marcar fora de notation seria falso-positivo.
+    """
+    stripped = strip_advpl(content)
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    notation_ranges = _ws004_notation_ranges(funcoes, content)
+    if not notation_ranges:
+        return findings
+
+    for m in _WS004_OREST_INVALID_RE.finditer(stripped):
+        linha = _line_at(stripped, m.start())
+        if not any(ini <= linha <= fim for ini, fim in notation_ranges):
+            continue
+        metodo = m.group(1)
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _funcao_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "WS-004",
+                "severidade": "error",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": _WS004_FIX[metodo.lower()],
+            }
+        )
+    return findings
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 
@@ -2092,6 +2189,7 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_ws001_wsmethod_orphan(arquivo, parsed, content))
     findings.extend(_check_ws002_getcontent_no_decode(arquivo, parsed, content))
     findings.extend(_check_ws003_setresponse_no_encode(arquivo, parsed, content))
+    findings.extend(_check_ws004_orest_invalid_method(arquivo, parsed, content))
     findings.extend(_check_enc001_prw_utf8(arquivo, parsed, content))
 
     findings.sort(key=lambda f: (int(f["linha"]), str(f["regra_id"])))

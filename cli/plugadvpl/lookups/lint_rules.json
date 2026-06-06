@@ -505,6 +505,18 @@
     "sonar_rules": []
   },
   {
+    "regra_id": "WS-004",
+    "titulo": "Método inexistente no oRest (notation tlppCore) — SetContentType/GetUserName/GetUrlParam",
+    "severidade": "error",
+    "categoria": "best-practice",
+    "descricao": "Em endpoint notation (@Get/@Post/...), o objeto injetado `oRest` (classe TLPP.REST.REST) NÃO expõe `SetContentType`/`GetUserName`/`GetUrlParam` — esses são do WSRESTFUL clássico (`::Self`). Em runtime dá HTTP 500 'Cannot find method TLPP.REST.REST:...'. Confirmado contra acervo TOTVS release 2510: 0 ocorrências em notation. Content-Type real via `setKeyHeaderResponse`, usuário via `cUserName`/`__cUserID`, path param via `getPathParamsRequest()`. Detecção escopada ao corpo de funções decoradas com a annotation notation (a primeira linha não-vazia acima da declaração tem `@Get/@Post/...`) — em WSRESTFUL clássico `oRest` pode ser um parâmetro/local ligado ao self (que TEM esses métodos) e um client `FwRest` reusa o nome `oRest`, então marcar fora de notation seria falso-positivo.",
+    "fix_guidance": "SetContentType -> `oRest:SetKeyHeaderResponse(\"Content-Type\", ...)`. GetUserName -> função global `GetUserName()` ou var `cUserName`/`__cUserID`. GetUrlParam -> `oRest:getPathParamsRequest()['<param>']`.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_ws004_orest_invalid_method",
+    "sonar_rules": []
+  },
+  {
     "regra_id": "ENC-001",
     "titulo": ".prw/.prx salvo em UTF-8 quebra compilador appserver legado",
     "severidade": "error",

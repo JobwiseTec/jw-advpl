@@ -34,6 +34,8 @@ manuais quando não dá pra anexar debugger.
 | MV_PAR retorna vazio em Pergunte | Variáveis Private MV_PAR* não inicializadas; nLin do Pergunte errado | inspect manual |
 | Job não roda agendado | `RpcSetEnv` sem empresa/filial; `StartJob` falhando em deps | `plugadvpl callers <Job>` |
 | REST endpoint retorna 500 | Self:GetContent vazio sem validação; ou WSRESTFUL Method não bate verbo HTTP | `plugadvpl grep "WSRESTFUL"` |
+| Endpoint `@Get/@Post` (notation) retorna 500 com `detailedMessage` vazio | Método inexistente no `oRest` (ex: `SetContentType`/`GetUserName`/`GetUrlParam` — só existem no `::Self` clássico) | filtrar `console.log` por `"Cannot find method"` / nome da função (log tem MB de ruído SSL — nunca ler cru); ou `plugadvpl lint` (regra **WS-004**) |
+| Compile TDS-LS: `Could not connect to server. The secure key is set to FALSE` | Porta TCP exige TLS (`MultiProtocolPortSecure=1` no `appserver.ini`) mas o script CLI manda `secure=0` | conferir `MultiProtocolPortSecure` no socket; fix: `secure=1` no bloco `[auth]` do script `.ini` do TDS-LS |
 | MD-FE / NF-e rejeitada | Tag XML errada; lib desatualizada (cMV `MV_NFCSERV`) | `plugadvpl param MV_NFCSERV` |
 | ConOut mostrando lixo / chars estranhos | Encoding errado (cp1252 vs utf-8); BOM em arquivo | `plugadvpl doctor` |
 | `Begin Sequence / Recover` não captura exception (thread cai) | Falta `ErrorBlock({\|e\| Break(e)})` antes do BS — exceptions nativas/REST não disparam Recover sozinhas | inspect manual + `[[advpl-tlpp]]` (try/catch) |

@@ -50,7 +50,8 @@ Estrutura **function-based** com annotations. Mais limpo, sem precisar de classe
 @Get(endpoint="/v1/cliente/:codigo", description="Busca cliente por codigo")
 User Function GetCliente()
     Local oResp  := JsonObject():New()
-    Local cCod   := oRest:GetUrlParam("codigo")
+    Local jPath  := oRest:GetPathParamsRequest()
+    Local cCod   := If(jPath != Nil, jPath["codigo"], "")
 
     If Empty(cCod)
         oRest:SetStatusCode(400)
@@ -453,7 +454,7 @@ Return .T.
 ## Content-Type e CORS
 
 ```advpl
-oRest:SetContentType("application/json; charset=utf-8")
+oRest:SetKeyHeaderResponse("Content-Type", "application/json; charset=utf-8")
 oRest:SetKeyHeaderResponse("Access-Control-Allow-Origin",  "*")          // ajuste conforme politica
 oRest:SetKeyHeaderResponse("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 oRest:SetKeyHeaderResponse("Access-Control-Allow-Headers", "Content-Type,Authorization,TenantId")
@@ -552,8 +553,8 @@ Sem isso, acentos viram `Ã§`/`Ã£` no consumidor. Veja `[[advpl-encoding]]`.
 | Status                   | `oRest:setStatusCode(404)`                           | `::SetStatus(404)`                           |
 | Response body            | `oRest:setResponse(c)` *(cuidado: cumulativo!)*      | `::SetResponse(c)` *(cuidado: cumulativo!)*  |
 | Erro/fault               | `oRest:setFault(cMsg)` + `setStatusCode`             | `SetRestFault(404, cMsg)` *(função global)*  |
-| Content-Type             | `oRest:setContentType("application/json")`           | `::SetContentType("application/json")`       |
-| User logado              | `oRest:getUserName()`                                | `::GetUserName()`                            |
+| Content-Type             | `oRest:setKeyHeaderResponse("Content-Type","application/json")` | `::SetContentType("application/json")`       |
+| User logado              | `GetUserName()` (global) ou var `cUserName`/`__cUserID` | `::GetUserName()`                            |
 | JSON parse               | `JsonObject():New()` + `oJ:FromJson(cBody)`          | idem                                         |
 | JSON build               | `oJ["chave"] := val` + `oJ:ToJson()`                 | idem                                         |
 | Doc Swagger              | `description="[funcDoc]"` + `TLPP COMPONENT`         | ❌ não nativo                                 |

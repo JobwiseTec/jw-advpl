@@ -69,7 +69,7 @@ User Function ListCliente()
     jResp['count']  := Len(aItens)
     jResp['offset'] := nOff
     jResp['limit']  := nLim
-    oRest:setContentType('application/json; charset=utf-8')
+    oRest:setKeyHeaderResponse('Content-Type', 'application/json; charset=utf-8')
     oRest:setStatusCode(200)
     oRest:setResponse(EncodeUtf8(jResp:ToJson()))
 Return
@@ -98,7 +98,7 @@ User Function GetCliente()
     jResp['cnpj']    := AllTrim(SA1->A1_CGC)
     jResp['limite']  := SA1->A1_LC
     oRest:setStatusCode(200)
-    oRest:setContentType('application/json; charset=utf-8')
+    oRest:setKeyHeaderResponse('Content-Type', 'application/json; charset=utf-8')
     oRest:setResponse(EncodeUtf8(jResp:ToJson()))
 Return
 
@@ -145,7 +145,7 @@ User Function CreateCliente()
     jResp['codigo'] := AllTrim(SA1->A1_COD)
     jResp['loja']   := AllTrim(SA1->A1_LOJA)
     oRest:setStatusCode(201)
-    oRest:setHeaderResponse('Location', '/v1/cliente/' + AllTrim(SA1->A1_COD) + '/' + AllTrim(SA1->A1_LOJA))
+    oRest:setKeyHeaderResponse('Location', '/v1/cliente/' + AllTrim(SA1->A1_COD) + '/' + AllTrim(SA1->A1_LOJA))
     oRest:setResponse(EncodeUtf8(jResp:ToJson()))
 Return
 
@@ -217,9 +217,9 @@ Return
 // ─── OPTIONS (CORS preflight) ────────────────────────────────────────────
 @Options("/v1/cliente")
 User Function OptionsCliente()
-    oRest:setHeaderResponse('Access-Control-Allow-Origin',  '*')
-    oRest:setHeaderResponse('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-    oRest:setHeaderResponse('Access-Control-Allow-Headers', 'Content-Type,Authorization,tenantId')
+    oRest:setKeyHeaderResponse('Access-Control-Allow-Origin',  '*')
+    oRest:setKeyHeaderResponse('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+    oRest:setKeyHeaderResponse('Access-Control-Allow-Headers', 'Content-Type,Authorization,tenantId')
     oRest:setStatusCode(204)
 Return
 ```
@@ -295,13 +295,13 @@ Comparando: ~50% mais boilerplate, sem PATCH, path params posicionais, e `SetRes
 | `oRest:getPathParamsRequest()` | `JsonObject` ou `Nil` | `:param` da URL. Sempre `if jPath != Nil` antes de indexar |
 | `oRest:getQueryRequest()` | `JsonObject` ou `Nil` | Query string `?a=1&b=2` |
 | `oRest:getHeaderRequest(c)` | `Character` | Valor do header (ex: `'Authorization'`, `'tenantId'`) |
-| `oRest:getUserName()` | `Character` | Usuário Protheus autenticado |
+| ~~`oRest:getUserName()`~~ | — | **NÃO existe no oRest (notation)** → HTTP 500. Usuário via `GetUserName()` global ou var `cUserName`/`__cUserID` |
 | `oRest:setResponse(c)` | — | **Cumulativo.** Acumule local + 1 chamada no fim |
 | `oRest:setStatusCode(n)` | — | 200/201/204/400/401/403/404/409/422/500 |
 | `oRest:setFault(c)` | — | Mensagem de erro (junto com `setStatusCode`) |
-| `oRest:setContentType(c)` | — | `'application/json; charset=utf-8'` padrão |
+| ~~`oRest:setContentType(c)`~~ | — | **NÃO existe no oRest (notation)** → HTTP 500. Content-Type via `oRest:setKeyHeaderResponse('Content-Type', c)` |
 | `oRest:setKeyHeaderResponse(cK, cV)` | — | Header custom (CORS, Location, X-*). **Não confundir com `setHeaderResponse` (sem `Key`) que quebra em build 7.00.240223P+** |
-| `oRest:setKeepAlive(.T.)` | — | Stream/Server-Sent Events |
+| `oRest:setKeepAlive(.T.)` | — | Stream/Server-Sent Events. ⚠️ Não confirmado no acervo TOTVS 2510 — validar contra a build antes de usar |
 
 ## 4. Catálogo `::Self` (clássico)
 
@@ -397,7 +397,7 @@ No notation isso é manual:
 ```advpl
 @Get("/v1/cliente")
 User Function ListCli()
-    If !UserHasAccess(oRest:getUserName(), 'MATA030', 1)
+    If !UserHasAccess(GetUserName(), 'MATA030', 1)   // GetUserName() = funcao global; oRest nao expoe getter de usuario
         oRest:setStatusCode(403)
         oRest:setResponse('{"error":"sem permissao"}')
         Return
@@ -653,9 +653,9 @@ User Function DownloadAnexo()
     cBin := FRead(nH, FSeek(nH, 0, 2))
     FClose(nH)
 
-    oRest:setContentType('application/octet-stream')
-    oRest:setHeaderResponse('Content-Disposition', 'attachment; filename="' + cFileName(cFile) + '"')
-    oRest:setHeaderResponse('Content-Length', cValToChar(Len(cBin)))
+    oRest:setKeyHeaderResponse('Content-Type', 'application/octet-stream')
+    oRest:setKeyHeaderResponse('Content-Disposition', 'attachment; filename="' + cFileName(cFile) + '"')
+    oRest:setKeyHeaderResponse('Content-Length', cValToChar(Len(cBin)))
     oRest:setResponse(cBin)
 Return
 ```
@@ -676,10 +676,10 @@ Aplica globalmente em todos os endpoints. Override per-endpoint se precisar de p
 ### CORS manual no endpoint
 
 ```advpl
-oRest:setHeaderResponse('Access-Control-Allow-Origin',  'https://app.cliente.com')
-oRest:setHeaderResponse('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-oRest:setHeaderResponse('Access-Control-Allow-Headers', 'Content-Type,Authorization,tenantId,X-Request-Id')
-oRest:setHeaderResponse('Access-Control-Max-Age', '3600')
+oRest:setKeyHeaderResponse('Access-Control-Allow-Origin',  'https://app.cliente.com')
+oRest:setKeyHeaderResponse('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+oRest:setKeyHeaderResponse('Access-Control-Allow-Headers', 'Content-Type,Authorization,tenantId,X-Request-Id')
+oRest:setKeyHeaderResponse('Access-Control-Max-Age', '3600')
 ```
 
 Sempre implementar `@Options(...)` separado pro preflight.
@@ -689,10 +689,10 @@ Sempre implementar `@Options(...)` separado pro preflight.
 ```advpl
 Local cAccept := oRest:getHeaderRequest('Accept')
 If 'application/xml' $ cAccept
-    oRest:setContentType('application/xml')
+    oRest:setKeyHeaderResponse('Content-Type', 'application/xml')
     oRest:setResponse(JsonToXml(jResp))
 Else
-    oRest:setContentType('application/json; charset=utf-8')
+    oRest:setKeyHeaderResponse('Content-Type', 'application/json; charset=utf-8')
     oRest:setResponse(EncodeUtf8(jResp:ToJson()))
 EndIf
 ```
@@ -712,7 +712,7 @@ jReq:FromJson(cBody)
 Local jResp := JsonObject():New()
 jResp['nome'] := AllTrim(SA1->A1_NOME)   // já em cp1252 (vem do banco)
 oRest:setResponse(EncodeUtf8(jResp:ToJson()))   // converte cp1252 → UTF-8 pro cliente
-oRest:setContentType('application/json; charset=utf-8')
+oRest:setKeyHeaderResponse('Content-Type', 'application/json; charset=utf-8')
 ```
 
 Sintomas de erro:
@@ -800,7 +800,7 @@ Local cBearer := jTok['access_token']
 7. **`User Function` decorada SEM prefixo de cliente** vira regra geral em REST (`SEC-002` catálogo) — exceção justificada.
 8. **`setResponse` cumulativo** — mesmo bug do clássico, idem fix.
 9. **`oRest:setStatusCode(204)` + body não-vazio** — alguns clientes rejeitam.
-10. **Header case-insensitive ao ler, case-sensitive ao gravar** — `getHeaderRequest('Authorization')` pega `authorization:` mas `setHeaderResponse('Content-Type'...)` precisa exato.
+10. **Header case-insensitive ao ler, case-sensitive ao gravar** — `getHeaderRequest('Authorization')` pega `authorization:` mas `setKeyHeaderResponse('Content-Type', ...)` precisa exato.
 
 ### Clássico
 11. **`::SetResponse` cumulativo** — bug #1, acumule local.
