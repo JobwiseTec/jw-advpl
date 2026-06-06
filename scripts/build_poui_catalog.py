@@ -22,8 +22,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 OUT = ROOT / "cli" / "plugadvpl" / "lookups" / "poui_componentes.json"
+META_OUT = ROOT / "cli" / "plugadvpl" / "lookups" / "poui_catalog_meta.json"
 RAW = "https://raw.githubusercontent.com/po-ui/po-angular/master"
 API = "https://api.github.com/repos/po-ui/po-angular/contents"
+_MAJOR_RE = re.compile(r"(\d+)")
 
 # 3 formas de binding p-:
 #   @Input('p-x') / @Input("p-x")  +  prop (com set opcional)
@@ -147,6 +149,28 @@ def main() -> None:
     print(f"catálogo: {len(catalogo)} bindings de {comps} componentes -> {OUT.name}")
     if not catalogo:
         sys.exit("nenhum binding extraído")
+
+    _write_meta()
+
+
+def _write_meta() -> None:
+    """Grava a versão do po-angular que este catálogo representa (#98).
+
+    O catálogo é um snapshot do master; a versão (major) deixa o lint avisar
+    quando o projeto está num major diferente (bindings/props mudam entre majors).
+    """
+    pkg = _get_json(f"{RAW}/package.json")
+    versao = pkg.get("version", "") if isinstance(pkg, dict) else ""
+    m = _MAJOR_RE.search(versao) if versao else None
+    meta = [
+        {"chave": "poui_major", "valor": m.group(1) if m else ""},
+        {"chave": "poui_version", "valor": versao},
+        {"chave": "fonte", "valor": "po-ui/po-angular@master"},
+    ]
+    META_OUT.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+    )
+    print(f"meta do catálogo: po-angular {versao or '?'} -> {META_OUT.name}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 ---
-description: Lint PO UI — bindings p-* (POUI-PROP), chaves/valores de interface .ts (POUI-IFACE) e import de pacote ausente (POUI-IMPORT), anti-alucinacao
+description: Lint PO UI — bindings p-* (POUI-PROP), interface .ts (POUI-IFACE), import de pacote (POUI-IMPORT) e divergencia de versao (POUI-VERSION)
 disable-model-invocation: true
 arguments: []
 allowed-tools: [Bash]
@@ -7,8 +7,8 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:poui-lint`
 
-Detecta tres tipos de erro comuns de geracao de codigo PO UI, cruzando o uso
-real com os catalogos verificados extraidos do `po-angular`:
+Detecta erros comuns de geracao de codigo PO UI, cruzando o uso real com os
+catalogos verificados extraidos do `po-angular`:
 
 - **POUI-PROP** — binding `p-*` em template `<po-*>` que **nao existe** no
   catalogo `poui_componentes` (ex.: `<po-table [p-fake]>`).
@@ -19,6 +19,9 @@ real com os catalogos verificados extraidos do `po-angular`:
 - **POUI-IMPORT** — componente usado cujo **pacote** npm nao e importado no
   projeto (ex.: `<po-page-dynamic-table>` e de `@po-ui/ng-templates`, mas o
   projeto so importa `@po-ui/ng-components`). Escopo por projeto.
+- **POUI-VERSION** *(aviso)* — projeto num **major** PO UI diferente do catalogo
+  embarcado (snapshot do po-angular). Como bindings/props mudam entre majors, os
+  findings acima podem divergir; serve de alerta de contexto.
 
 So flagra interface/componente **conhecido** no catalogo (zero falso-positivo
 em tipo custom). Um achado indica alucinacao da IA ou erro de digitacao.

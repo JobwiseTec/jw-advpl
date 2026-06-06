@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "30"
+SCHEMA_VERSION = "31"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -159,6 +159,11 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
             "herdado_de",
             "fonte",
         ],
+    ),
+    # v0.29.0 (migration 031, #98): versão do po-angular que o catálogo representa.
+    "poui_catalog_meta.json": (
+        "poui_catalog_meta",
+        ["chave", "valor"],
     ),
 }
 

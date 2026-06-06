@@ -3713,3 +3713,53 @@ def poui_import_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def poui_catalog_meta(conn: sqlite3.Connection) -> dict[str, str]:
+    """Metadados do catálogo PO UI embarcado (versão do po-angular, #98)."""
+    try:
+        return dict(conn.execute("SELECT chave, valor FROM poui_catalog_meta"))
+    except sqlite3.OperationalError:
+        return {}
+
+
+def poui_version_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """POUI-VERSION: projeto num major PO UI diferente do catálogo embarcado (#98).
+
+    O catálogo é um snapshot do po-angular (master). Bindings e propriedades mudam
+    entre majors (ex.: ``p-hide-text-overflow`` removido do po-table). Quando o
+    ``poui_major`` do projeto difere do major do catálogo, os findings de POUI-PROP
+    e POUI-IFACE podem divergir — este aviso torna isso explícito. 1 por projeto.
+
+    Returns:
+        Lista de dicts ``{arquivo, linha, componente, binding, kind, regra, mensagem}``
+        (mesma forma de :func:`poui_lint`); vazia se o catálogo não tem versão ou
+        nenhum projeto diverge.
+    """
+    meta = poui_catalog_meta(conn)
+    cat_major = meta.get("poui_major", "")
+    cat_ver = meta.get("poui_version", cat_major)
+    if not cat_major:
+        return []
+    out: list[dict[str, Any]] = []
+    for caminho, poui_major in conn.execute(
+        "SELECT caminho, poui_major FROM poui_projetos WHERE poui_major IS NOT NULL"
+    ):
+        if str(poui_major) == cat_major:
+            continue
+        out.append(
+            {
+                "arquivo": caminho,
+                "linha": 1,
+                "componente": "(projeto)",
+                "binding": "",
+                "kind": "warning",
+                "regra": "POUI-VERSION",
+                "mensagem": (
+                    f"projeto é PO UI v{poui_major}; catálogo embarcado é v{cat_ver} — "
+                    "findings de POUI-PROP/POUI-IFACE podem divergir (bindings/props "
+                    "mudam entre majors)"
+                ),
+            }
+        )
+    return out

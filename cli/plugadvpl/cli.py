@@ -145,6 +145,9 @@ from plugadvpl.query import (
     poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
+    poui_version_lint as q_poui_version_lint,
+)
+from plugadvpl.query import (
     status as q_status,
 )
 from plugadvpl.query import (
@@ -2820,6 +2823,8 @@ def poui_lint_cmd(ctx: typer.Context) -> None:
       (ex.: `field` em vez de `property`, `type: 'money'` em vez de `'currency'`).
     - **POUI-IMPORT**: componente usado cujo pacote não é importado no projeto
       (ex.: `<po-page-dynamic-table>` de `@po-ui/ng-templates` sem importar o pacote).
+    - **POUI-VERSION**: projeto num major PO UI diferente do catálogo embarcado
+      (aviso — os findings acima podem divergir entre majors).
 
     Requer ``ingest-poui`` prévia (popula ``poui_componentes_uso``,
     ``poui_iface_uso`` e ``poui_imports``)."""
@@ -2827,7 +2832,12 @@ def poui_lint_cmd(ctx: typer.Context) -> None:
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
-        rows = q_poui_lint(conn) + q_poui_iface_lint(conn) + q_poui_import_lint(conn)
+        rows = (
+            q_poui_lint(conn)
+            + q_poui_iface_lint(conn)
+            + q_poui_import_lint(conn)
+            + q_poui_version_lint(conn)
+        )
     finally:
         close_db(conn)
     rows.sort(key=lambda r: (r["arquivo"], r["linha"], r["regra"]))

@@ -1,0 +1,14 @@
+[
+  {
+    "chave": "poui_major",
+    "valor": "21"
+  },
+  {
+    "chave": "poui_version",
+    "valor": "21.19.0"
+  },
+  {
+    "chave": "fonte",
+    "valor": "po-ui/po-angular@master"
+  }
+]
