@@ -3630,7 +3630,29 @@ class TestPouiLintCmd:
         assert result.exit_code == 0
         data = json.loads(result.output)
         rows = data["rows"] if isinstance(data, dict) else data
-        assert any(r["binding"] == "p-fake" for r in rows)
+        assert any(r["regra"] == "POUI-PROP" and "p-fake" in r["alvo"] for r in rows)
+
+    def test_poui_lint_iface_mostra_finding(self, runner: CliRunner, tmp_path: Path) -> None:
+        """poui-lint deve retornar finding POUI-IFACE para chave/valor de interface inválido."""
+        import json
+
+        proj = tmp_path / "front"
+        (proj / "src").mkdir(parents=True)
+        (proj / "package.json").write_text(
+            '{"dependencies": {"@po-ui/ng-components": "21.0.0"}}', encoding="utf-8"
+        )
+        (proj / "src" / "app.component.ts").write_text(
+            "x: PoTableColumn[] = [ { field: 'a', type: 'money' } ];", encoding="utf-8"
+        )
+        runner.invoke(app, ["--root", str(tmp_path), "ingest-poui", str(tmp_path)])
+        result = runner.invoke(app, ["--root", str(tmp_path), "--format", "json", "poui-lint"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        rows = data["rows"] if isinstance(data, dict) else data
+        regras = {r["regra"] for r in rows}
+        assert "POUI-IFACE" in regras
+        assert any("field" in r["alvo"] for r in rows)  # chave inexistente
+        assert any("money" in r["mensagem"] for r in rows)  # valor fora do enum
 
     def test_poui_lint_sem_findings_retorna_vazio(
         self, runner: CliRunner, tmp_path: Path

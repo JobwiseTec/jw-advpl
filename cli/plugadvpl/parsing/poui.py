@@ -34,6 +34,108 @@ _PO_TAG_RE = re.compile(r"<(po-[\w-]+)((?:[^>])*?)/?>", re.DOTALL)
 # Atributo p-* com prefixo opcional: [(, [, ( → kind; sem prefixo → input.
 _PO_ATTR_RE = re.compile(r"(\[\(|\[|\()?\s*(p-[\w-]+)")
 
+# Interface usage extraction (#96 passo 2)
+# Anotação de tipo `: PoX` / `: PoX[]` / `: Array<PoX>` seguida de `= [` ou `= {`.
+# Exigir o `=` antes do literal evita capturar corpo de função (`): PoX[] {`).
+_IFACE_ANNOT_RE = re.compile(r":\s*(?:Array\s*<\s*)?(Po[A-Z]\w+)\s*>?\s*(?:\[\])?\s*=\s*(?=[\[{])")
+# Chave de objeto: identificador seguido de `:` (não `::`, não membro `.x`).
+_OBJ_KEY_RE = re.compile(r"([A-Za-z_]\w*)\s*:(?!:)")
+# Valor string logo após `chave:` (p/ checar enum, ex.: type: 'currency').
+_KEY_STR_VAL_RE = re.compile(r"\s*:\s*['\"]([\w-]+)['\"]")
+
+
+def _skip_string(content: str, i: int) -> int:
+    """``content[i]`` abre uma string; retorna o índice após a aspa de fechamento."""
+    q = content[i]
+    i += 1
+    n = len(content)
+    while i < n:
+        if content[i] == "\\":
+            i += 2
+            continue
+        if content[i] == q:
+            return i + 1
+        i += 1
+    return n
+
+
+def _skip_comment(content: str, i: int, n: int) -> int:
+    """``content[i:i+2]`` é ``//`` ou ``/*``; retorna o índice após o comentário."""
+    if content[i + 1] == "/":
+        j = content.find("\n", i)
+        return n if j == -1 else j
+    j = content.find("*/", i)
+    return n if j == -1 else j + 2
+
+
+def _maybe_key(content: str, i: int, stack: list[str], base_is_array: bool) -> bool:
+    """A chave em ``i`` está no nível direto do literal anotado?"""
+    if not stack or stack[-1] != "{":
+        return False
+    depth_ok = len(stack) == (2 if base_is_array else 1)
+    return depth_ok and (content[i].isalpha() or content[i] == "_") and content[i - 1] not in "._"
+
+
+def _scan_iface_literal(content: str, start: int) -> list[tuple[str, str, int]]:
+    """Varre o literal (`[`/`{`) em ``start`` e colhe as chaves DIRETAS dos objetos.
+
+    "Direta" = chave do objeto que pertence ao literal anotado, não de objetos
+    aninhados (ex.: em ``[{a, b, detail: {c}}]`` colhe ``a, b, detail``, não ``c``).
+    Respeita strings/comentários. Retorna ``[(chave, valor, linha)]`` (``valor``
+    só preenchido quando o valor é string literal — usado p/ checar enum).
+    """
+    out: list[tuple[str, str, int]] = []
+    base_is_array = content[start] == "["
+    stack: list[str] = []
+    i, n = start, len(content)
+    while i < n:
+        c = content[i]
+        if c in "'\"`":
+            i = _skip_string(content, i)
+        elif c == "/" and i + 1 < n and content[i + 1] in "/*":
+            i = _skip_comment(content, i, n)
+        elif c in "{[(":
+            stack.append(c)
+            i += 1
+        elif c in "}])":
+            if stack:
+                stack.pop()
+            if not stack:
+                return out
+            i += 1
+        elif _maybe_key(content, i, stack, base_is_array) and (m := _OBJ_KEY_RE.match(content, i)):
+            val_m = _KEY_STR_VAL_RE.match(content, m.end() - 1)
+            out.append((m.group(1), val_m.group(1) if val_m else "", content.count("\n", 0, i) + 1))
+            i = m.end()
+        else:
+            i += 1
+    return out
+
+
+def extract_poui_iface_usage(content: str) -> list[dict[str, object]]:
+    """Uso de interfaces de config PO UI em ``.ts``: chaves de object-literals tipados.
+
+    Captura ``name: PoX[] = [ {…} ]`` / ``name: PoX = { … }`` / ``Array<PoX>`` e,
+    para cada objeto direto do literal, cada chave usada (+ valor string quando
+    houver, p/ checar enum como ``type: 'currency'``). Funções puras, zero I/O.
+
+    Returns:
+        Lista de dicts ``{interface, propriedade, valor, linha}`` (dedup por tupla).
+    """
+    seen: set[tuple[str, str, str, int]] = set()
+    out: list[dict[str, object]] = []
+    for m in _IFACE_ANNOT_RE.finditer(content):
+        interface = m.group(1)
+        for prop, valor, linha in _scan_iface_literal(content, m.end()):
+            key = (interface, prop, valor, linha)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {"interface": interface, "propriedade": prop, "valor": valor, "linha": linha}
+            )
+    return out
+
 
 def extract_poui_template_usage(content: str) -> list[dict[str, object]]:
     """Extrai uso de componentes ``<po-*>`` + bindings ``p-*`` de templates HTML.

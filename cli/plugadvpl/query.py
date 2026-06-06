@@ -3574,3 +3574,75 @@ def poui_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         }
         for caminho, linha, componente, binding, kind in rows
     ]
+
+
+def poui_iface_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """POUI-IFACE: chave/valor inválido em object-literal ``.ts`` tipado ``Po*`` (#96).
+
+    Cruza ``poui_iface_uso`` (uso real) com ``poui_interfaces`` (catálogo). Dois
+    findings, só para interface CONHECIDA no catálogo (zero FP em tipo custom):
+
+    - **chave** usada que não é propriedade da interface (ex.: ``field`` em vez
+      de ``property``);
+    - **valor** string fora do enum da propriedade (ex.: ``type: 'money'`` quando
+      os válidos são ``currency``/...).
+
+    Returns:
+        Lista de dicts ``{arquivo, linha, componente, binding, kind, regra, mensagem}``
+        (mesma forma de :func:`poui_lint`), ordenada por ``arquivo, linha``.
+    """
+    out: list[dict[str, Any]] = []
+    # (1) chave inexistente — anti-join, só p/ interface conhecida no catálogo.
+    rows = conn.execute(
+        """
+        SELECT u.caminho, u.linha, u.interface_nome, u.propriedade
+        FROM poui_iface_uso u
+        WHERE NOT EXISTS (
+            SELECT 1 FROM poui_interfaces c
+            WHERE c.interface_nome = u.interface_nome AND c.propriedade = u.propriedade )
+          AND EXISTS (
+            SELECT 1 FROM poui_interfaces c2 WHERE c2.interface_nome = u.interface_nome )
+        """
+    ).fetchall()
+    for caminho, linha, iface, prop in rows:
+        out.append(
+            {
+                "arquivo": caminho,
+                "linha": linha,
+                "componente": iface,
+                "binding": prop,
+                "kind": "interface",
+                "regra": "POUI-IFACE",
+                "mensagem": f"propriedade `{prop}` não existe em `{iface}` (catálogo po-angular)",
+            }
+        )
+    # (2) valor fora do enum — junta com a prop e checa a lista de valores.
+    vrows = conn.execute(
+        """
+        SELECT u.caminho, u.linha, u.interface_nome, u.propriedade, u.valor, c.valores
+        FROM poui_iface_uso u
+        JOIN poui_interfaces c
+          ON c.interface_nome = u.interface_nome AND c.propriedade = u.propriedade
+        WHERE u.valor != '' AND c.valores != '[]'
+        """
+    ).fetchall()
+    for caminho, linha, iface, prop, valor, valores_json in vrows:
+        try:
+            valores = json.loads(valores_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if valores and valor not in valores:
+            validos = ", ".join(valores)
+            out.append(
+                {
+                    "arquivo": caminho,
+                    "linha": linha,
+                    "componente": iface,
+                    "binding": prop,
+                    "kind": "valor",
+                    "regra": "POUI-IFACE",
+                    "mensagem": f"valor `{valor}` inválido para `{iface}.{prop}` — válidos: {validos}",
+                }
+            )
+    out.sort(key=lambda r: (r["arquivo"], r["linha"]))
+    return out

@@ -1,5 +1,5 @@
 ---
-description: Lint de templates PO UI — detecta bindings p-* nao catalogados (regra POUI-PROP, anti-alucinacao)
+description: Lint PO UI — bindings p-* nao catalogados (POUI-PROP) e chaves/valores de interface .ts invalidos (POUI-IFACE), anti-alucinacao
 disable-model-invocation: true
 arguments: []
 allowed-tools: [Bash]
@@ -7,12 +7,18 @@ allowed-tools: [Bash]
 
 # `/plugadvpl:poui-lint`
 
-Detecta bindings `p-*` usados em templates `<po-*>` que **nao existem no
-catalogo verificado** `poui_componentes` (948 bindings extraidos do
-codigo-fonte oficial do `po-angular`). Regra: **POUI-PROP**.
+Detecta dois tipos de erro comuns de geracao de codigo PO UI, cruzando o uso
+real com os catalogos verificados extraidos do `po-angular`:
 
-Um binding ausente do catalogo indica alucinacao da IA ou erro de digitacao —
-o Protheus renderizara o atributo ignorado silenciosamente.
+- **POUI-PROP** — binding `p-*` em template `<po-*>` que **nao existe** no
+  catalogo `poui_componentes` (ex.: `<po-table [p-fake]>`).
+- **POUI-IFACE** — em objeto `.ts` tipado por interface `Po*` (ex.:
+  `cols: PoTableColumn[] = [...]`): **chave** que nao existe na interface
+  (`field` em vez de `property`) ou **valor** fora do enum
+  (`type: 'money'` em vez de `'currency'`). Cruza com `poui_interfaces`.
+
+So flagra interface/componente **conhecido** no catalogo (zero falso-positivo
+em tipo custom). Um achado indica alucinacao da IA ou erro de digitacao.
 
 ## Pre-requisito
 
@@ -20,7 +26,7 @@ o Protheus renderizara o atributo ignorado silenciosamente.
 plugadvpl ingest-poui <dir-frontend>
 ```
 
-Popula `poui_componentes_uso` varrendo os `.html` do projeto.
+Popula `poui_componentes_uso` (dos `.html`) e `poui_iface_uso` (dos `.ts`).
 
 ## Execucao
 
@@ -32,10 +38,11 @@ uvx plugadvpl@0.27.0 poui-lint
 
 | Coluna | Descricao |
 |---|---|
-| `arquivo` | Template HTML com o binding suspeito |
-| `linha` | Linha do componente no arquivo |
-| `componente` | Componente Angular (`po-button`, `po-table`, ...) |
-| `binding` | Binding `p-*` nao encontrado no catalogo |
+| `arquivo` | Arquivo `.html` (POUI-PROP) ou `.ts` (POUI-IFACE) |
+| `linha` | Linha do uso suspeito |
+| `regra` | `POUI-PROP` ou `POUI-IFACE` |
+| `alvo` | `componente.binding` ou `Interface.propriedade` |
+| `mensagem` | Descricao do problema (com os valores validos, no caso de enum) |
 
 ## Exemplo
 

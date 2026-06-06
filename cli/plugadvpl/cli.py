@@ -130,6 +130,9 @@ from plugadvpl.query import (
     poui_componentes as q_poui_componentes,
 )
 from plugadvpl.query import (
+    poui_iface_lint as q_poui_iface_lint,
+)
+from plugadvpl.query import (
     poui_interfaces as q_poui_interfaces,
 )
 from plugadvpl.query import (
@@ -2807,30 +2810,37 @@ def poui_bridge(ctx: typer.Context) -> None:
 
 @app.command(name="poui-lint")
 def poui_lint_cmd(ctx: typer.Context) -> None:
-    """Lint de templates PO UI: bindings p-* não catalogados (regra POUI-PROP).
+    """Lint PO UI: bindings `p-*` (POUI-PROP) e chaves/valores de interface (POUI-IFACE).
 
-    Requer ``ingest-poui`` prévia para popular ``poui_componentes_uso``."""
+    - **POUI-PROP**: binding `p-*` em template `<po-*>` que não existe no catálogo.
+    - **POUI-IFACE**: chave ou valor de objeto `.ts` tipado `Po*` inválido
+      (ex.: `field` em vez de `property`, `type: 'money'` em vez de `'currency'`).
+
+    Requer ``ingest-poui`` prévia (popula ``poui_componentes_uso`` e
+    ``poui_iface_uso``)."""
     db_path: Path = ctx.obj["db"]
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
-        rows = q_poui_lint(conn)
+        rows = q_poui_lint(conn) + q_poui_iface_lint(conn)
     finally:
         close_db(conn)
+    rows.sort(key=lambda r: (r["arquivo"], r["linha"], r["regra"]))
     linhas = [
         {
             "arquivo": r["arquivo"],
             "linha": r["linha"],
-            "componente": r["componente"],
-            "binding": r["binding"],
+            "regra": r["regra"],
+            "alvo": f"{r['componente']}.{r['binding']}",
+            "mensagem": r["mensagem"],
         }
         for r in rows
     ]
     _render_from_ctx(
         ctx,
         linhas,
-        columns=["arquivo", "linha", "componente", "binding"],
-        title="POUI-PROP — bindings não catalogados",
+        columns=["arquivo", "linha", "regra", "alvo", "mensagem"],
+        title="POUI lint — POUI-PROP (bindings) + POUI-IFACE (interfaces)",
     )
 
 
