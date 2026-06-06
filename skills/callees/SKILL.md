@@ -18,7 +18,7 @@ Lista todas as funcoes/metodos chamadas por uma funcao (call graph direto).
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.28.0 --format md callees $funcao
+uvx plugadvpl@0.29.0 --format md callees $funcao
 ```
 
 > **Para agente IA:** prefira `--format md`. Default `table` trunca colunas em terminais estreitos. Flag global, vem **antes** do subcomando.

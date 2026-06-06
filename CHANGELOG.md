@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-06-06
+
 ### Added
 
 - **`poui-bridge`: cobre `PoHttpClientService` ([#100](https://github.com/JoniPraia/plugadvpl/issues/100))** — o extrator de datasources Angular agora reconhece o cliente REST do próprio PO UI (`PoHttpClientService`), cujo field costuma ter nome fora do padrão `http` (ex.: `this.poHttp.get('/api/x')`) e escapava do cruzamento front↔back. Mudança conservadora (a presença da classe habilita o harvest de path-literals REST que já existia para `HttpClient`); o wrapper genérico foi **descartado** por ser ruidoso e sem evidência na base. _(Fecha a auditoria POUI-codegen #96–#100.)_

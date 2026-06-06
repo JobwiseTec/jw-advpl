@@ -928,6 +928,17 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.29.0 — PO UI: import, versão, schematics, PoHttpClientService (fecha auditoria #96–#100)
+
+Lote final da auditoria de geração de código PO-UI — 4 frentes para a IA gerar Angular certo:
+
+- **POUI-IMPORT** (#97): `poui-lint` pega componente usado cujo pacote npm não é importado (`<po-page-dynamic-table>` é de `@po-ui/ng-templates`, mas só `@po-ui/ng-components` foi importado — quebra o build). Catálogo ganhou a coluna `pacote`, exibida no `poui-componentes`.
+- **POUI-VERSION** (#98): aviso quando o `poui_major` do projeto difere do major do catálogo embarcado (hoje v21) — bindings/props mudam entre majors, então os outros findings podem divergir.
+- **Schematics** (#99): `poui-componentes schematics` lista os 13 generators oficiais (`ng generate @po-ui/...`) por caso-de-uso — prefira gerar a tela (CRUD/login/agendador) a montá-la à mão.
+- **PoHttpClientService** (#100): `poui-bridge` passa a cruzar também o cliente REST do próprio PO UI (não só `HttpClient`). Wrapper genérico descartado por ruído (disciplina #82).
+
+`poui-lint` agora tem 4 regras (POUI-PROP/IFACE/IMPORT/VERSION). Aditivo/determinístico. Migrations 030–032 (schema v32).
+
 ### v0.28.0 — PO UI: interfaces de config + lint POUI-IFACE (auditoria codegen, #96)
 
 Auditoria de geração de código PO-UI (Angular) achou que o suporte cobria os bindings `p-*` do template, mas era cego ao **objeto de config `.ts`** dentro deles — onde a IA mais alucina. #96 fecha isso em 2 frentes:

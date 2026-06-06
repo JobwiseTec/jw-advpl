@@ -20,7 +20,7 @@ TLPP indexadas em `rest_endpoints`).
 ## Execução
 
 ```bash
-uvx plugadvpl@0.28.0 --format md poui-bridge
+uvx plugadvpl@0.29.0 --format md poui-bridge
 ```
 
 ## Colunas de saída
