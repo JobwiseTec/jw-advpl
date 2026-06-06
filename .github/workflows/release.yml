@@ -48,19 +48,38 @@ jobs:
     needs: publish-pypi
     steps:
       - uses: astral-sh/setup-uv@v8.1.0
-      - name: Aguarda propagacao do PyPI
-        # PyPI CDN leva 30-60s pra propagar release novo pra todos os mirrors.
-        # uvx busca direto do PyPI mas pode pegar mirror desatualizado.
-        run: sleep 60
       - name: Extrai version do tag
         id: ver
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-      - name: Smoke uvx contra PyPI publicado
+      - name: Smoke uvx contra PyPI publicado (com retry pra propagacao)
+        # PyPI CDN leva 30-60s pra propagar release novo pra todos os mirrors;
+        # uvx pode pegar mirror desatualizado e falhar com "no version". Em vez de
+        # um sleep fixo + tentativa unica (flaky), poll com backoff: sai assim que
+        # a versao resolve (rapido no caso comum) e tolera lag ate ~135s no pior.
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          set -e
-          echo "Smoke version pinada em PyPI: plugadvpl@${{ steps.ver.outputs.version }}"
-          uvx --refresh "plugadvpl@${{ steps.ver.outputs.version }}" version
-          uvx --refresh "plugadvpl@${{ steps.ver.outputs.version }}" --help
+          set -u
+          attempts=6
+          delay=20
+          echo "Aguarda inicial de propagacao do PyPI..."
+          sleep 15
+          for i in $(seq 1 "$attempts"); do
+            echo "::group::Tentativa $i/$attempts — uvx plugadvpl@${VERSION}"
+            if uvx --refresh "plugadvpl@${VERSION}" version \
+               && uvx --refresh "plugadvpl@${VERSION}" --help; then
+              echo "::endgroup::"
+              echo "Smoke OK na tentativa $i (plugadvpl@${VERSION})."
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "$i" -lt "$attempts" ]; then
+              echo "Falhou (provavel lag de propagacao do PyPI). Aguardando ${delay}s..."
+              sleep "$delay"
+            fi
+          done
+          echo "::error::Smoke falhou apos $attempts tentativas (plugadvpl@${VERSION})." >&2
+          exit 1
 
   github-release:
     runs-on: ubuntu-latest
