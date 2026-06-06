@@ -145,6 +145,9 @@ from plugadvpl.query import (
     poui_projetos as q_poui_projetos,
 )
 from plugadvpl.query import (
+    poui_schematics as q_poui_schematics,
+)
+from plugadvpl.query import (
     poui_version_lint as q_poui_version_lint,
 )
 from plugadvpl.query import (
@@ -1747,37 +1750,49 @@ def poui_componentes(
         str | None,
         typer.Argument(
             help=(
-                "Componente PO UI (ex: po-table) → bindings `p-*`; OU interface de "
-                "config (ex: PoTableColumn) → propriedades. Omita p/ listar todos os componentes."
+                "Componente (ex: po-table) → bindings `p-*`; interface (ex: PoTableColumn) "
+                "→ propriedades; `schematics` → generators `ng generate`. Omita p/ listar todos."
             )
         ),
     ] = None,
 ) -> None:
-    """Referência PO UI verificada (po-angular): bindings `p-*` e interfaces de config.
+    """Referência PO UI verificada (po-angular): bindings, interfaces e schematics.
 
-    Consulta os catálogos embarcados ``poui_componentes`` (bindings) e
-    ``poui_interfaces`` (interfaces de config: ``PoTableColumn``,
-    ``PoDynamicFormField``, ``PoPageAction``, ...) — não precisa de índice de
-    projeto. Use antes de escrever Angular para não inventar atributo/chave/valor:
+    Consulta os catálogos embarcados — não precisa de índice de projeto. Use
+    antes de escrever Angular para não inventar atributo/chave/valor:
 
     - ``poui-componentes po-table`` → bindings `p-*` que o componente aceita.
     - ``poui-componentes PoTableColumn`` → propriedades do objeto de config
       (com valores válidos quando enumerados, ex.: o `type` ∈ 14 valores).
+    - ``poui-componentes schematics`` → generators oficiais (`ng generate
+      @po-ui/...`) por caso-de-uso — prefira gerar a tela ao montá-la à mão.
 
-    O alvo iniciando com maiúscula (``Po...``) é tratado como interface.
+    Alvo iniciando com maiúscula (``Po...``) = interface; ``schematics`` = generators.
     """
     db_path: Path = ctx.obj["db"]
-    is_interface = alvo is not None and alvo[:1].isupper()
+    is_schematics = alvo is not None and alvo.lower() in ("schematics", "schematic", "scaffold")
+    is_interface = not is_schematics and alvo is not None and alvo[:1].isupper()
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
         seed_lookups(conn)
-        if is_interface:
+        if is_schematics:
+            srows = q_poui_schematics(conn)
+        elif is_interface:
             irows = q_poui_interfaces(conn, interface=alvo)
         else:
             rows = q_poui_componentes(conn, componente=alvo)
     finally:
         close_db(conn)
+
+    if is_schematics:
+        _render_from_ctx(
+            ctx,
+            srows,
+            columns=["caso_uso", "comando", "gera", "pacote"],
+            title="Schematics PO UI — ng generate @po-ui/... (prefira ao código à mão)",
+        )
+        return
 
     if is_interface:
         display = [

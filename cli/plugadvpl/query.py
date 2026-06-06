@@ -3491,6 +3491,33 @@ def poui_componentes(
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+def poui_schematics(conn: sqlite3.Connection, filtro: str | None = None) -> list[dict[str, Any]]:
+    """Schematics oficiais do PO UI (``ng generate @po-ui/...``, #99).
+
+    Referência para recomendar o generator certo (e não montar a tela à mão).
+
+    Args:
+        conn: conexão SQLite (RO ok).
+        filtro: substring case-insensitive casada contra ``generator``/``caso_uso``
+            (ex.: ``crud``, ``login``). ``None`` = todos.
+
+    Returns:
+        Lista de dicts ``{generator, pacote, comando, gera, caso_uso}`` ordenada
+        por ``pacote, generator``.
+    """
+    base = "SELECT generator, pacote, comando, gera, caso_uso FROM poui_schematics"
+    if filtro:
+        rows = conn.execute(
+            f"{base} WHERE lower(generator) LIKE '%' || lower(?) || '%' "
+            "OR lower(caso_uso) LIKE '%' || lower(?) || '%' ORDER BY pacote, generator",
+            (filtro, filtro),
+        ).fetchall()
+    else:
+        rows = conn.execute(f"{base} ORDER BY pacote, generator").fetchall()
+    cols = ["generator", "pacote", "comando", "gera", "caso_uso"]
+    return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
 def poui_interfaces(
     conn: sqlite3.Connection,
     interface: str | None = None,

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-SCHEMA_VERSION = "31"
+SCHEMA_VERSION = "32"
 
 
 # Mapeamento {filename JSON -> (tabela, colunas em ordem)}.
@@ -164,6 +164,11 @@ _LOOKUP_FILES: dict[str, tuple[str, list[str]]] = {
     "poui_catalog_meta.json": (
         "poui_catalog_meta",
         ["chave", "valor"],
+    ),
+    # v0.29.0 (migration 032, #99): schematics oficiais (ng generate @po-ui/...).
+    "poui_schematics.json": (
+        "poui_schematics",
+        ["chave", "generator", "pacote", "comando", "gera", "caso_uso"],
     ),
 }
 

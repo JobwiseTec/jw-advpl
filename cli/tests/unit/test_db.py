@@ -308,6 +308,8 @@ class TestSeedLookups:
             "poui_interfaces.json",
             # v0.29.0: metadados do catálogo PO UI (#98)
             "poui_catalog_meta.json",
+            # v0.29.0: schematics oficiais PO UI (#99)
+            "poui_schematics.json",
         ):
             (custom_dir / fname).write_text("[]", encoding="utf-8")
 

@@ -32,6 +32,9 @@ convenção própria.
 - Argumento iniciando com minúscula (`po-table`) → bindings `p-*` do componente.
 - Argumento iniciando com maiúscula (`PoTableColumn`) → propriedades da interface
   de config (com valores válidos quando enumerados).
+- `schematics` → generators oficiais (`ng generate @po-ui/...`) por caso-de-uso.
+  **Antes de montar uma tela inteira à mão** (CRUD, login, agendador), prefira o
+  schematic — ele gera o esqueleto correto; depois ajuste o config com o catálogo.
 
 ## Execução
 

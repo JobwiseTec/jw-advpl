@@ -1,0 +1,106 @@
+[
+  {
+    "chave": "@po-ui/ng-components:po-page-default",
+    "generator": "po-page-default",
+    "pacote": "@po-ui/ng-components",
+    "comando": "ng generate @po-ui/ng-components:po-page-default",
+    "gera": "página base com header, breadcrumb e actions",
+    "caso_uso": "esqueleto de página padrão (estática)"
+  },
+  {
+    "chave": "@po-ui/ng-components:po-page-detail",
+    "generator": "po-page-detail",
+    "pacote": "@po-ui/ng-components",
+    "comando": "ng generate @po-ui/ng-components:po-page-detail",
+    "gera": "página de detalhe (estática)",
+    "caso_uso": "detalhe sem dinamismo de metadados"
+  },
+  {
+    "chave": "@po-ui/ng-components:po-page-edit",
+    "generator": "po-page-edit",
+    "pacote": "@po-ui/ng-components",
+    "comando": "ng generate @po-ui/ng-components:po-page-edit",
+    "gera": "página de edição (estática)",
+    "caso_uso": "formulário de edição manual"
+  },
+  {
+    "chave": "@po-ui/ng-components:po-page-list",
+    "generator": "po-page-list",
+    "pacote": "@po-ui/ng-components",
+    "comando": "ng generate @po-ui/ng-components:po-page-list",
+    "gera": "página de listagem (estática)",
+    "caso_uso": "listagem manual (sem dynamic-table)"
+  },
+  {
+    "chave": "@po-ui/ng-components:sidemenu",
+    "generator": "sidemenu",
+    "pacote": "@po-ui/ng-components",
+    "comando": "ng generate @po-ui/ng-components:sidemenu",
+    "gera": "menu lateral (po-menu) com itens",
+    "caso_uso": "estrutura de navegação/menu do app"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-blocked-user",
+    "generator": "po-page-blocked-user",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-blocked-user",
+    "gera": "tela de usuário bloqueado",
+    "caso_uso": "fluxo de bloqueio de conta"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-change-password",
+    "generator": "po-page-change-password",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-change-password",
+    "gera": "tela de troca de senha",
+    "caso_uso": "fluxo de alterar/expirar senha"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-dynamic-detail",
+    "generator": "po-page-dynamic-detail",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-dynamic-detail",
+    "gera": "tela de detalhe/visualização dinâmica (somente leitura)",
+    "caso_uso": "exibir um registro em modo leitura"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-dynamic-edit",
+    "generator": "po-page-dynamic-edit",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-dynamic-edit",
+    "gera": "formulário dinâmico de cadastro/edição (create/update) a partir de fields",
+    "caso_uso": "tela de inclusão/alteração de um registro"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-dynamic-search",
+    "generator": "po-page-dynamic-search",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-dynamic-search",
+    "gera": "busca avançada dinâmica com filtros e disclaimers",
+    "caso_uso": "tela de pesquisa avançada (advanced filter)"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-dynamic-table",
+    "generator": "po-page-dynamic-table",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-dynamic-table",
+    "gera": "listagem CRUD dinâmica (grid + filtros + ações) a partir de serviço/metadados",
+    "caso_uso": "tela de consulta/listagem de um cadastro com paginação e ações"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-job-scheduler",
+    "generator": "po-page-job-scheduler",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-job-scheduler",
+    "gera": "agendador de tarefas/jobs (po-page-job-scheduler)",
+    "caso_uso": "configurar execução agendada de processos"
+  },
+  {
+    "chave": "@po-ui/ng-templates:po-page-login",
+    "generator": "po-page-login",
+    "pacote": "@po-ui/ng-templates",
+    "comando": "ng generate @po-ui/ng-templates:po-page-login",
+    "gera": "tela de login",
+    "caso_uso": "autenticação de usuário"
+  }
+]
