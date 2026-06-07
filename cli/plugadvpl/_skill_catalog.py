@@ -75,6 +75,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "advpl-ui-patterns": _PRW,
     "advpl-web": _PRW,
     "advpl-webservice": _PRW,
+    "protheus-poui": [*_PRW, "**/*.component.ts", "**/*.component.html"],
     # SX dictionary skills (incluindo CSV)
     "tables": _PRW_CSV,
     "param": _PRW_CSV,
