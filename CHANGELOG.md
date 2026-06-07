@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-06-07
+
 ### Fixed
 
 - **Exemplo `CriaCli` da skill `advpl-webservice` usava `Return .F.`** — o exemplo "Validação de input" (`@Post`) ainda retornava `.F.` em caminhos de erro (→ HTTP 500), contradizendo a própria gotcha #2. Corrigido para `Return` (a correção anterior pegou só o exemplo headline). Pego por teste de outro agente contra a v0.30.0.

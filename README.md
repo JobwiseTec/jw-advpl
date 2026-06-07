@@ -928,6 +928,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.30.1 — precisão p/ IA + guard do `--incremental` (pós-relatório)
+
+Verificação do relatório de outro agente contra a 0.30.0 (a maioria já funcionava) + 3 melhorias:
+- **Fix** do exemplo `CriaCli` (`advpl-webservice`) que ainda usava `Return .F.` (→ HTTP 500).
+- **`ingest --incremental` ciente de versão**: detecta upgrade do plugadvpl (não só mudança de lookup) e avisa pra rodar `--no-incremental` — fecha a causa-raiz dos "0 findings" (regra nova não reaplicada em arquivo pulado).
+- **Instruções de precisão para agentes** (Copilot/Cursor/Gemini): vazio ≠ "limpo", `--format json`/`--limit 0`, tabela PO UI — eleva a precisão de quem usa o plugin via IA.
+
 ### v0.30.0 — Relatório de uso real PO UI 18 ↔ TLPP REST (#111–#120)
 
 Lote vindo de um **relatório de uso end-to-end** (cadastro PO UI 18 ↔ TLPP REST, RPO 2510) — 10 achados validados em ambiente vivo, todos fechados:
