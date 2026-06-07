@@ -517,6 +517,18 @@
     "sonar_rules": []
   },
   {
+    "regra_id": "WS-005",
+    "titulo": "Return .F. em endpoint notation vira HTTP 500 (descarta o SetStatusCode)",
+    "severidade": "warning",
+    "categoria": "best-practice",
+    "descricao": "Em endpoint REST notation (@Get/@Post/@Put/@Patch/@Delete), retornar `.F.` e interpretado como falha pelo framework tlppCore -> HTTP 500, descartando o `oRest:setStatusCode` ja setado (404/409/422). O correto e `Return` (ou `Return .T.`) e deixar o status pro setStatusCode. Reproduzido em ambiente vivo (RPO 2510). Deteccao escopada ao corpo de funcoes decoradas com a annotation notation (mesmo escopo da WS-004): no WSRESTFUL classico `Return .F.` + `SetRestFault` e o padrao de erro CORRETO, entao marcar fora de notation seria falso-positivo.",
+    "fix_guidance": "Troque `Return .F.` por `Return` (ou `Return .T.`) e defina o status com `oRest:setStatusCode(nnn)` + `oRest:setResponse(...)`.",
+    "detection_kind": "regex",
+    "status": "active",
+    "impl_function": "_check_ws005_return_false_in_notation",
+    "sonar_rules": []
+  },
+  {
     "regra_id": "ENC-001",
     "titulo": ".prw/.prx salvo em UTF-8 quebra compilador appserver legado",
     "severidade": "error",

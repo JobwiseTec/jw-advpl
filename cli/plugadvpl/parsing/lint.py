@@ -2105,6 +2105,54 @@ def _ws004_notation_ranges(
     return ranges
 
 
+# WS-005: `Return .F.` dentro de endpoint notation (@Get/@Post/...). O framework
+# tlppCore lê `.F.` como falha e devolve HTTP 500, descartando o SetStatusCode.
+_WS005_RETURN_FALSE_RE = re.compile(r"\bReturn\s+\.F\.", re.IGNORECASE)
+
+
+def _check_ws005_return_false_in_notation(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """WS-005 (warning): ``Return .F.`` num endpoint REST notation vira HTTP 500.
+
+    No notation tlppCore, retornar ``.F.`` é interpretado como falha pelo framework
+    → HTTP 500, **descartando** o ``oRest:setStatusCode`` já setado (404/409/422).
+    O correto é ``Return`` (ou ``Return .T.``) e deixar o status pro setStatusCode.
+
+    Escopo restrito a funções notation (via :func:`_ws004_notation_ranges`): no
+    WSRESTFUL clássico ``Return .F.`` + ``SetRestFault`` é o padrão de erro CORRETO,
+    então marcar fora de notation seria falso-positivo.
+    """
+    stripped = strip_advpl(content)
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    notation_ranges = _ws004_notation_ranges(funcoes, content)
+    if not notation_ranges:
+        return findings
+
+    for m in _WS005_RETURN_FALSE_RE.finditer(stripped):
+        linha = _line_at(stripped, m.start())
+        if not any(ini <= linha <= fim for ini, fim in notation_ranges):
+            continue
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _funcao_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "WS-005",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Return .F. num endpoint notation (@Get/@Post/...) vira HTTP 500 e "
+                    "descarta o SetStatusCode. Use Return (ou Return .T.); o status "
+                    "vem de oRest:setStatusCode(nnn). (No WSRESTFUL classico Return .F. "
+                    "+ SetRestFault e o certo — esta regra so vale pro notation.)"
+                ),
+            }
+        )
+    return findings
+
+
 def _check_ws004_orest_invalid_method(
     arquivo: str, parsed: dict[str, Any], content: str
 ) -> list[dict[str, Any]]:
@@ -2190,6 +2238,7 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_ws002_getcontent_no_decode(arquivo, parsed, content))
     findings.extend(_check_ws003_setresponse_no_encode(arquivo, parsed, content))
     findings.extend(_check_ws004_orest_invalid_method(arquivo, parsed, content))
+    findings.extend(_check_ws005_return_false_in_notation(arquivo, parsed, content))
     findings.extend(_check_enc001_prw_utf8(arquivo, parsed, content))
 
     findings.sort(key=lambda f: (int(f["linha"]), str(f["regra_id"])))

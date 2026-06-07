@@ -2416,6 +2416,60 @@ class TestWS004OrestInvalidMethod:
         assert "WS-004" not in _ids(findings)
 
 
+# --- WS-005: Return .F. em endpoint notation vira HTTP 500 -------------------
+
+
+class TestWS005ReturnFalseInNotation:
+    """`Return .F.` num endpoint notation (@Get/@Post/...) vira HTTP 500 e
+    descarta o SetStatusCode. No WSRESTFUL classico `Return .F.` + SetRestFault
+    e o padrao de erro CORRETO — so o notation dispara."""
+
+    def test_positive_return_false_notation(self) -> None:
+        src = (
+            '@Get(endpoint="/x/:id")\n'
+            "User Function ZHGetX()\n"
+            "  If naoAchou\n"
+            "    oRest:SetStatusCode(404)\n"
+            "    Return .F.\n"
+            "  EndIf\n"
+            "Return\n"
+        )
+        findings = lint_source(_parsed_for(src, "x.tlpp"), src)
+        ws005 = [f for f in findings if f["regra_id"] == "WS-005"]
+        assert len(ws005) == 1
+        assert ws005[0]["severidade"] == "warning"
+
+    def test_negative_return_true_notation(self) -> None:
+        """Endpoint notation que usa Return/Return .T. nao dispara."""
+        src = (
+            '@Get(endpoint="/x/:id")\n'
+            "User Function ZHGetX()\n"
+            "  If naoAchou\n"
+            "    oRest:SetStatusCode(404)\n"
+            "    Return\n"
+            "  EndIf\n"
+            "Return .T.\n"
+        )
+        assert "WS-005" not in _ids(lint_source(_parsed_for(src, "x.tlpp"), src))
+
+    def test_negative_return_false_classico(self) -> None:
+        """No WSRESTFUL classico Return .F. + SetRestFault e o correto — sem finding."""
+        src = (
+            "WSMETHOD GET listar WSSERVICE API_Foo\n"
+            "  If x\n"
+            '    SetRestFault(400, "erro")\n'
+            "    Return .F.\n"
+            "  EndIf\n"
+            "Return .T.\n"
+        )
+        assert "WS-005" not in _ids(lint_source(_parsed_for(src, "api_foo.prw"), src))
+
+    def test_negative_outside_notation(self) -> None:
+        """User Function sem annotation: Return .F. e codigo normal, nao dispara."""
+        src = "User Function XYZHelper()\n  Return .F.\n"
+        assert "WS-005" not in _ids(lint_source(_parsed_for(src, "x.tlpp"), src))
+
+
 # --- ENC-001: .prw com encoding UTF-8 (quebra compilador appserver legado) --
 
 

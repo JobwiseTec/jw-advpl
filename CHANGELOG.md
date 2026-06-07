@@ -6,6 +6,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ### Added
 
+- **Lint `WS-005`: `Return .F.` em endpoint REST notation ([#120](https://github.com/JoniPraia/plugadvpl/issues/120))** — detecta estaticamente o `Return .F.` dentro de `User Function` decorada com `@Get/@Post/...`, que vira **HTTP 500** e descarta o `setStatusCode` (severidade warning). Escopo restrito ao notation (no WSRESTFUL clássico `Return .F.` + `SetRestFault` é o correto → zero FP). Completa o trio do relatório: **REST-010 já existia como `WS-004`** (método inválido no `oRest`) e **REST-012 = `SEC-001`** (`RpcSetEnv` em REST). Achado de uso real (RPO 2510).
+
 - **`poui-componentes`: filtro por propriedade + saída completa ([#116](https://github.com/JoniPraia/plugadvpl/issues/116))** — (1) **filtro por substring**: `poui-componentes PoDynamicFormField maxLength` (interface) ou `poui-componentes po-table columns` (binding); (2) a dica de truncamento agora aponta o uso **correto**: `--limit 0` vai **antes** do subcomando (é flag global), ou `--format json`. Achado de uso real (o hint antigo sugeria um `--limit` pós-subcomando que falha).
 - **`poui-bridge` cobre `[p-service-api]` ([#115](https://github.com/JoniPraia/plugadvpl/issues/115))** — o `ingest-poui` agora extrai datasource do binding `p-service-api`/`serviceApi` dos `po-page-dynamic-table`/`-edit` (o padrão CRUD **mais comum** do PO UI, onde não há `HttpClient` no `.ts`). Antes o bridge ficava cego justo no caso de uso principal; agora casa `<po-page-dynamic-table [p-service-api]="'/rest/hermes/contatos'">` (front) com o `@Get` correspondente (back). Verbo vazio = o serviço dinâmico cobre o CRUD inteiro. Achado de **uso real** (relatório PO UI 18 ↔ TLPP REST).
 
