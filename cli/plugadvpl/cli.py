@@ -94,6 +94,7 @@ from plugadvpl.query import (
     execution_triggers_duplicates,
     execution_triggers_query,
     find_any,
+    fonte_indexada,
     gatilho_query,
     grep_fts,
     hotspots_query,
@@ -1648,6 +1649,17 @@ def lint(
         effective_build = _with_ro_db(ctx, lambda c: get_meta(c, "target_build"))
 
     rows = _with_ro_db(ctx, lambda c: lint_query(c, arquivo, severity, regra))
+
+    # #118: "sem findings" é ambíguo — arquivo limpo OU nem indexado. Se o alvo
+    # não está no índice, avisa (em vez de parecer "revisado e OK").
+    if arquivo and not _with_ro_db(ctx, lambda c: fonte_indexada(c, arquivo)):
+        typer.secho(
+            f"AVISO: '{arquivo}' não está no índice — o lint NÃO analisou esse arquivo. "
+            f"Rode 'plugadvpl ingest' (ou confira o caminho/nome). "
+            f"'sem findings' aqui significa NÃO-ANALISADO, não 'limpo'.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     if effective_build:
         build_rows = _lint_build_check_rows(

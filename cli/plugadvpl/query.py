@@ -77,6 +77,22 @@ def _glob_to_like(termo: str) -> str | None:
     return "".join(out)
 
 
+def fonte_indexada(conn: sqlite3.Connection, alvo: str) -> bool:
+    """O fonte ``alvo`` está no índice? (#118)
+
+    Casa pelo **basename** (``fontes.arquivo``, NOCASE) ou por sufixo do caminho.
+    Usado para distinguir "analisado e limpo" de "nem foi indexado" em comandos
+    de análise (``lint``/``arch``), onde resultado vazio é ambíguo.
+    """
+    base = alvo.replace("\\", "/").rsplit("/", 1)[-1]
+    row = conn.execute(
+        "SELECT 1 FROM fontes WHERE arquivo = ? COLLATE NOCASE "
+        "OR replace(caminho, '\\', '/') LIKE '%/' || ? COLLATE NOCASE LIMIT 1",
+        (base, base),
+    ).fetchone()
+    return row is not None
+
+
 def find_file(conn: sqlite3.Connection, termo: str) -> list[dict[str, Any]]:
     """Procura arquivo por basename ou parte do caminho relativo.
 

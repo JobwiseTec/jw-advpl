@@ -1666,6 +1666,19 @@ class TestLint:
         # Pode estar vazio mas tem que retornar JSON válido.
         json.loads(result.stdout)
 
+    def test_lint_arquivo_nao_indexado_avisa(self, tmp_path: Path, runner: CliRunner) -> None:
+        """#118: lint num arquivo fora do índice AVISA (não parece 'limpo')."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ZZUI.prw").write_bytes(b"User Function ZZUI()\nReturn\n")
+        runner.invoke(app, ["--root", str(src), "ingest"])
+        # arquivo que não existe no índice -> aviso em stderr
+        r = runner.invoke(app, ["--root", str(src), "--format", "md", "lint", "inexistente.tlpp"])
+        assert "não está no índice" in r.stderr
+        # arquivo indexado -> SEM aviso
+        r2 = runner.invoke(app, ["--root", str(src), "--format", "md", "lint", "ZZUI.prw"])
+        assert "não está no índice" not in r2.stderr
+
     def test_lint_target_build_includes_build001(
         self, tmp_path: Path, runner: CliRunner
     ) -> None:
