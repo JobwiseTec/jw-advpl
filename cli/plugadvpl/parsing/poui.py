@@ -31,6 +31,9 @@ _HTTP_USAGE_RE = re.compile(r"\bhttp\s*\.\s*(get|post|put|delete|patch)\b", re.I
 _POHTTP_RE = re.compile(r"\bPoHttpClientService\b")
 # Literal de path REST: começa com / (ou ${...}/) — exclui import relativo (./x).
 _REST_PATH_LITERAL_RE = re.compile(r"[`'\"]((?:\$\{[^}]*\})?/[A-Za-z][^`'\"]*)[`'\"]")
+# #115: datasource via binding `p-service-api` (template) ou propriedade `serviceApi`
+# (.ts) dos po-page-dynamic-* — o padrão CRUD mais comum do PO UI, sem HttpClient.
+_SERVICE_API_KEY_RE = re.compile(r"(?:p-service-api|serviceApi)", re.IGNORECASE)
 
 # Template component usage extraction (Fase 3b)
 # Tag <po-*>: captura nome + blob de atributos (lazy, sem cruzar '>').
@@ -281,6 +284,45 @@ def extract_angular_http_calls(content: str) -> list[dict[str, object]]:
                 "linha": content.count("\n", 0, m.start()) + 1,
             }
         )
+    return _http_pass2(content, out, seen_path)
+
+
+def extract_poui_service_api(content: str) -> list[dict[str, object]]:
+    """Datasource REST via `p-service-api`/`serviceApi` (#115). Funções puras.
+
+    Cobre o padrão CRUD mais comum do PO UI: `<po-page-dynamic-table
+    [p-service-api]="'/rest/x'">` (template) ou `serviceApi = '/rest/x'` (.ts) —
+    onde NÃO há chamada `HttpClient` explícita. O verbo fica vazio (o serviço
+    dinâmico cobre todos os verbos CRUD).
+
+    Returns:
+        Lista de dicts ``{verbo, url, path_norm, linha}`` (dedup por path).
+    """
+    out: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for m in _SERVICE_API_KEY_RE.finditer(content):
+        pm = _REST_PATH_LITERAL_RE.search(content, m.end(), m.end() + 160)
+        if pm is None:
+            continue
+        raw = pm.group(1)
+        path = _path_norm(raw)
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        out.append(
+            {
+                "verbo": "",
+                "url": raw,
+                "path_norm": path,
+                "linha": content.count("\n", 0, m.start()) + 1,
+            }
+        )
+    return out
+
+
+def _http_pass2(
+    content: str, out: list[dict[str, object]], seen_path: set[str]
+) -> list[dict[str, object]]:
     # Pass 2: URL em variável — colhe path-literals do arquivo (se usa HttpClient
     # ou PoHttpClientService). Cobre `http.get(fullUrl)` e `this.poHttp.get('/x')`.
     verbos = {m.group(1).upper() for m in _HTTP_USAGE_RE.finditer(content)}

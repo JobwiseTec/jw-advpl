@@ -16,6 +16,7 @@ from plugadvpl.parsing.poui import (
     extract_angular_http_calls,
     extract_poui_iface_usage,
     extract_poui_imports,
+    extract_poui_service_api,
     extract_poui_template_usage,
     parse_poui_package_json,
 )
@@ -128,6 +129,28 @@ def _ingest_imports(conn: sqlite3.Connection, proj_root: Path) -> None:
             )
 
 
+def _ingest_service_api(conn: sqlite3.Connection, proj_root: Path) -> None:
+    """Varre .html e .ts, extrai datasource via `p-service-api`/`serviceApi` (#115).
+
+    Insere em ``poui_datasources`` (verbo vazio = serviço dinâmico cobre o CRUD),
+    para o ``poui-bridge`` casar o padrão `po-page-dynamic-*`. NÃO limpa: roda
+    depois de ``_ingest_datasources`` (que já zerou as rows do projeto)."""
+    for ext in ("*.html", "*.ts"):
+        for f in proj_root.rglob(ext):
+            if any(part in _SKIP_DIRS for part in f.relative_to(proj_root).parts):
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for ds in extract_poui_service_api(txt):
+                conn.execute(
+                    "INSERT INTO poui_datasources (caminho, linha, verbo, url_raw, path_norm) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (str(f.resolve()), ds["linha"], ds["verbo"], ds["url"], ds["path_norm"]),
+                )
+
+
 def _discover(root: Path) -> list[Path]:
     out: list[Path] = []
     for pkg in root.rglob("package.json"):
@@ -188,6 +211,7 @@ def ingest_poui_dir(
             ),
         )
         _ingest_datasources(conn, pkg_path.parent)
+        _ingest_service_api(conn, pkg_path.parent)
         _ingest_template_usage(conn, pkg_path.parent)
         _ingest_iface_usage(conn, pkg_path.parent)
         _ingest_imports(conn, pkg_path.parent)

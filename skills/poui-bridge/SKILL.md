@@ -14,7 +14,8 @@ TLPP indexadas em `rest_endpoints`).
 ## Pré-requisito
 
 1. `plugadvpl ingest-poui <dir-frontend>` — ingere projetos @po-ui/* e extrai
-   datasources REST dos `.ts`.
+   datasources REST: chamadas `HttpClient`/`PoHttpClientService` (`.ts`) **e** o
+   binding `p-service-api`/`serviceApi` dos `po-page-dynamic-*` (`.html`/`.ts`).
 2. `plugadvpl ingest` — indexa os fontes TLPP com as rotas `@Get`/`@Post`.
 
 ## Execução

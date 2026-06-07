@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **`poui-bridge` cobre `[p-service-api]` ([#115](https://github.com/JoniPraia/plugadvpl/issues/115))** — o `ingest-poui` agora extrai datasource do binding `p-service-api`/`serviceApi` dos `po-page-dynamic-table`/`-edit` (o padrão CRUD **mais comum** do PO UI, onde não há `HttpClient` no `.ts`). Antes o bridge ficava cego justo no caso de uso principal; agora casa `<po-page-dynamic-table [p-service-api]="'/rest/hermes/contatos'">` (front) com o `@Get` correspondente (back). Verbo vazio = o serviço dinâmico cobre o CRUD inteiro. Achado de **uso real** (relatório PO UI 18 ↔ TLPP REST).
+
 ## [0.29.0] - 2026-06-06
 
 ### Added

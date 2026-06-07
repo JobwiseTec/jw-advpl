@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from plugadvpl.parsing.poui import extract_angular_http_calls, parse_poui_package_json
+from plugadvpl.parsing.poui import (
+    extract_angular_http_calls,
+    extract_poui_service_api,
+    parse_poui_package_json,
+)
 
 
 def test_detecta_poui_e_versao() -> None:
@@ -122,3 +126,30 @@ def test_pohttp_ausente_nao_colhe_path_solto() -> None:
     # sem http nem PoHttpClientService, path-literal solto NÃO vira datasource.
     ts = "class X { f() { const a = ['/nao/rest']; return a; } }"
     assert extract_angular_http_calls(ts) == []
+
+
+# --- #115: datasource via p-service-api / serviceApi (po-page-dynamic-*) ---
+def test_service_api_template_bracket() -> None:
+    html = "<po-page-dynamic-table [p-service-api]=\"'/rest/hermes/contatos'\"></po-page-dynamic-table>"
+    rows = extract_poui_service_api(html)
+    assert any(r["path_norm"] == "/rest/hermes/contatos" and r["verbo"] == "" for r in rows)
+
+
+def test_service_api_template_plano() -> None:
+    html = '<po-page-dynamic-edit p-service-api="/rest/api/v1/clientes"></po-page-dynamic-edit>'
+    assert any(r["path_norm"] == "/rest/api/v1/clientes" for r in extract_poui_service_api(html))
+
+
+def test_service_api_propriedade_ts() -> None:
+    ts = "export class C { serviceApi = '/rest/hermes/pedidos'; }"
+    assert any(r["path_norm"] == "/rest/hermes/pedidos" for r in extract_poui_service_api(ts))
+
+
+def test_service_api_variavel_nao_resolve() -> None:
+    # valor em variável (sem literal) não vira datasource — não dá pra resolver.
+    assert extract_poui_service_api('[p-service-api]="apiUrl"') == []
+
+
+def test_service_api_linha() -> None:
+    html = "x\n<po-page-dynamic-table p-service-api=\"/rest/x\">"
+    assert extract_poui_service_api(html)[0]["linha"] == 2
