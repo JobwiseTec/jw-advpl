@@ -3806,9 +3806,11 @@ def poui_version_lint(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "kind": "warning",
                 "regra": "POUI-VERSION",
                 "mensagem": (
-                    f"projeto é PO UI v{poui_major}; catálogo embarcado é v{cat_ver} — "
-                    "findings de POUI-PROP/POUI-IFACE podem divergir (bindings/props "
-                    "mudam entre majors)"
+                    f"projeto é PO UI v{poui_major}; catálogo embarcado é v{cat_ver}. "
+                    "O catálogo é ~superset (entre majors props/bindings são quase só "
+                    "ADICIONADOS): o que ele NÃO conhece é confiável como inválido, mas "
+                    "ele pode aceitar algo mais novo que o seu major (não flagra). Props "
+                    "core (property/type/maxLength/mask) são estáveis"
                 ),
             }
         )

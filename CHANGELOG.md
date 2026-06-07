@@ -13,6 +13,7 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ### Changed
 
+- **Aviso `POUI-VERSION` explica a confiabilidade entre majors ([#117](https://github.com/JoniPraia/plugadvpl/issues/117))** — medindo o delta v18.24 ↔ v21 (PoTableColumn idêntica; `PoDynamicFormField` 84→128 props, **só adições**, ~0 removidas), confirmou-se que o catálogo é **superset**: o que ele não conhece é confiável como inválido; ele só pode aceitar algo mais novo que o major do projeto. A mensagem agora diz isso (props core `property/type/maxLength/mask` são estáveis). **Catálogo por major não se justifica** (ganho ~nulo vs custo alto — decisão por dado, disciplina #82).
 - **`--format json` deixa de truncar** ([#116](https://github.com/JoniPraia/plugadvpl/issues/116)) — em qualquer comando, o `json` agora retorna a lista **completa** (antes cortava no `--limit`, default 20), pois é consumo por máquina/IA — ex.: varrer as 128 props de `PoDynamicFormField`. `table`/`md`/`html` seguem truncando para o humano, com a dica corrigida.
 
 ## [0.29.0] - 2026-06-06
