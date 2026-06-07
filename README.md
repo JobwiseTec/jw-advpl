@@ -928,6 +928,20 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.30.0 — Relatório de uso real PO UI 18 ↔ TLPP REST (#111–#120)
+
+Lote vindo de um **relatório de uso end-to-end** (cadastro PO UI 18 ↔ TLPP REST, RPO 2510) — 10 achados validados em ambiente vivo, todos fechados:
+
+- **`poui-bridge` cobre `[p-service-api]`** (#115) — o padrão CRUD mais comum (`po-page-dynamic-*`), antes invisível ao bridge.
+- **`poui-componentes`: filtro por propriedade + `--format json` completo** (#116) — varrer `PoDynamicFormField` (128 props) sem truncar; dica de `--limit` corrigida.
+- **Lint `WS-005`** (#120) — `Return .F.` em endpoint notation (→ HTTP 500). REST-010 já era `WS-004`, REST-012 já era `SEC-001`.
+- **`lint` avisa "não indexado"** (#118) — "sem findings" deixa de ser confundido com "limpo".
+- **`POUI-VERSION` explica o superset** (#117) — medido v18↔v21: catálogo por major não se justifica (só adições entre majors).
+- **Nova skill `protheus-poui`** (#114) — guia da integração (contrato dynamic, proxy, Origin→401, FWCallApp/protheus-lib-core, SX3→PoDynamicFormField).
+- **Correções na skill `advpl-webservice`** (#104/#111/#112/#113) + entradas no `advpl-debugging` (#119): API do `oRest`, `Return .F.`→500, Origin→401.
+
+Total: **66 skills**.
+
 ### v0.29.0 — PO UI: import, versão, schematics, PoHttpClientService (fecha auditoria #96–#100)
 
 Lote final da auditoria de geração de código PO-UI — 4 frentes para a IA gerar Angular certo:

@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-06-07
+
+> Lote do **relatório de uso end-to-end** (cadastro PO UI 18 ↔ TLPP REST, RPO 2510) — issues #111–#120, todas fechadas.
+
 ### Added
 
 - **Nova skill `protheus-poui` ([#114](https://github.com/JoniPraia/plugadvpl/issues/114))** — guia de conhecimento da integração ponta-a-ponta **PO UI (Angular) ↔ Protheus REST (TLPP)**: o contrato que o `po-page-dynamic-*` espera (`{items,hasNext}`, 201/204…), o `proxy.conf.js` do `ng serve` (injeta Basic + remove `Origin`), a pegadinha **Origin → 401**, o `FWCallApp` + interceptors do `@totvs/protheus-lib-core` (token/URL/tenant), o mapa **SX3 → `PoDynamicFormField`** (`X3_TITULO`/`TamSX3`/`X3_PICTURE`) e as pegadinhas de thread REST (`xFilial()=''`, `GetSqlName`). Ativa em `.tlpp/.prw` e `.component.ts/.html`. (Total: **66 skills**.)
@@ -16,6 +20,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 - **Aviso `POUI-VERSION` explica a confiabilidade entre majors ([#117](https://github.com/JoniPraia/plugadvpl/issues/117))** — medindo o delta v18.24 ↔ v21 (PoTableColumn idêntica; `PoDynamicFormField` 84→128 props, **só adições**, ~0 removidas), confirmou-se que o catálogo é **superset**: o que ele não conhece é confiável como inválido; ele só pode aceitar algo mais novo que o major do projeto. A mensagem agora diz isso (props core `property/type/maxLength/mask` são estáveis). **Catálogo por major não se justifica** (ganho ~nulo vs custo alto — decisão por dado, disciplina #82).
 - **`--format json` deixa de truncar** ([#116](https://github.com/JoniPraia/plugadvpl/issues/116)) — em qualquer comando, o `json` agora retorna a lista **completa** (antes cortava no `--limit`, default 20), pois é consumo por máquina/IA — ex.: varrer as 128 props de `PoDynamicFormField`. `table`/`md`/`html` seguem truncando para o humano, com a dica corrigida.
+
+### Fixed
+
+- **Skill `advpl-webservice`: API REST corrigida (#104/[#111](https://github.com/JoniPraia/plugadvpl/issues/111)/[#112](https://github.com/JoniPraia/plugadvpl/issues/112)/[#113](https://github.com/JoniPraia/plugadvpl/issues/113))** — bugs de doc que levavam a HTTP 500/401, validados em RPO 2510: `oRest:setContentType`/`getUserName`/`GetUrlParam` **não existem** no notation (são do `::Self` clássico) → corrigidos para `setKeyHeaderResponse`/`GetUserName()` global/`getPathParamsRequest`; o exemplo headline usava `Return .F.` num caminho de erro (vira 500) → `Return` + `setStatusCode`; e nova pegadinha **Origin → 401** (CORS off). + `advpl-debugging` ganhou as entradas de diagnóstico desses casos ([#119](https://github.com/JoniPraia/plugadvpl/issues/119)).
 
 ## [0.29.0] - 2026-06-06
 
