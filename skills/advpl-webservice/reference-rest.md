@@ -792,28 +792,31 @@ Local cBearer := jTok['access_token']
 
 ### Notation
 1. **`oRest` é `Nil` fora de contexto REST** — chamar `User Function` decorada via `U_FUNC` no SmartClient crasha. Decorator só ativa via HTTP.
-2. **Path com `:param` aceita **um nível** entre slashes** — `/a/:x/b/:y` ok; `/a/:x:y` não.
-3. **Decorator deve ficar IMEDIATAMENTE acima** da função — comentário no meio invalida.
-4. **`oRest:getPathParamsRequest()` retorna `Nil`** quando endpoint não tem `:param` — sempre testar.
-5. **Endpoints duplicados em fontes diferentes** geram colisão silenciosa — último compilado ganha.
-6. **`@Patch` em build muito antigo** é ignorado sem erro.
-7. **`User Function` decorada SEM prefixo de cliente** vira regra geral em REST (`SEC-002` catálogo) — exceção justificada.
-8. **`setResponse` cumulativo** — mesmo bug do clássico, idem fix.
-9. **`oRest:setStatusCode(204)` + body não-vazio** — alguns clientes rejeitam.
-10. **Header case-insensitive ao ler, case-sensitive ao gravar** — `getHeaderRequest('Authorization')` pega `authorization:` mas `setKeyHeaderResponse('Content-Type', ...)` precisa exato.
+2. **🔴 `Return .F.` num endpoint notation vira HTTP 500** — o framework lê `.F.` como falha e **descarta o `setStatusCode`** já setado. Para 404/409/422: `oRest:setStatusCode(nnn)` + `oRest:setResponse(...)` + **`Return`** (ou `Return .T.`). ⚠️ É o oposto do clássico, onde `Return .F.` + `SetRestFault` é o padrão de erro. _(reproduzido em RPO 2510)_
+3. **Path com `:param` aceita **um nível** entre slashes** — `/a/:x/b/:y` ok; `/a/:x:y` não.
+4. **Decorator deve ficar IMEDIATAMENTE acima** da função — comentário no meio invalida.
+5. **`oRest:getPathParamsRequest()` retorna `Nil`** quando endpoint não tem `:param` — sempre testar.
+6. **Endpoints duplicados em fontes diferentes** geram colisão silenciosa — último compilado ganha.
+7. **`@Patch` em build muito antigo** é ignorado sem erro.
+8. **`User Function` decorada SEM prefixo de cliente** vira regra geral em REST (`SEC-002` catálogo) — exceção justificada.
+9. **`setResponse` cumulativo** — mesmo bug do clássico, idem fix.
+10. **`oRest:setStatusCode(204)` + body não-vazio** — alguns clientes rejeitam.
+11. **Header case-insensitive ao ler, case-sensitive ao gravar** — `getHeaderRequest('Authorization')` pega `authorization:` mas `setKeyHeaderResponse('Content-Type', ...)` precisa exato.
 
 ### Clássico
-11. **`::SetResponse` cumulativo** — bug #1, acumule local.
-12. **`WSMETHOD GET` repetido sem sub-nome** — 404 silencioso no 2º.
-13. **`WSDATA` sem `WSRECEIVE` no WSMETHOD** — `::var` sempre `Nil`.
-14. **Esquecer `DEFAULT ::var := ""`** em OPTIONAL — concat com `Nil` quebra.
-15. **`::aURLParms` é posicional** — refatorar URL quebra silenciosamente.
-16. **`SetRestFault` é função global, não `::SetFault`** — confundir dá erro de compilação obscuro.
-17. **WSRESTFUL sem `PATH`** explícito — URL deriva do nome da classe, vira `/api/<NomeClasse>`, surpreendente.
+12. **`::SetResponse` cumulativo** — bug #1, acumule local.
+13. **`WSMETHOD GET` repetido sem sub-nome** — 404 silencioso no 2º.
+14. **`WSDATA` sem `WSRECEIVE` no WSMETHOD** — `::var` sempre `Nil`.
+15. **Esquecer `DEFAULT ::var := ""`** em OPTIONAL — concat com `Nil` quebra.
+16. **`::aURLParms` é posicional** — refatorar URL quebra silenciosamente.
+17. **`SetRestFault` é função global, não `::SetFault`** — confundir dá erro de compilação obscuro.
+18. **WSRESTFUL sem `PATH`** explícito — URL deriva do nome da classe, vira `/api/<NomeClasse>`, surpreendente.
 
 ### Comum aos dois
-18. **CORS preflight (OPTIONS) sem implementação** — POST/PUT/DELETE de browser quebra com erro CORS, mesmo com `CORSEnable=1` no .ini se faltar `@Options`/`WSMETHOD OPTIONS`.
-19. **JSON malformado no body** — `JsonObject():FromJson()` retorna mensagem de erro, mas se você ignora o retorno o `jReq[key]` vira `Nil` e quebra adiante.
-20. **`tenantId` errado** → request cai no ambiente errado, lê/grava dados de outra empresa SEM erro. Sempre logar `cEmpAnt/cFilAnt` no boot do endpoint.
-21. **`RpcSetEnv` em REST** — SEC-001 crítico, use `PrepareIn` + `tenantId`.
-22. **Esquecer `EncodeUtf8`/`DecodeUtf8`** — acentos viram `Ã§`/`Ã£` no cliente.
+19. **🔴 Browser recebe 401 com Basic/Bearer VÁLIDO (header `Origin` + CORS off)** — o REST do Protheus, ao ver `Origin` (que **todo** navegador manda), entra em modo CORS e **nega com 401** quando CORS está desligado no `.ini`. O `curl` não manda `Origin` → passa; o navegador → 401. Diagnóstico: repita o `curl` com `-H "Origin: http://x"` e veja o 401 reproduzir. **Dev:** proxy remove o `Origin` (`proxyReq.removeHeader('origin')`). **Prod:** `[HTTPURI] CORSEnable=1` + `AllowOrigin`. _(a pegadinha #1 da integração front↔Protheus; reproduzida em RPO 2510)_
+20. **CORS preflight (OPTIONS) sem implementação** — POST/PUT/DELETE de browser quebra com erro CORS, mesmo com `CORSEnable=1` no .ini se faltar `@Options`/`WSMETHOD OPTIONS`.
+21. **JSON malformado no body** — `JsonObject():FromJson()` retorna mensagem de erro, mas se você ignora o retorno o `jReq[key]` vira `Nil` e quebra adiante.
+22. **`tenantId` errado** → request cai no ambiente errado, lê/grava dados de outra empresa SEM erro. Sempre logar `cEmpAnt/cFilAnt` no boot do endpoint.
+23. **`RpcSetEnv` em REST** — SEC-001 crítico, use `PrepareIn` + `tenantId`.
+24. **Esquecer `EncodeUtf8`/`DecodeUtf8`** — acentos viram `Ã§`/`Ã£` no cliente.
+25. **`xFilial()` retorna `''` / `GetSqlName` quebra em thread REST** — ambiente "magro" na thread WSREST. Resolva a filial pelo header/tenant; use nome de tabela **literal** (`SA1010`) em vez de `GetSqlName('SA1')`. _(RPO 2510)_

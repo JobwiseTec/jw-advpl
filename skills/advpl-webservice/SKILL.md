@@ -57,7 +57,7 @@ User Function GetCliente()
         oRest:SetStatusCode(400)
         oResp["error"] := "Codigo obrigatorio"
         oRest:SetResponse(oResp:ToJson())
-        Return .F.
+        Return   // NUNCA `Return .F.` no notation: vira HTTP 500 e descarta o 400
     EndIf
 
     DbSelectArea("SA1")
@@ -269,7 +269,7 @@ Return .T.
 6. **`::GetContent()`** → `oRest:getBodyRequest()`
 7. **`::SetResponse(c)`** (cumulativo) → **acumular em variável local** e fazer **uma chamada única** `oRest:setResponse(cAcumulado)` no fim
 8. **`SetRestFault(404, msg)`** → `oRest:setStatusCode(404)` + `oRest:setFault(msg)`
-9. **Tirar `Return .T./.F.`** — só `Return` (status é via `oRest:setStatusCode`)
+9. **Tirar `Return .F.`** — em notation, `Return .F.` é lido como falha e **vira HTTP 500**, descartando o `setStatusCode`. Use sempre `Return` (ou `Return .T.`); o status vem do `oRest:setStatusCode`. _(pegadinha #2 da referência)_
 10. **Re-testar `tenantId`** — mesmo comportamento, mas convém validar
 
 Referência oficial: [TDN - Migração WsRESTful para REST tlppCore](https://tdn.totvs.com/pages/viewpage.action?pageId=553337101).
@@ -465,6 +465,8 @@ oRest:SetKeyHeaderResponse("Access-Control-Allow-Headers", "Content-Type,Authori
 Endpoints com upload binário usam `application/octet-stream`. JSON é o default.
 
 > CORS é declarado uma vez no `appserver.ini` (`CORSEnable=1`, `AllowOrigin=*`) e propagado automaticamente. Override no method só se precisar de policy específica.
+
+> 🔴 **Gotcha que mais custa tempo na integração com SPA/PO UI:** com **CORS desligado** no `.ini`, o REST do Protheus **nega com 401 qualquer request que tenha o header `Origin`** — que **todo navegador manda** —, mesmo com Basic/Bearer válido. Sintoma clássico: o `curl` (sem `Origin`) dá 200/201, mas o navegador dá 401. **Diagnóstico:** repita o `curl` com `-H "Origin: http://x"` e veja o 401 reproduzir. **Fix dev:** o proxy do `ng serve` remove o `Origin` (`proxyReq.removeHeader('origin')`). **Fix prod:** `CORSEnable=1` + `AllowOrigin` controlado. _(Detalhe na referência, pegadinha #19.)_
 
 ## Retorno de erro padronizado
 
