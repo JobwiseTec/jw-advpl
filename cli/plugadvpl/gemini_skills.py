@@ -103,6 +103,17 @@ cru — economiza ~16x tokens.
 4. `uvx plugadvpl@__VERSION__ callers X` — quem chama X
 5. Só depois, se necessário, leia o arquivo com offset/limit do `arch`
 
+## Precisão — pegadinhas que enganam o agente
+
+- **Resultado vazio nem sempre é "limpo".** `lint <arq>` vazio = código OK, OU arquivo **não
+  indexado** (o comando avisa), OU índice **desatualizado** após upgrade. Se atualizou o
+  plugadvpl, rode `uvx plugadvpl@__VERSION__ ingest --no-incremental` antes de confiar em
+  `lint`/`arch` (o `--incremental` default pula arquivos inalterados, sem reaplicar regras novas).
+- **Listas grandes truncam no `table`/`md`.** Lista completa: `--format json` (nunca trunca) ou
+  `--limit 0` **antes** do subcomando (`--limit` é flag global).
+- **PO UI:** `poui-componentes <po-comp>` / `<PoInterface>` (+`<prop>` filtra) / `schematics`;
+  `poui-bridge` (front↔back REST); `poui-lint` (erros de PO UI gerado). Consulte ANTES de gerar.
+
 ## Skills locais
 
 Este projeto tem `.gemini/skills/plugadvpl-*/SKILL.md` com instruções

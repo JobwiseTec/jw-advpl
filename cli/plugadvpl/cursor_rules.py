@@ -141,6 +141,17 @@ cru — economiza ~16x tokens.
 3. `Bash: uvx plugadvpl@__VERSION__ callees X` — o que X chama
 4. `Bash: uvx plugadvpl@__VERSION__ callers X` — quem chama X
 5. Só depois, se necessário, Read do arquivo com offset/limit do `arch`
+
+## Precisão — pegadinhas que enganam o agente
+
+- **Resultado vazio nem sempre é "limpo".** `lint <arq>` vazio = código OK, OU arquivo **não
+  indexado** (o comando avisa), OU índice **desatualizado** após upgrade do plugadvpl. Se
+  atualizou o plugin, rode `uvx plugadvpl@__VERSION__ ingest --no-incremental` antes de confiar
+  em `lint`/`arch` (o `--incremental` default pula arquivos inalterados e não reaplica regras novas).
+- **Listas grandes truncam no `table`/`md`.** Lista completa: `--format json` (nunca trunca) ou
+  `--limit 0` **antes** do subcomando (`uvx plugadvpl@__VERSION__ --limit 0 <cmd>` — flag global).
+- **PO UI:** `poui-componentes <po-comp>` / `<PoInterface>` (+`<prop>` filtra) / `schematics`;
+  `poui-bridge` (front↔back REST); `poui-lint` (erros de PO UI gerado). Consulte ANTES de gerar.
 """
 
 

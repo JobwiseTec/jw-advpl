@@ -1039,9 +1039,30 @@ class TestIngest:
             app, ["--root", str(indexed_project), "ingest"]
         )
         assert result.exit_code == 0
-        assert "Lookups" in result.stderr
+        assert "regras/lookups" in result.stderr
         assert "--no-incremental" in result.stderr
         assert "ingest" in result.stderr
+
+    def test_ingest_incremental_warns_when_plugadvpl_version_changed(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        """0.30.1 — regra de lint nova pode ser código puro (sem mudar o lookup
+        bundle). Detectamos upgrade do plugadvpl comparando meta.plugadvpl_version,
+        e avisamos igual (arquivos pulados não reanalisados)."""
+        db = indexed_project / ".plugadvpl" / "index.db"
+        conn = sqlite3.connect(db)
+        try:
+            # simula índice gravado por uma versão antiga (sem tocar o lookup hash)
+            conn.execute("UPDATE meta SET valor='0.1.0' WHERE chave='plugadvpl_version'")
+            conn.commit()
+        finally:
+            conn.close()
+
+        result = runner.invoke(app, ["--root", str(indexed_project), "ingest"])
+        assert result.exit_code == 0
+        assert "atualizado" in result.stderr
+        assert "v0.1.0" in result.stderr
+        assert "--no-incremental" in result.stderr
 
     def test_ingest_no_incremental_no_warning_even_with_hash_change(
         self, indexed_project: Path, runner: CliRunner

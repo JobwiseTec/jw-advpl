@@ -992,6 +992,10 @@ def ingest(
     conn = open_db(db_path)
     try:
         apply_migrations(conn)
+        # Captura a versão do plugadvpl que gravou o índice ANTES do init_meta
+        # sobrescrever — permite detectar upgrade do binário (regras de lint novas
+        # podem ser puramente código, sem mudar o lookup_bundle_hash). #incremental-guard
+        previous_version = get_meta(conn, "plugadvpl_version")
         init_meta(conn, project_root=str(root), cli_version=_cli_version)
         # Captura o hash ANTES de seed_lookups sobrescrever — permite detectar
         # se o bundle de lookups (lint_rules, funcoes_restritas, ...) mudou
@@ -1068,6 +1072,11 @@ def ingest(
                 previous_lookup_hash is not None and previous_lookup_hash != current_lookup_hash
             ),
             "previous_lookup_hash": previous_lookup_hash,
+            # Upgrade do binário (ex: 0.30.0 -> 0.31.0): regras de lint novas em
+            # código puro não mudam o lookup_bundle, mas ainda exigem re-análise
+            # dos arquivos pulados pelo --incremental. #incremental-guard
+            "version_changed": (previous_version is not None and previous_version != _cli_version),
+            "previous_version": previous_version,
         }
 
         if effective_workers <= 1 or len(files_to_parse) < _PARALLEL_MIN_FILES:

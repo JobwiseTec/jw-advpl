@@ -4,6 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exemplo `CriaCli` da skill `advpl-webservice` usava `Return .F.`** — o exemplo "Validação de input" (`@Post`) ainda retornava `.F.` em caminhos de erro (→ HTTP 500), contradizendo a própria gotcha #2. Corrigido para `Return` (a correção anterior pegou só o exemplo headline). Pego por teste de outro agente contra a v0.30.0.
+
+### Changed
+
+- **`ingest --incremental` avisa também em upgrade do plugadvpl (não só mudança de lookup)** — uma regra de lint nova pode ser **código puro** (sem mudar o `lookup_bundle_hash`); nesse caso o `--incremental` (default) pulava arquivos inalterados e **não reaplicava** as regras novas, fazendo `lint`/`arch` parecer "limpo" quando estava desatualizado. Agora o ingest compara `meta.plugadvpl_version`: em upgrade + arquivos pulados, avisa *"o plugadvpl foi atualizado… rode `ingest --no-incremental`"*. (Causa-raiz dos "0 findings" que outro agente reportou contra a v0.30.0.)
+- **Instruções para agentes (Copilot/Cursor/Gemini) com seção de precisão** — `render_global_instructions` agora ensina as pegadinhas que enganam o agente: resultado vazio ≠ "limpo" (não-indexado ou índice velho → `ingest --no-incremental`); listas grandes truncam no `table`/`md` → use `--format json` ou `--limit 0` **antes** do subcomando; e uma tabela PO UI (`poui-componentes`/`-bridge`/`-lint`). Eleva a precisão de quem usa o plugin via IA.
+
 ## [0.30.0] - 2026-06-07
 
 > Lote do **relatório de uso end-to-end** (cadastro PO UI 18 ↔ TLPP REST, RPO 2510) — issues #111–#120, todas fechadas.

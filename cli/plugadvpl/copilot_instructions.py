@@ -83,6 +83,34 @@ cru — economiza ~16x tokens.
 3. `uvx plugadvpl@__VERSION__ callees X` — o que X chama
 4. `uvx plugadvpl@__VERSION__ callers X` — quem chama X
 5. Só depois, se necessário, leia o arquivo com offset/limit do `arch`
+
+## Precisão — leia antes de concluir (pegadinhas que enganam o agente)
+
+- **Resultado vazio nem sempre é "limpo".** `lint <arq>` vazio pode ser (a) código OK,
+  (b) arquivo **não indexado** — o comando avisa *"não está no índice"* — ou (c) índice
+  **desatualizado** após upgrade do plugadvpl. Se atualizou o plugin (ou na dúvida), rode
+  `uvx plugadvpl@__VERSION__ ingest --no-incremental` ANTES de confiar em `lint`/`arch`: o
+  `--incremental` (default) pula arquivos com mtime inalterado e **não** reaplica regras novas.
+- **Listas grandes truncam no `table`/`md` (~20 linhas).** Para a lista COMPLETA (ex.: as
+  ~128 props de `PoDynamicFormField`), use **`--format json`** (nunca trunca) ou **`--limit 0`
+  ANTES do subcomando** (`uvx plugadvpl@__VERSION__ --limit 0 <cmd>`). `--limit` é flag
+  global — **não** vai depois do subcomando.
+- **Prefira `--format json`** quando for parsear o resultado: campos estáveis e `truncated`
+  sinaliza corte.
+
+## PO UI (Angular) + Protheus REST
+
+| Pergunta | Comando |
+|---|---|
+| bindings `p-*` válidos de um componente | `uvx plugadvpl@__VERSION__ poui-componentes po-table` |
+| propriedades/valores de uma interface de config | `uvx plugadvpl@__VERSION__ poui-componentes PoTableColumn` (+ `<prop>` filtra) |
+| qual `ng generate @po-ui/...` usar | `uvx plugadvpl@__VERSION__ poui-componentes schematics` |
+| front (HttpClient/`[p-service-api]`) ↔ rota REST do back | `uvx plugadvpl@__VERSION__ poui-bridge` |
+| erros de PO UI gerado (binding/chave/valor/import/versão) | `uvx plugadvpl@__VERSION__ poui-lint` |
+
+Antes de gerar Angular/PO UI, **consulte o catálogo** (`poui-componentes`) — não invente
+binding/chave/valor; o `poui-lint` confirma. REST no Protheus: ver a skill `advpl-webservice`
+(notation `@Get/@Post`, `oRest`) e `protheus-poui` (integração front↔back).
 """
 
 

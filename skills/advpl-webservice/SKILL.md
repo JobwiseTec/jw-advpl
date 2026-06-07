@@ -429,21 +429,21 @@ User Function CriaCli()
     If !Empty(cErr)
         oRest:SetStatusCode(400)
         oRest:SetResponse('{"error":"JSON invalido: ' + cErr + '"}')
-        Return .F.
+        Return            // .F. aqui viraria HTTP 500 (ver migration passo 9)
     EndIf
 
     // Valida campos obrigatorios + tipos
     If Empty(oReq["codigo"]) .Or. ValType(oReq["codigo"]) != "C"
         oRest:SetStatusCode(422)
         oRest:SetResponse('{"error":"campo codigo obrigatorio"}')
-        Return .F.
+        Return            // .F. aqui viraria HTTP 500 (ver migration passo 9)
     EndIf
 
     // Valida tamanho/range usando o proprio SX3 como verdade
     If Len(AllTrim(oReq["codigo"])) > TamSX3("A1_COD")[1]
         oRest:SetStatusCode(422)
         oRest:SetResponse('{"error":"codigo excede tamanho do SX3"}')
-        Return .F.
+        Return            // .F. aqui viraria HTTP 500 (ver migration passo 9)
     EndIf
 
     // ... agora usa oReq["codigo"] com seguranca
