@@ -35,6 +35,14 @@ convenção própria.
 - `schematics` → generators oficiais (`ng generate @po-ui/...`) por caso-de-uso.
   **Antes de montar uma tela inteira à mão** (CRUD, login, agendador), prefira o
   schematic — ele gera o esqueleto correto; depois ajuste o config com o catálogo.
+- **2º argumento = filtro por substring** da propriedade/binding:
+  `poui-componentes PoDynamicFormField maxLength` ou `poui-componentes po-table columns`.
+
+> **Catálogo grande:** o `table`/`md` trunca em 20 linhas. Use **`--format md`** já
+> pega o essencial; para a lista **completa** (ex.: as 128 props de
+> `PoDynamicFormField`) use **`--format json`** (nunca trunca) ou **`--limit 0`
+> ANTES do subcomando** (`plugadvpl --limit 0 poui-componentes ...`) — `--limit` é
+> flag global, não vai depois do subcomando.
 
 ## Execução
 

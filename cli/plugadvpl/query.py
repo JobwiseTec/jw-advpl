@@ -3455,6 +3455,7 @@ def poui_bridge(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 def poui_componentes(
     conn: sqlite3.Connection,
     componente: str | None = None,
+    binding: str | None = None,
 ) -> list[dict[str, Any]]:
     """Bindings `p-*` do catálogo PO UI (migration 024).
 
@@ -3462,6 +3463,8 @@ def poui_componentes(
         conn: conexão SQLite (RO ok).
         componente: nome do componente Angular (ex: ``po-table``). Filtro
             case-insensitive. ``None`` = todos os componentes.
+        binding: filtra por **substring** do binding (ex.: ``columns``),
+            case-insensitive. ``None`` = todos.
 
     Returns:
         Lista de dicts ``{componente, kind, binding, propriedade, pacote}`` ordenada
@@ -3469,24 +3472,20 @@ def poui_componentes(
         componente (``@po-ui/ng-components`` | ``@po-ui/ng-templates``, #97). Vazia
         se ``componente`` não existe no catálogo.
     """
+    conds: list[str] = []
+    params: list[str] = []
     if componente is not None:
-        rows = conn.execute(
-            """
-            SELECT componente, kind, binding, propriedade, pacote
-            FROM poui_componentes
-            WHERE lower(componente) = lower(?)
-            ORDER BY componente, kind, binding
-            """,
-            (componente,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT componente, kind, binding, propriedade, pacote
-            FROM poui_componentes
-            ORDER BY componente, kind, binding
-            """
-        ).fetchall()
+        conds.append("lower(componente) = lower(?)")
+        params.append(componente)
+    if binding:
+        conds.append("lower(binding) LIKE '%' || lower(?) || '%'")
+        params.append(binding)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    rows = conn.execute(
+        f"SELECT componente, kind, binding, propriedade, pacote FROM poui_componentes"
+        f"{where} ORDER BY componente, kind, binding",
+        tuple(params),
+    ).fetchall()
     cols = ["componente", "kind", "binding", "propriedade", "pacote"]
     return [dict(zip(cols, r, strict=True)) for r in rows]
 
@@ -3521,6 +3520,7 @@ def poui_schematics(conn: sqlite3.Connection, filtro: str | None = None) -> list
 def poui_interfaces(
     conn: sqlite3.Connection,
     interface: str | None = None,
+    propriedade: str | None = None,
 ) -> list[dict[str, Any]]:
     """Propriedades das interfaces de config PO UI do catálogo (migration 028).
 
@@ -3533,6 +3533,8 @@ def poui_interfaces(
         conn: conexão SQLite (RO ok).
         interface: nome da interface (ex.: ``PoTableColumn``). Filtro
             case-insensitive. ``None`` = todas.
+        propriedade: filtra por **substring** do nome da propriedade (ex.:
+            ``maxLength``), case-insensitive. ``None`` = todas as props.
 
     Returns:
         Lista de dicts ``{interface, propriedade, tipo, opcional, valores,
@@ -3543,13 +3545,18 @@ def poui_interfaces(
         "SELECT interface_nome, propriedade, tipo, opcional, valores, herdado_de "
         "FROM poui_interfaces"
     )
+    conds: list[str] = []
+    params: list[str] = []
     if interface is not None:
-        rows = conn.execute(
-            f"{base} WHERE lower(interface_nome) = lower(?) ORDER BY interface_nome, propriedade",
-            (interface,),
-        ).fetchall()
-    else:
-        rows = conn.execute(f"{base} ORDER BY interface_nome, propriedade").fetchall()
+        conds.append("lower(interface_nome) = lower(?)")
+        params.append(interface)
+    if propriedade:
+        conds.append("lower(propriedade) LIKE '%' || lower(?) || '%'")
+        params.append(propriedade)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    rows = conn.execute(
+        f"{base}{where} ORDER BY interface_nome, propriedade", tuple(params)
+    ).fetchall()
     out: list[dict[str, Any]] = []
     for nome, prop, tipo, opcional, valores, herdado in rows:
         try:

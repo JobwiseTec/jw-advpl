@@ -61,6 +61,9 @@ def render(
             de próximos comandos (hints para LLMs).
     """
     total = len(rows)
+    # JSON é consumo por máquina/IA: nunca trunca (#116) — só table/md/html cortam.
+    if format == "json":
+        limit = 0
     if offset > 0:
         rows = rows[offset:]
     truncated = limit > 0 and (total - offset) > limit
@@ -137,7 +140,8 @@ def _render_md(
         sys.stdout.write("| " + " | ".join(_md_cell(r.get(c, "")) for c in cols) + " |\n")
     if truncated:
         sys.stdout.write(
-            f"\n_... e mais {remaining} resultados; refine os filtros ou aumente --limit_\n"
+            f"\n_... e mais {remaining} resultados; use `--limit 0` ANTES do subcomando "
+            "(ex.: `plugadvpl --limit 0 <cmd>`) ou `--format json` (não trunca)_\n"
         )
     sys.stdout.flush()
 
@@ -179,7 +183,10 @@ def _render_html(
         out.append("</tr>")
     out.append("</tbody></table>")
     if truncated:
-        out.append(f"<p><em>... e mais {remaining} resultados; aumente --limit.</em></p>")
+        out.append(
+            f"<p><em>... e mais {remaining} resultados; use --limit 0 antes do "
+            "subcomando, ou --format json (não trunca).</em></p>"
+        )
     out.append("</body></html>")
     sys.stdout.write("\n".join(out) + "\n")
     sys.stdout.flush()
@@ -208,7 +215,8 @@ def _render_table(
     err_console.print(table)
     if truncated:
         err_console.print(
-            f"[dim]... e mais {remaining} resultados; refine filtros ou aumente --limit[/dim]"
+            f"[dim]... e mais {remaining} resultados; use --limit 0 ANTES do subcomando "
+            "(ex.: plugadvpl --limit 0 <cmd>) ou --format json (não trunca)[/dim]"
         )
 
 

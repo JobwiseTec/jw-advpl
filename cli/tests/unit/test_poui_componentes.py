@@ -68,3 +68,10 @@ class TestPouiComponentesQuery:
     def test_componente_inexistente_retorna_vazio(self, conn) -> None:
         rows = q_poui_componentes(conn, componente="po-inexistente-xyz")
         assert rows == []
+
+    def test_filtro_por_binding(self, conn) -> None:
+        # #116: filtra por substring do binding
+        rows = q_poui_componentes(conn, componente="po-table", binding="columns")
+        assert rows
+        assert all("columns" in r["binding"].lower() for r in rows)
+        assert any(r["binding"] == "p-columns" for r in rows)

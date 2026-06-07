@@ -32,17 +32,29 @@ class TestRenderJSON:
         assert payload["truncated"] is False
         assert payload["rows"][0]["arquivo"] == "FATA050.prw"
 
-    def test_json_truncates_with_limit(
+    def test_json_nunca_trunca(
         self,
         capsys: pytest.CaptureFixture[str],
         sample_rows: list[dict[str, object]],
     ) -> None:
+        # #116: JSON é consumo por máquina — ignora o limit e mostra tudo.
         render(sample_rows, format="json", limit=2)
         out = capsys.readouterr().out
         payload = json.loads(out)
         assert payload["total"] == 3
-        assert payload["shown"] == 2
-        assert payload["truncated"] is True
+        assert payload["shown"] == 3
+        assert payload["truncated"] is False
+
+    def test_md_trunca_com_limit(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        sample_rows: list[dict[str, object]],
+    ) -> None:
+        # table/md continuam truncando (humano); a dica aponta --limit 0 / --format json.
+        render(sample_rows, format="md", limit=2)
+        out = capsys.readouterr().out
+        assert "e mais 1 resultados" in out
+        assert "--limit 0" in out and "--format json" in out
 
     def test_json_compact_no_indent(
         self,

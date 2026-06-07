@@ -61,3 +61,16 @@ class TestPouiInterfacesQuery:
 
     def test_inexistente_vazio(self, conn) -> None:
         assert q_poui_interfaces(conn, interface="PoInexistenteXyz") == []
+
+    def test_filtro_por_propriedade(self, conn) -> None:
+        # #116: filtra por substring da propriedade (case-insensitive)
+        rows = q_poui_interfaces(conn, interface="PoDynamicFormField", propriedade="maxlength")
+        props = {r["propriedade"] for r in rows}
+        assert "maxLength" in props
+        assert all("maxlength" in r["propriedade"].lower() for r in rows)
+
+    def test_filtro_propriedade_sem_interface(self, conn) -> None:
+        # filtro de propriedade vale mesmo sem fixar a interface
+        rows = q_poui_interfaces(conn, propriedade="maxLength")
+        assert rows
+        assert all("maxlength" in r["propriedade"].lower() for r in rows)

@@ -1755,6 +1755,15 @@ def poui_componentes(
             )
         ),
     ] = None,
+    filtro: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Filtra por substring: propriedade (interface) ou binding (componente). "
+                "Ex.: `poui-componentes PoDynamicFormField maxLength`."
+            )
+        ),
+    ] = None,
 ) -> None:
     """Referência PO UI verificada (po-angular): bindings, interfaces e schematics.
 
@@ -1764,10 +1773,13 @@ def poui_componentes(
     - ``poui-componentes po-table`` → bindings `p-*` que o componente aceita.
     - ``poui-componentes PoTableColumn`` → propriedades do objeto de config
       (com valores válidos quando enumerados, ex.: o `type` ∈ 14 valores).
+    - ``poui-componentes PoDynamicFormField maxLength`` → filtra por propriedade.
     - ``poui-componentes schematics`` → generators oficiais (`ng generate
       @po-ui/...`) por caso-de-uso — prefira gerar a tela ao montá-la à mão.
 
     Alvo iniciando com maiúscula (``Po...``) = interface; ``schematics`` = generators.
+    O catálogo é grande: use `--limit 0` ANTES do subcomando (ou `--format json`,
+    que nunca trunca) para ver tudo.
     """
     db_path: Path = ctx.obj["db"]
     is_schematics = alvo is not None and alvo.lower() in ("schematics", "schematic", "scaffold")
@@ -1777,11 +1789,11 @@ def poui_componentes(
         apply_migrations(conn)
         seed_lookups(conn)
         if is_schematics:
-            srows = q_poui_schematics(conn)
+            srows = q_poui_schematics(conn, filtro=filtro)
         elif is_interface:
-            irows = q_poui_interfaces(conn, interface=alvo)
+            irows = q_poui_interfaces(conn, interface=alvo, propriedade=filtro)
         else:
-            rows = q_poui_componentes(conn, componente=alvo)
+            rows = q_poui_componentes(conn, componente=alvo, binding=filtro)
     finally:
         close_db(conn)
 
