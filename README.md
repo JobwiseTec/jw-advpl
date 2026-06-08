@@ -385,7 +385,7 @@ flowchart LR
 
 ## Comandos disponíveis
 
-O CLI Python expõe **50 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
+O CLI Python expõe **51 subcomandos** (incluindo sub-apps `edit-prw` e `migrate-tlpp`), todos espelhados em slash commands do plugin Claude Code. Histórico de qual versão entregou cada comando está em [Evolução por versão](#evolução-por-versão).
 
 ### Fontes
 
@@ -904,15 +904,15 @@ Detalhes completos em [docs/compile-checklist.md](docs/compile-checklist.md) (hu
 
 Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolução-por-versão) mais abaixo.
 
-- **50 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS), **`diagnose`** (relativização), **`family`** (descoberta de família) e **`ingest-tsv`/`catalog`** (conteúdo de tabelas-catálogo via dump TSV/CSV)
+- **51 subcomandos** cobrindo parser de fontes, dicionário SX, rastreabilidade, trace + qualidade, geração de Protheus.doc, migração ADVPL→TLPP, edit-prw cp1252, compile via `advpls`, ingestão REST do Protheus ao vivo, auditoria de INI + log, **interfaces POUI** (frontend Angular TOTVS), **`diagnose`** (relativização), **`family`** (descoberta de família) e **`ingest-tsv`/`catalog`** (conteúdo de tabelas-catálogo via dump TSV/CSV)
 - **Reconstrução de processos (#61–#65, #72, #75):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira (`--include-tables` mostra read/write por fonte); e **`ingest-tsv` + `catalog`** importam o **conteúdo** das tabelas-catálogo (Z*/X*) pro índice e cruzam `*_FUNCAO` com os fontes — fechando a reconstrução em ~98%
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
 - **67 skills** (27 knowledge + 40 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
-- **1852 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
-- Reference impl MIT do servidor REST `coletadb.tlpp` v1.0.3 — bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
+- **1953 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
+- Reference impl MIT do servidor REST `coletadb.tlpp` **v1.2.0** (salvar na estação cliente + envio zipado) — **empacotado no wheel**, extraível pra raiz via `plugadvpl coletadb` (versão casada com o plugin); bundle pattern com 21 CSVs em chunks de 4MB e hash dinâmico sha256/sha1/md5
 - Multi-agente nativo: Claude Code + Codex + Cursor + Copilot + Gemini CLI + Codex CLI (6 agentes IA cobertos pelo `init`)
 
 ### Próximas entregas
@@ -927,6 +927,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.31.0 — coletadb no wheel + hook reforça uso do plugin
+
+Onboarding/adoção (brainstorm → spec → plano → execução por subagentes):
+- **`plugadvpl coletadb` + `init --coletadb` + skill `/plugadvpl:coletadb`** — empacota o componente servidor `coletadb.tlpp` **dentro do wheel** e o extrai pra raiz; a versão extraída **casa com o plugin instalado** (fim de caçar o arquivo e pegar cópia antiga). Núcleo no módulo `server_components.py` (cópia byte-a-byte, LF/ASCII).
+- **SessionStart hook reforça o uso do plugin toda sessão** com índice saudável (antes ficava mudo): lembra a IA de consultar o índice antes de `Read` em `.prw`/`.tlpp`. Opt-out `PLUGADVPL_HOOK_QUIET=1`.
+- **Fix** do version stamp do `coletadb.tlpp` (`1.0.0` → `1.2.0`, alinha com `CDB_VERSION`).
 
 ### v0.30.1 — precisão p/ IA + guard do `--incremental` (pós-relatório)
 

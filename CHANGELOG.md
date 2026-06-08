@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-06-08
+
 ### Added
 
 - **`plugadvpl coletadb` + `init --coletadb` + skill `/plugadvpl:coletadb`** — extrai o componente servidor `coletadb.tlpp` (que dumpa o dicionário SX no Protheus pro `ingest-protheus`) **empacotado no próprio wheel**, pra raiz do projeto (`--dest` pra outra pasta, `--force` se já existir versão diferente). A versão extraída **casa com a versão do plugadvpl instalado** — fim do drift de caçar o arquivo e pegar uma cópia antiga. (67 skills.)
