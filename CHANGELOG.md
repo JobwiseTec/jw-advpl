@@ -4,6 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **`plugadvpl coletadb` + `init --coletadb` + skill `/plugadvpl:coletadb`** — extrai o componente servidor `coletadb.tlpp` (que dumpa o dicionário SX no Protheus pro `ingest-protheus`) **empacotado no próprio wheel**, pra raiz do projeto (`--dest` pra outra pasta, `--force` se já existir versão diferente). A versão extraída **casa com a versão do plugadvpl instalado** — fim do drift de caçar o arquivo e pegar uma cópia antiga. (67 skills.)
+- **SessionStart hook reforça o uso do plugin toda sessão** — quando o índice está saudável (antes o hook ficava silencioso nesse caso), passa a injetar um lembrete curto e imperativo pra IA consultar o índice (`arch`/`find`/`callers`/`tables`/`param`/`lint`) **antes** de `Read`/`Grep` em `.prw`/`.tlpp`. Reforço independente de skill discovery e de o usuário ter rodado `init`. Opt-out: `PLUGADVPL_HOOK_QUIET=1`.
+
+### Fixed
+
+- **`coletadb.tlpp`: version stamp do header `1.0.0` → `1.2.0`** — o comentário `Versao:` estava defasado em relação ao `#DEFINE CDB_VERSION "1.2.0"` (o recurso "salvar na estação do cliente" já existe desde a v1.1.0; quem via "só salva no servidor" estava num binário antigo compilado).
+
 ## [0.30.1] - 2026-06-07
 
 ### Fixed

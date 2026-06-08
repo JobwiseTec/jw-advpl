@@ -20,6 +20,18 @@ const SKIP_DIRS = new Set([
 const ADDITIONAL_CONTEXT_LIMIT = 9500; // Claude Code limit ~10k chars; leave headroom
 const FILE_SCAN_LIMIT = 100;            // short-circuit: enough evidence it's ADVPL
 
+const HEALTHY_REMINDER =
+  'Projeto Protheus com índice plugadvpl ativo neste diretório. Antes de Read/Grep em ' +
+  '.prw/.tlpp/.prx, consulte o índice PRIMEIRO: `plugadvpl arch <arq>` (visão geral), ' +
+  '`find <nome>`, `callers`/`callees`, `tables <T>`, `param <MV_>`, `lint`. Leia o fonte ' +
+  'cru só depois de localizar a faixa de linhas exata (10-50× menos contexto). Use o ' +
+  'plugadvpl para todo trabalho ADVPL/TLPP.';
+
+function isHookQuiet() {
+  const v = (process.env.PLUGADVPL_HOOK_QUIET || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on' || v === 'sim' || v === 'yes';
+}
+
 function emit(additionalContext) {
   if (!additionalContext) {
     process.exit(0); // silent
@@ -181,7 +193,9 @@ function main() {
           'Execute /plugadvpl:reindex <arq> ou /plugadvpl:ingest --incremental.',
       );
     } else {
-      emit(null); // tudo OK — silent
+      // v0.31: índice saudável passa a reforçar o uso do plugin toda sessão
+      // (antes ficava mudo). Opt-out via PLUGADVPL_HOOK_QUIET.
+      emit(isHookQuiet() ? null : HEALTHY_REMINDER);
     }
   } catch (err) {
     // Last-resort silent fail — NEVER break user session
@@ -189,4 +203,8 @@ function main() {
   }
 }
 
-main();
+// Permite import em teste sem executar o hook (que lê argv/stdin reais).
+if (process.env.PLUGADVPL_HOOK_TEST !== '1') {
+  main();
+}
+export { HEALTHY_REMINDER, isHookQuiet };

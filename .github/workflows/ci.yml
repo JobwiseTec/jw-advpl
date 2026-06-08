@@ -112,6 +112,7 @@ jobs:
         plugadvpl/query.py
         plugadvpl/runtime_config.py
         plugadvpl/scan.py
+        plugadvpl/server_components.py
         plugadvpl/tq.py
     steps:
       - uses: actions/checkout@v5

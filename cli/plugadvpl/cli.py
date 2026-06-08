@@ -627,6 +627,10 @@ def init(
             help="Não instala .codex/config.toml mesmo se Codex for detectado (.codex/ no projeto ou codex no PATH).",
         ),
     ] = False,
+    coletadb: Annotated[
+        bool,
+        typer.Option("--coletadb", help="Também extrai o coletadb.tlpp pra raiz do projeto."),
+    ] = False,
 ) -> None:
     """Cria ``./.plugadvpl/index.db``, escreve fragments em ``CLAUDE.md`` + ``AGENTS.md``, atualiza ``.gitignore``, e (se detectado) gera Cursor rules + Copilot instructions + Gemini skills.
 
@@ -671,6 +675,8 @@ def init(
         _install_gemini_for_init(root, quiet)
     if not no_codex:
         _install_codex_for_init(root, quiet)
+    if coletadb:
+        _extract_coletadb_for_init(root, quiet)
 
 
 def _install_cursor_for_init(root: Path, quiet: bool) -> None:
@@ -763,6 +769,24 @@ def _install_codex_for_init(root: Path, quiet: bool) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+
+
+def _extract_coletadb_for_init(root: Path, quiet: bool) -> None:
+    """Helper de init() — extrai o coletadb.tlpp quando --coletadb é passado."""
+    from plugadvpl.server_components import extract_coletadb
+
+    result = extract_coletadb(root, force=False)
+    if quiet:
+        return
+    if result.status == "version_mismatch":
+        typer.secho(
+            f"⚠  coletadb.tlpp já existe (v{result.version_existing or 'desconhecida'}) e "
+            f"difere do bundle (v{result.version_bundled}); rode `plugadvpl coletadb --force`.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    else:
+        typer.echo(f"OK  coletadb.tlpp v{result.version_bundled} em {result.path}")
 
 
 _CURSOR_RULE_MARKER_RE = re.compile(
@@ -3109,6 +3133,52 @@ def ingest_protheus_cmd(
             "plugadvpl gatilho A1_COD",
         ],
     )
+
+
+@app.command()
+def coletadb(
+    ctx: typer.Context,
+    dest: Annotated[
+        Path | None,
+        typer.Option("--dest", help="Pasta destino (default: raiz do projeto)."),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Sobrescreve se já existir versão diferente."),
+    ] = False,
+) -> None:
+    """Extrai o ``COLETADB.tlpp`` (componente servidor) pra raiz do projeto.
+
+    O ``coletadb.tlpp`` dumpa o dicionário SX no Protheus pro ``ingest-protheus``.
+    A versão extraída casa com a versão do plugadvpl instalado.
+    """
+    from plugadvpl.server_components import extract_coletadb
+
+    root: Path = ctx.obj["root"]
+    dest_dir = dest or root
+    result = extract_coletadb(dest_dir, force=force)
+
+    if result.status == "version_mismatch":
+        typer.secho(
+            f"⚠  Já existe {result.path} (v{result.version_existing or 'desconhecida'}); "
+            f"o bundle é v{result.version_bundled}. Use --force pra substituir.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if ctx.obj["quiet"]:
+        return
+    if result.status == "unchanged":
+        typer.echo(f"OK  {result.path} já está atualizado (v{result.version_bundled})")
+    else:
+        typer.echo(f"OK  coletadb.tlpp v{result.version_bundled} escrito em {result.path}")
+    typer.echo("")
+    typer.echo("Próximos passos (pra usar via REST com ingest-protheus):")
+    typer.echo("  1. Copie o coletadb.tlpp pro RPO custom do AppServer")
+    typer.echo("  2. Compile (TDS-VSCode ou `plugadvpl compile coletadb.tlpp`)")
+    typer.echo("  3. Habilite [HTTPV11] + [HTTPURI] no appserver.ini")
+    typer.echo("  Depois: `plugadvpl ingest-protheus --endpoint <url> --user U --password P`")
 
 
 @app.command()

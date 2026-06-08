@@ -73,7 +73,7 @@ packages = ["plugadvpl"]
 # separadamente em release.yml — cada um construido direto da fonte. Sem isso,
 # `uv build` chained (sdist → wheel-from-sdist) falha porque ../skills não
 # existe dentro do sdist extraido.
-force-include = { "../skills" = "plugadvpl/skills" }
+force-include = { "../skills" = "plugadvpl/skills", "../docs/reference-impl/coletadb.tlpp" = "plugadvpl/server_components/coletadb.tlpp" }
 
 [tool.ruff]
 line-length = 100

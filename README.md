@@ -908,7 +908,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **Reconstrução de processos (#61–#65, #72, #75):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira (`--include-tables` mostra read/write por fonte); e **`ingest-tsv` + `catalog`** importam o **conteúdo** das tabelas-catálogo (Z*/X*) pro índice e cruzam `*_FUNCAO` com os fontes — fechando a reconstrução em ~98%
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **66 skills** (27 knowledge + 39 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **67 skills** (27 knowledge + 40 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
 - **1852 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
@@ -947,7 +947,7 @@ Lote vindo de um **relatório de uso end-to-end** (cadastro PO UI 18 ↔ TLPP RE
 - **Nova skill `protheus-poui`** (#114) — guia da integração (contrato dynamic, proxy, Origin→401, FWCallApp/protheus-lib-core, SX3→PoDynamicFormField).
 - **Correções na skill `advpl-webservice`** (#104/#111/#112/#113) + entradas no `advpl-debugging` (#119): API do `oRest`, `Return .F.`→500, Origin→401.
 
-Total: **66 skills**.
+Total: **67 skills**.
 
 ### v0.29.0 — PO UI: import, versão, schematics, PoHttpClientService (fecha auditoria #96–#100)
 

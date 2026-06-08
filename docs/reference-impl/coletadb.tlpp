@@ -14,7 +14,7 @@
 |   2) API REST: WSRESTFUL COLETADBAPI (PATH /coletadb/run e /file).     |
 |      Cliente externo dispara coleta via POST e baixa CSVs em chunks.   |
 |                                                                          |
-| Versao: 1.0.0                                                            |
+| Versao: 1.2.0                                                            |
 | Linguagem: ADVPL (User Function + WSRESTFUL classic)                     |
 | Compatibilidade: Protheus 12.1.2410+                                     |
 |                                                                          |
