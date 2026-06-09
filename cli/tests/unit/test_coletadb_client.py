@@ -585,3 +585,25 @@ class TestEndpointPath:
         client.run()
         # Sem // duplicado
         assert captured["url"] == "http://x/rest/coletadb/run"
+
+
+class TestIsPlaintextRemoteEndpoint:
+    """is_plaintext_remote_endpoint — warning de Basic Auth em claro (auditoria A3)."""
+
+    @pytest.mark.parametrize(
+        ("endpoint", "expected"),
+        [
+            ("http://10.0.0.5:8181/rest", True),
+            ("http://protheus:8181/rest", True),
+            ("http://127.0.0.1:8181/rest", False),
+            ("http://localhost:8181/rest", False),
+            ("http://[::1]:8181/rest", False),
+            ("https://10.0.0.5:8181/rest", False),
+            ("HTTP://PROTHEUS:8181/rest", True),
+            ("http://127.0.0.2:8181/rest", False),  # toda a faixa 127/8 é loopback
+        ],
+    )
+    def test_detection(self, endpoint: str, expected: bool) -> None:
+        from plugadvpl.coletadb_client import is_plaintext_remote_endpoint
+
+        assert is_plaintext_remote_endpoint(endpoint) is expected

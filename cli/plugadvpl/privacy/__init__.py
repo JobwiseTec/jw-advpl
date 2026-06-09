@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from .config import PrivacyConfig
+from .config import PrivacyConfig, dev_key_warning
 from .engine import Masker
 from .injection import InjectionHit, flag_injection
 
@@ -29,6 +29,7 @@ __all__ = [
     "InjectionHit",
     "Masker",
     "PrivacyConfig",
+    "dev_key_warning",
     "flag_injection",
     "mask_for_egress",
 ]

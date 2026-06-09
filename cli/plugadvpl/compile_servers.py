@@ -35,8 +35,9 @@ class Server:
     password_env: str = "PROTHEUS_PASS"
     secure: bool = False
     notes: str = ""
-    restart_cmd: str = ""  # v0.14: shell command pra restart do AppServer (Troca Quente)
+    restart_cmd: str = ""  # v0.14: comando pra restart do AppServer (Troca Quente)
     is_prod: bool = False  # v0.15: tq exige --confirm-prod quando True
+    restart_shell: bool = False  # v0.32: opt-in shell=True no restart_cmd (auditoria A1)
     includes: list[str] = field(default_factory=list)  # v0.8.11: vem do TDS-VSCode
 
 

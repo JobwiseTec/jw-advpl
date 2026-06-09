@@ -24,6 +24,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 # Limite superior exclusivo do range 5xx (server errors)
@@ -34,6 +35,22 @@ DEFAULT_TIMEOUT_FILE_S = 60.0  # /file le 4MB de disk
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_RETRY_BACKOFF_S = 2.0
 DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024  # 4MB, casa com CDB_API_CHUNK do servidor
+
+
+def is_plaintext_remote_endpoint(endpoint: str) -> bool:
+    """True se ``endpoint`` é ``http://`` apontando pra host não-loopback.
+
+    Nesse cenário o Basic Auth (user:password em base64) trafega em claro
+    na rede — o caller deve avisar e recomendar HTTPS ou túnel SSH
+    (auditoria 2026-06-09, A3).
+    """
+    parsed = urlsplit(endpoint)
+    if parsed.scheme.lower() != "http":
+        return False
+    host = (parsed.hostname or "").lower()
+    if host in {"localhost", "::1"}:
+        return False
+    return not host.startswith("127.")
 
 
 @dataclass(frozen=True)

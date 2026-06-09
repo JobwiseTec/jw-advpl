@@ -159,6 +159,42 @@ class TestExecuteDownload:
         # Pasta-mãe NÃO tem package.json (extração só de bin/<os>/)
         assert not (result.binary_path.parent / "package.json").exists()
 
+    def test_download_rejects_zip_slip_member(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Membro do .vsix com '..' no path não pode escrever fora do target_dir."""
+        from plugadvpl.compile_installer import _binary_filename, _os_subdir
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "fake_home")
+        os_sub = _os_subdir()
+        prefix = f"extension/node_modules/@totvs/tds-ls/bin/{os_sub}"
+
+        evil_vsix = tmp_path / "evil.vsix"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Membro legítimo + membro malicioso que escapa via ".."
+            zf.writestr(f"{prefix}/{_binary_filename()}", b"fake advpls binary")
+            zf.writestr(f"{prefix}/../../../../evil.txt", b"pwned")
+        evil_vsix.write_bytes(buf.getvalue())
+
+        plan = plan_download()
+
+        def fake_retrieve(url: str, dst: str) -> tuple[str, object]:
+            import shutil
+            shutil.copy(evil_vsix, dst)
+            return dst, None
+
+        with patch("plugadvpl.compile_installer.urllib.request.urlretrieve",
+                   side_effect=fake_retrieve):
+            result = execute_download(plan)
+
+        assert result.ok is False
+        assert "path traversal" in result.error
+        # Assert load-bearing: pré-fix o evil.txt cairia dentro de fake_home
+        # (target_dir = fake_home/.plugadvpl/advpls/bin/<os>) ou acima.
+        assert not list((tmp_path / "fake_home").rglob("evil.txt"))
+        assert not (tmp_path / "evil.txt").exists()
+
     def test_download_handles_corrupt_vsix(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

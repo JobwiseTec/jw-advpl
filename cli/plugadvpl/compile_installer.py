@@ -182,7 +182,7 @@ def execute_copy(
     )
 
 
-def execute_download(
+def execute_download(  # noqa: PLR0911 — padrão result-object: cada erro é um early-return
     plan: InstallPlan,
     progress: Callable[[str], None] | None = None,
 ) -> InstallResult:
@@ -237,12 +237,22 @@ def execute_download(
                         error=f"vsix não contém {prefix} — formato mudou? "
                         f"Reporte bug em https://github.com/JoniPraia/plugadvpl",
                     )
+                resolved_root = target_dir.resolve()
                 for member in members:
                     # member ex: extension/node_modules/.../bin/windows/advpls.exe
                     rel = member[len(prefix) :]
                     if not rel:  # entry da pasta vazia
                         continue
                     dst = target_dir / rel
+                    # Guarda anti zip-slip: membro com ".." não pode escapar
+                    # do target_dir (auditoria 2026-06-09, A2)
+                    if not dst.resolve().is_relative_to(resolved_root):
+                        return InstallResult(
+                            ok=False,
+                            binary_path=None,
+                            bytes_written=0,
+                            error=f"membro suspeito no .vsix (path traversal): {member!r}",
+                        )
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(member) as src, dst.open("wb") as out:
                         shutil.copyfileobj(src, out)

@@ -26,6 +26,10 @@ Write-Host ""
 # ---------------------------------------------------------------------------
 # Step 1/4: Check/install uv
 # ---------------------------------------------------------------------------
+# Pinned (auditoria 2026-06-09, A6): release imutavel do GitHub em vez de
+# https://astral.sh/uv/install.ps1 (sempre-latest). Bump junto com releases.
+$uvInstallerUrl = 'https://github.com/astral-sh/uv/releases/download/0.11.19/uv-installer.ps1'
+
 $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uvCmd) {
     Write-Host "  [1/4] uv nao encontrado, instalando..." -ForegroundColor Yellow
@@ -36,11 +40,11 @@ if (-not $uvCmd) {
         winget install --id=astral-sh.uv --silent --accept-source-agreements --accept-package-agreements *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  winget falhou, usando installer oficial..." -ForegroundColor Yellow
-            iex (irm https://astral.sh/uv/install.ps1)
+            iex (irm $uvInstallerUrl)
         }
     } else {
         Write-Host "  winget nao disponivel, usando installer oficial..." -ForegroundColor Yellow
-        iex (irm https://astral.sh/uv/install.ps1)
+        iex (irm $uvInstallerUrl)
     }
 
     # Refresh PATH for current session

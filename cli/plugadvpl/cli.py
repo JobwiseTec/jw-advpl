@@ -312,7 +312,7 @@ def main_callback(
     ] = None,
 ) -> None:
     """Opções globais aplicadas a todos os subcomandos via ``ctx.obj``."""
-    from .privacy import PrivacyConfig
+    from .privacy import PrivacyConfig, dev_key_warning
 
     ctx.ensure_object(dict)
     resolved_root = root.resolve()
@@ -325,6 +325,9 @@ def main_callback(
     ctx.obj["compact"] = compact
     ctx.obj["next_steps_enabled"] = not no_next_steps
     ctx.obj["privacy"] = PrivacyConfig.from_env(enabled_override=privacy)
+    privacy_warning = dev_key_warning(ctx.obj["privacy"])
+    if privacy_warning:
+        typer.secho(privacy_warning, fg=typer.colors.YELLOW, err=True)
 
 
 # ---------------------------------------------------------------------------
@@ -2992,6 +2995,13 @@ def ingest_protheus_cmd(
         float,
         typer.Option("--timeout-file", help="Timeout do /coletadb/file (por chunk)."),
     ] = 60.0,
+    no_security_warning: Annotated[
+        bool,
+        typer.Option(
+            "--no-security-warning",
+            help="Suprime aviso de endpoint http:// em host remoto.",
+        ),
+    ] = False,
 ) -> None:
     """Indexa dicionario SX via REST API do COLETADB (Universo 5).
 
@@ -3006,7 +3016,11 @@ def ingest_protheus_cmd(
     """
     import os
 
-    from plugadvpl.coletadb_client import ColetaDBClient, ColetaDBError
+    from plugadvpl.coletadb_client import (
+        ColetaDBClient,
+        ColetaDBError,
+        is_plaintext_remote_endpoint,
+    )
 
     if not endpoint:
         typer.secho(
@@ -3015,6 +3029,16 @@ def ingest_protheus_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
+
+    if not no_security_warning and is_plaintext_remote_endpoint(endpoint):
+        typer.secho(
+            "WARNING: endpoint http:// em host não-local — user/password (Basic Auth) "
+            "trafegam EM CLARO na rede. Use https:// ou túnel SSH "
+            "(ssh -L 8181:localhost:8181 user@host -N) e aponte pra 127.0.0.1. "
+            "(suprima com --no-security-warning)",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     effective_user = user or os.environ.get("PROTHEUS_USER", "")
     effective_pass = password or os.environ.get("PROTHEUS_PASS", "")
@@ -4871,9 +4895,17 @@ def compile_callback(  # noqa: PLR0911, PLR0912, PLR0915 -- typer command dispat
         str,
         typer.Option(
             "--cmd",
-            help='Comando shell pro restart (use com --set-restart-cmd). Ex: "cmd.exe /c restart.bat"',
+            help='Comando pro restart (use com --set-restart-cmd). Ex: "cmd.exe /c restart.bat"',
         ),
     ] = "",
+    restart_shell: Annotated[
+        bool,
+        typer.Option(
+            "--restart-shell",
+            help="Com --set-restart-cmd: executa o comando via shell (pipes/&&). "
+            "Default: execução direta, sem shell.",
+        ),
+    ] = False,
     mark_prod: Annotated[
         str,
         typer.Option(
@@ -4973,7 +5005,7 @@ def compile_callback(  # noqa: PLR0911, PLR0912, PLR0915 -- typer command dispat
                 err=True,
             )
             raise typer.Exit(code=2)
-        _handle_set_restart_cmd(set_restart_cmd, cmd_value)
+        _handle_set_restart_cmd(set_restart_cmd, cmd_value, restart_shell)
         return
 
     if mark_prod:
@@ -5720,8 +5752,12 @@ def _handle_set_credentials(server_name: str) -> None:
     )
 
 
-def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
-    """Grava o restart_cmd no server do registry global (v0.14)."""
+def _handle_set_restart_cmd(server_name: str, cmd: str, use_shell: bool = False) -> None:
+    """Grava o restart_cmd no server do registry global (v0.14).
+
+    v0.32 (auditoria A1): default executa sem shell; ``use_shell=True`` é o
+    opt-in pra comandos que dependem de pipes/``&&``/builtins do shell.
+    """
     from dataclasses import replace
 
     from plugadvpl.compile_servers import (
@@ -5742,13 +5778,14 @@ def _handle_set_restart_cmd(server_name: str, cmd: str) -> None:
         )
         raise typer.Exit(code=2)
 
-    new_srv = replace(srv, restart_cmd=cmd)
+    new_srv = replace(srv, restart_cmd=cmd, restart_shell=use_shell)
     registry = load_registry()
     new_servers = [new_srv if s.name == server_name else s for s in registry.servers]
     save_registry(ServersRegistry(default=registry.default, servers=new_servers))
 
+    shell_note = " (via shell)" if use_shell else ""
     typer.secho(
-        f"restart_cmd setado pra '{server_name}': {cmd!r}",
+        f"restart_cmd setado pra '{server_name}': {cmd!r}{shell_note}",
         fg=typer.colors.GREEN,
     )
 

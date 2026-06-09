@@ -1,6 +1,7 @@
 """Testes unit do modulo plugadvpl.tq — restart + healthcheck."""
 from __future__ import annotations
 
+import os
 import subprocess
 from unittest import mock
 
@@ -10,7 +11,11 @@ from plugadvpl.compile_servers import Server
 from plugadvpl.tq import TqResult, _http_probe, run_tq
 
 
-def _make_server(name: str = "test-srv", restart_cmd: str = "echo restart") -> Server:
+def _make_server(
+    name: str = "test-srv",
+    restart_cmd: str = "echo restart",
+    restart_shell: bool = False,
+) -> Server:
     """Server de teste com defaults razoáveis."""
     return Server(
         name=name,
@@ -20,6 +25,7 @@ def _make_server(name: str = "test-srv", restart_cmd: str = "echo restart") -> S
         environments=["env_a"],
         default_environment="env_a",
         restart_cmd=restart_cmd,
+        restart_shell=restart_shell,
     )
 
 
@@ -195,3 +201,52 @@ class TestRunTq:
         assert result.healthcheck_attempts == 0
         probe_mock.assert_not_called()
         sleep_mock.assert_not_called()
+
+
+class TestRestartShellMode:
+    """run_tq executa restart_cmd sem shell por default (auditoria A1)."""
+
+    def test_default_does_not_use_shell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Sem restart_shell, subprocess.run NUNCA recebe shell=True."""
+        srv = _make_server(restart_cmd="echo restart")
+        fake_run = mock.MagicMock(return_value=mock.MagicMock(returncode=0, stderr=""))
+        monkeypatch.setattr("plugadvpl.tq.subprocess.run", fake_run)
+        run_tq(srv, timeout_s=60, no_healthcheck=True)
+        assert fake_run.call_args.kwargs.get("shell") is False
+        # Em POSIX o comando vira lista; no Windows permanece string
+        cmd_arg = fake_run.call_args.args[0]
+        if os.name == "nt":
+            assert cmd_arg == "echo restart"
+        else:
+            assert cmd_arg == ["echo", "restart"]
+
+    def test_restart_shell_optin_uses_shell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Com restart_shell=True, comportamento legado (shell=True) preservado."""
+        srv = _make_server(restart_cmd="a && b", restart_shell=True)
+        fake_run = mock.MagicMock(return_value=mock.MagicMock(returncode=0, stderr=""))
+        monkeypatch.setattr("plugadvpl.tq.subprocess.run", fake_run)
+        run_tq(srv, timeout_s=60, no_healthcheck=True)
+        assert fake_run.call_args.kwargs.get("shell") is True
+        assert fake_run.call_args.args[0] == "a && b"
+
+    def test_binary_not_found_returns_error_with_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """shell=False levanta FileNotFoundError → TqResult ok=False com hint."""
+        srv = _make_server(restart_cmd="nao-existe-xyz --flag")
+        monkeypatch.setattr(
+            "plugadvpl.tq.subprocess.run",
+            mock.MagicMock(side_effect=FileNotFoundError("nao-existe-xyz")),
+        )
+        result = run_tq(srv, timeout_s=60, no_healthcheck=True)
+        assert result.ok is False
+        assert "--restart-shell" in result.error
+
+    def test_unbalanced_quotes_returns_error(self) -> None:
+        """POSIX: shlex.split com aspas desbalanceadas não estoura exceção crua."""
+        if os.name == "nt":
+            pytest.skip("shlex.split só é usado em POSIX")
+        srv = _make_server(restart_cmd="echo 'aberto")
+        result = run_tq(srv, timeout_s=60, no_healthcheck=True)
+        assert result.ok is False
+        assert result.restart_exit_code == -3

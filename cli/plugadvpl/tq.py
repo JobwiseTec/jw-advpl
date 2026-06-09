@@ -6,6 +6,8 @@ Spec: docs/superpowers/specs/2026-05-25-plugadvpl-tq-mvp-design.md
 from __future__ import annotations
 
 import http.client
+import os
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -85,12 +87,23 @@ def run_tq(
             f"plugadvpl compile --set-restart-cmd {server.name} --cmd '<comando>'",
         )
 
-    # Restart
+    # Restart — sem shell por default (auditoria 2026-06-09, A1).
+    # Windows: string direto (CreateProcess parseia e executa .exe/.bat).
+    # POSIX: shlex.split. Opt-in shell=True via Server.restart_shell.
     restart_start = time.monotonic()
     try:
+        if server.restart_shell:
+            argv: str | list[str] = server.restart_cmd
+            use_shell = True
+        elif os.name == "nt":
+            argv = server.restart_cmd
+            use_shell = False
+        else:
+            argv = shlex.split(server.restart_cmd)
+            use_shell = False
         proc = subprocess.run(
-            server.restart_cmd,
-            shell=True,
+            argv,
+            shell=use_shell,
             capture_output=True,
             text=True,
             timeout=timeout_s + 10,
@@ -101,6 +114,15 @@ def run_tq(
     except subprocess.TimeoutExpired:
         restart_exit = -2
         restart_stderr = f"restart_cmd timeout após {timeout_s + 10}s"
+    except (OSError, ValueError) as exc:
+        # OSError cobre FileNotFoundError (subclasse) — listar os dois reprova
+        # no ruff B014. ValueError vem do shlex.split (aspas desbalanceadas).
+        restart_exit = -3
+        restart_stderr = (
+            f"falha ao executar restart_cmd sem shell: {exc}. Se o comando usa "
+            f"pipes/&&/redirecionamento, reconfigure com: plugadvpl compile "
+            f"--set-restart-cmd {server.name} --cmd '...' --restart-shell"
+        )
     restart_dur_ms = int((time.monotonic() - restart_start) * 1000)
 
     if restart_exit != 0:

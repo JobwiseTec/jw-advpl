@@ -125,3 +125,26 @@ class TestDisabled:
     def test_cli_override_wins(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
         monkeypatch.setenv("PLUGADVPL_PRIVACY", "1")
         assert PrivacyConfig.from_env(enabled_override=False).enabled is False
+
+
+class TestDevKeyWarning:
+    """dev_key_warning — aviso de chave-dev previsível (auditoria A4)."""
+
+    def test_warns_when_enabled_with_dev_key(self) -> None:
+        from plugadvpl.privacy import dev_key_warning
+
+        cfg = PrivacyConfig(enabled=True)  # key default, key_explicit=False
+        msg = dev_key_warning(cfg)
+        assert msg is not None
+        assert "PLUGADVPL_PRIVACY_KEY" in msg
+
+    def test_silent_when_key_explicit(self) -> None:
+        from plugadvpl.privacy import dev_key_warning
+
+        cfg = PrivacyConfig(enabled=True, key=b"x" * 32, key_explicit=True)
+        assert dev_key_warning(cfg) is None
+
+    def test_silent_when_disabled(self) -> None:
+        from plugadvpl.privacy import dev_key_warning
+
+        assert dev_key_warning(PrivacyConfig(enabled=False)) is None

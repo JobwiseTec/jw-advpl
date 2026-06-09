@@ -117,3 +117,20 @@ class PrivacyConfig:
             financial_fields=financial_fields,
             scan_injection=scan_injection,
         )
+
+
+def dev_key_warning(cfg: PrivacyConfig) -> str | None:
+    """Mensagem de aviso quando o mascaramento usa a chave-dev default.
+
+    Tokens HMAC com chave pública são previsíveis: CPF/CNPJ podem ser
+    reconstruídos por força bruta de dicionário (auditoria 2026-06-09, A4).
+    Retorna ``None`` quando não há o que avisar (privacy off ou chave
+    explícita via ``PLUGADVPL_PRIVACY_KEY``).
+    """
+    if not cfg.enabled or cfg.key_explicit:
+        return None
+    return (
+        "WARNING: --privacy ativo com a chave-dev default — tokens de CPF/CNPJ "
+        "são previsíveis (reconstruíveis por dicionário). Defina "
+        "PLUGADVPL_PRIVACY_KEY com um valor secreto pra tokens não-reversíveis."
+    )

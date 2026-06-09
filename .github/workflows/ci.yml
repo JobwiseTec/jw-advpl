@@ -5,6 +5,11 @@ on:
   push:
     branches: [main, master]
 
+# Token mínimo por default (auditoria 2026-06-09, A5). O job `bench`
+# declara override próprio (contents/pull-requests: write) pro gh-pages.
+permissions:
+  contents: read
+
 jobs:
   lint-plugin:
     runs-on: ubuntu-latest

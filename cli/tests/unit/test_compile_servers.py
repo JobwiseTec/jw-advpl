@@ -63,6 +63,27 @@ class TestLoadSave:
         r = load_registry()
         assert r.servers == []
 
+    def test_load_registry_without_restart_shell_key_defaults_false(
+        self, fake_home: Path
+    ) -> None:
+        """servers.json gravado por versão antiga (sem restart_shell) carrega com False."""
+        path = registry_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({
+                "default": "old",
+                "servers": [{
+                    "name": "old", "host": "127.0.0.1", "port": 1234,
+                    "build": "7.00.240223P", "environments": ["P2510"],
+                    "default_environment": "P2510",
+                    "restart_cmd": "restart.bat",
+                }],
+            }),
+            encoding="utf-8",
+        )
+        loaded = load_registry()
+        assert loaded.servers[0].restart_shell is False
+
 
 class TestAddRemove:
     def test_add_first_becomes_default(self, fake_home: Path) -> None:

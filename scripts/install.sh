@@ -12,7 +12,9 @@ echo ""
 # Step 1: Check/install uv
 if ! command -v uv >/dev/null 2>&1; then
     echo "  [1/3] uv não encontrado, instalando..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Pinned (auditoria 2026-06-09, A6): URL de release imutável do GitHub em vez
+    # de https://astral.sh/uv/install.sh (sempre-latest). Bump junto com releases.
+    curl -LsSf "https://github.com/astral-sh/uv/releases/download/0.11.19/uv-installer.sh" | sh
     # Source env if available
     if [ -f "$HOME/.local/bin/env" ]; then
         . "$HOME/.local/bin/env"
