@@ -510,6 +510,59 @@ Detalhes em [docs/compile-checklist.md](docs/compile-checklist.md) (info convers
 
 Reference impl do servidor: [`docs/reference-impl/coletadb.tlpp`](docs/reference-impl/coletadb.tlpp) (MIT, ~1900 linhas). Reference completa dos subcomandos: [docs/cli-reference.md](docs/cli-reference.md).
 
+### Pegando o dicionário SX no Protheus (COLETADB.tlpp)
+
+O dicionário SX vive **dentro do banco do Protheus**. Pra trazer ele pro índice do plugadvpl, o jeito mais completo é rodar o **`COLETADB.tlpp`** no AppServer — um fonte ADVPL/TLPP (MIT) que dumpa SX1..SXG + menus + schedules + jobs de uma vez.
+
+**1. Pegue o arquivo — não precisa mais caçar** (a partir da v0.31.0 ele vem dentro do próprio plugin):
+
+```bash
+plugadvpl coletadb
+#  → OK  coletadb.tlpp v1.2.0 escrito em ./coletadb.tlpp
+```
+
+No Claude Code: `/plugadvpl:coletadb`. Use `--dest <pasta>` pra extrair em outro lugar. A versão extraída **sempre casa com o plugadvpl instalado** — acabou o problema de achar uma cópia velha em algum drive/chat e ela não bater com o que o plugin espera.
+
+**2. Compile no Protheus:** copie o `coletadb.tlpp` pro RPO custom e compile (TDS-VSCode ou `plugadvpl compile coletadb.tlpp`).
+
+**3a. Pela tela `U_COLETADB` — o jeito mais usado (baixa direto na sua máquina, sem REST):**
+
+- No SmartClient, rode a User Function **`U_COLETADB`** (defina como *programa inicial* `U_COLETADB`, ou chame por menu/Outras Opções).
+- Na tela "Coleta de Dicionario Protheus":
+  - **Modo:** `enxuto` (só tabelas com dados — recomendado) ou `completo` (todas as SX, pra troubleshooting).
+  - Marque **☑ "Salvar na estacao (cliente)"** e, no campo **Estacao**, clique **"..."** pra escolher uma pasta **no seu próprio computador**.
+  - Clique **"Gerar CSV"**. Ele gera os CSVs no servidor, **zipa e copia pra sua pasta** (`coletadb_bundle.zip`) e remove do servidor — a mensagem final mostra o caminho na sua estação.
+- Descompacte o zip e ingira:
+
+  ```bash
+  plugadvpl ingest-sx <pasta-descompactada>
+  ```
+
+> Esse caminho roda **100% pela tela** — não precisa de `[HTTPV11]`/REST nem de acesso ao filesystem do servidor. Por isso é o preferido da maioria.
+
+**3b. Pelo REST (`ingest-protheus`) — automação, um comando só:**
+
+Habilite `[HTTPV11]` + `[HTTPURI]` no `appserver.ini` e rode:
+
+```bash
+plugadvpl ingest-protheus --endpoint http://protheus:8181/rest --user U --password P
+#  dispara o dump + baixa os 21 CSVs em chunks + ingere, tudo de uma vez
+```
+
+```ini
+[HTTPV11]
+ENABLE=1
+PORT=8080
+
+[HTTPURI]
+URL=/rest
+PrepareIn=<emp>,<fil>
+Security=1
+CORSEnable=1
+```
+
+> **Sem COLETADB?** Dá pra exportar o SX em CSV pelo Configurador (SIGACFG → Misc → Exportar Dicionário) e rodar `plugadvpl ingest-sx <pasta-csv>` direto — mas o COLETADB pega bem mais (21 tabelas vs 11) e é foto do estado atual do banco.
+
 ### Interfaces POUI (frontend Angular TOTVS)
 
 [PO UI](https://po-ui.io) é a lib de componentes Angular oficial da TOTVS. O plugadvpl entende projetos POUI **de ponta a ponta** — e cruza o front com o backend Protheus que ele já indexa.
@@ -689,6 +742,8 @@ Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_
 ### Universo 2 — Dicionário SX
 
 **O que faz**: `plugadvpl ingest-sx <pasta-csv>` ingere o dicionário SX exportado do Configurador (SIGACFG → Misc → Exportar Dicionário em CSV) em 11 tabelas: `tabelas` (SX2), `campos` (SX3), `gatilhos` (SX7), `parametros` (SX6), `perguntas` (SX1), `consultas` (SXB), `pastas` (SXA), `relacionamentos` (SX9), `indices` (SIX), `tabelas_genericas` (SX5), `grupos_campo` (SXG).
+
+**Dump ao vivo (mais completo, sem exportar CSV na mão)**: em vez do Configurador, rode o `COLETADB.tlpp` no AppServer — pegue o arquivo com `plugadvpl coletadb` (vem junto com o plugin, não precisa caçar), compile e gere as SXs pela **tela `U_COLETADB`** (baixa direto na sua máquina) ou via `plugadvpl ingest-protheus`. Passo a passo: [Pegando o dicionário SX no Protheus](#pegando-o-dicionário-sx-no-protheus-coletadbtlpp).
 
 **Por design**: ingere apenas customizações do cliente (`X3_NIVEL > 1`). O padrão TOTVS é ignorado — o plugin **não redistribui dicionário TOTVS** (questão de licença).
 
