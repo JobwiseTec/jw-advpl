@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.2.0
       - name: Build wheel
         run: cd cli && uv build
       - name: Publish to TestPyPI
@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Wait for TestPyPI propagation
         run: sleep 60
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v8.2.0
       - name: Smoke test via uvx from TestPyPI
         run: |
           # Extract version from tag (e.g., v0.1.0-rc1 -> 0.1.0rc1)
