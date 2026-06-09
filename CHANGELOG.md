@@ -4,6 +4,45 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-06-09
+
+Release de **hardening de segurança** — implementa os 6 itens (A1–A6) da auditoria
+interna `docs/auditoria-seguranca-2026-06-09.md` (incluída no repo). Nenhuma falha
+crítica foi encontrada na auditoria; tudo aqui é defesa-em-profundidade.
+
+### Security
+
+- **⚠️ BREAKING — `tq` executa o `restart_cmd` sem shell por default (A1)** — antes o
+  comando do Troca Quente rodava com `shell=True` (string interpretada pelo shell).
+  Agora: Windows passa a string direto pro CreateProcess (`.exe`/`.bat` funcionam
+  igual); POSIX usa `shlex.split`. Quem depende de pipes/`&&`/builtins precisa
+  reconfigurar com `plugadvpl compile --set-restart-cmd <srv> --cmd '...' --restart-shell`
+  (novo opt-in persistido no registry como `restart_shell`). A mensagem de erro do `tq`
+  orienta a migração; registries antigos carregam sem mudança.
+- **Guarda anti zip-slip na extração do `.vsix` (A2)** — membro do zip com `..` no
+  nome não consegue mais escrever fora da pasta de instalação do `advpls`
+  (`resolve()` + `is_relative_to`); o instalador falha com erro explícito de
+  path traversal.
+- **`ingest-protheus` avisa quando o Basic Auth vai em claro (A3)** — endpoint
+  `http://` em host não-loopback agora gera WARNING (user/password em base64 ≠
+  criptografia) recomendando HTTPS ou túnel SSH. Supressível com
+  `--no-security-warning` (mesmo padrão do `compile`).
+- **`--privacy` avisa quando roda com a chave-dev default (A4)** — sem
+  `PLUGADVPL_PRIVACY_KEY`, os tokens HMAC de CPF/CNPJ são previsíveis
+  (reconstruíveis por dicionário); agora um WARNING único no stderr deixa isso
+  explícito em vez de só na docstring.
+- **CI com token mínimo (A5)** — `permissions: contents: read` no nível do workflow
+  em `ci.yml` (o job `bench` mantém o override que o gh-pages exige).
+- **Bootstrap do uv pinado em release imutável (A6)** — `install.sh`/`install.ps1`
+  baixam o instalador do uv da release `0.11.19` no GitHub (URL imutável) em vez de
+  `astral.sh/uv/install.*` (sempre-latest). Bump da URL acompanha releases futuros.
+
+### Added
+
+- **`docs/auditoria-seguranca-2026-06-09.md`** — relatório completo da auditoria
+  (credenciais, injeção/execução, rede/privacidade, supply chain), com veredicto,
+  evidências arquivo:linha e o plano de ação que virou esta release.
+
 ## [0.31.0] - 2026-06-08
 
 ### Added

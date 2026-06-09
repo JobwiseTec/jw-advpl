@@ -471,7 +471,7 @@ O CLI Python expõe **51 subcomandos** (incluindo sub-apps `edit-prw` e `migrate
 | `/plugadvpl:compile --install-advpls` | Instalação gerenciada do binário em `~/.plugadvpl/advpls/`. Interativo: copia de path local OU baixa do Marketplace VSCode (~118MB) — sempre pede confirmação |
 | `/plugadvpl:compile --list-servers` / `--add-server` / `--use-server <nome>` / `--import-tds-servers` | Registry global de AppServers em `~/.plugadvpl/servers.json` (estilo TDS-VSCode). Cadastra uma vez, usa em qualquer projeto |
 | `/plugadvpl:compile --all-envs` | Compila pra **todos** os environments do `--use-server` (RPO sync entre envs — ex: `protheus` + `protheus_rest`) |
-| `/plugadvpl:compile --set-restart-cmd <server> --cmd "<cmd>"` | Configura o `restart_cmd` do server no registry global (consumido pelo `tq`) |
+| `/plugadvpl:compile --set-restart-cmd <server> --cmd "<cmd>"` | Configura o `restart_cmd` do server no registry global (consumido pelo `tq`). Executa **sem shell** por default (v0.32.0); adicione `--restart-shell` se o comando usa pipes/`&&` |
 | `/plugadvpl:tq --use-server <nome>` | Restart do AppServer + healthcheck HTTP (Troca Quente MVP local). Encadeia bem com `compile --all-envs` |
 | `/plugadvpl:compile --probe-appserver <host:port \| path>` | Descobre build do AppServer. Modo **network** (`host:port`) invoca `advpls cli action=validate`, retorna build + flag SSL. Modo **log** (path) parseia `protheus.log` como fallback offline |
 | `/plugadvpl:compile --set-credentials <server>` / `--clear-credentials <server>` | Salva user+senha no **cofre nativo do OS** (Win Credential Manager / macOS Keychain / Linux Secret Service). Prompt seguro com `getpass`. Plugin nunca grava senha em arquivo |
@@ -548,6 +548,10 @@ Habilite `[HTTPV11]` + `[HTTPURI]` no `appserver.ini` e rode:
 plugadvpl ingest-protheus --endpoint http://protheus:8181/rest --user U --password P
 #  dispara o dump + baixa os 21 CSVs em chunks + ingere, tudo de uma vez
 ```
+
+> Endpoint `http://` em host remoto gera WARNING (v0.32.0): o Basic Auth vai **em
+> claro** na rede. Prefira `https://` ou túnel SSH (`ssh -L 8181:localhost:8181
+> user@host -N` + `--endpoint http://127.0.0.1:8181/rest`).
 
 ```ini
 [HTTPV11]
@@ -982,6 +986,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.32.0 — hardening de segurança (auditoria A1–A6)
+
+Auditoria interna completa ([docs/auditoria-seguranca-2026-06-09.md](docs/auditoria-seguranca-2026-06-09.md): nenhuma falha crítica; 6 itens de defesa-em-profundidade implementados com TDD):
+- **⚠️ BREAKING — `tq` sem `shell=True`**: o `restart_cmd` roda sem shell por default (Windows: CreateProcess direto, `.exe`/`.bat` ok; POSIX: `shlex.split`). Pipes/`&&` exigem o novo opt-in `--set-restart-cmd ... --restart-shell`; o erro do `tq` orienta a migração.
+- **Anti zip-slip** na extração do `.vsix` do Marketplace (membro com `..` é rejeitado).
+- **Warnings novos**: `ingest-protheus` com endpoint `http://` remoto (Basic Auth em claro → use HTTPS/túnel SSH; suprima com `--no-security-warning`) e `--privacy` com chave-dev default (defina `PLUGADVPL_PRIVACY_KEY`).
+- **Supply chain**: `permissions: contents: read` no CI; bootstrap do uv pinado em release imutável do GitHub.
 
 ### v0.31.0 — coletadb no wheel + hook reforça uso do plugin
 
