@@ -9,6 +9,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from plugadvpl.ignore import IgnoreMatcher
 
 VALID_EXTENSIONS = frozenset({".prw", ".tlpp", ".prx", ".apw"})
 
@@ -36,9 +40,11 @@ class ScanResult:
 
     files: list[Path]
     collisions: dict[str, list[Path]] = field(default_factory=dict)
+    # v0.34 (#141): basenames excluídos por .plugadvplignore/--exclude (ordenado, dedup).
+    ignored: list[str] = field(default_factory=list)
 
 
-def scan_sources_full(root: Path) -> ScanResult:
+def scan_sources_full(root: Path, *, ignore: IgnoreMatcher | None = None) -> ScanResult:
     """Scan ``root`` recursivamente listando fontes ADVPL/TLPP, com diagnóstico
     de colisões de basename.
 
@@ -57,6 +63,7 @@ def scan_sources_full(root: Path) -> ScanResult:
     files: list[Path] = []
     seen: dict[str, Path] = {}
     collisions: dict[str, list[Path]] = {}
+    ignored: list[str] = []
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Mutate dirnames in-place para que os.walk pule esses subdirs (não desce neles).
@@ -73,6 +80,15 @@ def scan_sources_full(root: Path) -> ScanResult:
                 continue
 
             full = Path(dirpath) / fname
+
+            # .plugadvplignore / --exclude (#141): filtra arquivo a arquivo (sem podar
+            # dir) pra que ``ignored`` capture os fontes — usado pelo prune do ingest.
+            if ignore is not None:
+                rel_f = os.path.relpath(full, root).replace(os.sep, "/")
+                if ignore.matches(rel_f):
+                    ignored.append(fname)
+                    continue
+
             try:
                 size = full.stat().st_size
             except OSError:
@@ -98,14 +114,15 @@ def scan_sources_full(root: Path) -> ScanResult:
     return ScanResult(
         files=sorted(files, key=lambda p: p.name.lower()),
         collisions=collisions,
+        ignored=sorted(set(ignored)),
     )
 
 
-def scan_sources(root: Path) -> list[Path]:
+def scan_sources(root: Path, *, ignore: IgnoreMatcher | None = None) -> list[Path]:
     """Scan ``root`` recursivamente listando fontes ADVPL/TLPP.
 
     Wrapper compatível de :func:`scan_sources_full` que retorna apenas a
     lista de arquivos. Use ``scan_sources_full`` se precisar do diagnóstico
-    de colisões.
+    de colisões ou da lista de ignorados.
     """
-    return scan_sources_full(root).files
+    return scan_sources_full(root, ignore=ignore).files

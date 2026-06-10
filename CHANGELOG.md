@@ -4,6 +4,10 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Controle de escopo na ingestão: `.plugadvplignore` + `--exclude` (#141)** — arquivo `.plugadvplignore` na raiz do projeto (committável, sintaxe subconjunto do `.gitignore`: `descontinuado/`, `**/*_old.prw`, `clientes/**/v1/*.prw`) e flag `--exclude <glob>` repetível no `ingest` mantêm pastas/arquivos fora do índice. Aplicado no scan central, então vale igual em `ingest`, `reindex` e `status --check-stale` (e no hook SessionStart que consome o stale-check). Re-ingest **remove do índice** (prune, best-effort por basename) os fontes que passaram a ser ignorados, e o resumo do ingest mostra a contagem (`ignorados: N (removidos do índice: M)`). Sem dependência nova (stdlib `fnmatch`). Resolve também o caso de pasta `descontinuado/` que causava colisão de basename.
+
 ## [0.33.0] - 2026-06-10
 
 ### Added

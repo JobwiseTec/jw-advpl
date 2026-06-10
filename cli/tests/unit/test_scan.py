@@ -175,3 +175,34 @@ class TestScanSourcesFullCollisions:
         result = scan_sources(tmp_path)
         assert isinstance(result, list)
         assert len(result) == 1  # Dedup ainda silencioso aqui — wrapper compat.
+
+
+class TestScanWithIgnore:
+    """scan_sources_full(root, ignore=...) — issue #141."""
+
+    def test_ignore_excludes_directory(self, tmp_path: Path) -> None:
+        from plugadvpl.ignore import IgnoreMatcher
+        _touch(tmp_path / "ativo" / "A.prw", b"User Function A() Return\n")
+        _touch(tmp_path / "descontinuado" / "B.prw", b"User Function B() Return\n")
+        res = scan_sources_full(tmp_path, ignore=IgnoreMatcher(["descontinuado/"]))
+        assert {p.name for p in res.files} == {"A.prw"}
+
+    def test_ignore_basename_glob(self, tmp_path: Path) -> None:
+        from plugadvpl.ignore import IgnoreMatcher
+        _touch(tmp_path / "X.prw", b"User Function X() Return\n")
+        _touch(tmp_path / "X_old.prw", b"User Function Y() Return\n")
+        res = scan_sources_full(tmp_path, ignore=IgnoreMatcher(["*_old.prw"]))
+        assert {p.name for p in res.files} == {"X.prw"}
+
+    def test_ignored_list_populated_and_sorted(self, tmp_path: Path) -> None:
+        from plugadvpl.ignore import IgnoreMatcher
+        _touch(tmp_path / "ativo" / "A.prw", b"User Function A() Return\n")
+        _touch(tmp_path / "descontinuado" / "B.prw", b"User Function B() Return\n")
+        res = scan_sources_full(tmp_path, ignore=IgnoreMatcher(["descontinuado/"]))
+        assert res.ignored == ["B.prw"]   # ordenado + dedup, consistente com files
+
+    def test_no_ignore_is_unchanged(self, tmp_path: Path) -> None:
+        _touch(tmp_path / "descontinuado" / "B.prw", b"User Function B() Return\n")
+        res = scan_sources_full(tmp_path)        # default None → byte-idêntico ao de hoje
+        assert {p.name for p in res.files} == {"B.prw"}
+        assert res.ignored == []

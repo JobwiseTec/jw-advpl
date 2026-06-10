@@ -35,6 +35,7 @@ from plugadvpl.db import (
     seed_lookups,
     set_meta,
 )
+from plugadvpl.ignore import IgnoreMatcher, load_ignore_file
 from plugadvpl.parsing import lint as lint_module
 from plugadvpl.parsing.execauto import (
     extract_execauto_calls,
@@ -196,6 +197,29 @@ def _delete_dependents(conn: sqlite3.Connection, arquivo: str) -> None:
     ):
         conn.execute(f"DELETE FROM {table} WHERE arquivo=?", (arquivo,))
     conn.execute("DELETE FROM chamadas_funcao WHERE arquivo_origem=?", (arquivo,))
+
+
+def _prune_ignored(conn: sqlite3.Connection, ignored: list[str], all_files: list[Path]) -> int:
+    """Remove do índice fontes que passaram a ser ignorados (#141). Retorna a contagem.
+
+    Best-effort por basename (PK): se houver colisão de basename (mesmo nome
+    vivo em outra pasta), é conservador e NÃO remove. Só age sobre o que o
+    matcher excluiu — nunca sobre arquivos apenas deletados do disco.
+    """
+    if not ignored:
+        return 0
+    live = {f.name for f in all_files}
+    removed = 0
+    for name in ignored:
+        if name in live:
+            continue
+        if conn.execute("SELECT 1 FROM fontes WHERE arquivo=?", (name,)).fetchone() is not None:
+            _delete_dependents(conn, name)
+            conn.execute("DELETE FROM fontes WHERE arquivo=?", (name,))
+            removed += 1
+    if removed:
+        conn.commit()
+    return removed
 
 
 def _write_parsed(  # noqa: PLR0912, PLR0915 — escrita verbosa: 12 tabelas dependentes
@@ -954,13 +978,14 @@ def _ingest_parallel(
     conn.commit()
 
 
-def ingest(
+def ingest(  # noqa: PLR0915 — orquestrador do pipeline (scan/parse/write/FTS); verboso por natureza
     root: Path,
     *,
     workers: int | None = None,
     incremental: bool = True,
     no_content: bool = False,
     redact_secrets: bool = False,
+    exclude: list[str] | None = None,
 ) -> dict[str, Any]:
     """Pipeline completo: scan -> parse -> write -> FTS5 rebuild.
 
@@ -1006,8 +1031,13 @@ def ingest(
         set_meta(conn, "parser_version", PARSER_VERSION)
         set_meta(conn, "cli_version", _cli_version)
 
-        scan_result = scan_sources_full(root)
+        # .plugadvplignore (committável, raiz) + --exclude (ad-hoc) — issue #141.
+        _ign = IgnoreMatcher(load_ignore_file(root) + (exclude or []))
+        scan_result = scan_sources_full(root, ignore=_ign)
         all_files = scan_result.files
+
+        # Prune: fontes que estavam no índice e agora são ignorados saem do DB.
+        arquivos_ignorados_removidos = _prune_ignored(conn, scan_result.ignored, all_files)
 
         # v0.9.5 (QA PERF 2026-05-18 #2): avisa quando ha basenames duplicados
         # em diretorios distintos (ex: mod1/MATA010.prw vs mod2/MATA010.prw).
@@ -1056,6 +1086,9 @@ def ingest(
             "arquivos_total": len(all_files),
             "arquivos_ok": 0,
             "arquivos_skipped": len(all_files) - len(files_to_parse),
+            # #141: total filtrado no scan (transparência) vs efetivamente removido do DB.
+            "arquivos_ignorados": len(scan_result.ignored),
+            "arquivos_ignorados_removidos": arquivos_ignorados_removidos,
             "arquivos_failed": 0,
             "chunks": 0,
             "chamadas": 0,

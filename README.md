@@ -742,6 +742,8 @@ O plugin é dividido em **camadas independentes** — cada uma adiciona um tipo 
 
 Persistência em SQLite + **2 índices FTS5**: um `unicode61` com `tokenchars '_-'` (mantém `A1_COD`/`FW-Browse` como um token só) e um **trigram** para busca substring exata (`SA1->A1_COD`, `%xfilial%`).
 
+**Controle de escopo** (#141): para manter pastas fora do índice (ex: `descontinuado/`, cópias por cliente), crie um `.plugadvplignore` na raiz — committável, sintaxe subconjunto do `.gitignore` (`descontinuado/`, `**/*_old.prw`, `clientes/**/v1/*.prw`). Para exclusão pontual sem arquivo, use `--exclude <glob>` (repetível): `plugadvpl ingest --exclude 'descontinuado/**' --exclude '**/poc-*'`. O filtro vale também em `reindex` e `status`; um re-`ingest` remove do índice os fontes que passaram a ser ignorados e o resumo mostra a contagem. Resolve de quebra a colisão de basename causada por pastas duplicadas.
+
 **Comandos**: `init`, `ingest`, `reindex`, `find`, `callers`, `callees`, `tables`, `param`, `arch`, `lint`, `grep`, `doctor`, `status`.
 
 ### Universo 2 — Dicionário SX

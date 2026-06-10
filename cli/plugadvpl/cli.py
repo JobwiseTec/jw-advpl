@@ -46,6 +46,7 @@ from plugadvpl.db import (
     seed_lookups,
     set_meta,
 )
+from plugadvpl.ignore import IgnoreMatcher, load_ignore_file
 from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
 from plugadvpl.ingest_ini import (
@@ -1034,8 +1035,20 @@ def ingest(
         bool,
         typer.Option("--redact-secrets", help="Mascara URLs com credenciais e tokens hex."),
     ] = False,
+    exclude: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude",
+            help="Glob a ignorar na ingestão (repetível). Soma com .plugadvplignore. "
+            "Ex: --exclude 'descontinuado/**' --exclude '**/poc-*'.",
+        ),
+    ] = None,
 ) -> None:
-    """Indexa todos os fontes em ``--root`` (scan -> parse -> SQLite -> FTS5 rebuild)."""
+    """Indexa todos os fontes em ``--root`` (scan -> parse -> SQLite -> FTS5 rebuild).
+
+    Use ``.plugadvplignore`` (na raiz, committável) ou ``--exclude`` pra manter
+    pastas fora do índice (ex: ``descontinuado/``).
+    """
     root: Path = ctx.obj["root"]
     counters = do_ingest(
         root,
@@ -1043,6 +1056,7 @@ def ingest(
         incremental=incremental,
         no_content=no_content,
         redact_secrets=redact_secrets,
+        exclude=exclude,
     )
 
     summary: dict[str, object] = {
@@ -1064,6 +1078,17 @@ def ingest(
             "plugadvpl find <termo>",
         ],
     )
+
+    # #141 — transparência: o que .plugadvplignore/--exclude tirou do índice.
+    n_ign = counters.get("arquivos_ignorados", 0)
+    n_rem = counters.get("arquivos_ignorados_removidos", 0)
+    if (n_ign or n_rem) and not ctx.obj["quiet"]:
+        typer.secho(
+            f"ignorados por .plugadvplignore/--exclude: {n_ign}"
+            + (f" (removidos do índice: {n_rem})" if n_rem else ""),
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     # v0.3.13 + v0.30.1 — pegadinha do --incremental após upgrade do plugadvpl:
     # arquivos pulados (mtime inalterado) NÃO são re-avaliados contra regras de
@@ -1106,7 +1131,9 @@ def reindex(
     reescrita.
     """
     root: Path = ctx.obj["root"]
-    candidates = scan_sources(root)
+    # #141: respeita .plugadvplignore — reindex de um fonte ignorado retorna
+    # Exit 2 ("não encontrado"), pois não aparece no scan filtrado (intencional).
+    candidates = scan_sources(root, ignore=IgnoreMatcher(load_ignore_file(root)))
     target = next((p for p in candidates if p.name.lower() == arq.lower()), None)
     if target is None:
         # tenta resolver como path direto
@@ -1236,7 +1263,9 @@ def status(
 
     if check_stale:
         try:
-            files = scan_sources(root)
+            # #141: respeita .plugadvplignore. Um fonte recém-ignorado ainda no DB
+            # vira "deleted" (transitório) até o próximo ingest podar — esperado.
+            files = scan_sources(root, ignore=IgnoreMatcher(load_ignore_file(root)))
             fs_state = {f.name: f.stat().st_mtime_ns for f in files if f.exists()}
         except OSError as exc:
             typer.secho(f"Erro ao escanear filesystem: {exc}", fg=typer.colors.RED, err=True)

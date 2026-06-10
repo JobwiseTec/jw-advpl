@@ -78,6 +78,7 @@ jobs:
         plugadvpl/doc_writer.py
         plugadvpl/edit_prw.py
         plugadvpl/gemini_skills.py
+        plugadvpl/ignore.py
         plugadvpl/ingest.py
         plugadvpl/ingest_ini.py
         plugadvpl/ingest_log.py

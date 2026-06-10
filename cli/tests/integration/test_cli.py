@@ -3878,3 +3878,31 @@ def test_init_without_flag_does_not_extract(tmp_path: Path, runner: CliRunner) -
     r = runner.invoke(app, ["--root", str(tmp_path), "init"])
     assert r.exit_code == 0, r.stderr or r.stdout
     assert not (tmp_path / "coletadb.tlpp").exists()
+
+
+class TestIngestExcludeCli:
+    """CLI: --exclude + .plugadvplignore na ingestão (issue #141)."""
+
+    def test_exclude_flag_and_summary(self, tmp_path: Path, runner: CliRunner) -> None:
+        (tmp_path / "ativo").mkdir()
+        (tmp_path / "ativo" / "A.prw").write_text("User Function A()\nReturn\n", encoding="utf-8")
+        (tmp_path / "descontinuado").mkdir()
+        (tmp_path / "descontinuado" / "B.prw").write_text(
+            "User Function B()\nReturn\n", encoding="utf-8"
+        )
+
+        r0 = runner.invoke(app, ["--root", str(tmp_path), "init"])
+        assert r0.exit_code == 0, r0.stderr or r0.stdout
+        r = runner.invoke(
+            app, ["--root", str(tmp_path), "ingest", "--exclude", "descontinuado/**"]
+        )
+        assert r.exit_code == 0, r.stderr or r.stdout
+        assert "ignorados" in (r.stderr + r.stdout)
+
+        db = tmp_path / ".plugadvpl" / "index.db"
+        conn = sqlite3.connect(db)
+        try:
+            rows = {row[0] for row in conn.execute("SELECT arquivo FROM fontes")}
+        finally:
+            conn.close()
+        assert rows == {"A.prw"}

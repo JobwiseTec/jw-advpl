@@ -286,3 +286,48 @@ class TestIngest:
             f"{iter_finished[0]}. Código antigo chamava list(pool.map(...)) "
             f"e exauria o iterador antes de qualquer write."
         )
+
+
+class TestIngestIgnore:
+    """ingest respeita .plugadvplignore + --exclude (issue #141)."""
+
+    def _db(self, root: Path) -> Path:
+        return root / ".plugadvpl" / "index.db"
+
+    def test_plugadvplignore_excludes_dir(self, tmp_path: Path) -> None:
+        (tmp_path / "ativo").mkdir()
+        (tmp_path / "ativo" / "A.prw").write_text("User Function A()\nReturn\n", encoding="utf-8")
+        (tmp_path / "descontinuado").mkdir()
+        (tmp_path / "descontinuado" / "B.prw").write_text(
+            "User Function B()\nReturn\n", encoding="utf-8"
+        )
+        (tmp_path / ".plugadvplignore").write_text("descontinuado/\n", encoding="utf-8")
+
+        counters = ingest(tmp_path, workers=0, incremental=False)
+
+        conn = _connect(self._db(tmp_path))
+        rows = {r[0] for r in conn.execute("SELECT arquivo FROM fontes")}
+        assert rows == {"A.prw"}
+        assert counters["arquivos_ignorados"] == 1
+
+    def test_reingest_prunes_newly_ignored(self, tmp_path: Path) -> None:
+        (tmp_path / "B.prw").write_text("User Function B()\nReturn\n", encoding="utf-8")
+        ingest(tmp_path, workers=0, incremental=False)
+        assert {
+            r[0] for r in _connect(self._db(tmp_path)).execute("SELECT arquivo FROM fontes")
+        } == {"B.prw"}
+
+        (tmp_path / ".plugadvplignore").write_text("B.prw\n", encoding="utf-8")
+        counters = ingest(tmp_path, workers=0, incremental=True)
+        assert {
+            r[0] for r in _connect(self._db(tmp_path)).execute("SELECT arquivo FROM fontes")
+        } == set()
+        assert counters["arquivos_ignorados_removidos"] == 1
+
+    def test_exclude_param(self, tmp_path: Path) -> None:
+        (tmp_path / "A.prw").write_text("User Function A()\nReturn\n", encoding="utf-8")
+        (tmp_path / "poc-x.prw").write_text("User Function P()\nReturn\n", encoding="utf-8")
+        counters = ingest(tmp_path, workers=0, incremental=False, exclude=["poc-*"])
+        rows = {r[0] for r in _connect(self._db(tmp_path)).execute("SELECT arquivo FROM fontes")}
+        assert rows == {"A.prw"}
+        assert counters["arquivos_ignorados"] == 1

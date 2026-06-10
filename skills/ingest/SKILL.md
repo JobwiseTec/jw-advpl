@@ -23,6 +23,22 @@ Quando `paths` for omitido, indexa o diretorio do projeto atual.
 - `--no-content` — nao armazena conteudo bruto dos fontes (apenas metadados/AST)
 - `--redact-secrets` — redige strings sensiveis (senhas, tokens) antes de indexar
 - `--incremental`/`--no-incremental` — default `--incremental` (pula arquivos cujo `mtime` no DB ja eh >= ao do filesystem). `--no-incremental` re-parseia tudo.
+- `--exclude <glob>` — ignora um glob na ingestao (repetivel). Soma com `.plugadvplignore`. Ex: `--exclude 'descontinuado/**' --exclude '**/poc-*'`.
+
+## Controle de escopo: `.plugadvplignore` (#141)
+
+Para manter pastas/arquivos fora do indice (ex: pasta `descontinuado/`, copias por cliente), crie um `.plugadvplignore` na **raiz do projeto** — committavel, sintaxe subconjunto do `.gitignore`:
+
+```gitignore
+# fontes mortos — nao indexar
+descontinuado/
+**/*_old.prw
+clientes/**/v1/*.prw
+```
+
+Regras suportadas: `dir/` (diretorio e tudo abaixo, em qualquer nivel), `*.glob` (por basename em qualquer nivel), `a/**/b.prw` (path com `**` cruzando niveis). NAO suporta negacao `!`.
+
+O filtro vale igual em `ingest`, `reindex` e `status`. Um re-`ingest` **remove do indice** (prune) os fontes que passaram a ser ignorados (best-effort por basename) e o resumo mostra `ignorados: N (removidos do indice: M)`. Resolve tambem colisao de basename causada por pasta duplicada.
 
 ## Execucao
 
