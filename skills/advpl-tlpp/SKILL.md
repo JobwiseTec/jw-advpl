@@ -324,7 +324,7 @@ Rode via TDS (TOTVS Developer Studio) ou `tdscli probat`. Métodos de assert: `p
 | TLPP → ADVPL       | Chamada direta de `User Function` ADVPL existente.        |
 | ADVPL → TLPP function | `User Function` em `.tlpp` é chamada de `.prw` direto. |
 | ADVPL → TLPP class | `using namespace` (em TLPP); ADVPL chama `MyClass():New()` se a classe for compilada e namespace exportado. |
-| **`StaticCall`**   | **Deprecado em TLPP** — use namespaces explícitos.        |
+| **`StaticCall`**   | **Inibida em TLPP** — use namespaces explícitos. Consequência nº 1: o **MVC muda de mecanismo** (release 12.1.2410+; veja `[[advpl-mvc-tlpp]]`). |
 
 ```advpl
 // ADVPL .prw consumindo TLPP class
@@ -359,7 +359,8 @@ Return Nil
 - `[[advpl-fundamentals]]` — 10-char limit em `.prw`, escopos, reservadas.
 - `[[advpl-webservice]]` — REST tlppCore (annotations) vs WSRESTFUL clássico.
 - `[[advpl-encoding]]` — `.tlpp` é UTF-8 por padrão (vs cp1252 em `.prw`).
-- `[[advpl-mvc]]` — Cadastros MVC TLPP-style com `Class ... Inherit FWFormModel`.
+- `[[advpl-mvc-tlpp]]` — **MVC em fonte `.tlpp` com namespace**: User Function *Defs, `namespace.funçãoPrincipal` em FWLoadModel/ACTION, regras do U_, release 12.1.2410+.
+- `[[advpl-mvc]]` — miolo MVC (model/view/eventos), esqueleto `.prw` clássico.
 - `[[advpl-mvc-avancado]]` — TLPP em PE STRU.
 - `[[advpl-advanced]]` — OO avançado, reflection, generics (futuro).
 - `[[advpl-debugging]]` — try/catch/throw + ErrorClass para tratamento estruturado.

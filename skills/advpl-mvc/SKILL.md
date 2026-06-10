@@ -20,7 +20,9 @@ Uma rotina MVC tem **3 funções estáticas obrigatórias** + um menu:
 - Refatorar `AxCadastro`/`Modelo2`/`Modelo3` legado (`MOD-004`).
 - Edit em arquivo MVC identificado por `/plugadvpl:tables` ou `/plugadvpl:arch`.
 
-## Estrutura mínima moderna (TLPP-style)
+## Estrutura mínima (.prw clássico)
+
+> ⚠️ **Este esqueleto é para fonte `.prw`.** Em `.tlpp` com `namespace` ele **não funciona**: `Static Function` pras *Def não é alcançável (StaticCall inibida) e `SetMenuDef`/`FWLoadModel`/`FWMVCMenu` com nome de FONTE não resolvem. Para `.tlpp`, use `[[advpl-mvc-tlpp]]` — o miolo (model/view/eventos) é o mesmo daqui; só a casca muda.
 
 ```advpl
 #include "TOTVS.CH"
@@ -306,6 +308,8 @@ FWExecView("Inclusao de Cliente", "VIEWDEF.XYZCAD", MODEL_OPERATION_INSERT)
 
 ### `FWMVCRotAuto` — executa headless (lote, WS, PE)
 
+> Em `.tlpp`, `StaticCall` é inibida — troque por `custom.ns.u_MenuDef()` / `custom.ns.u_ModelDef()` direto (veja `[[advpl-mvc-tlpp]]`).
+
 ```advpl
 User Function ZBatch()
     Local oModel := Nil
@@ -357,6 +361,7 @@ FWMVCRotAuto(oModel, "ZZ1", MODEL_OPERATION_INSERT, ;
 
 ## Cross-references com outras skills
 
+- `[[advpl-mvc-tlpp]]` — **fonte `.tlpp` com namespace**: casca de resolução (User Function *Defs, `namespace.funçãoPrincipal`, regras do U_, pré-requisito 12.1.2410).
 - `[[advpl-fundamentals]]` — User Function, Static Function, escopos, MV_PAR, reservadas.
 - `[[advpl-mvc-avancado]]` — eventos avançados, FWFormCommit, FWFormFieldStruct customizada, multi-grid (pai/filho/neto).
 - `[[advpl-pontos-entrada]]` — PEs `<Rotina>MOD`, `<Rotina>VLD`, `<Rotina>COMMIT` que injetam código sem alterar fonte TOTVS.

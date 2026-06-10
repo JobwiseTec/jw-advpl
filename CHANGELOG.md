@@ -4,6 +4,14 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Skill `advpl-mvc-tlpp`** — MVC do Protheus em fonte `.tlpp` com namespace: casca de resolução (`User Function` pras *Def, `namespace.funçãoPrincipal` em `FWLoadModel`/ACTION/`SetMenuDef`), regras do `U_` (framework resolve sem; chamada explícita com `u_`), pré-requisito release 12.1.2410 + LIB 20240520, variantes `FWLoadBrw`/`BrowseDef` e bootstrap de `aRotina`, `FWMVCRotAuto` sem `StaticCall`, checklist de diagnóstico ("browse abre, Incluir não responde"). Inclui 2 exemplos novos em UTF-8 (CRUD master-detail com inclusão + monitor view-only). Motivação: equipe seguiu a skill `advpl-mvc` pra criar fonte novo em TLPP e o esqueleto `.prw` (Static *Def + nome de fonte) não resolve — validado com teste RED/GREEN de subagente. (68 skills.)
+
+### Fixed
+
+- **`advpl-mvc`: seção "Estrutura mínima moderna (TLPP-style)" renomeada pra "Estrutura mínima (.prw clássico)"** — o esqueleto era (e é) o padrão `.prw`; o rótulo induzia a usar `Static Function` + `SetMenuDef("FONTE")` em `.tlpp`, onde isso não funciona (StaticCall inibida). Avisos e cross-refs pra `advpl-mvc-tlpp` adicionados (inclusive no `FWMVCRotAuto`/`StaticCall`).
+
 ## [0.32.0] - 2026-06-09
 
 Release de **hardening de segurança** — implementa os 6 itens (A1–A6) da auditoria

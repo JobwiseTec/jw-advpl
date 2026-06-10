@@ -1,0 +1,172 @@
+#include "TOTVS.CH"
+#include "FWMVCDef.CH"
+#include "tlpp-core.th"
+
+namespace custom.exemplo.zx1
+
+/*/{Protheus.doc} zx1Cad
+Cadastro de Grupos (ZX1) x Itens (ZX2) — exemplo canônico de MVC em TLPP.
+
+Estrutura master-detail:
+  - Cabeçalho ........ ZX1 (Grupo)
+  - Itens (grid) ..... ZX2 (Itens do Grupo), com campo virtual de descrição
+  - Tabela de apoio .. ZX3 (Catálogo de Itens), origem da descrição
+
+Demonstra a CASCA de resolução TLPP (o que muda vs .prw):
+  1. *Def como User Function dentro do namespace (nunca Static Function).
+  2. SetMenuDef / FWLoadModel / ACTION recebem "namespace.funçãoPrincipal".
+  3. aRotina manual com ADD OPTION (FWMVCMenu("FONTE") é padrão .prw).
+  4. Validação de linha chamando função do mesmo fonte (sem prefixo).
+
+Pré-requisito: release 12.1.2410+ / LIB 20240520+ com includes atualizados.
+
+@type  User Function
+@since 10/06/2026
+/*/
+User Function zx1Cad()
+    Local oBrowse := FWMBrowse():New()
+
+    oBrowse:SetAlias("ZX1")
+    oBrowse:SetDescription("Cadastro de Grupos")
+    // namespace + função PRINCIPAL (esta função) — não o nome do arquivo
+    oBrowse:SetMenuDef("custom.exemplo.zx1.zx1Cad")
+    oBrowse:Activate()
+Return Nil
+
+/*/{Protheus.doc} MenuDef
+aRotina manual: em TLPP não há suporte documentado pra FWMVCMenu("FONTE").
+/*/
+User Function MenuDef() as array
+    Local aRotina := {} as array
+
+    ADD OPTION aRotina TITLE "Visualizar" ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_VIEW   ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"    ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_INSERT ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"    ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_UPDATE ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"    ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_DELETE ACCESS 0
+    // Opção custom: chamada explícita de User Function = com u_ e parênteses
+    ADD OPTION aRotina TITLE "Imprimir"   ACTION "custom.exemplo.zx1.u_zx1Print()"   OPERATION 8                      ACCESS 0
+Return aRotina
+
+/*/{Protheus.doc} ModelDef
+Cabeçalho ZX1 + grid ZX2 com campo virtual, unicidade e validação de linha.
+O MIOLO é idêntico ao ADVPL (veja a skill advpl-mvc) — só a casca muda.
+/*/
+User Function ModelDef()
+    Local oModel  := Nil
+    Local oStrZX1 := FWFormStruct(1, "ZX1")
+    Local oStrZX2 := FWFormStruct(1, "ZX2")
+
+    // Campo virtual (read-only): descrição do item buscada na tabela de apoio
+    oStrZX2:AddField( ;
+        "Descr.Item"        , ; // [01] Título
+        "Descrição do Item" , ; // [02] Tooltip
+        "ZX2_XDESC"         , ; // [03] Id do campo (virtual)
+        "C"                 , ; // [04] Tipo
+        30                  , ; // [05] Tamanho
+        0                   , ; // [06] Decimais
+        Nil                 , ; // [07] Valid
+        Nil                 , ; // [08] When
+        Nil                 , ; // [09] Combo
+        .F.                 , ; // [10] Obrigatório
+        FwBuildFeature(STRUCT_FEATURE_INIPAD, 'Posicione("ZX3",1,xFilial("ZX3")+ZX2->ZX2_CODITM,"ZX3_DESC")'), ; // [11] Init
+        Nil                 , ; // [12] Chave
+        .F.                 , ; // [13] Atualizável
+        .T.                   ) // [14] Virtual
+
+    oModel := MPFormModel():New("ZX1CADMD")
+    oModel:SetDescription("Cadastro de Grupos")
+
+    oModel:AddFields("ZX1MASTER", /*cOwner*/, oStrZX1)
+    oModel:SetPrimaryKey({"ZX1_FILIAL", "ZX1_COD"})   // nunca {} em cadastro com inclusão
+
+    // Grid de itens com validação de linha (função deste fonte: chamada direta, sem prefixo)
+    oModel:AddGrid("ZX2DETAIL", "ZX1MASTER", oStrZX2, ;
+        /*bLinePre*/ , ;
+        {|oGrid, nLine| zx1VldLin(oGrid, nLine)} )
+
+    oModel:SetRelation("ZX2DETAIL", ;
+        {{"ZX2_FILIAL", "xFilial('ZX2')"}, {"ZX2_COD", "ZX1_COD"}}, ;
+        ZX2->(IndexKey(1)))
+
+    oModel:GetModel("ZX2DETAIL"):SetUniqueLine({"ZX2_CODITM"})  // item não repete no grupo
+    oModel:GetModel("ZX2DETAIL"):SetOptional(.T.)               // grupo pode nascer sem itens
+    oModel:GetModel("ZX2DETAIL"):SetDescription("Itens do Grupo")
+Return oModel
+
+/*/{Protheus.doc} ViewDef
+Form do cabeçalho + grid dos itens (espelha o campo virtual da ModelDef).
+/*/
+User Function ViewDef()
+    Local oModel  := FWLoadModel("custom.exemplo.zx1.zx1Cad")  // namespace + função principal
+    Local oView   := FWFormView():New()
+    Local oStrZX1 := FWFormStruct(2, "ZX1")
+    Local oStrZX2 := FWFormStruct(2, "ZX2")
+
+    // Campo de relacionamento é preenchido pela relação — esconde na grid
+    oStrZX2:RemoveField("ZX2_COD")
+
+    // Campo virtual da descrição (espelha a ModelDef)
+    oStrZX2:AddField( ;
+        "ZX2_XDESC"         , ; // [01] Id do campo
+        "99"                , ; // [02] Ordem
+        "Descr.Item"        , ; // [03] Título
+        "Descrição do Item" , ; // [04] Descrição
+        Nil                 , ; // [05] Help
+        "C"                 , ; // [06] Tipo
+        "@!"                , ; // [07] Picture
+        Nil                 , ; // [08] bPictVar
+        Nil                 , ; // [09] F3
+        .F.                 , ; // [10] Editável
+        Nil                 , ; // [11] Pasta
+        Nil                 , ; // [12] Grupo
+        Nil                 , ; // [13] Combo
+        Nil                 , ; // [14] Tam. combo
+        Nil                 , ; // [15] IniBrow
+        .T.                   ) // [16] Virtual
+
+    oView:SetModel(oModel)
+
+    oView:AddField("VIEW_ZX1", oStrZX1, "ZX1MASTER")
+    oView:AddGrid("VIEW_ZX2", oStrZX2, "ZX2DETAIL")
+
+    oView:CreateHorizontalBox("BOXCAB",  25)
+    oView:CreateHorizontalBox("BOXGRID", 75)
+
+    oView:SetOwnerView("VIEW_ZX1", "BOXCAB")
+    oView:SetOwnerView("VIEW_ZX2", "BOXGRID")
+
+    oView:EnableTitleView("VIEW_ZX1", "Grupo")
+    oView:EnableTitleView("VIEW_ZX2", "Itens do Grupo")
+Return oView
+
+/*/{Protheus.doc} zx1VldLin
+Validação de linha da grid: só aceita item ativo no catálogo (ZX3).
+Função auxiliar do MESMO fonte — declarada como User Function e chamada
+sem prefixo dentro do fonte (de outro fonte seria custom.exemplo.zx1.u_zx1VldLin()).
+/*/
+User Function zx1VldLin(oGrid, nLine)
+    Local lRet  := .T. as logical
+    Local cItem := oGrid:GetValue("ZX2_CODITM") as character
+
+    Default nLine := oGrid:GetLine()
+
+    If oGrid:IsDeleted() .Or. Empty(cItem)
+        Return .T.
+    EndIf
+
+    ZX3->(DbSetOrder(1)) // ZX3_FILIAL + ZX3_CODITM
+    If !ZX3->(DbSeek(xFilial("ZX3") + cItem))
+        Help(, , "ZX1CAD", , "Item " + AllTrim(cItem) + " não cadastrado no catálogo.", 1, 0)
+        lRet := .F.
+    ElseIf ZX3->ZX3_MSBLQL == "1"
+        Help(, , "ZX1CAD", , "Item " + AllTrim(cItem) + " está bloqueado.", 1, 0)
+        lRet := .F.
+    EndIf
+Return lRet
+
+/*/{Protheus.doc} zx1Print
+Ação custom do menu — referenciada no aRotina como "custom.exemplo.zx1.u_zx1Print()".
+/*/
+User Function zx1Print()
+    FwAlertInfo("Posicionado no grupo " + AllTrim(ZX1->ZX1_COD) + ".", "Imprimir")
+Return Nil

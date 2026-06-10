@@ -1,0 +1,84 @@
+#include "TOTVS.CH"
+#include "FWMVCDef.CH"
+#include "tlpp-core.th"
+
+// Static de fonte: válida em TLPP, visível só neste fonte
+static cTitulo := "Monitor de Processos (exemplo)"
+
+namespace custom.exemplo.zx9
+
+/*/{Protheus.doc} zx9Monitor
+Monitor view-only em TLPP: FWMBrowse com legendas/filtro + ação custom.
+
+Demonstra:
+  1. Browse sem inclusão (menu só com Visualizar + ação custom).
+  2. ACTION de framework ("ViewDef.namespace.funçãoPrincipal") vs ACTION
+     custom ("namespace.u_funcao()") — regra do U_.
+  3. ModelDef/ViewDef mínimos para o Visualizar funcionar.
+
+Pré-requisito: release 12.1.2410+ / LIB 20240520+ com includes atualizados.
+
+@type  User Function
+@since 10/06/2026
+/*/
+User Function zx9Monitor()
+    Local aArea   := FwGetArea() as array
+    Local oBrowse := FWMBrowse():New() as object
+
+    oBrowse:SetAlias("ZX9")
+    oBrowse:SetDescription(cTitulo)
+    oBrowse:SetMenuDef("custom.exemplo.zx9.zx9Monitor")
+
+    oBrowse:AddLegend("ZX9_STATUS == 'P'", "YELLOW", "Pendente")
+    oBrowse:AddLegend("ZX9_STATUS == 'E'", "RED"   , "Erro")
+    oBrowse:AddLegend("ZX9_STATUS == 'O'", "GREEN" , "Processado")
+
+    oBrowse:Activate()
+
+    FwRestArea(aArea)
+Return Nil
+
+User Function MenuDef() as array
+    Local aRotina := {} as array
+
+    // Resolução do framework: SEM u_ ("ViewDef." + namespace + função principal)
+    ADD OPTION aRotina TITLE "Visualizar"  ACTION "ViewDef.custom.exemplo.zx9.zx9Monitor" OPERATION MODEL_OPERATION_VIEW ACCESS 0
+    // Chamada explícita de User Function: COM u_ e parênteses
+    ADD OPTION aRotina TITLE "Reprocessar" ACTION "custom.exemplo.zx9.u_zx9Reproc()"      OPERATION 6                    ACCESS 0
+Return aRotina
+
+User Function ModelDef()
+    Local oModel  := MPFormModel():New("ZX9MONMD")
+    Local oStrZX9 := FWFormStruct(1, "ZX9")
+
+    oModel:AddFields("ZX9MASTER", /*cOwner*/, oStrZX9)
+    oModel:SetPrimaryKey({"ZX9_FILIAL", "ZX9_ID"})
+    oModel:SetDescription(cTitulo)
+Return oModel
+
+User Function ViewDef()
+    Local oModel  := FWLoadModel("custom.exemplo.zx9.zx9Monitor")
+    Local oView   := FWFormView():New()
+    Local oStrZX9 := FWFormStruct(2, "ZX9")
+
+    oView:SetModel(oModel)
+    oView:AddField("VIEW_ZX9", oStrZX9, "ZX9MASTER")
+    oView:CreateHorizontalBox("PRINCIPAL", 100)
+    oView:SetOwnerView("VIEW_ZX9", "PRINCIPAL")
+Return oView
+
+/*/{Protheus.doc} zx9Reproc
+Ação custom: marca o registro posicionado pra reprocessamento.
+/*/
+User Function zx9Reproc()
+    If ZX9->ZX9_STATUS != "E"
+        FwAlertError("Só registros com erro podem ser reprocessados.", "Não permitido")
+        Return Nil
+    EndIf
+
+    If RecLock("ZX9", .F.)
+        ZX9->ZX9_STATUS := "P"
+        ZX9->(MsUnlock())
+        FwAlertSuccess("Registro recolocado na fila de processamento.", "Reprocessar")
+    EndIf
+Return Nil
