@@ -687,6 +687,7 @@ Além dos 33 command wrappers (1 por subcomando do CLI + `help` + `setup`), o pl
 | `advpl-encoding` | cp1252 (.prw) vs utf-8 (.tlpp) — **inclui workflow seguro de Edit (stage/commit)** |
 | `edit-prw` | **Workflow operacional pra editar `.prw` cp1252 com Claude sem corromper acentos** |
 | `advpl-mvc` | MenuDef/ModelDef/ViewDef, hooks bCommit/bTudoOk, FWFormStruct |
+| `advpl-mvc-tlpp` | **MVC em fonte `.tlpp` com namespace** — User Function *Defs, `namespace.funçãoPrincipal`, regras do U_, release 12.1.2410+ |
 | `advpl-mvc-avancado` | Eventos MVC, validações cruzadas, FWMVCRotAuto |
 | `advpl-tlpp` | TLPP moderno — OO, namespaces, annotations, tipagem opcional + defaults |
 | `advpl-tlpp-named-params` | Parâmetros nomeados na chamada via operador `=` (AppServer 20.3.2.0+ funções/métodos, 24.3.1.0+ construtores) |
@@ -986,6 +987,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.33.0 — skill advpl-mvc-tlpp (MVC em TLPP com namespace)
+
+Equipe seguiu a skill `advpl-mvc` pra criar MVC novo em `.tlpp` e a tela de inclusão não abria — o esqueleto era o padrão `.prw` (Static *Def + nome de fonte), que não resolve em TLPP (StaticCall inibida):
+- **Skill nova `advpl-mvc-tlpp`** (68ª): `User Function` pras *Def dentro do namespace, `namespace.funçãoPrincipal` em `FWLoadModel`/ACTION/`SetMenuDef`, regras do `U_`, pré-requisito release 12.1.2410 + LIB 20240520, variantes `FWLoadBrw`/`BrowseDef`, `FWMVCRotAuto` sem StaticCall, checklist "browse abre, Incluir não responde".
+- **2 exemplos novos UTF-8**: CRUD master-detail **com inclusão** + monitor view-only.
+- **`advpl-mvc` corrigida**: rótulo "TLPP-style" virou "(.prw clássico)" + avisos/cross-refs.
+- Validação com TDD de skill (RED: subagente com a skill antiga reproduz a falha; GREEN: com a nova, gera o padrão canônico). Fontes: TDN oficial + padrões validados em produção.
 
 ### v0.32.0 — hardening de segurança (auditoria A1–A6)
 

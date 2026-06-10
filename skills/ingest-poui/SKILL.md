@@ -14,7 +14,7 @@ flag projetos incompatíveis.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.32.0 --format md ingest-poui $ARGUMENTS
+uvx plugadvpl@0.33.0 --format md ingest-poui $ARGUMENTS
 ```
 
 ## Relacionado
