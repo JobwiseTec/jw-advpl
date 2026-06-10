@@ -990,6 +990,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.34.0 — controle de escopo na ingestão (.plugadvplignore + --exclude)
+
+A pedido de usuários que queriam manter pastas (ex: `descontinuado/`, cópias por cliente) fora do índice (#141):
+- **`.plugadvplignore`** na raiz (committável, sintaxe subconjunto do `.gitignore`: `descontinuado/`, `**/*_old.prw`, `clientes/**/v1/*.prw`) + flag **`--exclude <glob>`** repetível no `ingest`.
+- Aplicado no scan central → vale igual em `ingest`, `reindex` e `status` (e no hook). Re-`ingest` **remove do índice** (prune best-effort por basename) os fontes recém-ignorados; o resumo mostra `ignorados: N (removidos do índice: M)`.
+- Sem dependência nova (stdlib `fnmatch`). Resolve de quebra a colisão de basename causada por pasta duplicada.
+
 ### v0.33.0 — skill advpl-mvc-tlpp (MVC em TLPP com namespace)
 
 Equipe seguiu a skill `advpl-mvc` pra criar MVC novo em `.tlpp` e a tela de inclusão não abria — o esqueleto era o padrão `.prw` (Static *Def + nome de fonte), que não resolve em TLPP (StaticCall inibida):
