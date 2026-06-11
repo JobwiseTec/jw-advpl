@@ -161,8 +161,9 @@ oExcel:GetXMLFile(cArq)
 FWExecView( ... )  // ou shell para o arquivo gerado
 ```
 
-> **Gotcha:** extensão `.xlsx` em saída de `GetXMLFile` = arquivo "quebrado".
-> Sempre `.xml`.
+> **Gotcha:** extensão `.xlsx` em saída de `FWMSExcel:GetXMLFile` = arquivo "quebrado"
+> (é XML). Sempre `.xml`. Para `.xlsx` binário de verdade use `FWMsExcelXlsx`, e para
+> **LER** planilha (não há função nativa) veja a skill dedicada `[[advpl-excel]]`.
 
 ## Compatibilidade por build
 

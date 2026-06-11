@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 68 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 69 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -63,6 +63,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "advpl-dicionario-sx-validacoes": _PRW,
     "advpl-embedded-sql": _PRW,
     "advpl-encoding": _PRW,
+    "advpl-excel": _PRW,
     "advpl-fundamentals": _PRW,
     "advpl-jobs-rpc": _PRW,
     "advpl-matxfis": _PRW,
