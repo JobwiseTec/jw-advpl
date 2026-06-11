@@ -25,6 +25,7 @@
 | mvc-setproperty-fwbuildfeature | [#155](https://github.com/JoniPraia/plugadvpl/issues/155) | [#156](https://github.com/JoniPraia/plugadvpl/pull/156) | proposed | SetProperty+FWBuildFeature p/ WHEN/VALID/INIT por código |
 | mvc-checklist-geracao | [#157](https://github.com/JoniPraia/plugadvpl/issues/157) | [#158](https://github.com/JoniPraia/plugadvpl/pull/158) | proposed | checklist de geração MVC (Model/View/Menu/Qualidade) |
 | mvc-exemplo-prw-classico | [#159](https://github.com/JoniPraia/plugadvpl/issues/159) | [#160](https://github.com/JoniPraia/plugadvpl/pull/160) | proposed | exemplo MVC clássico .prw master-detail (ZEXPEDIDO) |
+| mvc-tlpp-convencao-function-u | — | — | local-only | advpl-mvc-tlpp: padrão `Function U_Nome()` (casa) — conflita com upstream a cada sync, manter o nosso |
 
 ## Qual modelo usar em cada etapa do ciclo
 
