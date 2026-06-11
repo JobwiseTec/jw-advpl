@@ -18,3 +18,4 @@
 | Slug | Issue | PR | Status | Notas |
 |------|-------|----|--------|-------|
 <!-- novas linhas são anexadas aqui pelo jw-enviar-melhoria.sh -->
+| rebrand-plugin-jw-advpl | — | — | local-only | renomeia plugin+marketplace p/ jw-advpl e source local (não upstreamável) |
