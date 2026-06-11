@@ -421,6 +421,10 @@ Veja a pasta [`exemplos/`](exemplos/) ao lado deste SKILL.md para fontes reais T
 - `custom.mvc.transferOrder.tlpp` — ordem de transferência com validações cruzadas.
 - `custom.mvc.confirmationOfReceipt.tlpp` — confirmação com hooks de commit.
 
+E um exemplo **MVC clássico (`.prw`)** — a contraparte ADVPL (Static Functions, referência pelo nome do fonte) dos `.tlpp` acima:
+
+- `ZEXPEDIDO.prw` — cadastro **master-detail** (capa ZX1 + itens ZX2): `FWMVCMenu` + opção custom, `AddFields`/`AddGrid`/`SetRelation`, `SetPrimaryKey`/`SetUniqueLine`, validação de linha, hook `FWModelEvent` (`InTTS`/`AfterTTS`) e aprovação headless via `FWLoadModel`. O miolo é o mesmo do `.tlpp`; só a casca muda (ver `[[advpl-mvc-tlpp]]`).
+
 ## Sources
 
 - [Interceptação do Commit e Validação MVC - FWModelEvent - TDN](https://tdn.totvs.com/pages/viewpage.action?pageId=269552294)
