@@ -21,7 +21,7 @@ Pré-requisito: release 12.1.2410+ / LIB 20240520+ com includes atualizados.
 @type  User Function
 @since 10/06/2026
 /*/
-User Function zx9Monitor()
+Function U_zx9Monitor()
     Local aArea   := FwGetArea() as array
     Local oBrowse := FWMBrowse():New() as object
 
@@ -38,7 +38,7 @@ User Function zx9Monitor()
     FwRestArea(aArea)
 Return Nil
 
-User Function MenuDef() as array
+Function U_MenuDef() as array
     Local aRotina := {} as array
 
     // Resolução do framework: SEM u_ ("ViewDef." + namespace + função principal)
@@ -47,7 +47,7 @@ User Function MenuDef() as array
     ADD OPTION aRotina TITLE "Reprocessar" ACTION "custom.exemplo.zx9.u_zx9Reproc()"      OPERATION 6                    ACCESS 0
 Return aRotina
 
-User Function ModelDef()
+Function U_ModelDef()
     Local oModel  := MPFormModel():New("ZX9MONMD")
     Local oStrZX9 := FWFormStruct(1, "ZX9")
 
@@ -56,7 +56,7 @@ User Function ModelDef()
     oModel:SetDescription(cTitulo)
 Return oModel
 
-User Function ViewDef()
+Function U_ViewDef()
     Local oModel  := FWLoadModel("custom.exemplo.zx9.zx9Monitor")
     Local oView   := FWFormView():New()
     Local oStrZX9 := FWFormStruct(2, "ZX9")
@@ -70,7 +70,7 @@ Return oView
 /*/{Protheus.doc} zx9Reproc
 Ação custom: marca o registro posicionado pra reprocessamento.
 /*/
-User Function zx9Reproc()
+Function U_zx9Reproc()
     If ZX9->ZX9_STATUS != "E"
         FwAlertError("Só registros com erro podem ser reprocessados.", "Não permitido")
         Return Nil

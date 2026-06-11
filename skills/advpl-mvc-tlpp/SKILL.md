@@ -4,7 +4,9 @@ description: Use ao criar/editar rotina MVC (browse, ModelDef/ViewDef/MenuDef, c
 
 # advpl-mvc-tlpp — MVC do Protheus em TLPP (namespace)
 
-Em `.tlpp` o framework MVC **muda o mecanismo de resolução**: o MVC clássico localiza `MenuDef`/`ModelDef`/`ViewDef` como `Static Function` pelo **nome do fonte** via `StaticCall` — e a `StaticCall` é **inibida em TLPP**. No TLPP, essas funções viram `User Function` dentro do `namespace`, e tudo que o framework recebe passa a ser **`namespace.funçãoPrincipal`** (a função do browse), nunca o nome do arquivo.
+Em `.tlpp` o framework MVC **muda o mecanismo de resolução**: o MVC clássico localiza `MenuDef`/`ModelDef`/`ViewDef` como `Static Function` pelo **nome do fonte** via `StaticCall` — e a `StaticCall` é **inibida em TLPP**. No TLPP, essas funções viram **funções globais** dentro do `namespace`, declaradas como **`Function U_Nome()`** (convenção desta casa — `U_` explícito no nome; `User Function Nome()` também resolve, é o mesmo símbolo), e tudo que o framework recebe passa a ser **`namespace.funçãoPrincipal`** (a função do browse), nunca o nome do arquivo.
+
+> **Convenção da casa:** a tríade e a função de entrada usam `Function U_Nome()` (com `U_` literal). É equivalente a `User Function Nome()` — escolha foi padronizar o `U_` explícito. **Não misture as duas grafias** no mesmo projeto.
 
 > O miolo do MVC (MPFormModel, AddFields/AddGrid, SetRelation, FWModelEvent, FWFormView) **não muda** — veja `[[advpl-mvc]]`. O que muda é a **casca de resolução**: declaração das *Def e as strings passadas ao framework.
 
@@ -23,7 +25,7 @@ Sintoma clássico de ambiente antigo (documentado pela TOTVS): **browse abre, ma
 
 | Aspecto | `.prw` clássico | `.tlpp` com namespace |
 |---|---|---|
-| `MenuDef`/`ModelDef`/`ViewDef` | `Static Function` | **`User Function`** dentro do `namespace` (padronize assim; `Function` também resolve) |
+| `MenuDef`/`ModelDef`/`ViewDef` | `Static Function` | **`Function U_Nome()`** dentro do `namespace` (convenção da casa; `User Function` também resolve) |
 | `FWLoadModel(...)` | `"NOMEFONTE"` | `"namespace.funçãoPrincipal"` |
 | ACTION do aRotina | `"VIEWDEF.NOMEFONTE"` | `"ViewDef.namespace.funçãoPrincipal"` |
 | `oBrowse:SetMenuDef(...)` | `"NOMEFONTE"` | `"namespace.funçãoPrincipal"` (validado em produção; sem doc oficial) |
@@ -40,20 +42,20 @@ Sintoma clássico de ambiente antigo (documentado pela TOTVS): **browse abre, ma
 
 namespace custom.exemplo.zx1
 
-/*/{Protheus.doc} zx1Cad
+/*/{Protheus.doc} U_zx1Cad
 Cadastro ZX1 — browse + CRUD completo em TLPP.
 /*/
-User Function zx1Cad()
+Function U_zx1Cad()
     Local oBrowse := FWMBrowse():New()
 
     oBrowse:SetAlias("ZX1")
     oBrowse:SetDescription("Cadastro ZX1")
-    // namespace + função PRINCIPAL (esta função) — NÃO o nome do arquivo
+    // namespace + função PRINCIPAL (esta função), SEM o U_ — NÃO o nome do arquivo
     oBrowse:SetMenuDef("custom.exemplo.zx1.zx1Cad")
     oBrowse:Activate()
 Return Nil
 
-User Function MenuDef() as array
+Function U_MenuDef() as array
     Local aRotina := {} as array
     // FWMVCMenu("FONTE") não tem suporte documentado com namespace — monte manual:
     ADD OPTION aRotina TITLE "Visualizar" ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_VIEW   ACCESS 0
@@ -62,7 +64,7 @@ User Function MenuDef() as array
     ADD OPTION aRotina TITLE "Excluir"    ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_DELETE ACCESS 0
 Return aRotina
 
-User Function ModelDef()
+Function U_ModelDef()
     Local oModel  := MPFormModel():New("ZX1CADMD")
     Local oStrZX1 := FWFormStruct(1, "ZX1")
 
@@ -71,8 +73,8 @@ User Function ModelDef()
     oModel:SetDescription("Cadastro ZX1")
 Return oModel
 
-User Function ViewDef()
-    Local oModel  := FWLoadModel("custom.exemplo.zx1.zx1Cad")  // namespace + função principal
+Function U_ViewDef()
+    Local oModel  := FWLoadModel("custom.exemplo.zx1.zx1Cad")  // namespace + função principal (sem U_)
     Local oView   := FWFormView():New()
     Local oStrZX1 := FWFormStruct(2, "ZX1")
 
@@ -83,27 +85,29 @@ User Function ViewDef()
 Return oView
 ```
 
+> **Importante:** o nome é declarado com `U_` (`Function U_zx1Cad`), mas as **strings do framework** (`SetMenuDef`/`FWLoadModel`/`ACTION`) usam o nome **SEM `U_`** (`...zx1Cad`). O resolver casa `zx1Cad` com a função `U_zx1Cad`.
+
 Master-detail (cabeçalho + grid), campo virtual, `SetUniqueLine`, validação de linha etc.: **idêntico ao ADVPL** — copie o miolo de `[[advpl-mvc]]` e troque só a casca acima. Exemplo completo em [`exemplos/custom.exemplo.zx1cad.tlpp`](exemplos/custom.exemplo.zx1cad.tlpp).
 
 ## Regras do `U_` (a parte que mais confunde)
 
-Declare tudo como **`User Function`**. Aí valem 4 regras de chamada:
+Declare tudo como **`Function U_Nome()`** (convenção da casa). Aí valem 4 regras de chamada:
 
 | Quem chama | Forma | Exemplo |
 |---|---|---|
 | **Framework** (*Def, ACTION ViewDef, FWLoadModel, SetMenuDef) | namespace + nome **sem** `U_` | `FWLoadModel("custom.x.zx1Cad")` |
-| **Seu código, mesmo fonte** | nome direto, sem prefixo | `aRotina := MenuDef()` |
+| **Seu código, mesmo fonte** | nome direto, sem prefixo | `aRotina := U_MenuDef()` |
 | **Seu código, outro fonte** (ou ACTION de opção custom) | namespace + **`u_`** + nome + `()` | `ACTION "custom.x.u_aprovar()"` |
 | **PE via ExistBlock/ExecBlock** | namespace + nome **sem** `U_` | `ExistBlock("custom.x.meupe")` |
 
-> `Function U_Nome()` (função comum com `U_` literal no nome) também resolve — é outra grafia do mesmo símbolo. **Padronize `User Function Nome()`**: é o que a doc oficial usa e evita os dois estilos misturados no mesmo fonte.
+> A casa padroniza **`Function U_Nome()`** — deixa o `U_` explícito no nome. `User Function Nome()` é equivalente (o compilador gera o mesmo `U_NOME`) e é a forma da doc oficial TOTVS; ambas resolvem. O que **não** pode é misturar as duas grafias no mesmo projeto.
 
 ## Variantes que funcionam (validadas em produção/tutoriais)
 
 **1. Bootstrap explícito do aRotina** — útil como cinto de segurança em LIBs mais antigas que o suporte pleno (os tutoriais funcionais da comunidade usam; em ambientes 12.1.2410+ o `SetMenuDef` com namespace dispensa):
 
 ```advpl
-User Function zx1Cad()
+Function U_zx1Cad()
     Local oBrowse
     Private aRotina := custom.exemplo.zx1.u_MenuDef()  // explícito, com u_
     SetFunName("zx1Cad")
@@ -114,10 +118,10 @@ User Function zx1Cad()
 **2. `FWLoadBrw` + `BrowseDef`** — padrão mais novo; o framework monta o browse e resolve tudo sozinho:
 
 ```advpl
-User Function zx1Cad()
+Function U_zx1Cad()
 Return FWLoadBrw("custom.exemplo.zx1.zx1Cad")
 
-User Function BrowseDef() as object
+Function U_BrowseDef() as object
     Local oBrowse := FWMBrowse():New() as object
     oBrowse:SetAlias("ZX1")
     oBrowse:SetDescription("Cadastro ZX1")
@@ -141,8 +145,8 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 
 1. **Release ≥ 12.1.2410 e LIB ≥ 20240520?** Não → reescreva em `.prw` (orientação oficial).
 2. **Includes atualizados** (FWMVCDEF.CH/tlpp-core.th da LIB nova)?
-3. As *Def são **`User Function` dentro do namespace**? (`Static Function` = causa nº 1 — StaticCall inibida)
-4. ACTION/`FWLoadModel`/`SetMenuDef` usam **`namespace.funçãoPrincipal`** e o nome confere com a função que existe?
+3. As *Def são **funções globais no namespace** (`Function U_Nome()`, **não** `Static Function`)? (`Static Function` = causa nº 1 — StaticCall inibida)
+4. ACTION/`FWLoadModel`/`SetMenuDef` usam **`namespace.funçãoPrincipal`** (sem `U_`) e o nome confere com a função que existe?
 5. Usou `FWMVCMenu("FONTE")`? Troque por aRotina manual com `ADD OPTION`.
 6. Persiste? Adicione o bootstrap explícito (variante 1) e teste de novo.
 
@@ -153,7 +157,8 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 - **`FWMVCMenu("FONTE")`** → sem suporte documentado com namespace; monte o aRotina manual.
 - **`oModel:SetPrimaryKey({})`** em cadastro com inclusão → informe a chave real (em monitor view-only passa despercebido).
 - **`StaticCall(...)` em `.tlpp`** → inibida; chame `namespace.u_Funcao()` direto.
-- **Misturar grafias** (`Function U_Nome` + `User Function Nome` no mesmo projeto) → ambas resolvem, mas padronize `User Function`.
+- **Misturar grafias** (`Function U_Nome` + `User Function Nome` no mesmo projeto) → ambas resolvem, mas padronize `Function U_Nome()` (convenção da casa).
+- **`U_` na string do framework** (`FWLoadModel("custom.x.u_zx1Cad")`) → a string qualificada vai **sem** `U_` (`...zx1Cad`); o `u_` só aparece em chamada explícita de outro fonte.
 - **`.tlpp` em cp1252** → TLPP é UTF-8 (`[[advpl-encoding]]`).
 
 ## Referência rápida — qual string vai onde
@@ -167,6 +172,7 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 | `FWLoadBrw(...)` | `"custom.ns.funcaoPrincipal"` |
 | `ExistBlock`/`ExecBlock` (PE TLPP) | `"custom.ns.nomepe"` (sem `U_`) |
 | Chamada explícita no seu código (outro fonte) | `custom.ns.u_Funcao()` |
+| **Declaração** das *Def e da função principal | `Function U_Nome()` (convenção da casa) |
 
 ## Cross-references
 
@@ -178,7 +184,7 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 
 ## Comandos plugadvpl relacionados
 
-- `/plugadvpl:find function ModelDef` — localiza as *Def indexadas (em `.tlpp` aparecem como User Function).
+- `/plugadvpl:find function ModelDef` — localiza as *Def indexadas (em `.tlpp` aparecem como `Function U_*`/`User Function`).
 - `/plugadvpl:arch <arquivo>` — confere namespace/funções do fonte antes de editar.
 - `/plugadvpl:lint <arquivo>` — regras BP/MOD aplicam igual em `.tlpp`.
 
