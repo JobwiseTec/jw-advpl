@@ -195,6 +195,42 @@ def check_gemini_skills(root: Path, expected_version: str) -> AgentCheck:
     return AgentCheck("gemini_skills", "ok", f"{len(skill_files)} skills OK")
 
 
+def check_codex_skills(root: Path, expected_version: str) -> AgentCheck:
+    """Verifica .agents/skills/plugadvpl-*/SKILL.md (skills nativas Codex, v0.38.0).
+
+    Espelho de check_gemini_skills, mas no diretório canônico .agents/skills e
+    com o marker plugadvpl-codex-skill-version (NÃO o gemini-version).
+    """
+    skills_dir = root / ".agents" / "skills"
+    if not skills_dir.exists():
+        return AgentCheck("codex_skills", "missing", ".agents/skills/ ausente")
+    skill_files = sorted(skills_dir.glob("plugadvpl-*/SKILL.md"))
+    if not skill_files:
+        return AgentCheck("codex_skills", "missing", "Nenhuma skill plugadvpl-*/SKILL.md")
+    failed: list[str] = []
+    stale: list[str] = []
+    for f in skill_files:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        fm = _extract_frontmatter(content)
+        if fm is None:
+            failed.append(f"{f.parent.name}: frontmatter ausente/malformado")
+            continue
+        if "name:" not in fm:
+            failed.append(f"{f.parent.name}: sem 'name' field")
+            continue
+        if "description:" not in fm:
+            failed.append(f"{f.parent.name}: sem 'description' field")
+            continue
+        m_ver = re.search(r"<!--\s*plugadvpl-codex-skill-version:\s*([\w.+-]+)\s*-->", content)
+        if m_ver and m_ver.group(1) != expected_version:
+            stale.append(f"{f.parent.name}: versao {m_ver.group(1)}")
+    if failed:
+        return AgentCheck("codex_skills", "fail", "; ".join(failed[:3]))
+    if stale:
+        return AgentCheck("codex_skills", "warning", f"{len(stale)} stale")
+    return AgentCheck("codex_skills", "ok", f"{len(skill_files)} skills OK")
+
+
 def check_skill_descriptions_keywords(skills_root: Path) -> list[str]:
     """Lista SKILL.md cujas description NAO contem keywords ADVPL/Protheus.
 
@@ -223,6 +259,7 @@ def run_checks(root: Path, expected_version: str) -> DoctorReport:
         check_cursor_rules(root, expected_version),
         check_copilot_instructions(root, expected_version),
         check_gemini_skills(root, expected_version),
+        check_codex_skills(root, expected_version),
     ]
     # Skills keywords check (se skills/ existe no root)
     skills_root = root / "skills"

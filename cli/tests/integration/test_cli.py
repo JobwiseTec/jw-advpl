@@ -841,6 +841,84 @@ class TestInitCodexConfig:
         assert user_config.read_text(encoding="utf-8") == "# my own config, no marker"
 
 
+class TestInitCodexFirstClass:
+    """v0.38.0 — Codex first-class: init instala skills nativas + --codex-only."""
+
+    def test_codex_only_installs_codex_skips_others(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_cfc1"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_skills.shutil.which", lambda _: None)
+        (synthetic_project / ".codex").mkdir()
+        result = runner.invoke(
+            app, ["--root", str(synthetic_project), "init", "--codex-only"]
+        )
+        assert result.exit_code == 0, result.stderr or result.stdout
+        assert (synthetic_project / "AGENTS.md").exists()  # Codex usa AGENTS.md
+        assert not (synthetic_project / "CLAUDE.md").exists()  # pulado no codex-only
+        agents = list(
+            (synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        assert agents
+        # outros agentes pulados
+        assert not (synthetic_project / ".cursor").exists()
+        assert not (synthetic_project / "GEMINI.md").exists()
+        # ignore patterns gravados
+        ign = (synthetic_project / ".plugadvplignore").read_text(encoding="utf-8")
+        assert ".agents/skills/**" in ign
+        assert ".codex/**" in ign
+
+    def test_init_default_installs_codex_skills_when_detected(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_cfc2"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_skills.shutil.which", lambda _: None)
+        (synthetic_project / ".codex").mkdir()
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        assert (synthetic_project / "CLAUDE.md").exists()  # default mantém CLAUDE.md
+        agents = list(
+            (synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        codex = list(
+            (synthetic_project / ".codex" / "skills").glob("plugadvpl-*/SKILL.md")
+        )
+        assert agents and codex
+
+    def test_no_codex_signal_no_skills(
+        self,
+        synthetic_project: Path,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_home = synthetic_project.parent / "fake_home_cfc3"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.codex_skills.shutil.which", lambda _: None)
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        assert result.exit_code == 0
+        assert not (synthetic_project / ".agents").exists()
+
+
 class TestDoctorCheckAgents:
     """v0.16.5 — plugadvpl doctor --check-agents valida arquivos gerados."""
 

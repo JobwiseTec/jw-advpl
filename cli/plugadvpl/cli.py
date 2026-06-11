@@ -629,7 +629,14 @@ def init(
         bool,
         typer.Option(
             "--no-codex",
-            help="Não instala .codex/config.toml mesmo se Codex for detectado (.codex/ no projeto ou codex no PATH).",
+            help="Não instala .codex/config.toml + skills mesmo se Codex for detectado (.codex/ no projeto ou codex no PATH).",
+        ),
+    ] = False,
+    codex_only: Annotated[
+        bool,
+        typer.Option(
+            "--codex-only",
+            help="Modo isolado Codex: instala só Codex (config + skills nativas em .agents/skills), mantém AGENTS.md, pula CLAUDE.md/Cursor/Copilot/Gemini.",
         ),
     ] = False,
     coletadb: Annotated[
@@ -649,10 +656,19 @@ def init(
     Use ``--no-gemini`` pra desabilitar.
     v0.16.5: ``.codex/config.toml`` mínimo quando Codex CLI é detectado
     (``.codex/`` no projeto ou ``codex`` no PATH). Use ``--no-codex`` pra desabilitar.
+    v0.38.0: Codex first-class — skills nativas em ``.agents/skills/plugadvpl-*/SKILL.md``
+    (+ ``.codex/skills/`` legado). ``--codex-only`` instala só Codex (mantém AGENTS.md,
+    pula CLAUDE.md/Cursor/Copilot/Gemini). Patterns de agentes vão pro ``.plugadvplignore``.
     """
     root: Path = ctx.obj["root"]
     db_path: Path = ctx.obj["db"]
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # v0.38.0 — modo isolado Codex: força skip dos outros agentes e do CLAUDE.md
+    # (Codex usa AGENTS.md, que mantemos). Os demais flags ficam coerentes.
+    if codex_only:
+        no_cursor = no_copilot = no_gemini = True
+        no_codex = False
 
     conn = open_db(db_path)
     try:
@@ -662,36 +678,49 @@ def init(
     finally:
         close_db(conn)
 
-    _write_agent_fragment(root, "CLAUDE.md")
+    if not codex_only:
+        _write_agent_fragment(root, "CLAUDE.md")
     _write_agent_fragment(root, "AGENTS.md")
     _add_to_gitignore(root, ".plugadvpl/")
 
     if not ctx.obj["quiet"]:
         typer.echo(f"OK  DB criado em {db_path}")
-        typer.echo("OK  CLAUDE.md + AGENTS.md atualizados (fragment plugadvpl, idênticos)")
+        if codex_only:
+            typer.echo(
+                "OK  AGENTS.md atualizado (fragment plugadvpl; CLAUDE.md pulado — --codex-only)"
+            )
+        else:
+            typer.echo("OK  CLAUDE.md + AGENTS.md atualizados (fragment plugadvpl, idênticos)")
         typer.echo("OK  .plugadvpl/ adicionado ao .gitignore")
 
     quiet = ctx.obj["quiet"]
+    any_agent = False
     if not no_cursor:
-        _install_cursor_for_init(root, quiet)
+        any_agent |= _install_cursor_for_init(root, quiet)
     if not no_copilot:
-        _install_copilot_for_init(root, quiet)
+        any_agent |= _install_copilot_for_init(root, quiet)
     if not no_gemini:
-        _install_gemini_for_init(root, quiet)
+        any_agent |= _install_gemini_for_init(root, quiet)
     if not no_codex:
-        _install_codex_for_init(root, quiet)
+        any_agent |= _install_codex_for_init(root, quiet)
+    if any_agent:
+        _ensure_agent_ignore_patterns(root, quiet)
     if coletadb:
         _extract_coletadb_for_init(root, quiet)
 
 
-def _install_cursor_for_init(root: Path, quiet: bool) -> None:
-    """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
+def _install_cursor_for_init(root: Path, quiet: bool) -> bool:
+    """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes.
+
+    Returns True se instalou algo (usado pra decidir se grava .plugadvplignore).
+    """
     from plugadvpl.cursor_rules import install_cursor_rules
 
     cursor_result = install_cursor_rules(root, __version__)
+    installed = bool(cursor_result.installed_global or cursor_result.installed_local_count)
     if quiet:
-        return
-    if cursor_result.installed_global or cursor_result.installed_local_count:
+        return installed
+    if installed:
         typer.echo(f"OK  Cursor rules: {cursor_result.summary()}")
     for warn in cursor_result.errors:
         typer.secho(f"⚠  Cursor rules: {warn}", fg=typer.colors.YELLOW, err=True)
@@ -701,16 +730,18 @@ def _install_cursor_for_init(root: Path, quiet: bool) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+    return installed
 
 
-def _install_copilot_for_init(root: Path, quiet: bool) -> None:
+def _install_copilot_for_init(root: Path, quiet: bool) -> bool:
     """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
     from plugadvpl.copilot_instructions import install_copilot_instructions
 
     copilot_result = install_copilot_instructions(root, __version__)
+    installed = bool(copilot_result.installed_global or copilot_result.installed_local_count)
     if quiet:
-        return
-    if copilot_result.installed_global or copilot_result.installed_local_count:
+        return installed
+    if installed:
         typer.echo(f"OK  Copilot instructions: {copilot_result.summary()}")
     for warn in copilot_result.errors:
         typer.secho(
@@ -724,20 +755,22 @@ def _install_copilot_for_init(root: Path, quiet: bool) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+    return installed
 
 
-def _install_gemini_for_init(root: Path, quiet: bool) -> None:
+def _install_gemini_for_init(root: Path, quiet: bool) -> bool:
     """Helper extraido de init() pra manter PLR0912 <=12 com 3 agentes."""
     from plugadvpl.gemini_skills import install_gemini_skills
 
     gemini_result = install_gemini_skills(root, __version__)
-    if quiet:
-        return
-    if (
+    installed = bool(
         gemini_result.installed_global_home
         or gemini_result.installed_project_md
         or gemini_result.installed_skills_count
-    ):
+    )
+    if quiet:
+        return installed
+    if installed:
         typer.echo(f"OK  Gemini skills: {gemini_result.summary()}")
     for warn in gemini_result.errors:
         typer.secho(
@@ -751,17 +784,34 @@ def _install_gemini_for_init(root: Path, quiet: bool) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+    return installed
 
 
-def _install_codex_for_init(root: Path, quiet: bool) -> None:
-    """Helper extraido de init() pra manter PLR0912 baixo com Codex (v0.16.5)."""
+def _install_codex_for_init(root: Path, quiet: bool) -> bool:
+    """Helper extraido de init() — Codex first-class (v0.38.0).
+
+    Instala config.toml E skills nativas (.agents/skills + .codex/skills).
+    Returns True se config OU skills foram instalados.
+    """
     from plugadvpl.codex_config import install_codex_config
+    from plugadvpl.codex_skills import install_codex_skills
 
     codex_result = install_codex_config(root, __version__)
+    skills_result = install_codex_skills(root, __version__)
+    skills_installed = bool(
+        skills_result.installed_agents_count
+        or skills_result.installed_codex_count
+        or skills_result.installed_global_count
+    )
+    installed = bool(codex_result.installed) or skills_installed
+
     if quiet:
-        return
+        return installed
+
     if codex_result.installed:
         typer.echo(f"OK  Codex: {codex_result.summary()}")
+    if skills_installed:
+        typer.echo(f"OK  Codex skills: {skills_result.summary()}")
     if codex_result.error:
         typer.secho(
             f"⚠  Codex: {codex_result.error}",
@@ -774,6 +824,15 @@ def _install_codex_for_init(root: Path, quiet: bool) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+    for warn in skills_result.errors:
+        typer.secho(f"⚠  Codex skills: {warn}", fg=typer.colors.YELLOW, err=True)
+    for skipped in skills_result.skipped_due_to_user_files:
+        typer.secho(
+            f"⚠  Codex skills: {skipped} já existe sem marker plugadvpl — não sobrescrevi",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    return installed
 
 
 def _extract_coletadb_for_init(root: Path, quiet: bool) -> None:
@@ -1041,6 +1100,46 @@ def _add_to_gitignore(root: Path, line: str) -> None:
     sep = "" if existing.endswith("\n") or not existing else "\n"
     with gi.open("a", encoding="utf-8") as f:
         f.write(sep + line + "\n")
+
+
+# Patterns dos diretórios gerados por agentes — não devem entrar no índice
+# plugadvpl (são markdown/toml de instrução, não fonte ADVPL/TLPP). v0.38.0.
+_AGENT_IGNORE_PATTERNS = (
+    ".agents/skills/**",
+    ".codex/**",
+    ".gemini/skills/**",
+    ".cursor/**",
+    ".github/instructions/**",
+)
+
+
+def _ensure_agent_ignore_patterns(root: Path, quiet: bool = True) -> None:
+    """Garante os patterns de agentes no ``.plugadvplignore`` (cria se ausente).
+
+    Diferente de ``_add_to_gitignore``: CRIA o arquivo quando não existe (o
+    ``.plugadvplignore`` é committável e específico do plugadvpl). Idempotente —
+    só adiciona as linhas que faltam, preservando o conteúdo do usuário.
+    """
+    target = root / ".plugadvplignore"
+    try:
+        existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    except OSError:
+        return
+    present = set(existing.splitlines())
+    to_add = [p for p in _AGENT_IGNORE_PATTERNS if p not in present]
+    if not to_add:
+        return
+    header = ""
+    if not existing:
+        header = "# Diretórios gerados por agentes (Codex/Cursor/Copilot/Gemini) — plugadvpl\n"
+    sep = "" if (not existing or existing.endswith("\n")) else "\n"
+    try:
+        with target.open("a", encoding="utf-8") as f:
+            f.write(sep + header + "\n".join(to_add) + "\n")
+    except OSError:
+        return
+    if not quiet:
+        typer.echo(f"OK  .plugadvplignore: +{len(to_add)} pattern(s) de agentes (fora do índice)")
 
 
 # ---------------------------------------------------------------------------

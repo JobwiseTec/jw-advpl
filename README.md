@@ -24,16 +24,18 @@
 
 ## Cobertura multi-agente
 
-`plugadvpl init` gera contexto nativo pra **5 agentes IA** + 1 extra:
+`plugadvpl init` gera contexto nativo pra **6 agentes IA**:
 
 | Agente | Arquivo(s) gerado(s) | Detecção |
 |---|---|---|
 | **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
-| **Codex** + AGENTS.md ecosystem | `AGENTS.md` (gêmeo idêntico) | sempre |
-| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 57 | `.cursor/` no projeto |
-| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 57 | `.github/` no projeto |
-| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 57 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
-| **+ Codex CLI** (extra) | `.codex/config.toml` mínimo | `.codex/` ou `codex` no PATH |
+| **AGENTS.md ecosystem** | `AGENTS.md` (gêmeo idêntico) | sempre |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 70 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 70 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 70 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **Codex CLI** | `.codex/config.toml` + **skills nativas** `.agents/skills/plugadvpl-*/SKILL.md` × 70 (+ `.codex/skills/` legado; + `~/.agents/skills/` global se já existir) | `.codex/`, `.agents/`, ou `codex` no PATH |
+
+As skills do Codex usam o **open agent skills standard** (frontmatter `name` + `description`, prefixo `plugadvpl-`), os mesmos `SKILL.md` do Claude Code — os comandos viram `uvx plugadvpl@<ver> <subcomando>` e os links `[[skill]]` viram `[[plugadvpl-skill]]`. Use **`plugadvpl init --codex-only`** pra instalar só o Codex (mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini). Os diretórios gerados por agentes entram no `.plugadvplignore` (fora do índice). Valide com **`plugadvpl doctor --check-agents`** (cobre Codex também).
 
 Sinais de detection são **INDEPENDENTES** — sinal global (`~/.cursor/`, `~/.gemini/`) NÃO ativa install no projeto. Cada agente tem sua flag `--no-<agent>` pra desabilitar mesmo com sinal presente.
 

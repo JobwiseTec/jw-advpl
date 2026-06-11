@@ -4,6 +4,18 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+
+- **Codex CLI agora é first-class** — `plugadvpl init` instala as 70 skills como **skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (diretório canônico do *open agent skills standard*; auto-discovery), replicadas em `.codex/skills/` (legado experimental) e, se `~/.agents/` já existir, em `~/.agents/skills/` (global, blindado — nunca cria o home). Cada `SKILL.md` ganha frontmatter `name: plugadvpl-<X>` + `description`, comandos `/plugadvpl:<X>` viram `uvx plugadvpl@<ver> <X>`, e links wiki `[[skill]]` viram `[[plugadvpl-skill]]` (transform compartilhado com Cursor/Copilot/Gemini). Antes o `init` só gerava `.codex/config.toml` + `AGENTS.md` — o Codex não recebia as skills (feedback de quem instalou o plugin no Codex).
+- **`plugadvpl init --codex-only`** — modo isolado: instala só o Codex (config + skills), mantém `AGENTS.md` e **pula** `CLAUDE.md`/Cursor/Copilot/Gemini. Útil pra repositórios que usam exclusivamente o Codex.
+- **`plugadvpl doctor --check-agents` agora valida as skills do Codex** (`check_codex_skills`): confere frontmatter `name`+`description` e marker de versão em `.agents/skills/plugadvpl-*/SKILL.md` (6 checks no total: Claude, AGENTS, Cursor, Copilot, Gemini, Codex).
+- **`.plugadvplignore` auto-populado com os diretórios de agentes** — o `init` garante os patterns `.agents/skills/**`, `.codex/**`, `.gemini/skills/**`, `.cursor/**`, `.github/instructions/**` (cria o arquivo se ausente, idempotente), mantendo arquivos gerados de agentes **fora do índice** plugadvpl.
+
+### Changed
+
+- `.codex/config.toml`: comentário do bloco de skills corrigido — aponta pra `.agents/skills/plugadvpl-*/SKILL.md` (auto-discovery) e mostra `[[skills.config]]` (`path`+`enabled`) como opcional; removido o enganoso `[skills] enabled = true` (não existe na config do Codex).
+- `gemini_skills.py` deixou de escrever em `.agents/skills/` — esse diretório agora é de `codex_skills.py` (dono único), evitando colisão de marker entre Gemini e Codex no mesmo arquivo.
+
 ## [0.37.0] - 2026-06-11
 
 ### Added

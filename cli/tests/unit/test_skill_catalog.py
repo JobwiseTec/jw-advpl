@@ -6,12 +6,11 @@ from pathlib import Path
 import pytest
 
 from plugadvpl._skill_catalog import (
+    _SKILL_GLOBS,
     INSTRUCTIONS_MARKER_PREFIX,
     RULE_MARKER_PREFIX,
     WriteOutcome,
     _parse_skill_md,
-    _skills_root,
-    _SKILL_GLOBS,
     _transform_body,
     _write_managed_file,
 )
@@ -90,6 +89,21 @@ class TestTransformBody:
         result = _transform_body(body, version="0.16.5")  # no style arg
         assert "uvx plugadvpl@0.16.5 arch" in result
         assert "Bash:" not in result
+
+    def test_rewrites_skill_links_with_plugadvpl_prefix(self) -> None:
+        """[[skill]] vira [[plugadvpl-skill]] (skills instaladas usam o prefixo)."""
+        body = "Veja [[advpl-encoding]] e [[advpl-tlpp]].\n"
+        out = _transform_body(body, version="0.38.0")
+        assert "[[plugadvpl-advpl-encoding]]" in out
+        assert "[[plugadvpl-advpl-tlpp]]" in out
+        assert "[[advpl-encoding]]" not in out
+
+    def test_does_not_double_prefix_links(self) -> None:
+        """Link já prefixado não vira plugadvpl-plugadvpl-."""
+        body = "Veja [[plugadvpl-advpl-mvc]].\n"
+        out = _transform_body(body, version="0.38.0")
+        assert "[[plugadvpl-advpl-mvc]]" in out
+        assert "[[plugadvpl-plugadvpl-advpl-mvc]]" not in out
 
 
 class TestWriteManagedFile:
