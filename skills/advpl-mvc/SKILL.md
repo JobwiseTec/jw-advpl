@@ -220,13 +220,36 @@ EndIf
 
 A estrutura é lida do dicionário **SX3** (campos) + **SX7** (gatilhos) + **SXA** (pastas). Para ver/alterar embutidos, veja `[[advpl-dicionario-sx]]` e `[[advpl-dicionario-sx-validacoes]]`.
 
-Customizações ad-hoc:
+Customizações ad-hoc na estrutura (sem alterar o SX3):
 
 ```advpl
-oStruZZZ:RemoveField("ZZZ_INTERN")              // remove campo da estrutura
-oStruZZZ:SetProperty("ZZZ_COD", MODEL_FIELD_NOUPD, .T.)  // bloqueia alteração
-oStruZZZ:AddField(...)                          // adiciona campo virtual
+oStruZZZ:RemoveField("ZZZ_INTERN")                       // remove campo da estrutura
+oStruZZZ:AddField(...)                                   // adiciona campo virtual
+oStruZZZ:SetProperty("ZZZ_COD", MODEL_FIELD_NOUPD, .T.)  // propriedade booleana: bloqueia alteração
 ```
+
+### Alterar WHEN / VALID / INIT por código (`SetProperty` + `FWBuildFeature`)
+
+Propriedade **booleana** (`OBRIGAT`, `NOUPD`, `VIRTUAL`...) recebe `.T.`/`.F.` direto. Mas **WHEN, VALID e INIT são expressões** — precisam ser embrulhadas em `FWBuildFeature`, senão o `SetProperty` não toma efeito:
+
+```advpl
+// ❌ NÃO funciona — WHEN/VALID/INIT não aceitam string/bloco cru:
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_WHEN, ".F.")
+
+// ✅ correto — FWBuildFeature monta o bloco que o framework espera:
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_WHEN,  FWBuildFeature(STRUCT_FEATURE_WHEN,   ".F."))           // read-only só nesta rotina
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_INIT,  FWBuildFeature(STRUCT_FEATURE_INIPAD, "'1'"))           // valor inicial forçado
+oStru:SetProperty("ZZZ_VALOR",  MODEL_FIELD_VALID, FWBuildFeature(STRUCT_FEATURE_VALID,  "ZZZ_VALOR > 0")) // valid custom
+```
+
+| Propriedade (constante) | Tipo do valor | Forma |
+|---|---|---|
+| `MODEL_FIELD_OBRIGAT`, `MODEL_FIELD_NOUPD`, `MODEL_FIELD_VIRTUAL` | booleano | `.T.` / `.F.` direto |
+| `MODEL_FIELD_WHEN` | expressão | `FWBuildFeature(STRUCT_FEATURE_WHEN, "<expr>")` |
+| `MODEL_FIELD_VALID` | expressão | `FWBuildFeature(STRUCT_FEATURE_VALID, "<expr>")` |
+| `MODEL_FIELD_INIT` | expressão | `FWBuildFeature(STRUCT_FEATURE_INIPAD, "<expr>")` |
+
+Vale para `FWFormStruct(1,...)` (Model) e `FWFormStruct(2,...)` (View), em `.prw` e `.tlpp`. Use quando precisar mudar o comportamento de um campo **só naquela rotina**, sem customizar o dicionário (SX3) globalmente. Para validações embutidas no próprio dicionário, veja `[[advpl-dicionario-sx-validacoes]]`.
 
 ## Sub-models — cabeçalho + grid de itens
 
