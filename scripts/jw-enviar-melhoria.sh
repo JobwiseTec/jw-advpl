@@ -13,6 +13,19 @@ BRANCH="feat/$SLUG"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "jobwise" ]; then
+  echo "ERRO: rode este script do clone principal, não do worktree jobwise." >&2
+  exit 1
+fi
+
+# descobre o worktree que está no branch jobwise (onde a melhoria é integrada)
+JOBWISE_WT="$(git worktree list --porcelain \
+  | awk '/^worktree /{wt=substr($0,10)} /^branch refs\/heads\/jobwise$/{print wt; exit}')"
+if [ -z "${JOBWISE_WT:-}" ]; then
+  echo "ERRO: worktree do branch jobwise não encontrado (crie com: git worktree add ../jw-advpl-work jobwise)." >&2
+  exit 1
+fi
+
 echo ">> garantindo branch $BRANCH..."
 git checkout "$BRANCH"
 
@@ -61,16 +74,16 @@ _(o que foi validado: unit/integration)_")
 PR_NUM="${PR_URL##*/}"
 echo "   PR: $PR_URL"
 
-echo ">> integrando a melhoria no branch jobwise (independe da aceitação)..."
-git checkout jobwise
-git merge --no-ff "$BRANCH" -m "merge($SLUG): integra melhoria no downstream jw-advpl"
-
-echo ">> atualizando o ledger MELHORIAS.md..."
-printf '| %s | [#%s](%s) | [#%s](%s) | proposed | |\n' \
-  "$SLUG" "$ISSUE_NUM" "$ISSUE_URL" "$PR_NUM" "$PR_URL" >> MELHORIAS.md
-git add MELHORIAS.md
-git commit -m "docs(melhorias): registra $SLUG (issue #$ISSUE_NUM, PR #$PR_NUM)"
-git push origin jobwise
+echo ">> integrando a melhoria no branch jobwise (no worktree $JOBWISE_WT)..."
+(
+  cd "$JOBWISE_WT"
+  git merge --no-ff "$BRANCH" -m "merge($SLUG): integra melhoria no downstream jw-advpl"
+  printf '| %s | [#%s](%s) | [#%s](%s) | proposed | |\n' \
+    "$SLUG" "$ISSUE_NUM" "$ISSUE_URL" "$PR_NUM" "$PR_URL" >> MELHORIAS.md
+  git add MELHORIAS.md
+  git commit -m "docs(melhorias): registra $SLUG (issue #$ISSUE_NUM, PR #$PR_NUM)"
+  git push origin jobwise
+)
 
 cat <<EOF
 

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # jw-nova-melhoria.sh — abre uma branch de melhoria a partir do upstream/main sincronizado.
 # Uso: scripts/jw-nova-melhoria.sh <slug>
-# (downstream-only — existe apenas no branch jobwise)
+# RODE DO CLONE PRINCIPAL (não do worktree jobwise). Downstream-only (existe só no branch jobwise).
 set -euo pipefail
 
 SLUG="${1:?uso: jw-nova-melhoria.sh <slug-curto-da-melhoria>}"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "jobwise" ]; then
+  echo "ERRO: rode este script do clone principal, não do worktree jobwise." >&2
+  exit 1
+fi
 
 echo ">> sincronizando main com upstream..."
 git checkout main
