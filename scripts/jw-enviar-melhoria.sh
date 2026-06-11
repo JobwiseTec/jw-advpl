@@ -102,8 +102,12 @@ echo ">> integrando a melhoria no branch jobwise (no worktree $JOBWISE_WT)..."
 (
   cd "$JOBWISE_WT"
   git merge --no-ff "$BRANCH" -m "merge($SLUG): integra melhoria no downstream jw-advpl"
-  printf '| %s | [#%s](%s) | [#%s](%s) | proposed | |\n' \
-    "$SLUG" "$ISSUE_NUM" "$ISSUE_URL" "$PR_NUM" "$PR_URL" >> MELHORIAS.md
+  # insere a linha DENTRO da tabela (após o marcador) — não no fim do arquivo,
+  # que hoje tem seções depois da tabela.
+  MARKER="<!-- novas linhas são anexadas aqui pelo jw-enviar-melhoria.sh -->"
+  ROW="| $SLUG | [#$ISSUE_NUM]($ISSUE_URL) | [#$PR_NUM]($PR_URL) | proposed | |"
+  _tmp=$(mktemp)
+  awk -v marker="$MARKER" -v row="$ROW" '{print} index($0,marker){print row}' MELHORIAS.md > "$_tmp" && mv "$_tmp" MELHORIAS.md
   git add MELHORIAS.md
   git commit -m "docs(melhorias): registra $SLUG (issue #$ISSUE_NUM, PR #$PR_NUM)"
   git push origin jobwise

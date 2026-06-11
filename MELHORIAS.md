@@ -22,6 +22,7 @@
 | fragment-namespace-aware | [#152](https://github.com/JoniPraia/plugadvpl/issues/152) | [#153](https://github.com/JoniPraia/plugadvpl/pull/153) | proposed | fragment usa namespace real do plugin |
 | gate-lint-diff-only | — | — | local-only | jw-enviar-melhoria: ruff só no diff e não-bloqueante (drift de versão) |
 | upstream-watch | — | — | local-only | workflow semanal avisa release nova do upstream (issue no fork) |
+| mvc-setproperty-fwbuildfeature | [#155](https://github.com/JoniPraia/plugadvpl/issues/155) | [#156](https://github.com/JoniPraia/plugadvpl/pull/156) | proposed | SetProperty+FWBuildFeature p/ WHEN/VALID/INIT por código |
 
 ## Qual modelo usar em cada etapa do ciclo
 
@@ -44,4 +45,3 @@ No Claude Code dá pra trocar com `/model`, e subagentes podem usar modelo difer
 > Heads-up: o gate do `jw-enviar-melhoria.sh` deixa o **ruff não-bloqueante** — então, rodando o ciclo
 > com Haiku, **revise os avisos de ruff/format antes do PR** (o Haiku tende a não questioná-los). `mypy`
 > e `pytest` continuam bloqueantes, então erro de tipo/teste o script pega sozinho.
-| mvc-setproperty-fwbuildfeature | [#155](https://github.com/JoniPraia/plugadvpl/issues/155) | [#156](https://github.com/JoniPraia/plugadvpl/pull/156) | proposed | SetProperty+FWBuildFeature p/ WHEN/VALID/INIT por código |
