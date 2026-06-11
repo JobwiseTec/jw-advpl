@@ -17,7 +17,7 @@ Mostra a lista de comandos plugadvpl disponiveis e suas opcoes globais.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.34.0 --help
+uvx plugadvpl@0.35.0 --help
 ```
 
 ## Saida

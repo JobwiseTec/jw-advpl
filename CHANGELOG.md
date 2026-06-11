@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-06-10
+
 ### Added
 
 - **Skill `advpl-excel`** — ler/escrever Excel (.xls/.xlsx/CSV) no Protheus, com foco **anti-alucinação**. Caso real: dev foi fazer um leitor de Excel pra gravar em tabela e o assistente inventou uma função inexistente. A skill abre com o fato oficial da TOTVS (*"não existe função que leia XLS/XLSX"*) + tabela de funções **alucinadas a rejeitar** (`FWLerExcel`, `LeExcel`, `MsRetXls`, `OleAuto`, `MSExcelEx():_oExcel`, `MsExcel():GetValue` nativo...), e os caminhos **reais**: leitura via CSV+`FWFileReader`/`FT_F*` (limite 1022 bytes), `TXmlManager`, `MsExcel()` OLE (client-side, frágil), lib `YExcel`; escrita via `FWMsExcelXlsx`/`FwPrinterXlsx` (.xlsx binário), `FWMsExcelEx` (XML), `FWMsExcel` (depreciada). Inclui 2 exemplos (import CSV→tabela com RecLock/Transaction; geração xlsx). Validado com TDD de skill (RED: baseline alucina `MSExcelEx`/`OleAuto`; GREEN: usa só API real). Pesquisa ancorada em TDN/Central oficial + comunidade. (69 skills.)

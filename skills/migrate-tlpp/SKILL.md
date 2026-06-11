@@ -128,7 +128,7 @@ Varre `.tlpp` procurando `// @plugadvpl-todo:<recipe> <mensagem>`.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.34.0 migrate-tlpp $ARGUMENTS
+uvx plugadvpl@0.35.0 migrate-tlpp $ARGUMENTS
 ```
 
 ## Atribuição

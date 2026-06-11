@@ -991,6 +991,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.35.0 — skill advpl-excel (Excel no Protheus, anti-alucinação)
+
+Caso real: dev foi fazer um leitor de Excel pra gravar em tabela e o assistente inventou uma função inexistente (#144):
+- **Skill nova `advpl-excel`** (69ª): abre com o fato oficial TOTVS (**não existe função nativa que leia .xls/.xlsx**) + tabela de funções **alucinadas a rejeitar** (`FWLerExcel`, `LeExcel`, `OleAuto`, `MSExcelEx():_oExcel`, `MsExcel():GetValue` nativo...).
+- Caminhos **reais de leitura**: CSV + `FWFileReader`/`FT_F*`, `TXmlManager`, `MsExcel()` OLE (client-side, frágil), lib `YExcel`. **Escrita**: `FWMsExcelXlsx`/`FwPrinterXlsx` (.xlsx binário), `FWMsExcelEx` (XML), `FWMsExcel` (depreciada).
+- 2 exemplos (import CSV→tabela; gerar xlsx). Validado com TDD de skill (RED alucina, GREEN usa só API real). Pesquisa ancorada em TDN/Central oficial + comunidade.
+
 ### v0.34.0 — controle de escopo na ingestão (.plugadvplignore + --exclude)
 
 A pedido de usuários que queriam manter pastas (ex: `descontinuado/`, cópias por cliente) fora do índice (#141):
