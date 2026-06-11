@@ -244,6 +244,27 @@ class TestInit:
         content = (synthetic_project / "AGENTS.md").read_text(encoding="utf-8")
         assert content.count("<!-- BEGIN plugadvpl -->") == 1
 
+    def test_init_fragment_has_no_unresolved_placeholders(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        """O body do fragment não pode vazar placeholders __X__ pro CLAUDE.md."""
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "__SLASH_NS__" not in content
+        assert "__VERSION__" not in content
+
+    def test_init_slash_namespace_env_override(
+        self, synthetic_project: Path, runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """PLUGADVPL_SLASH_NS reescreve o namespace dos slash commands (fork/rebrand)."""
+        monkeypatch.setenv("PLUGADVPL_SLASH_NS", "jw-advpl")
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "/jw-advpl:arch" in content
+        assert "/jw-advpl:find" in content
+        assert "/plugadvpl:" not in content
+
 
 class TestInitCursorRules:
     """v0.16.2 — init detecta Cursor e gera .cursor/rules/*.mdc."""
