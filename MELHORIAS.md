@@ -20,3 +20,4 @@
 <!-- novas linhas são anexadas aqui pelo jw-enviar-melhoria.sh -->
 | rebrand-plugin-jw-advpl | — | — | local-only | renomeia plugin+marketplace p/ jw-advpl e source local (não upstreamável) |
 | fragment-namespace-aware | [#152](https://github.com/JoniPraia/plugadvpl/issues/152) | [#153](https://github.com/JoniPraia/plugadvpl/pull/153) | proposed | fragment usa namespace real do plugin |
+| gate-lint-diff-only | — | — | local-only | jw-enviar-melhoria: ruff só no diff e não-bloqueante (drift de versão) |

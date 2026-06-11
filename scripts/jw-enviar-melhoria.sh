@@ -29,12 +29,36 @@ fi
 echo ">> garantindo branch $BRANCH..."
 git checkout "$BRANCH"
 
-echo ">> gates de qualidade (ruff/mypy/pytest — mesmos do CI upstream)..."
+echo ">> gates: ruff/mypy só nos arquivos do diff; pytest completo..."
+# Lint só nos .py mudados nesta branch vs upstream/main — evita travar em lint
+# PRE-EXISTENTE do upstream (e em drift de versão do ruff local vs CI).
+MERGE_BASE="$(git merge-base upstream/main HEAD)"
+mapfile -t _CHANGED < <(git diff --name-only --diff-filter=ACMR "$MERGE_BASE"...HEAD -- 'cli/**/*.py')
+_PKG_PY=()   # arquivos do pacote (mypy) — relativos a cli/
+_ALL_PY=()   # todos os .py mudados (ruff) — relativos a cli/
+for _f in "${_CHANGED[@]}"; do
+  _rel="${_f#cli/}"
+  _ALL_PY+=("$_rel")
+  case "$_rel" in plugadvpl/*) _PKG_PY+=("$_rel");; esac
+done
+
 (
   cd cli
-  uv run ruff format --check .
-  uv run ruff check .
-  uv run mypy --strict plugadvpl
+  if [ ${#_ALL_PY[@]} -gt 0 ]; then
+    # ruff = NÃO-bloqueante (warn): ruff local pode ser mais novo que o CI do upstream
+    # e acusar estilo pré-existente. O CI do maintainer é o gate de estilo real.
+    echo "   ruff (aviso, não bloqueia) em: ${_ALL_PY[*]}"
+    uv run ruff check "${_ALL_PY[@]}" || echo "   ⚠ ruff check apontou itens — REVISE antes do PR."
+    uv run ruff format --check "${_ALL_PY[@]}" || echo "   ⚠ ruff format sugeriu mudanças — REVISE antes do PR."
+    # mypy = BLOQUEANTE, só no pacote (testes não são strict-typed)
+    if [ ${#_PKG_PY[@]} -gt 0 ]; then
+      echo "   mypy --strict (bloqueante): ${_PKG_PY[*]}"
+      uv run mypy --strict "${_PKG_PY[@]}"
+    fi
+  else
+    echo "   (nenhum .py mudado sob cli/ — pulando ruff/mypy)"
+  fi
+  echo "   pytest unit+integration (bloqueante)"
   uv run pytest tests/unit tests/integration -q
 )
 
