@@ -23,6 +23,7 @@
 | gate-lint-diff-only | — | — | local-only | jw-enviar-melhoria: ruff só no diff e não-bloqueante (drift de versão) |
 | upstream-watch | — | — | local-only | workflow semanal avisa release nova do upstream (issue no fork) |
 | mvc-setproperty-fwbuildfeature | [#155](https://github.com/JoniPraia/plugadvpl/issues/155) | [#156](https://github.com/JoniPraia/plugadvpl/pull/156) | proposed | SetProperty+FWBuildFeature p/ WHEN/VALID/INIT por código |
+| mvc-checklist-geracao | [#157](https://github.com/JoniPraia/plugadvpl/issues/157) | [#158](https://github.com/JoniPraia/plugadvpl/pull/158) | proposed | checklist de geração MVC (Model/View/Menu/Qualidade) |
 
 ## Qual modelo usar em cada etapa do ciclo
 
