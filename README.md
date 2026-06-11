@@ -991,6 +991,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.36.0 — correções advpl-excel + advpl-tlpp (validadas em AppServer real)
+
+Testando os fontes Excel num AppServer ao vivo (leitura via REST), três correções:
+- **advpl-excel — bug CRLF**: o leitor de exemplo não tirava o `\r` de arquivos CRLF → a última coluna vinha `"S\r"` e o booleano dava sempre `.F.`. Agora `StrTran(GetLine(), Chr(13), "")` + anti-padrão.
+- **advpl-excel — sem `printer.exe`**: `FWMsExcelXlsx` falha em runtime; documentado o fallback `FWMsExcelEx` (XML) com try/catch.
+- **advpl-tlpp — `Function` pelado em `.tlpp` com namespace**: o servidor rejeita ("Regular functions are not allowed"); usar `User`/`Static Function`. O `appre` offline aceita, o servidor real não.
+
 ### v0.35.0 — skill advpl-excel (Excel no Protheus, anti-alucinação)
 
 Caso real: dev foi fazer um leitor de Excel pra gravar em tabela e o assistente inventou uma função inexistente (#144):

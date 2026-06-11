@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-06-11
+
 ### Fixed
 
 - **`advpl-excel`: leitor CSV agora tira o `\r` de CRLF** — o exemplo usava `StrTokArr(oReader:GetLine(), ";")` sem remover o carriage-return, então a **última coluna** vinha com `"\r"` no fim e quebrava o parse (sintoma clássico: booleano/flag da última coluna sempre `.F.`). Corrigido pra `StrTran(oReader:GetLine(), Chr(13), "")` no SKILL.md e no exemplo `import_csv_para_tabela.prw` + anti-padrão dedicado. Pego em **teste ao vivo** contra AppServer real.
