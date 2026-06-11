@@ -22,3 +22,25 @@
 | fragment-namespace-aware | [#152](https://github.com/JoniPraia/plugadvpl/issues/152) | [#153](https://github.com/JoniPraia/plugadvpl/pull/153) | proposed | fragment usa namespace real do plugin |
 | gate-lint-diff-only | — | — | local-only | jw-enviar-melhoria: ruff só no diff e não-bloqueante (drift de versão) |
 | upstream-watch | — | — | local-only | workflow semanal avisa release nova do upstream (issue no fork) |
+
+## Qual modelo usar em cada etapa do ciclo
+
+Guia prático de custo/qualidade. Regra geral: **cabe num script/passo-a-passo claro → Haiku;
+exige decidir sob ambiguidade ou diagnosticar por que algo quebrou → Opus** (Sonnet como meio-termo).
+No Claude Code dá pra trocar com `/model`, e subagentes podem usar modelo diferente do principal
+(ex.: Opus orquestra, dispara Haiku pra partes mecânicas).
+
+| Etapa do ciclo | Modelo sugerido | Por quê |
+|---|---|---|
+| `jw-nova-melhoria.sh` / `jw-enviar-melhoria.sh` (ciclo já scriptado) | **Haiku 4.5** | passo-a-passo determinístico |
+| Edição pequena/isolada, mudança de literal, seguir checklist | **Haiku 4.5** | bem-definido |
+| Busca/comparação de arquivos, consulta ao índice plugadvpl, git/gh "receita" | **Haiku 4.5** | mecânico |
+| Implementar feature nova ou refactor com nuance | **Sonnet 4.6** (ou Opus) | precisa de design, mas escopado |
+| Resolver conflito de merge não-trivial (ex.: marca vs upstream) | **Opus 4.8** | julgamento |
+| Debugar CI/tooling (ruff/version drift, schedule/default-branch/Issues off) | **Opus 4.8** | diagnóstico de causa por ausência de erro |
+| Decisão de arquitetura/fluxo, comparação ambígua, "o que portar do jobwise" | **Opus 4.8** | trade-offs sob ambiguidade |
+| Escolher entre abordagens / fazer as perguntas certas antes de agir | **Opus 4.8** | clarificação dirigida |
+
+> Heads-up: o gate do `jw-enviar-melhoria.sh` deixa o **ruff não-bloqueante** — então, rodando o ciclo
+> com Haiku, **revise os avisos de ruff/format antes do PR** (o Haiku tende a não questioná-los). `mypy`
+> e `pytest` continuam bloqueantes, então erro de tipo/teste o script pega sozinho.
