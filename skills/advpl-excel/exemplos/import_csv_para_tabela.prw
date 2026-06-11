@@ -38,7 +38,9 @@ User Function ZImpCli()
     Begin Transaction
         While oReader:HasLine()
             nLin++
-            aCols := StrTokArr(oReader:GetLine(), ";")   // ; = separador padrão BR
+            // StrTran(...Chr(13)...) tira o CR de arquivos CRLF: sem isso a ÚLTIMA
+            // coluna vem com "\r" no fim e quebra o parse (ex.: booleano sempre .F.).
+            aCols := StrTokArr(StrTran(oReader:GetLine(), Chr(13), ""), ";")   // ; = separador padrão BR
 
             // Pula cabeçalho (linha 1) e linhas curtas/vazias
             If nLin == 1 .Or. Len(aCols) < 2 .Or. Empty(AllTrim(aCols[1]))

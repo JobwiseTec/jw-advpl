@@ -80,12 +80,21 @@ Tipagem é **opcional** — função pode ser declarada sem tipos (`function foo
 > | Forma | 7.00.240223P | 20.3+ |
 > |---|---|---|
 > | `function nome(...)` | ❌ compile error | ✅ |
-> | `Function Nome(...)` | ✅ | ✅ |
+> | `Function Nome(...)` | ⚠️ ❌ em `.tlpp` com `namespace` (ver abaixo) | ✅ |
 > | `User Function Nome(...)` | ✅ | ✅ |
 > | `Static Function Nome(...)` | ✅ | ✅ |
 >
 > Em fontes que precisam rodar em build mista (legado + moderno), padronize em
 > `User Function` ou `Static Function` capitalizado — funciona em qualquer build.
+
+> ⚠️ **Gotcha de namespace — `Function` "pelado" rejeitado em `.tlpp` com `namespace`.**
+> Num fonte `.tlpp` que declara `namespace`, uma função sem qualificador (`Function Nome()`,
+> mesmo capitalizada) é **rejeitada na compilação**: *"Regular functions are not allowed in
+> code. Use USER FUNCTION or STATIC FUNCTION."* Toda função num `.tlpp` com namespace precisa
+> ser **`User Function`** (callable de outros fontes, vira `namespace.u_nome`) ou
+> **`Static Function`** (visível só no próprio fonte — ideal para helpers/auxiliares).
+> O `appre` (pré-compilador offline) **aceita** `Function` pelado, mas o **AppServer real
+> rejeita** — valide sempre no servidor. (Validado em build 7.00.240223P, 2026-06-11.)
 
 ## Parâmetros nomeados na chamada (named arguments)
 

@@ -4,6 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **`advpl-excel`: leitor CSV agora tira o `\r` de CRLF** — o exemplo usava `StrTokArr(oReader:GetLine(), ";")` sem remover o carriage-return, então a **última coluna** vinha com `"\r"` no fim e quebrava o parse (sintoma clássico: booleano/flag da última coluna sempre `.F.`). Corrigido pra `StrTran(oReader:GetLine(), Chr(13), "")` no SKILL.md e no exemplo `import_csv_para_tabela.prw` + anti-padrão dedicado. Pego em **teste ao vivo** contra AppServer real.
+- **`advpl-tlpp`: `Function` "pelado" é rejeitado em `.tlpp` com `namespace`** — a tabela de gotcha dava `Function Nome(...)` capitalizado como ✅, mas num fonte com `namespace` o AppServer rejeita (*"Regular functions are not allowed in code. Use USER FUNCTION or STATIC FUNCTION."*). Toda função precisa ser `User Function` ou `Static Function`. Nota nova alertando que o `appre` offline aceita mas o servidor real rejeita (validar no servidor). Validado em build 7.00.240223P.
+
+### Changed
+
+- **`advpl-excel`: orientação de fallback quando falta `printer.exe`** — `FWMsExcelXlsx`/`FwPrinterXlsx` falham **em runtime** sem `printer.exe` no AppServer (erro *"Printer Agent not found / Versão da printer.exe não suporta .xlsx"*). Skill e exemplo `gerar_xlsx.prw` agora documentam o fallback `FWMsExcelEx` (XML SpreadsheetML, sem printer.exe) com `try/catch`. Validado ao vivo.
+
 ## [0.35.0] - 2026-06-10
 
 ### Added

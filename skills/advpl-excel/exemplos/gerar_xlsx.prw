@@ -4,7 +4,9 @@
 Gera uma planilha .xlsx a partir da tabela ZZ0 usando FWMsExcelXlsx.
 
 FWMsExcelXlsx produz .xlsx BINÁRIO real (requer binário 17.3.0.0+ e printer.exe).
-Para XML SpreadsheetML (abre no Excel, extensão diferente) use FWMsExcelEx.
+SEM printer.exe no AppServer, FWMsExcelXlsx FALHA EM RUNTIME ("Printer Agent not
+found... printer.exe"). Fallback sem printer.exe: FWMsExcelEx (XML SpreadsheetML,
+salve como .xml — o Excel abre). Padrão robusto: try FWMsExcelXlsx / catch -> FWMsExcelEx.
 NÃO use FWMsExcel (depreciada — estoura memória em volume grande).
 
 Sequência canônica da família: New → AddWorkSheet → AddTable → AddColumn(s)

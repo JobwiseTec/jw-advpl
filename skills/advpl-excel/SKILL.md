@@ -73,7 +73,9 @@ User Function ZImpCli()
     Begin Transaction
         While oReader:HasLine()
             nLin++
-            aCols := StrTokArr(oReader:GetLine(), ";")   // ; = separador BR
+            // StrTran(...Chr(13)...) tira o CR de arquivos CRLF — senão a ÚLTIMA
+            // coluna vem com "\r" no fim e quebra parse (ex: booleano sempre .F.).
+            aCols := StrTokArr(StrTran(oReader:GetLine(), Chr(13), ""), ";")   // ; = separador BR
             If nLin == 1 .Or. Len(aCols) < 2              // pula cabeçalho / linha curta
                 Loop
             EndIf
@@ -102,6 +104,8 @@ Return Nil
 | **`FWMsExcel`** | XML SpreadsheetML | — | ⚠️ **depreciada** (alto uso de memória) |
 
 > XML SpreadsheetML ≠ `.xlsx` binário. `FWMsExcel`/`FWMsExcelEx` geram **XML que abre no Excel**; `.xlsx` de verdade só com `FWMsExcelXlsx`/`FwPrinterXlsx`.
+
+> ⚠️ **`.xlsx` binário depende de `printer.exe` no AppServer.** Sem ele, `FWMsExcelXlsx`/`FwPrinterXlsx` **falham em runtime** (não em compilação) — erro típico: *"TOTVS Printer: Printer Agent not found... printer.exe"* / *"Versão da printer.exe não suporta a geração de arquivos .xlsx"*. **Fallback sem printer.exe:** use `FWMsExcelEx` (gera XML SpreadsheetML, salve como `.xml`, o Excel abre). Padrão robusto: tente `FWMsExcelXlsx` num `try/catch` e caia pra `FWMsExcelEx` no `catch`. (Validado em ambiente real, build 7.00.240223P sem printer.exe.)
 
 ### Esqueleto: gerar planilha (FWMsExcelXlsx — sequência canônica)
 
@@ -158,6 +162,7 @@ Sem namespace/annotation de office — **as mesmas classes** valem em `.tlpp` e 
 - Inventar `FWLerExcel`/`LeExcel`/`OleAuto` (seção do topo) — não existem.
 - `MsExcel()` OLE em **JOB/REST/servidor** → não há Excel na máquina; use CSV. Veja `[[advpl-jobs-rpc]]`.
 - `FT_FReadLn` em CSV com linha > **1022 bytes** → trunca silenciosamente; use `FWFileReader`.
+- **Não tirar o `\r` de CRLF** ao parsear: `FWFileReader:GetLine()` (e `FT_FReadLn`) mantêm o carriage-return → a **última coluna** vem com `"\r"` no fim e `AllTrim` não tira (só espaço). Sintoma clássico: booleano/flag da última coluna sempre `.F.`. Tire com `StrTran(cLinha, Chr(13), "")` antes do `StrTokArr`. (Pego em teste real.)
 - Usar `FWMsExcel` (depreciada) pra volume grande → estoura memória; use `FWMsExcelEx`/`FWMsExcelXlsx`.
 - Esperar `.xlsx` binário de `FWMsExcel`/`FWMsExcelEx` → eles geram **XML** (abre no Excel, mas extensão/binário diferente).
 - Gravar tabela padrão com `RecLock` cru ignorando gatilhos → prefira `MSExecAuto`.
