@@ -18,7 +18,7 @@ Re-indexa um arquivo especifico (forca atualizacao mesmo se hash/mtime nao mudou
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.36.0 reindex $arquivo
+uvx plugadvpl@0.37.0 reindex $arquivo
 ```
 
 ## Exemplos

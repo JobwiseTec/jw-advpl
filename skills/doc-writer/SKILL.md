@@ -98,7 +98,7 @@ plugadvpl --format json doc-writer CalcICMS --author Joao -p "n,numeric,x"
 ## Execução
 
 ```bash
-uvx plugadvpl@0.36.0 doc-writer $ARGUMENTS
+uvx plugadvpl@0.37.0 doc-writer $ARGUMENTS
 ```
 
 ## Convenções importantes

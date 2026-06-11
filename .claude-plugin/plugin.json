@@ -1,6 +1,6 @@
 {
   "name": "jw-advpl",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "Fork jw-advpl do plugadvpl (TOTVS Protheus ADVPL/TLPP): índice SQLite/FTS5, lint, compile via advpls, edita .prw cp1252 sem corromper acentos e guarda credenciais no cofre nativo do OS. ~16× menos contexto. Base: plugadvpl (JoniPraia, MIT).",
   "author": {
     "name": "JobwiseTec"

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -500,7 +501,7 @@ FWExecView, métodos), SQL embarcado, includes, capabilities (MVC/JOB/REST/PE/..
 ### REGRA DURA — SEM EXCEÇÃO
 
 **Antes de chamar `Read` em qualquer `.prw`/`.tlpp`/`.prx`, você DEVE rodar primeiro
-um comando do plugadvpl** (via `Bash plugadvpl ...` ou `/plugadvpl:*` se houver slash).
+um comando do plugadvpl** (via `Bash plugadvpl ...` ou `/__SLASH_NS__:*` se houver slash).
 Fontes Protheus têm tipicamente 1.000-10.000 linhas; lê-los inteiros queima contexto e
 produz respostas vagas. O índice te dá o resumo em ~200 tokens em vez de 10.000.
 
@@ -545,7 +546,7 @@ Sintetize o que encontrar nos passos 1-6 num parágrafo: o que faz + dependênci
 - **Sempre disponível** (CLI Python, basta `uv` instalado):
   `Bash -> plugadvpl <subcomando> ...` ou `uvx plugadvpl@<versão> <subcomando> ...`
 - **Se o plugin Claude Code estiver instalado** (recomendado para UX):
-  use os slash commands `/plugadvpl:arch`, `/plugadvpl:find`, etc.
+  use os slash commands `/__SLASH_NS__:arch`, `/__SLASH_NS__:find`, etc.
 
 Para ver versão / status do índice: `plugadvpl status`. Para ver todos os comandos:
 `plugadvpl --help`.
@@ -957,6 +958,39 @@ def _check_fragment_staleness(root: Path) -> str | None:
     return None
 
 
+_DEFAULT_SLASH_NS = "plugadvpl"
+
+
+def _resolve_slash_namespace() -> str:
+    """Namespace dos slash commands do plugin Claude Code (ex.: ``plugadvpl`` → ``/plugadvpl:arch``).
+
+    Quando o plugin é redistribuído sob outro nome (fork/rebrand), o Claude Code
+    expõe os comandos sob ``/<nome-do-plugin>:`` — então o fragment precisa refletir
+    esse nome, não o literal ``plugadvpl``. Resolução, em ordem:
+
+    1. env ``PLUGADVPL_SLASH_NS`` (override explícito);
+    2. ``name`` do ``.claude-plugin/plugin.json`` vizinho ao código (instalação
+       editable a partir de um checkout do repo/fork);
+    3. fallback ``plugadvpl``.
+    """
+    env = os.environ.get("PLUGADVPL_SLASH_NS", "").strip()
+    if env:
+        return env
+    # Sobe a partir deste arquivo procurando .claude-plugin/plugin.json (poucos níveis:
+    # cli/plugadvpl/cli.py → cli → <raiz do repo>/.claude-plugin/plugin.json).
+    for parent in list(Path(__file__).resolve().parents)[:6]:
+        manifest = parent / ".claude-plugin" / "plugin.json"
+        if manifest.is_file():
+            try:
+                name = str(json.loads(manifest.read_text(encoding="utf-8")).get("name", "")).strip()
+            except (OSError, ValueError):
+                break
+            if name:
+                return name
+            break
+    return _DEFAULT_SLASH_NS
+
+
 def _write_agent_fragment(root: Path, filename: str) -> None:
     """Escreve/atualiza idempotentemente a região ``BEGIN/END plugadvpl`` em ``filename``.
 
@@ -966,9 +1000,14 @@ def _write_agent_fragment(root: Path, filename: str) -> None:
     v0.16.1: parametrizado pra suportar múltiplos agentes — Claude Code lê
     ``CLAUDE.md``; Cursor/GitHub Copilot/Codex leem ``AGENTS.md``. Conteúdo do
     fragment é idêntico, só o arquivo destino muda.
+
+    Slash commands: ``__SLASH_NS__`` é resolvido pelo nome real do plugin
+    (ver ``_resolve_slash_namespace``) pra funcionar em forks/rebrands.
     """
     target = root / filename
-    body_with_version = _CLAUDE_FRAGMENT_BODY.replace("__VERSION__", __version__)
+    body_with_version = _CLAUDE_FRAGMENT_BODY.replace("__VERSION__", __version__).replace(
+        "__SLASH_NS__", _resolve_slash_namespace()
+    )
     fragment = _CLAUDE_FRAGMENT_BEGIN + "\n" + body_with_version + _CLAUDE_FRAGMENT_END + "\n"
 
     if target.exists():

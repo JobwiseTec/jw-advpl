@@ -30,8 +30,8 @@ entendimento arquitetural.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.36.0 --format md family $prefixo
-uvx plugadvpl@0.36.0 --format md family $prefixo --include-tables
+uvx plugadvpl@0.37.0 --format md family $prefixo
+uvx plugadvpl@0.37.0 --format md family $prefixo --include-tables
 ```
 
 > A flag `--format` vem **antes** do subcomando (e global no callback). Use `--format md` (ou `json`).
