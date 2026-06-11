@@ -994,6 +994,16 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.38.0 — Codex CLI first-class (skills nativas)
+
+Feedback de quem instalou o plugin no **OpenAI Codex**: o `init` gerava `AGENTS.md` + `.codex/config.toml`, mas **não instalava as skills**. Agora o Codex é agente first-class:
+- **Skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (× 70, *open agent skills standard* — auto-discovery), replicadas em `.codex/skills/` (legado) e em `~/.agents/skills/` (global, só se `~/.agents` já existir). Frontmatter `name: plugadvpl-<X>` + `description`.
+- **`init --codex-only`**: modo isolado — só Codex (config + skills), mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini.
+- **Reescrita de links** `[[skill]]` → `[[plugadvpl-skill]]` no transform compartilhado (além de `/plugadvpl:<X>` → `uvx plugadvpl@<ver> <X>`).
+- **`.plugadvplignore`** auto-populado com os dirs de agentes (`.agents/skills/**`, `.codex/**`, `.gemini/skills/**`, `.cursor/**`, `.github/instructions/**`) — fora do índice.
+- **`doctor --check-agents`** passa a validar as skills do Codex (`check_codex_skills`; 6 checks no total).
+- `gemini_skills.py` cedeu o cross-write de `.agents/skills` pro `codex_skills.py` (dono único — sem colisão de marker).
+
 ### v0.37.0 — skill advpl-word (Word no Protheus, anti-alucinação)
 
 Mesma jogada do `advpl-excel`, agora pra MS Word (carta/contrato/mala direta) — #149:

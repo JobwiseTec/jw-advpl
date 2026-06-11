@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-06-11
+
 ### Added
 
 - **Codex CLI agora é first-class** — `plugadvpl init` instala as 70 skills como **skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (diretório canônico do *open agent skills standard*; auto-discovery), replicadas em `.codex/skills/` (legado experimental) e, se `~/.agents/` já existir, em `~/.agents/skills/` (global, blindado — nunca cria o home). Cada `SKILL.md` ganha frontmatter `name: plugadvpl-<X>` + `description`, comandos `/plugadvpl:<X>` viram `uvx plugadvpl@<ver> <X>`, e links wiki `[[skill]]` viram `[[plugadvpl-skill]]` (transform compartilhado com Cursor/Copilot/Gemini). Antes o `init` só gerava `.codex/config.toml` + `AGENTS.md` — o Codex não recebia as skills (feedback de quem instalou o plugin no Codex).
