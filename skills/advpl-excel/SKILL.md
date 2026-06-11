@@ -175,6 +175,7 @@ Sem namespace/annotation de office — **as mesmas classes** valem em `.tlpp` e 
 
 ## Cross-references
 
+- `[[advpl-word]]` — MS Word (carta/contrato/mala direta): família `OLE_*` (client-side) e RTF (server-side). Mesmo limite de OLE.
 - `[[advpl-tlpp]]` — mesmas classes em `.tlpp`; OLE não roda em job.
 - `[[advpl-jobs-rpc]]` — por que OLE quebra em JOB/RPC (sem Office na máquina).
 - `[[advpl-ui-patterns]]` — export de browse/grid, FWMSExcel:GetXMLFile.
