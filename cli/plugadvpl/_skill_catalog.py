@@ -25,6 +25,7 @@ from typing import Literal
 RULE_MARKER_PREFIX = "<!-- plugadvpl-rule-version:"
 INSTRUCTIONS_MARKER_PREFIX = "<!-- plugadvpl-instructions-version:"
 GEMINI_MARKER_PREFIX = "<!-- plugadvpl-gemini-version:"
+CODEX_SKILL_MARKER_PREFIX = "<!-- plugadvpl-codex-skill-version:"
 
 # ---------------------------------------------------------------------------
 # Skill catalog (spec §5)
@@ -160,6 +161,11 @@ def _parse_skill_md(skill_md_text: str) -> tuple[str, str]:
 
 _SLASH_RE = re.compile(r"/plugadvpl:([a-z0-9-]+)")
 _UVX_VER_RE = re.compile(r"uvx plugadvpl@[\w.+-]+")
+# Link de skill estilo wiki: [[nome]] → [[plugadvpl-nome]] (idempotente).
+# Skills instaladas em todos os agentes usam o prefixo plugadvpl-. O
+# lookahead (?!plugadvpl-) evita duplo prefixo; só casa lowercase-hífen
+# (formato dos nomes de skill), nunca sintaxe de array ADVPL/markdown.
+_SKILL_LINK_RE = re.compile(r"\[\[(?!plugadvpl-)([a-z0-9][a-z0-9-]*)\]\]")
 
 
 def _transform_body(body: str, version: str, style: Literal["cursor", "plain"] = "plain") -> str:
@@ -182,7 +188,8 @@ def _transform_body(body: str, version: str, style: Literal["cursor", "plain"] =
         body = _SLASH_RE.sub(rf"`Bash: uvx plugadvpl@{version} \1`", body)
     else:  # plain
         body = _SLASH_RE.sub(rf"uvx plugadvpl@{version} \1", body)
-    return _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
+    body = _UVX_VER_RE.sub(f"uvx plugadvpl@{version}", body)
+    return _SKILL_LINK_RE.sub(r"[[plugadvpl-\1]]", body)
 
 
 # ---------------------------------------------------------------------------

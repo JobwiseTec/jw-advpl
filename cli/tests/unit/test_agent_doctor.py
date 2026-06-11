@@ -6,6 +6,7 @@ from pathlib import Path
 from plugadvpl.agent_doctor import (
     DoctorReport,
     check_claude_md,
+    check_codex_skills,
     check_copilot_instructions,
     check_cursor_rules,
     check_gemini_skills,
@@ -83,6 +84,35 @@ class TestCheckGeminiSkills:
         assert result.status == "ok"
 
 
+class TestCheckCodexSkills:
+    def test_valid_codex_skills(self, tmp_path: Path) -> None:
+        skill_dir = tmp_path / ".agents" / "skills" / "plugadvpl-arch"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: plugadvpl-arch\ndescription: ADVPL arch\n---\n"
+            "<!-- plugadvpl-codex-skill-version: 0.38.0 -->\nBody\n",
+            encoding="utf-8",
+        )
+        result = check_codex_skills(tmp_path, expected_version="0.38.0")
+        assert result.status == "ok"
+
+    def test_missing_codex_skills(self, tmp_path: Path) -> None:
+        result = check_codex_skills(tmp_path, expected_version="0.38.0")
+        assert result.status == "missing"
+
+    def test_flags_frontmatter_without_name(self, tmp_path: Path) -> None:
+        skill_dir = tmp_path / ".agents" / "skills" / "plugadvpl-arch"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\ndescription: ADVPL arch sem name\n---\n"
+            "<!-- plugadvpl-codex-skill-version: 0.38.0 -->\nBody\n",
+            encoding="utf-8",
+        )
+        result = check_codex_skills(tmp_path, expected_version="0.38.0")
+        assert result.status == "fail"
+        assert "name" in result.detail.lower()
+
+
 class TestKeywordsCheck:
     def test_flags_skill_without_advpl_keyword(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / "myskill"
@@ -109,4 +139,5 @@ class TestRunChecks:
     def test_run_all_checks_returns_report(self, tmp_path: Path) -> None:
         report = run_checks(tmp_path, expected_version="0.16.5")
         assert isinstance(report, DoctorReport)
-        assert len(report.checks) >= 5  # CLAUDE, AGENTS, Cursor, Copilot, Gemini
+        assert len(report.checks) >= 6  # CLAUDE, AGENTS, Cursor, Copilot, Gemini, Codex
+        assert any(c.name == "codex_skills" for c in report.checks)

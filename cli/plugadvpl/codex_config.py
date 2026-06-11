@@ -51,9 +51,12 @@ _CODEX_CONFIG_TEMPLATE = """# .codex/config.toml — Codex CLI per-project confi
 # Para ler arquivos adicionais como contexto:
 # project_doc_fallback_filenames = ["CLAUDE.md"]
 
-[skills]
-# Codex lê SKILL.md compatíveis cross-tool. Nossas skills/plugadvpl-*/SKILL.md
-# funcionam diretamente — Codex faz auto-discovery quando habilitado.
+# Skills do plugadvpl ficam em .agents/skills/plugadvpl-*/SKILL.md (padrão
+# aberto — Codex faz auto-discovery). Também replicadas em .codex/skills/
+# para versões experimentais do Codex. Para registrar ou desabilitar caminhos
+# específicos (opcional — não é necessário pro auto-discovery):
+# [[skills.config]]
+# path = ".agents/skills/plugadvpl-arch"
 # enabled = true
 """
 

@@ -244,10 +244,11 @@ class TestInstallGeminiSkills:
         assert not (project / "GEMINI.md").exists()
         assert not (project / ".gemini").exists()
 
-    def test_installs_to_agents_skills_when_present(
+    def test_does_not_cross_write_to_agents_skills(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """v0.16.5 — `.agents/skills/` no projeto → instala lá também (paralelo a .gemini/skills/)."""
+        """v0.38.0 — gemini NÃO escreve mais em `.agents/skills/` (codex_skills é o
+        dono do diretório; evita colisão de marker GEMINI vs CODEX_SKILL)."""
         from plugadvpl.gemini_skills import install_gemini_skills
         fake_home = tmp_path / "home"
         fake_home.mkdir()
@@ -255,42 +256,21 @@ class TestInstallGeminiSkills:
         monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
         project = tmp_path / "project"
         (project / ".gemini").mkdir(parents=True)
+        # Mesmo com .agents/skills/ presente, gemini não toca nele
         (project / ".agents" / "skills").mkdir(parents=True)
 
-        result = install_gemini_skills(project, version="0.16.5")
+        result = install_gemini_skills(project, version="0.38.0")
 
-        # Instala em ambos
+        # .gemini/skills instala normal (todas as 70)
         gemini_files = list(
             (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
         )
+        assert len(gemini_files) == 70
+        assert result.installed_skills_count == 70
+        # .agents/skills permanece vazio — gemini cedeu o cross-write
         agents_files = list(
             (project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(gemini_files) == 70
-        assert len(agents_files) == 70
-        assert result.installed_skills_count == 70
-        assert result.installed_agents_skills_count == 70
-
-    def test_no_install_to_agents_skills_when_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """v0.16.5 — `.agents/skills/` NÃO existe → NÃO cria a pasta."""
-        from plugadvpl.gemini_skills import install_gemini_skills
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
-        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
-        project = tmp_path / "project"
-        (project / ".gemini").mkdir(parents=True)
-        # Sem .agents/ no projeto
-
-        result = install_gemini_skills(project, version="0.16.5")
-
-        # .gemini/skills instala normal
-        gemini_files = list(
-            (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
-        )
-        assert len(gemini_files) == 70
-        # .agents/ NÃO foi criado
-        assert not (project / ".agents").exists()
-        assert result.installed_agents_skills_count == 0
+        assert agents_files == []
+        # InstallResult não tem mais o campo removido
+        assert not hasattr(result, "installed_agents_skills_count")
