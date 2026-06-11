@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-06-11
+
 ### Added
 
 - **Skill `advpl-word`** — gerar/preencher/imprimir documentos do MS Word (carta, contrato, mala direta) em ADVPL/TLPP, com foco **anti-alucinação** (mesma motivação do `advpl-excel`). A API real de Word é a **família `OLE_*`** (`OLE_CreateLink`/`OLE_NewFile`/`OLE_SetDocumentVar`/`OLE_UpdateFields`/`OLE_SaveAsFile`/`OLE_PrintFile`/`OLE_CloseFile`/`OLE_CloseLink`) com template `.dot/.dotx` + `DocVariable` — mas é **client-side** (Word instalado; não roda em REST/JOB/servidor/SmartClient HTML). Para servidor/headless o caminho portável é **RTF + `MemoWrite`**. Tabela de funções **alucinadas a rejeitar** (`MsWord()`, `FWMSWord`, `FWGeraWord`, `FWLerWord`, `GeraDocx`, `CreateObject("Word.Application")`). Inclui 2 exemplos (RTF server-side + OLE template client-side). Validado com TDD de skill (RED: baseline inventa `MSWord():New()`/CreateObject; GREEN: usa `OLE_*`/RTF reais) e endpoint REST de RTF testado em AppServer real. Pesquisa ancorada em TDN/Central oficial + comunidade. (70 skills.)

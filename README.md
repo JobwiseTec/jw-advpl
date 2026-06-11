@@ -992,6 +992,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.37.0 — skill advpl-word (Word no Protheus, anti-alucinação)
+
+Mesma jogada do `advpl-excel`, agora pra MS Word (carta/contrato/mala direta) — #149:
+- **Skill nova `advpl-word`** (70ª): API real = família **`OLE_*`** (`OLE_CreateLink`/`OLE_NewFile`/`OLE_SetDocumentVar`/`OLE_UpdateFields`/`OLE_SaveAsFile`/...) com template `.dot/.dotx` + `DocVariable` — mas **client-side** (Word instalado; não roda em REST/JOB/servidor/HTML). Server-side/headless: **RTF + `MemoWrite`**.
+- Tabela de funções **alucinadas a rejeitar**: `MsWord()`, `FWMSWord`, `FWGeraWord`, `FWLerWord`, `GeraDocx`, `CreateObject("Word.Application")`.
+- 2 exemplos (RTF server-side + OLE template client-side). TDD: RED inventa `MSWord()`/CreateObject; GREEN usa `OLE_*`/RTF. Endpoint REST RTF compilado e validado no AppServer real.
+
 ### v0.36.0 — correções advpl-excel + advpl-tlpp (validadas em AppServer real)
 
 Testando os fontes Excel num AppServer ao vivo (leitura via REST), três correções:
