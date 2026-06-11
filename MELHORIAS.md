@@ -24,6 +24,7 @@
 | upstream-watch | — | — | local-only | workflow semanal avisa release nova do upstream (issue no fork) |
 | mvc-setproperty-fwbuildfeature | [#155](https://github.com/JoniPraia/plugadvpl/issues/155) | [#156](https://github.com/JoniPraia/plugadvpl/pull/156) | proposed | SetProperty+FWBuildFeature p/ WHEN/VALID/INIT por código |
 | mvc-checklist-geracao | [#157](https://github.com/JoniPraia/plugadvpl/issues/157) | [#158](https://github.com/JoniPraia/plugadvpl/pull/158) | proposed | checklist de geração MVC (Model/View/Menu/Qualidade) |
+| mvc-exemplo-prw-classico | [#159](https://github.com/JoniPraia/plugadvpl/issues/159) | [#160](https://github.com/JoniPraia/plugadvpl/pull/160) | proposed | exemplo MVC clássico .prw master-detail (ZEXPEDIDO) |
 
 ## Qual modelo usar em cada etapa do ciclo
 
