@@ -348,6 +348,36 @@ FWMVCRotAuto(oModel, "ZZ1", MODEL_OPERATION_INSERT, ;
     {{"ZZ1MASTER", aCab}, {"ZZ2DETAIL", aItens}})
 ```
 
+## Checklist de geração MVC (antes de entregar)
+
+Antes de considerar um cadastro MVC pronto, confira:
+
+**Model (`ModelDef`)**
+- [ ] `FWFormStruct(1, "<ALIAS>")` para **cada** tabela (cabeçalho + cada grid).
+- [ ] `MPFormModel():New("<ID_UNICO>")` com ID exclusivo no ambiente.
+- [ ] `AddFields` (cabeçalho) e `AddGrid` (cada detalhe).
+- [ ] `SetRelation` ligando cada grid ao pai (master-detail).
+- [ ] `SetPrimaryKey({...})` **não-vazio** em cadastro com inclusão (vazio só em monitor view-only).
+- [ ] `SetUniqueLine` nas grids onde a chave não pode repetir.
+- [ ] Hooks via `FWModelEvent` + `InstallEvent` — **nunca** `bCommit`/`bTudoOk` (descontinuados).
+
+**View (`ViewDef`)**
+- [ ] `FWLoadModel("<ROTINA>")` (em `.tlpp`: `namespace.funçãoPrincipal` — ver `[[advpl-mvc-tlpp]]`).
+- [ ] `FWFormStruct(2, ...)` por entidade · `SetModel`.
+- [ ] `AddField`/`AddGrid` · boxes (`CreateHorizontalBox`/`CreateVerticalBox`/`CreateFolder`) + `SetOwnerView` para **cada** componente.
+
+**Menu (`MenuDef`)**
+- [ ] CRUD via `FWMVCMenu` (`.prw`) ou `ADD OPTION` manual (`.tlpp` — `FWMVCMenu` não resolve com namespace).
+- [ ] opções custom (`ACTION`) registradas, se houver.
+
+**Qualidade (cruza com `[[advpl-code-review]]`)**
+- [ ] gravação só via `FWFormCommit(oModel)` / `FWModelEvent` — nunca sobrescrever `FormCommit`.
+- [ ] **sem UI** (`MsgAlert`/`Help`/`Pergunte`) dentro de handler em transação (`InTTS`).
+- [ ] `Try/Catch` em vez de `ErrorBlock`; `FWLogMsg` em vez de `ConOut`.
+- [ ] `GetMV`/`ExistBlock` cacheados **antes** de loop de grid (não dentro).
+- [ ] estrutura lida via `FWFormStruct`/dicionário — sem `DbSelectArea("SX3")` cru.
+- [ ] fonte `.tlpp`? confira a casca de namespace e as *Def como `User Function` (`[[advpl-mvc-tlpp]]`).
+
 ## Anti-padrões
 
 - **`RecLock` dentro de `bCommit` legado** → registro fica preso se erro entre RecLock e MsUnlock. Use `FWModelEvent.InTTS` com try-protected.
