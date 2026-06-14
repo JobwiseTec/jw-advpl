@@ -994,6 +994,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.39.0 — advpl-mvc lapidada + init fork-aware
+
+Lapidação da skill **`advpl-mvc`** (3 PRs) e um ajuste no `init` pra forks/rebrands:
+- **Exemplo MVC clássico `.prw`** (`exemplos/ZEXPEDIDO.prw`) — contraparte ADVPL clássica dos exemplos `.tlpp`: master-detail ZX1+ZX2 com `FWMVCMenu`, `SetRelation`/`SetUniqueLine`, validação de linha e hook `FWModelEvent` (`InTTS`/`AfterTTS`). #160
+- **`SetProperty` + `FWBuildFeature`** pra WHEN/VALID/INIT por código (são **expressões** — sem o wrapper o `SetProperty` não toma efeito). #156
+- **Checklist de geração MVC** (Model/View/Menu/Qualidade) pra pegar os erros clássicos antes de entregar. #158
+- **`init` resolve o namespace real do plugin** nos slash commands do fragment (`PLUGADVPL_SLASH_NS` → `name` do `plugin.json` → fallback `plugadvpl`) — forks/rebrands deixam de apontar pra `/plugadvpl:*` inexistente. Instalação oficial: **byte-idêntico**. #153
+
 ### v0.38.0 — Codex CLI first-class (skills nativas)
 
 Feedback de quem instalou o plugin no **OpenAI Codex**: o `init` gerava `AGENTS.md` + `.codex/config.toml`, mas **não instalava as skills**. Agora o Codex é agente first-class:

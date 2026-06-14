@@ -4,6 +4,18 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-06-14
+
+### Added
+
+- **`plugadvpl init` resolve o namespace real do plugin nos slash commands do fragment** — o `CLAUDE.md`/`AGENTS.md` hardcodava `/plugadvpl:arch` etc. Em forks/rebrands o Claude Code expõe os comandos sob `/<nome-do-plugin>:`, então o fragment apontava pra comando inexistente. Agora um placeholder `__SLASH_NS__` é resolvido por (1) env `PLUGADVPL_SLASH_NS`, (2) `name` do `.claude-plugin/plugin.json` vizinho, (3) fallback `plugadvpl`. Instalação oficial: **byte-idêntico** (segue `/plugadvpl:*`). (#153)
+- **Exemplo MVC clássico `.prw` na skill `advpl-mvc`** — `exemplos/ZEXPEDIDO.prw`, a contraparte ADVPL clássica (Static Functions, referência pelo nome do fonte) dos exemplos `.tlpp`: cadastro **master-detail** (capa ZX1 + itens ZX2) com `FWMVCMenu` + opção custom, `AddFields`/`AddGrid`/`SetRelation`, `SetPrimaryKey`/`SetUniqueLine`, validação de linha, hook `FWModelEvent` (`InTTS`/`AfterTTS`) e aprovação headless via `FWLoadModel`. O miolo é o mesmo do `.tlpp`; só a casca muda. (#160)
+
+### Changed
+
+- **Skill `advpl-mvc`: `SetProperty` para WHEN/VALID/INIT por código** — a skill só mostrava `SetProperty` para flags booleanas. Agora documenta que **WHEN/VALID/INIT são expressões** e precisam de `FWBuildFeature(STRUCT_FEATURE_*, "<expr>")` (sem o wrapper o `SetProperty` não toma efeito), com tabela booleano-vs-expressão. (#156)
+- **Skill `advpl-mvc`: checklist de geração MVC antes de entregar** — checklist pré-entrega (Model/View/Menu/Qualidade) que captura os erros clássicos de geração MVC: `SetPrimaryKey` não-vazio, hooks via `FWModelEvent` em vez de `bCommit`/`bTudoOk` descontinuados, `FWMVCMenu` no `.prw` vs `ADD OPTION` no `.tlpp`, cache de `GetMV`/`ExistBlock` antes do loop de grid. (#158)
+
 ## [0.38.0] - 2026-06-11
 
 ### Added
