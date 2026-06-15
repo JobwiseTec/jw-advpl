@@ -994,6 +994,14 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.40.0 — roadmap-ia: verify-claims + grounding (anti-alucinação determinístico)
+
+A maior alavanca de qualidade (deep-research): um **verificador externo determinístico** — que o índice plugadvpl já é. 4 fases (TDD):
+- **`plugadvpl verify-claims`** — símbolos afirmados → verdict por claim (`exists`/`not_found`/`relation_holds`/...) por set-membership contra o índice. `not_found` é mundo aberto. `--stdin` (lote) + `--kind/--symbol`.
+- **Fluxo grounded** — hook `Stop` verifica os símbolos do bloco `<plugadvpl-claims>` antes de finalizar e pede correção só do que falhou (alta confiança); pega funções `FW*`/`Ms*` inventadas (ex.: `FWLerExcel`).
+- **Eval harness** (faithfulness, $0) + **routing-eval / lint de descrições** de skill.
+- **Fix:** `ingest` passa a respeitar `--db`. Validado em 4 bases reais. Ver [docs/roadmap-ia/](docs/roadmap-ia/).
+
 ### v0.39.0 — advpl-mvc lapidada + init fork-aware
 
 Lapidação da skill **`advpl-mvc`** (3 PRs) e um ajuste no `init` pra forks/rebrands:

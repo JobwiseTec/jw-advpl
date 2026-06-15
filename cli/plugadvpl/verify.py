@@ -258,15 +258,32 @@ def verify_claims(conn: sqlite3.Connection, claims: list[dict[str, Any]]) -> dic
     }
 
 
+# Prefixos reservados ao framework/nativas TOTVS. Uma função AUSENTE com um
+# desses prefixos alega ser nativa mas não está no catálogo → alucinação provável
+# (ex.: FWLerExcel, MsRetXls). Ninguém nomeia função customer assim (usa U_/prefixo).
+_FRAMEWORK_PREFIXES = ("FW", "MS", "TC", "PCO", "AP")
+
+
 def _confidence(kind: str, symbol: str, verdict: dict[str, Any], complete: set[str]) -> str:
-    """Calibra confiança: cai em MISS, não em HIT. Em kind de dicionário completo,
-    um miss de símbolo customer (prefixo Z) é significativo (high)."""
+    """Calibra confiança: cai em MISS, não em HIT.
+
+    - field/table: miss de símbolo customer (prefixo Z) em corpus completo → high.
+    - function: miss com prefixo de framework (FW/MS/...) → high (alega nativehood);
+      miss com prefixo ``U_`` → low (provável customer não-indexado); senão medium.
+    """
     if "confidence" in verdict:  # relações já decidem (sparse graph)
         return str(verdict["confidence"])
     status = verdict["status"]
     if status in ("exists", "relation_holds"):
         return "high"
-    if status == "not_found" and kind in ("field", "table"):
-        customer = symbol.strip().upper().startswith("Z")
-        return "high" if (kind in complete and customer) else "medium"
+    if status == "not_found":
+        su = symbol.strip().upper()
+        if kind in ("field", "table"):
+            customer = su.startswith("Z")
+            return "high" if (kind in complete and customer) else "medium"
+        if kind == "function":
+            if su.startswith("U_"):
+                return "low"
+            if any(su.startswith(p) for p in _FRAMEWORK_PREFIXES):
+                return "high"
     return "medium"

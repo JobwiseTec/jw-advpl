@@ -209,6 +209,39 @@ class TestUnsupportedKind:
         assert r["c1"]["status"] == "unsupported_kind"
 
 
+class TestFunctionMissConfidence:
+    """Calibração de confiança em not_found de função (Fase 1 refinada)."""
+
+    def test_framework_prefix_miss_is_high(self, conn: sqlite3.Connection) -> None:
+        from plugadvpl.verify import verify_claims
+
+        # FWLerExcel: prefixo FW (alega ser framework) + ausente -> alucinação provável.
+        r = _by_id(verify_claims(conn, [{"id": "c1", "kind": "function", "symbol": "FWLerExcel"}]))
+        assert r["c1"]["status"] == "not_found"
+        assert r["c1"]["confidence"] == "high"
+
+    def test_ms_prefix_miss_is_high(self, conn: sqlite3.Connection) -> None:
+        from plugadvpl.verify import verify_claims
+
+        r = _by_id(verify_claims(conn, [{"id": "c1", "kind": "function", "symbol": "MsRetXls"}]))
+        assert r["c1"]["confidence"] == "high"
+
+    def test_user_function_miss_is_low(self, conn: sqlite3.Connection) -> None:
+        from plugadvpl.verify import verify_claims
+
+        # U_ -> provável customer não-indexado -> baixa confiança (não bloquear).
+        r = _by_id(verify_claims(conn, [{"id": "c1", "kind": "function", "symbol": "U_NaoIndexada"}]))
+        assert r["c1"]["status"] == "not_found"
+        assert r["c1"]["confidence"] == "low"
+
+    def test_plain_name_miss_is_medium(self, conn: sqlite3.Connection) -> None:
+        from plugadvpl.verify import verify_claims
+
+        # Sem prefixo de framework nem U_ -> inconclusivo (medium).
+        r = _by_id(verify_claims(conn, [{"id": "c1", "kind": "function", "symbol": "GeraDocx"}]))
+        assert r["c1"]["confidence"] == "medium"
+
+
 class TestExtractClaims:
     """Fase 3: extração do bloco <plugadvpl-claims> de uma resposta."""
 

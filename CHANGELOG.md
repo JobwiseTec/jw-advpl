@@ -4,6 +4,24 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-06-15
+
+### Added
+
+- **`plugadvpl verify-claims` — verificador determinístico (sound verifier) anti-alucinação** (roadmap-ia Fase 1). Recebe os símbolos que uma resposta afirmou (`function`/`table`/`field`/`param`/`call_edge`/`trigger`) e devolve um verdict por claim — `exists`/`not_found`/`relation_holds`/`relation_absent`/`unsupported_kind` — por set-membership exata contra o índice, com bloco de cobertura (`complete_kinds`) e confiança calibrada (cai em miss, não em hit). `not_found` é **mundo aberto** (não significa "alucinado"). `--stdin` (lote) + forma curta `--kind/--symbol`. Veredito ancorado em deep-research: o maior alavanca de qualidade é o verificador externo determinístico — que o índice já é.
+- **Fluxo de verificação grounded** (Fase 3): hook `Stop` (`hooks/stop-verify.mjs`) que, antes de o agente finalizar, extrai os símbolos afirmados num bloco `<plugadvpl-claims>` e roda `verify-claims`, **bloqueando só em `not_found` de alta confiança** (re-prompt cirúrgico, failure-silent, loop-guard). Instrução no fragment `CLAUDE.md`/`AGENTS.md` + skill `verify-claims` (71ª skill). Garantido no Claude Code; advisory nos demais agentes.
+- **Eval harness determinístico** (Fase 2, custo $0): faithfulness de símbolo (reusa `verify-claims`) + armadilhas (`must_not_mention`) + gate de regressão. Juiz LLM opt-in/offline.
+- **Routing-eval + lint de descrições de skill** (Fase 4): scorers top-1/set-F1 + gate de qualidade sobre as descrições (a `description` é o roteador). Sem roteador semântico/GNN.
+- Roadmap documentado em `docs/roadmap-ia/`. Validado em **4 bases ADVPL reais** (0 falso-positivo em símbolo real; alucinações `FW*`/`Ms*` pegas).
+
+### Changed
+
+- **Calibração de confiança de função no `verify-claims`**: `not_found` com prefixo de framework (`FW`/`MS`/`TC`/`PCO`/`AP`) → **alta** confiança (alega ser nativa mas não está no catálogo, ex.: `FWLerExcel`); prefixo `U_` → **baixa** (provável customer não-indexado); senão média. Faz o hook `Stop` pegar a classe #1 de alucinação (funções inventadas que se passam por nativas) — gap descoberto na demonstração end-to-end.
+
+### Fixed
+
+- **`plugadvpl ingest` agora respeita a flag global `--db`** — antes hardcodava `<root>/.plugadvpl/index.db`, ignorando `--db`; permite indexar uma base apontando o índice pra outro lugar sem poluir a pasta (`reindex` já respeitava).
+
 ## [0.39.0] - 2026-06-14
 
 ### Added
