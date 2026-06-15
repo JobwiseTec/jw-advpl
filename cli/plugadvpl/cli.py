@@ -1646,12 +1646,19 @@ def tables(
                 err=True,
             )
             raise typer.Exit(code=1)
-        # SP2 awareness: expõe a chave única (X2_UNICO) no título pro agente
-        # consultar antes de gerar/gravar e não duplicar a chave.
+        # SP2 awareness: expõe a chave única (X2_UNICO) pro agente consultar antes
+        # de gerar/gravar e não duplicar a chave. No formato `table` (humano) vai
+        # no título; em `md` (formato do agente) o título é ignorado pelo render,
+        # então emitimos a chave como linha de stdout antes da tabela.
         meta = _with_ro_db(ctx, lambda c: q_table_meta(c, tabela))
         title = f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)"
         if meta and meta.get("unico"):
             title += f" | X2_UNICO (chave única): {meta['unico']}"
+            if ctx.obj["format"] == "md":
+                typer.echo(
+                    f"> **X2_UNICO (chave única) de {tabela.upper()}:** `{meta['unico']}` — "
+                    "faça DbSeek/ExistCpo da chave antes de incluir (evita duplicar).\n"
+                )
         _render_from_ctx(
             ctx,
             rows,

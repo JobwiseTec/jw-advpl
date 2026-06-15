@@ -1045,3 +1045,24 @@ class TestSxExtraColumns:
             assert r == ("S", "N", "ZX2_FILIAL+ZX2_NUM")
         finally:
             conn.close()
+
+    def test_tables_catalog_md_expoe_x2_unico(self, tmp_path: Path, runner: CliRunner) -> None:
+        """Awareness: `tables --catalog --format md` (formato do agente) mostra X2_UNICO."""
+        csv_dir = tmp_path / "csv"
+        csv_dir.mkdir()
+        (csv_dir / "sx2.csv").write_text(
+            '"X2_CHAVE","X2_NOME","X2_UNICO"\n"ZX1","Pedidos","ZX1_FILIAL+ZX1_NUM"\n',
+            encoding="utf-8",
+        )
+        (csv_dir / "sx3.csv").write_text(
+            '"X3_ARQUIVO","X3_CAMPO","X3_TIPO"\n"ZX1","ZX1_NUM","C"\n', encoding="utf-8"
+        )
+        db = tmp_path / "idx.db"
+        ingest_sx(csv_dir, db)
+        result = runner.invoke(
+            app,
+            ["--db", str(db), "--root", str(tmp_path), "--format", "md", "tables", "ZX1", "--catalog"],
+        )
+        assert result.exit_code == 0
+        assert "X2_UNICO" in result.stdout
+        assert "ZX1_FILIAL+ZX1_NUM" in result.stdout
