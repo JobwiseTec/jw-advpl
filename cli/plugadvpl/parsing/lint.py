@@ -2902,7 +2902,11 @@ _CUSTOM_TABLE_RE = re.compile(r"^(SZ[0-9A-Z]|Q[A-Z][0-9A-Z]|Z[0-9A-Z][0-9A-Z]?)$
 
 
 def _check_sx012_relacionamento_orfao(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """SX-012 (error): SX9 aponta pra tabela custom (Z*/SZ*) que não existe no SX2."""
+    """SX-012 (warning): SX9 aponta pra tabela custom (Z*/SZ*) que não existe no SX2.
+
+    Warning (não error): relacionamento órfão é config inerte — não navega, mas não
+    quebra runtime como SX-002/SX-011. Em bases reais aparece em volume (~140/base).
+    """
     findings: list[dict[str, Any]] = []
     known = {r[0].upper() for r in conn.execute("SELECT codigo FROM tabelas")}
     if not known:
@@ -2920,7 +2924,7 @@ def _check_sx012_relacionamento_orfao(conn: sqlite3.Connection) -> list[dict[str
                     "funcao": f"#{ident}",
                     "linha": 0,
                     "regra_id": "SX-012",
-                    "severidade": "error",
+                    "severidade": "warning",
                     "snippet": f"{orig} -> {dest}",
                     "sugestao_fix": (
                         f"Relacionamento SX9 {orig}#{ident} aponta para tabela custom {dest} "

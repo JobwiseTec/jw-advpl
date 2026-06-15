@@ -994,6 +994,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.41.0 — dicionário SX completo + lints de chave/índice/integridade
+
+Completa a ingestão do dicionário SX e adiciona análises de integridade/chave — **validado em base real** (14 dicionários, 0 falso-positivo na SX-012):
+- **9 colunas SX novas**: `X2_UNICO/MODOUN/MODOEMP`, `X3_ORDEM/INIBRW/RELACAO`, `X9_USEFIL/VINFIL/CHVFOR` (o `X3_RELACAO` antes era perdido).
+- **`SX-012`** (warning) relacionamento SX9 órfão (→ tabela custom inexistente) + **`SX-013`** (info) inclusão sem checar a chave única (X2_UNICO).
+- **Awareness X2_UNICO** no `tables --catalog` (inclusive no `md` do agente) + **guard de índice SIX** no codegen (`advpl-embedded-sql`/`advpl-code-generator`).
+
 ### v0.40.0 — roadmap-ia: verify-claims + grounding (anti-alucinação determinístico)
 
 A maior alavanca de qualidade (deep-research): um **verificador externo determinístico** — que o índice plugadvpl já é. 4 fases (TDD):

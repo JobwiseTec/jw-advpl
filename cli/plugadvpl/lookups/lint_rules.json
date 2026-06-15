@@ -471,7 +471,7 @@
   {
     "regra_id": "SX-012",
     "titulo": "Relacionamento SX9 aponta pra tabela custom (Z*/SZ*) inexistente",
-    "severidade": "error",
+    "severidade": "warning",
     "categoria": "best-practice",
     "descricao": "Relacionamento SX9 (X9_DOM -> X9_CDOM) cujo destino é uma tabela custom (Z*/SZ*/Q*) que não existe no dicionário SX2 (`tabelas`). Integridade referencial quebrada: o relacionamento navega pra uma tabela que não foi criada. Só tabelas custom são checadas (padrão TOTVS não é indexado por design). Requer `ingest-sx` rodado.",
     "fix_guidance": "Crie a tabela custom no SX2 ou corrija o destino do relacionamento (X9_CDOM). Verifique typo no código da tabela.",

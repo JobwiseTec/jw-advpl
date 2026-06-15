@@ -4,6 +4,20 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-06-15
+
+### Added
+
+- **Dicionário SX completo — 9 colunas que faltavam** (migration 033): `tabelas.unico/modo_unico/modo_emp` (X2_UNICO/MODOUN/MODOEMP); `campos.ordem/inibrw/relacao` (X3_ORDEM/INIBRW/RELACAO — `relacao` corrige um gap: `inicializador`=X3_INIT, o X3_RELACAO era perdido em dumps modernos); `relacionamentos.usa_filial/vincula_filial/chave_estrangeira` (X9_USEFIL/VINFIL/CHVFOR). Cobre CSV (`ingest-sx`) e REST (`ingest-protheus`) — normalizadores compartilhados. Validado em **14 dicionários reais** (até ~11k tabelas/dict).
+- **`SX-012`** (warning): relacionamento SX9 (X9_DOM→X9_CDOM) apontando pra tabela custom (Z*/SZ*/Q*) inexistente no SX2 → órfão. Custom-only (padrão TOTVS não indexado → **0 falso-positivo em 14 dicts reais**). Warning (não error): config inerte, não quebra runtime; aparece em volume (~140/base de dívida real).
+- **`SX-013`** (info): inclusão (`RecLock('TBL', .T.)`) em tabela com chave única (X2_UNICO) sem `DbSeek`/`ExistCpo`/`GetSx8Num`/`MsExecAuto` no escopo → risco de duplicar chave. Function-local conservador (baixo ruído).
+- **Awareness X2_UNICO**: `tables --catalog <T>` expõe a chave única — no formato `table` (humano) no título, no **`md`** (formato do agente) como linha de stdout — pro codegen consultar antes de gravar e não duplicar.
+- **Guard de cobertura de índice no codegen**: skill `advpl-embedded-sql` (passo de índice SIX cruzando com `PERF-006`) + agent `advpl-code-generator` consideram cobertura de índice + X2_UNICO ao gerar SQL.
+
+### Changed
+
+- `tables --catalog` passa a retornar também `ordem`/`relacao`/`inibrw` (X3) por campo. Schema bump 32 → 33.
+
 ## [0.40.0] - 2026-06-15
 
 ### Added
