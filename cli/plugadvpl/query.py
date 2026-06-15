@@ -415,6 +415,27 @@ def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]
     return out
 
 
+def table_meta(conn: sqlite3.Connection, tabela: str) -> dict[str, Any] | None:
+    """Metadados de cabeçalho da tabela SX2: modo + chave única (X2_UNICO).
+
+    SP2 (spec SX completo) — awareness: o agente consulta a chave única antes de
+    gerar/gravar para não duplicar. ``None`` se a tabela não está no dicionário.
+    """
+    row = conn.execute(
+        "SELECT codigo, modo, unico, modo_unico, modo_emp FROM tabelas WHERE codigo = upper(?)",
+        (tabela,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "codigo": row[0],
+        "modo": row[1] or "",
+        "unico": row[2] or "",
+        "modo_unico": row[3] or "",
+        "modo_emp": row[4] or "",
+    }
+
+
 def param_query(conn: sqlite3.Connection, parametro: str) -> list[dict[str, Any]]:
     """Quem usa o parâmetro ``MV_*``? Lookup em ``parametros_uso``."""
     rows = conn.execute(

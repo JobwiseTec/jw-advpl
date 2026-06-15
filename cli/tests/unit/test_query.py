@@ -409,6 +409,35 @@ class TestTablesCatalog:
         assert by["ZT_COD"]["inibrw"] == "S"
 
 
+class TestTableMeta:
+    """SP2 awareness: meta da tabela (chave única X2_UNICO) pro agente evitar duplicar."""
+
+    def test_returns_unico_and_modo(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, open_db
+        from plugadvpl.query import table_meta
+
+        conn = open_db(tmp_path / "idx.db")
+        apply_migrations(conn)
+        conn.execute(
+            "INSERT INTO tabelas (codigo, modo, custom, unico, modo_emp) "
+            "VALUES ('ZX1', 'C', 1, 'ZX1_FILIAL+ZX1_NUM', '2')"
+        )
+        conn.commit()
+        m = table_meta(conn, "zx1")  # case-insensitive
+        assert m is not None
+        assert m["unico"] == "ZX1_FILIAL+ZX1_NUM"
+        assert m["modo"] == "C"
+        assert m["modo_emp"] == "2"
+
+    def test_missing_table_is_none(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, open_db
+        from plugadvpl.query import table_meta
+
+        conn = open_db(tmp_path / "idx.db")
+        apply_migrations(conn)
+        assert table_meta(conn, "SXX") is None
+
+
 class TestFindFunction:
     def test_finds_user_function_case_insensitive(
         self, db_with_three_sources: tuple[Path, sqlite3.Connection]

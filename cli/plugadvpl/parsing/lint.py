@@ -2896,6 +2896,90 @@ def _check_mod003_static_funcs_to_class(
     return findings
 
 
+# SP2 (spec SX completo): código de tabela custom (Z*/SZ*/Q*). Padrão TOTVS
+# não é indexado por design, então só símbolos custom ausentes são órfãos reais.
+_CUSTOM_TABLE_RE = re.compile(r"^(SZ[0-9A-Z]|Q[A-Z][0-9A-Z]|Z[0-9A-Z][0-9A-Z]?)$")
+
+
+def _check_sx012_relacionamento_orfao(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """SX-012 (error): SX9 aponta pra tabela custom (Z*/SZ*) que não existe no SX2."""
+    findings: list[dict[str, Any]] = []
+    known = {r[0].upper() for r in conn.execute("SELECT codigo FROM tabelas")}
+    if not known:
+        return findings
+    rows = conn.execute(
+        "SELECT tabela_origem, identificador, tabela_destino FROM relacionamentos "
+        "WHERE tabela_destino != ''"
+    ).fetchall()
+    for orig, ident, dest in rows:
+        d = (dest or "").strip().upper()
+        if d and _CUSTOM_TABLE_RE.match(d) and d not in known:
+            findings.append(
+                {
+                    "arquivo": f"SX:relac:{orig}",
+                    "funcao": f"#{ident}",
+                    "linha": 0,
+                    "regra_id": "SX-012",
+                    "severidade": "error",
+                    "snippet": f"{orig} -> {dest}",
+                    "sugestao_fix": (
+                        f"Relacionamento SX9 {orig}#{ident} aponta para tabela custom {dest} "
+                        "que não existe no dicionário (SX2). Typo ou export incompleto."
+                    ),
+                }
+            )
+    return findings
+
+
+_RECLOCK_ADD_RE = re.compile(r'\bRecLock\s*\(\s*["\'](\w{2,7})["\']\s*,\s*\.T\.', re.IGNORECASE)
+_SEEK_RE = re.compile(r"\b(DbSeek|MsSeek|ExistCpo|Posicione)\b", re.IGNORECASE)
+_GETSX8_RE = re.compile(r"\bGetSx8Num\b", re.IGNORECASE)
+
+
+def _check_sx013_dupkey(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """SX-013 (info): RecLock add a tabela com X2_UNICO sem seek/numerador no escopo.
+
+    Conservador (baixo ruído): só dispara em ``RecLock('TBL', .T.)`` (inclusão) numa
+    tabela que tem chave única definida, quando a função NÃO tem nenhum
+    ``DbSeek``/``MsSeek``/``ExistCpo``/``Posicione``, ``GetSx8Num`` nem ``MsExecAuto``
+    no escopo — os caminhos legítimos de garantir unicidade. Heurística function-local.
+    """
+    findings: list[dict[str, Any]] = []
+    unico_tables = {
+        r[0].upper() for r in conn.execute("SELECT codigo FROM tabelas WHERE unico != ''")
+    }
+    if not unico_tables:
+        return findings
+    rows = conn.execute(
+        "SELECT arquivo, funcao, content, linha_inicio FROM fonte_chunks WHERE content != ''"
+    ).fetchall()
+    for arquivo, funcao, content, linha in rows:
+        if not content:
+            continue
+        if _SEEK_RE.search(content) or _GETSX8_RE.search(content) or _MSEXECAUTO_RE.search(content):
+            continue
+        for m in _RECLOCK_ADD_RE.finditer(content):
+            tbl = m.group(1).upper()
+            if tbl in unico_tables:
+                findings.append(
+                    {
+                        "arquivo": arquivo,
+                        "funcao": funcao or "",
+                        "linha": linha or 0,
+                        "regra_id": "SX-013",
+                        "severidade": "info",
+                        "snippet": f"RecLock('{tbl}', .T.)",
+                        "sugestao_fix": (
+                            f"Inclusão em {tbl} (chave única X2_UNICO) sem DbSeek/ExistCpo antes "
+                            "— risco de duplicar a chave. Cheque a existência antes do RecLock add "
+                            "(ignore se a unicidade é garantida por numerador/integração)."
+                        ),
+                    }
+                )
+                break
+    return findings
+
+
 # Tupla: (regra_id, check_fn, requires_sx).
 # requires_sx=True → so roda quando dicionario SX foi ingerido.
 # requires_sx=False → roda sempre (ex: MOD-003 usa so fonte_chunks).
@@ -2911,6 +2995,8 @@ _CROSS_FILE_RULES: list[tuple[str, Any, bool]] = [
     ("SX-009", _check_sx009_obrigat_with_empty_init, True),
     ("SX-010", _check_sx010_pesquisar_sem_seek, True),
     ("SX-011", _check_sx011_x3_f3_consulta_inexistente, True),
+    ("SX-012", _check_sx012_relacionamento_orfao, True),
+    ("SX-013", _check_sx013_dupkey, True),
     ("MOD-003", _check_mod003_static_funcs_to_class, False),
     ("PERF-006", _check_perf006_where_orderby_no_index, True),
     # v0.7.0 Fase 0 #6

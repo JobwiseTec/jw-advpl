@@ -469,6 +469,30 @@
     "sonar_rules": []
   },
   {
+    "regra_id": "SX-012",
+    "titulo": "Relacionamento SX9 aponta pra tabela custom (Z*/SZ*) inexistente",
+    "severidade": "error",
+    "categoria": "best-practice",
+    "descricao": "Relacionamento SX9 (X9_DOM -> X9_CDOM) cujo destino é uma tabela custom (Z*/SZ*/Q*) que não existe no dicionário SX2 (`tabelas`). Integridade referencial quebrada: o relacionamento navega pra uma tabela que não foi criada. Só tabelas custom são checadas (padrão TOTVS não é indexado por design). Requer `ingest-sx` rodado.",
+    "fix_guidance": "Crie a tabela custom no SX2 ou corrija o destino do relacionamento (X9_CDOM). Verifique typo no código da tabela.",
+    "detection_kind": "cross-file",
+    "status": "active",
+    "impl_function": "_check_sx012_relacionamento_orfao",
+    "sonar_rules": []
+  },
+  {
+    "regra_id": "SX-013",
+    "titulo": "Inclusão (RecLock add) em tabela com chave única (X2_UNICO) sem checagem de duplicidade",
+    "severidade": "info",
+    "categoria": "best-practice",
+    "descricao": "`RecLock('TBL', .T.)` (inclusão de novo registro) numa tabela que tem chave única definida (X2_UNICO) quando a função NÃO faz DbSeek/MsSeek/ExistCpo/Posicione, GetSx8Num nem MsExecAuto no escopo — risco de duplicar a chave única. Heurística function-local conservadora (info): os caminhos legítimos de unicidade (seek prévio, numerador SX8, ExecAuto) suprimem o finding. Requer `ingest-sx` (coluna X2_UNICO, v0.41+).",
+    "fix_guidance": "Faça DbSeek/ExistCpo da chave única antes do RecLock add e só inclua se não existir. Ou garanta a unicidade por numerador (GetSx8Num) / MsExecAuto. Se a unicidade já é garantida por integração, ignore o info.",
+    "detection_kind": "cross-file",
+    "status": "active",
+    "impl_function": "_check_sx013_dupkey",
+    "sonar_rules": []
+  },
+  {
     "regra_id": "WS-001",
     "titulo": "WSMETHOD sem WSSERVICE/WSRESTFUL/WSREST ou subname distinto em colisão",
     "severidade": "error",

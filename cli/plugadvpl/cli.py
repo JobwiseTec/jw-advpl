@@ -157,6 +157,9 @@ from plugadvpl.query import (
     status as q_status,
 )
 from plugadvpl.query import (
+    table_meta as q_table_meta,
+)
+from plugadvpl.query import (
     tables_catalog as q_tables_catalog,
 )
 from plugadvpl.scan import scan_sources
@@ -1643,10 +1646,16 @@ def tables(
                 err=True,
             )
             raise typer.Exit(code=1)
+        # SP2 awareness: expõe a chave única (X2_UNICO) no título pro agente
+        # consultar antes de gerar/gravar e não duplicar a chave.
+        meta = _with_ro_db(ctx, lambda c: q_table_meta(c, tabela))
+        title = f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)"
+        if meta and meta.get("unico"):
+            title += f" | X2_UNICO (chave única): {meta['unico']}"
         _render_from_ctx(
             ctx,
             rows,
-            title=f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)",
+            title=title,
             next_steps=[f"plugadvpl tables {tabela.upper()} --mode write"],
         )
         return
