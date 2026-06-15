@@ -58,6 +58,7 @@ Gerar **um arquivo `.prw`/`.tlpp`** correto, idiomático, seguindo:
 8. **Lint imediato:**
    - `uvx plugadvpl@0.3.1 lint <novo_arquivo>` — confirma 0 findings críticos.
    - Se houver finding crítico/erro: corrige via `Edit` e roda lint de novo. Iterar até zerar críticos.
+   - **Se o fonte tem SQL embarcado (`BeginSql`/`TCQuery`):** observe também `PERF-006` (WHERE/ORDER BY em coluna fora de índice SIX → full scan) e a chave única `X2_UNICO` da tabela alvo (`tables <T> --catalog`). Não bloqueiam (info/warning), mas ajuste o filtro pra uma coluna indexada e cheque a chave antes de gravar (evita full scan e duplicidade).
 
 9. **Output final:** caminho do arquivo, resumo do que foi gerado, lint summary, e sugestões de próximos passos (testar, criar SX3 se MVC novo, etc.).
 
