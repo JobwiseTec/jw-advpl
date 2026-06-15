@@ -396,6 +396,18 @@ class TestTablesCatalog:
     def test_tabela_inexistente(self, db_sx: sqlite3.Connection) -> None:
         assert tables_catalog(db_sx, "SXX") == []
 
+    def test_inclui_ordem_relacao_inibrw(self, db_sx: sqlite3.Connection) -> None:
+        # SP1 (spec SX completo): catálogo expõe as colunas SX3 novas.
+        db_sx.execute(
+            "UPDATE campos SET ordem='05', relacao=\"POSICIONE('SZ2')\", inibrw='S' "
+            "WHERE campo='ZT_COD'"
+        )
+        db_sx.commit()
+        by = {r["campo"]: r for r in tables_catalog(db_sx, "SZT")}
+        assert by["ZT_COD"]["ordem"] == "05"
+        assert by["ZT_COD"]["relacao"] == "POSICIONE('SZ2')"
+        assert by["ZT_COD"]["inibrw"] == "S"
+
 
 class TestFindFunction:
     def test_finds_user_function_case_insensitive(

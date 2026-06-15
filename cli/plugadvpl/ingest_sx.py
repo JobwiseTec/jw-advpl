@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 # Ordem importa: tabelas com PK que outros referenciam vêm primeiro
 # (sx2 antes de sx3, sx3 antes de sx7/sxb, sx2 antes de sx9...).
 _SX_INGEST_PLAN: list[tuple[str, str, list[str]]] = [
-    ("sx2.csv", "tabelas", ["codigo", "nome", "modo", "custom"]),
+    ("sx2.csv", "tabelas", ["codigo", "nome", "modo", "custom", "unico", "modo_unico", "modo_emp"]),
     (
         "sx3.csv",
         "campos",
@@ -68,6 +68,9 @@ _SX_INGEST_PLAN: list[tuple[str, str, list[str]]] = [
             "context",
             "folder",
             "grpsxg",
+            "ordem",
+            "inibrw",
+            "relacao",
         ],
     ),
     (
@@ -148,6 +151,9 @@ _SX_INGEST_PLAN: list[tuple[str, str, list[str]]] = [
             "proprietario",
             "condicao_sql",
             "custom",
+            "usa_filial",
+            "vincula_filial",
+            "chave_estrangeira",
         ],
     ),
     ("sxa.csv", "pastas", ["alias", "ordem", "descricao", "proprietario", "agrupamento"]),

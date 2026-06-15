@@ -384,13 +384,13 @@ def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]
     """
     rows = conn.execute(
         """
-        SELECT campo, tipo, tamanho, decimal, titulo, cbox
+        SELECT campo, tipo, tamanho, decimal, titulo, cbox, ordem, relacao, inibrw
         FROM campos WHERE tabela = upper(?) ORDER BY campo
         """,
         (tabela,),
     ).fetchall()
     out: list[dict[str, Any]] = []
-    for campo, tipo, tam, dec, titulo, cbox in rows:
+    for campo, tipo, tam, dec, titulo, cbox, ordem, relacao, inibrw in rows:
         cbox_dec = _decode_cbox(cbox or "")
         if not tipo:
             tipo_fmt = ""
@@ -406,6 +406,10 @@ def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]
                 "titulo": titulo or "",
                 "cbox": cbox_dec,
                 "discriminador": "sim" if is_discr else "",
+                # SP1 (spec SX completo): X3_ORDEM / X3_RELACAO / X3_INIBRW
+                "ordem": ordem or "",
+                "relacao": relacao or "",
+                "inibrw": inibrw or "",
             }
         )
     return out

@@ -9,6 +9,7 @@ delimitador, conversão XLSX disfarçado, sanitização de surrogates Unicode.
 Cada função ``parse_sxN`` recebe ``Path`` para o CSV e retorna ``list[dict[str, Any]]``
 com chaves alinhadas à migration 002_universo2_sx.sql.
 """
+
 from __future__ import annotations
 
 import csv
@@ -195,6 +196,10 @@ def normalize_sx2_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 "nome": row.get("X2_NOME", "").strip(),
                 "modo": row.get("X2_MODO", "").strip(),
                 "custom": 1 if _is_custom_table(codigo) else 0,
+                # SP1 (spec SX completo): chave única + modos de compartilhamento
+                "unico": row.get("X2_UNICO", "").strip(),
+                "modo_unico": row.get("X2_MODOUN", "").strip(),
+                "modo_emp": row.get("X2_MODOEMP", "").strip(),
             }
         )
     return result
@@ -219,8 +224,7 @@ def normalize_sx3_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
         obrig_raw = row.get("X3_OBRIGAT", "").strip().strip('"').strip()
         obrigatorio = (
             1
-            if obrig_raw.lower().startswith("x")
-            or obrig_raw.upper() in ("S", "SIM", "1", ".T.")
+            if obrig_raw.lower().startswith("x") or obrig_raw.upper() in ("S", "SIM", "1", ".T.")
             else 0
         )
         proprietario = row.get("X3_PROPRI", "").strip().strip('"')
@@ -243,8 +247,7 @@ def normalize_sx3_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 # expressao/relacao). Lemos X3_INIT prioritariamente, fallback pra
                 # X3_RELACAO so pra suportar dumps legados/fixtures antigas.
                 "inicializador": (
-                    row.get("X3_INIT", "").strip()
-                    or row.get("X3_RELACAO", "").strip()
+                    row.get("X3_INIT", "").strip() or row.get("X3_RELACAO", "").strip()
                 ),
                 "obrigatorio": obrigatorio,
                 "custom": is_custom,
@@ -259,6 +262,12 @@ def normalize_sx3_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 "context": row.get("X3_CONTEXT", "").strip(),
                 "folder": row.get("X3_FOLDER", "").strip(),
                 "grpsxg": row.get("X3_GRPSXG", "").strip(),
+                # SP1 (spec SX completo): ordem de browse, init de browse, e
+                # X3_RELACAO distinto (inicializador=X3_INIT prioriza; relacao
+                # captura X3_RELACAO mesmo com X3_INIT presente).
+                "ordem": row.get("X3_ORDEM", "").strip(),
+                "inibrw": row.get("X3_INIBRW", "").strip(),
+                "relacao": row.get("X3_RELACAO", "").strip(),
             }
         )
     return result
@@ -322,8 +331,7 @@ def normalize_sx7_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 "campo_destino": campo_destino,
                 "regra": row.get("X7_REGRA", "").strip(),
                 "tipo": row.get("X7_TIPO", "").strip(),
-                "tabela": row.get("X7_ALIAS", "").strip()
-                or row.get("X7_ARQUIVO", "").strip(),
+                "tabela": row.get("X7_ALIAS", "").strip() or row.get("X7_ARQUIVO", "").strip(),
                 "condicao": row.get("X7_CONDIC", "").strip(),
                 "proprietario": proprietario,
                 "seek": row.get("X7_SEEK", "").strip(),
@@ -454,6 +462,10 @@ def normalize_sx9_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
                 "expressao_destino": row.get("X9_EXPCDOM", "").strip(),
                 "proprietario": proprietario,
                 "condicao_sql": row.get("X9_CONDSQL", "").strip(),
+                # SP1 (spec SX completo): filial + chave estrangeira do relacionamento
+                "usa_filial": row.get("X9_USEFIL", "").strip(),
+                "vincula_filial": row.get("X9_VINFIL", "").strip(),
+                "chave_estrangeira": row.get("X9_CHVFOR", "").strip(),
                 "custom": 1 if proprietario != "S" else 0,
             }
         )
