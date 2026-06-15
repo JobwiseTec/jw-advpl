@@ -30,10 +30,10 @@
 |---|---|---|
 | **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
 | **AGENTS.md ecosystem** | `AGENTS.md` (gêmeo idêntico) | sempre |
-| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 70 | `.cursor/` no projeto |
-| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 70 | `.github/` no projeto |
-| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 70 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
-| **Codex CLI** | `.codex/config.toml` + **skills nativas** `.agents/skills/plugadvpl-*/SKILL.md` × 70 (+ `.codex/skills/` legado; + `~/.agents/skills/` global se já existir) | `.codex/`, `.agents/`, ou `codex` no PATH |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 71 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 71 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 71 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **Codex CLI** | `.codex/config.toml` + **skills nativas** `.agents/skills/plugadvpl-*/SKILL.md` × 71 (+ `.codex/skills/` legado; + `~/.agents/skills/` global se já existir) | `.codex/`, `.agents/`, ou `codex` no PATH |
 
 As skills do Codex usam o **open agent skills standard** (frontmatter `name` + `description`, prefixo `plugadvpl-`), os mesmos `SKILL.md` do Claude Code — os comandos viram `uvx plugadvpl@<ver> <subcomando>` e os links `[[skill]]` viram `[[plugadvpl-skill]]`. Use **`plugadvpl init --codex-only`** pra instalar só o Codex (mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini). Os diretórios gerados por agentes entram no `.plugadvplignore` (fora do índice). Valide com **`plugadvpl doctor --check-agents`** (cobre Codex também).
 
@@ -974,7 +974,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **Reconstrução de processos (#61–#65, #72, #75):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira (`--include-tables` mostra read/write por fonte); e **`ingest-tsv` + `catalog`** importam o **conteúdo** das tabelas-catálogo (Z*/X*) pro índice e cruzam `*_FUNCAO` com os fontes — fechando a reconstrução em ~98%
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **70 skills** (30 knowledge + 40 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **71 skills** (30 knowledge + 41 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
 - **1953 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
@@ -1005,7 +1005,7 @@ Lapidação da skill **`advpl-mvc`** (3 PRs) e um ajuste no `init` pra forks/reb
 ### v0.38.0 — Codex CLI first-class (skills nativas)
 
 Feedback de quem instalou o plugin no **OpenAI Codex**: o `init` gerava `AGENTS.md` + `.codex/config.toml`, mas **não instalava as skills**. Agora o Codex é agente first-class:
-- **Skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (× 70, *open agent skills standard* — auto-discovery), replicadas em `.codex/skills/` (legado) e em `~/.agents/skills/` (global, só se `~/.agents` já existir). Frontmatter `name: plugadvpl-<X>` + `description`.
+- **Skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (× 71, *open agent skills standard* — auto-discovery), replicadas em `.codex/skills/` (legado) e em `~/.agents/skills/` (global, só se `~/.agents` já existir). Frontmatter `name: plugadvpl-<X>` + `description`.
 - **`init --codex-only`**: modo isolado — só Codex (config + skills), mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini.
 - **Reescrita de links** `[[skill]]` → `[[plugadvpl-skill]]` no transform compartilhado (além de `/plugadvpl:<X>` → `uvx plugadvpl@<ver> <X>`).
 - **`.plugadvplignore`** auto-populado com os dirs de agentes (`.agents/skills/**`, `.codex/**`, `.gemini/skills/**`, `.cursor/**`, `.github/instructions/**`) — fora do índice.

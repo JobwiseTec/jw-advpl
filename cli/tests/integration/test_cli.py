@@ -296,7 +296,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 71
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -332,7 +332,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 71
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -347,7 +347,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 71
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
@@ -472,7 +472,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 71
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -515,7 +515,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 71
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -533,7 +533,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 71
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -619,7 +619,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 71
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -677,7 +677,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 71
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -696,7 +696,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 71
         arch_content = (
             synthetic_project
             / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
@@ -1016,15 +1016,15 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 70
+        assert len(cursor_files) == 71
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 70
+        assert len(copilot_files) == 71
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 70
+        assert len(gemini_files) == 71
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -4005,3 +4005,82 @@ class TestIngestExcludeCli:
         finally:
             conn.close()
         assert rows == {"A.prw"}
+
+
+class TestIngestRespectsDb:
+    """Bug fix: `ingest` deve respeitar `--db` (antes escrevia em <root>/.plugadvpl)."""
+
+    def test_ingest_writes_to_custom_db(
+        self, synthetic_project: Path, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        custom = tmp_path / "custom_idx.db"
+        runner.invoke(app, ["--root", str(synthetic_project), "--db", str(custom), "init"])
+        r = runner.invoke(app, ["--root", str(synthetic_project), "--db", str(custom), "ingest"])
+        assert r.exit_code == 0
+        # o índice custom deve estar populado...
+        conn = sqlite3.connect(custom)
+        try:
+            n = conn.execute("SELECT count(*) FROM fontes").fetchone()[0]
+        finally:
+            conn.close()
+        assert n > 0
+        # ...e o local default NÃO deve ter sido criado.
+        assert not (synthetic_project / ".plugadvpl" / "index.db").exists()
+
+
+class TestGroundingFragment:
+    """Fase 3 roadmap-ia: o fragment instrui o agente a emitir o bloco de claims."""
+
+    def test_fragment_has_claims_block_instruction(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "plugadvpl-claims" in content
+
+
+class TestVerifyClaims:
+    """Fase 1 roadmap-ia: comando `verify-claims` (verificador determinístico)."""
+
+    def test_stdin_batch_returns_verdict_json(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        payload = json.dumps(
+            {"claims": [{"id": "c1", "kind": "function", "symbol": "FWLerExcel"}]}
+        )
+        result = runner.invoke(
+            app,
+            ["--root", str(indexed_project), "--format", "json", "verify-claims", "--stdin"],
+            input=payload,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "coverage" in data
+        by = {r["claim_id"]: r for r in data["results"]}
+        # FWLerExcel é alucinação clássica -> não existe no índice.
+        assert by["c1"]["status"] == "not_found"
+
+    def test_short_form_single_claim(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "--root", str(indexed_project), "--format", "json", "verify-claims",
+                "--kind", "function", "--symbol", "FWLerExcel",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["results"][0]["status"] == "not_found"
+
+    def test_empty_stdin_is_graceful(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(
+            app,
+            ["--root", str(indexed_project), "--format", "json", "verify-claims", "--stdin"],
+            input="",
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["results"] == []

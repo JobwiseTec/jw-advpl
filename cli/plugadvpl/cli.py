@@ -551,6 +551,22 @@ Sintetize o que encontrar nos passos 1-6 num parágrafo: o que faz + dependênci
 Para ver versão / status do índice: `plugadvpl status`. Para ver todos os comandos:
 `plugadvpl --help`.
 
+### Verificação grounded (anti-alucinação)
+
+Quando sua resposta afirmar símbolos ADVPL (funções, tabelas, campos SX3, `MV_*`),
+liste-os no fim num bloco para verificação automática contra o índice:
+
+```
+<plugadvpl-claims>
+{"claims":[{"id":"c1","kind":"function","symbol":"FWFormStruct"},
+           {"id":"c2","kind":"field","symbol":"ZX1_STATUS"}]}
+</plugadvpl-claims>
+```
+
+`kind` ∈ function|table|field|param|call_edge|trigger. O hook `Stop` roda
+`plugadvpl verify-claims` e pede correção só dos símbolos `not_found` de alta
+confiança. Resposta sem símbolo afirmado dispensa o bloco (não custa nada).
+
 ### Output format — IMPORTANTE para agentes IA
 
 A flag global `--format` aceita 3 valores e **vem ANTES do subcomando** (é do callback):
@@ -1195,6 +1211,7 @@ def ingest(
         no_content=no_content,
         redact_secrets=redact_secrets,
         exclude=exclude,
+        db_path=ctx.obj["db"],
     )
 
     summary: dict[str, object] = {
@@ -1444,6 +1461,53 @@ def find(
             else None
         ),
     )
+
+
+@app.command("verify-claims")
+def verify_claims_cmd(
+    ctx: typer.Context,
+    stdin: Annotated[
+        bool,
+        typer.Option("--stdin", help='Lê {"claims":[...]} de stdin (lote).'),
+    ] = False,
+    kind: Annotated[
+        str,
+        typer.Option("--kind", help="Forma curta: tipo do claim (function/table/field/param/...)."),
+    ] = "",
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", help="Forma curta: símbolo a verificar."),
+    ] = "",
+) -> None:
+    """Verifica símbolos afirmados contra o índice (sound verifier determinístico).
+
+    Recebe os símbolos que uma resposta afirmou (funções, tabelas, campos SX3,
+    ``MV_*``, arestas de chamada, gatilhos) e devolve um verdict por claim —
+    ``exists`` / ``not_found`` / ``relation_holds`` / ``relation_absent`` /
+    ``unsupported_kind`` — com um bloco de cobertura. Ver
+    docs/roadmap-ia/01-verify-claims.md. ``not_found`` é mundo aberto (não
+    significa "alucinado"); use o bloco ``coverage`` para interpretar.
+    """
+    from .verify import verify_claims as _verify_claims
+
+    claims: list[dict[str, Any]] = []
+    if stdin:
+        raw = sys.stdin.read()
+        if raw.strip():
+            try:
+                claims = json.loads(raw).get("claims", []) or []
+            except (ValueError, AttributeError):
+                claims = []
+    elif kind and symbol:
+        claims = [{"id": "c1", "kind": kind, "symbol": symbol}]
+
+    verdict = _with_ro_db(ctx, lambda c: _verify_claims(c, claims))
+
+    if ctx.obj["format"] == "json":
+        payload = json.dumps(verdict, ensure_ascii=False, indent=2)
+        typer.echo(_mask_text_if_privacy(ctx, payload))
+    else:
+        _render_from_ctx(ctx, verdict["results"], title="verify-claims")
 
 
 @app.command()

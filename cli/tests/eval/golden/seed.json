@@ -1,0 +1,31 @@
+[
+  {
+    "id": "mvc-hook-moderno",
+    "category": "advpl-mvc",
+    "question": "Como interceptar o commit de um cadastro MVC sem usar bCommit?",
+    "claims": [
+      {"id": "c1", "kind": "function", "symbol": "FWModelEvent"},
+      {"id": "c2", "kind": "function", "symbol": "InstallEvent"}
+    ],
+    "must_not_mention": ["bCommit", "bTudoOk"],
+    "answer": "Crie uma classe que herda de FWModelEvent e registre via oModel:InstallEvent(); os hooks legados de commit foram descontinuados."
+  },
+  {
+    "id": "excel-anti-alucinacao",
+    "category": "advpl-excel",
+    "question": "Qual a funcao nativa para LER um arquivo .xlsx no Protheus server-side?",
+    "claims": [],
+    "must_not_mention": ["FWLerExcel", "MsRetXls", "FWImportExcel", "LeExcel"],
+    "answer": "Nao existe funcao nativa de leitura de xlsx server-side; o caminho portavel e CSV + FWFileReader/FT_F*."
+  },
+  {
+    "id": "campo-customer-existe",
+    "category": "advpl-dicionario-sx",
+    "question": "O campo ZX1_STATUS existe no dicionario do cliente?",
+    "claims": [
+      {"id": "c1", "kind": "field", "symbol": "ZX1_STATUS"}
+    ],
+    "must_not_mention": [],
+    "answer": "Sim, ZX1_STATUS consta no SX3 (campo customizado do cliente)."
+  }
+]
