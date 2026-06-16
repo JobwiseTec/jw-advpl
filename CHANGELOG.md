@@ -4,6 +4,8 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-06-16
+
 ### Added
 
 - **`plugadvpl mapear <codigo>` — dossiê determinístico de uma rotina + verificação** (issue #173). Reúne tudo que o índice sabe (`find`→`arch`→`callers`→`callees`): identidade, funções, tabelas (read/write/reclock/execauto) e grafo de chamadas; e confirma cada símbolo via `verify-claims`, distinguindo "tabela no código fora do SX2 (**cobertura**, não erro)" de símbolo ausente. 100% determinístico, **SEM LLM** — serve de fonte-de-verdade pra alimentar qualquer agente (Claude/Codex/Copilot/Gemini ou local). `--format md/json`, `--detalhe` expande o que cada user function interna chama. Productiza a "receita determinística como ferramenta" do PoC de harness local — a inteligência mora no índice, não no modelo. Nova skill `/plugadvpl:mapear` (72ª).

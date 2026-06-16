@@ -42,7 +42,7 @@ plugadvpl compile --set-restart-cmd Local --cmd "cmd.exe /c gaps\\restart-totvs.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.41.0 tq $ARGUMENTS
+uvx plugadvpl@0.42.0 tq $ARGUMENTS
 ```
 
 ## Encadeamento típico

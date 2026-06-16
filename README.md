@@ -994,6 +994,13 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.42.0 — `mapear`: dossiê determinístico de rotina + verificação (sem LLM)
+
+Productiza a "receita determinística como ferramenta" do PoC de harness local ([#173](https://github.com/JoniPraia/plugadvpl/issues/173)) — a inteligência mora no índice, não no modelo:
+- **`plugadvpl mapear <codigo> [--detalhe]`** — reúne tudo que o índice sabe de uma rotina (`find`→`arch`→`callers`→`callees`): identidade, funções, tabelas (read/write/reclock/execauto), grafo; e **verifica** cada símbolo via `verify-claims`.
+- **Cobertura honesta**: distingue "tabela no código fora do SX2 (cobertura, não erro)" de símbolo ausente. Nota no `md`: o verificador confere **símbolo, não sentido** de negócio.
+- **100% determinístico, sem dependência de LLM** — serve de fonte-de-verdade pra alimentar qualquer agente (nuvem ou local). `--format md/json`.
+
 ### v0.41.0 — dicionário SX completo + lints de chave/índice/integridade
 
 Completa a ingestão do dicionário SX e adiciona análises de integridade/chave — **validado em base real** (14 dicionários, 0 falso-positivo na SX-012):
