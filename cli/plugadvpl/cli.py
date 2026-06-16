@@ -1514,6 +1514,36 @@ def verify_claims_cmd(
 
 
 @app.command()
+def mapear(
+    ctx: typer.Context,
+    codigo: Annotated[str, typer.Argument(help="Função/rotina a mapear (ex.: ZROT, U_MINHAF).")],
+    detalhe: Annotated[
+        bool,
+        typer.Option("--detalhe", help="Expande o que cada user function interna chama."),
+    ] = False,
+) -> None:
+    """Dossiê determinístico de uma rotina (identidade, tabelas, grafo) + verificação.
+
+    Reúne TUDO que o índice sabe da rotina (``find`` -> ``arch`` -> ``callers`` ->
+    ``callees``) e confirma cada símbolo contra o índice (``verify-claims``),
+    separando "fora do dicionário (cobertura)" de símbolo ausente. 100%
+    determinístico, SEM LLM — serve de fonte-de-verdade pra qualquer agente.
+    Productiza a "receita determinística" do PoC de harness local (issue #173):
+    1 chamada robusta no lugar de o modelo orquestrar 4 passos frágeis.
+    """
+    from .mapear import format_mapa
+    from .mapear import mapear as _mapear
+
+    result = _with_ro_db(ctx, lambda c: _mapear(c, codigo, detalhe=detalhe))
+
+    if ctx.obj["format"] == "json":
+        payload = json.dumps(result, ensure_ascii=False, indent=2)
+        typer.echo(_mask_text_if_privacy(ctx, payload))
+    else:
+        typer.echo(_mask_text_if_privacy(ctx, format_mapa(result)))
+
+
+@app.command()
 def family(
     ctx: typer.Context,
     prefixo: Annotated[str, typer.Argument(help="Prefixo do basename (ex: MOD12) ou glob (FAT*).")],

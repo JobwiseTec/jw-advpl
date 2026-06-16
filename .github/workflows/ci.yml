@@ -86,6 +86,7 @@ jobs:
         plugadvpl/ingest_poui.py
         plugadvpl/ingest_rest.py
         plugadvpl/ingest_sx.py
+        plugadvpl/mapear.py
         plugadvpl/migrate_tlpp.py
         plugadvpl/migrate_tlpp_diff.py
         plugadvpl/migrate_tlpp_recipes/__init__.py
