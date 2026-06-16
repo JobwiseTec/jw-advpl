@@ -2193,6 +2193,139 @@ def _check_ws004_orest_invalid_method(
     return findings
 
 
+# --- BP-009/010/011: guard de sintaxe ADVPL (issue #176) ---------------------
+
+# Ancorado: só `If/ElseIf <cond> Then` (condicional ADVPL). NAO casa `Then` de SQL
+# `CASE WHEN ... THEN` em BeginSql (que nao comeca com If) nem `Then` em meio de linha.
+_THEN_RE = re.compile(r"(?im)^[ \t]*(?:if|elseif)\b[^\n]*?\bthen\b")
+_ENDFUNCTION_RE = re.compile(r"(?i)\bendfunction\b")
+# .prw/.prx: compilador usa so os 10 primeiros chars do identificador.
+# User Function: o prefixo de chamada 'U_' consome 2 -> sobram 8 uteis no nome.
+_BP011_LIMIT_USER = 8
+_BP011_LIMIT_FUNC = 10
+_BP011_FUNC_KINDS = frozenset({"static_function", "main_function"})
+
+
+def _func_at_line(funcoes: list[dict[str, Any]], linha: int) -> str:
+    """Nome (upper) da funcao cujo range contem ``linha``; '' se nenhuma."""
+    for f in funcoes:
+        ini = int(f.get("linha_inicio", 0) or 0)
+        fim = int(f.get("linha_fim", ini) or ini)
+        if ini <= linha <= fim:
+            return (f.get("nome", "") or "").upper()
+    return ""
+
+
+def _check_bp009_then_keyword(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-009 (warning): `Then` em condicional — ADVPL/TLPP usa `If <cond>` ... `EndIf`.
+
+    `Then` e palavra de outra linguagem (VB/xBase); nao existe em ADVPL/TLPP. Strings
+    e comentarios sao limpos pelo ``strip_advpl`` (zero falso-positivo em texto); o
+    regex ancorado em `If/ElseIf` ignora `Then` de SQL `CASE WHEN THEN` em BeginSql.
+    """
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    stripped = strip_advpl(content, strip_strings=True)
+    for m in _THEN_RE.finditer(stripped):
+        linha = stripped[: m.start()].count("\n") + 1
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _func_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "BP-009",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Remova `Then`: em ADVPL/TLPP o condicional e `If <cond>` ... `EndIf` "
+                    "(sem `Then`)."
+                ),
+            }
+        )
+    return findings
+
+
+def _check_bp010_endfunction_keyword(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-010 (warning): `EndFunction` — ADVPL/TLPP fecha funcao com `Return`.
+
+    Nao existe `EndFunction` em ADVPL/TLPP (e VB/outras linguagens). Strings e
+    comentarios limpos pelo ``strip_advpl``.
+    """
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    stripped = strip_advpl(content, strip_strings=True)
+    for m in _ENDFUNCTION_RE.finditer(stripped):
+        linha = stripped[: m.start()].count("\n") + 1
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _func_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "BP-010",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Troque `EndFunction` por `Return`: em ADVPL/TLPP a funcao termina com "
+                    "`Return [valor]`."
+                ),
+            }
+        )
+    return findings
+
+
+def _check_bp011_identifier_over_limit(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-011 (info): identificador de funcao alem do limite de 10 chars em `.prw`.
+
+    Em `.prw`/`.prx` o compilador so considera os 10 primeiros chars do identificador
+    -> nomes mais longos truncam e podem COLIDIR silenciosamente. User Function: max 8
+    (o prefixo `U_` consome 2 dos 10). Static/Main: max 10. `.tlpp` NAO tem limite
+    (isento). Usa a lista de funcoes ja parseada (kind), nao regex crua. Severidade
+    `info`: e risco LATENTE (o fonte ja compila) — advisory pra codegen/migracao; em
+    bases reais 10-16% das funcoes excedem, entao nao polui o nivel `warning`.
+    """
+    findings: list[dict[str, Any]] = []
+    if not arquivo.lower().endswith((".prw", ".prx")):
+        return findings
+    for f in parsed.get("funcoes", []) or []:
+        kind = f.get("kind", "")
+        nome = f.get("nome", "") or ""
+        if not nome:
+            continue
+        if kind == "user_function":
+            limite = _BP011_LIMIT_USER
+            ctx = "User Function (o `U_` consome 2 dos 10)"
+        elif kind in _BP011_FUNC_KINDS:
+            limite = _BP011_LIMIT_FUNC
+            ctx = kind.replace("_", " ")
+        else:
+            continue  # method/ws_method: sem limite de 10 aplicavel
+        if len(nome) <= limite:
+            continue
+        linha = int(f.get("linha_inicio", 1) or 1)
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": nome.upper(),
+                "linha": linha,
+                "regra_id": "BP-011",
+                "severidade": "info",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    f"Nome '{nome}' tem {len(nome)} chars; em `.prw` o limite efetivo e "
+                    f"{limite} ({ctx}). Encurte o nome ou migre o fonte p/ `.tlpp` (sem "
+                    "limite) — acima de 10 chars o compilador trunca e pode colidir."
+                ),
+            }
+        )
+    return findings
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 
@@ -2218,6 +2351,9 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_bp006_mixed_reclock_rawapi(arquivo, parsed, content))
     findings.extend(_check_bp007_no_protheus_doc(arquivo, parsed, content))
     findings.extend(_check_bp008_shadowed_reserved(arquivo, parsed, content))
+    findings.extend(_check_bp009_then_keyword(arquivo, parsed, content))
+    findings.extend(_check_bp010_endfunction_keyword(arquivo, parsed, content))
+    findings.extend(_check_bp011_identifier_over_limit(arquivo, parsed, content))
     findings.extend(_check_sec001_rpcsetenv_in_restful(arquivo, parsed, content))
     findings.extend(_check_sec002_user_function_no_prefix(arquivo, parsed, content))
     findings.extend(_check_sec003_pii_in_logs(arquivo, parsed, content))
