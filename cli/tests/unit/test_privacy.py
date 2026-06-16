@@ -67,7 +67,7 @@ class TestMaskText:
 
     def test_structural_text_untouched(self) -> None:
         # nome de função/tabela/parâmetro NÃO é identificador → fica intacto
-        text = "User Function FA040GRV() lê SE1 grava ZZ3 via MV_XPCOMGH"
+        text = "User Function FA040GRV() lê SE1 grava ZZ3 via MV_XPCOM01"
         assert _masker().mask_text(text) == text
 
     def test_token_stable_same_value(self) -> None:

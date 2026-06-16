@@ -17,7 +17,7 @@ from plugadvpl.privacy import PrivacyConfig, mask_for_egress
 from plugadvpl.privacy.buckets import financial_fields_from_sx3, is_financial_field
 
 # (campo PADRÃO TOTVS, é_valor_financeiro?) — heurística por nome
-MARFRIG_FISCAL = [
+FISCAL_NFE = [
     ("F2_VALMERC", True), ("F2_VALICM", True), ("F2_VALIPI", True), ("F2_VALIRRF", True),
     ("F2_VALBRUT", True), ("F2_FRETE", True), ("F2_SEGURO", True), ("F2_DESPESA", True),
     ("F2_BASEICM", True), ("D2_TOTAL", True), ("D2_PRCVEN", True), ("D2_VALIPI", True),
@@ -28,7 +28,7 @@ MARFRIG_FISCAL = [
     ("A1_INSCR", False), ("D2_GRADE", False),
 ]
 
-VIVEO_FISCAL = [
+FINANCEIRO_TITULOS = [
     ("E1_VALOR", True), ("E1_SALDO", True), ("E1_JUROS", True), ("E1_MULTA", True),
     ("E1_DESCONT", True), ("E1_VLCRUZ", True), ("E1_VLREAL", True), ("E2_VALOR", True),
     ("E2_VALJUR", True), ("E2_SALDO", True), ("C6_VALOR", True), ("C6_PRCVEN", True),
@@ -39,7 +39,7 @@ VIVEO_FISCAL = [
     ("C6_QUANT", False), ("E1_VENCTO", False),
 ]
 
-GH_CONTRATOS = [
+CONTRATOS = [
     ("CNB_VLTOT", True), ("CN9_VLTOT", True), ("CNA_VLTOT", True), ("CNB_VLUNIT", True),
     ("E1_VALOR", True), ("E1_SALDO", True), ("E3_VALOR", True), ("E3_BASE", True),
     ("E3_COMIS", True), ("E3_VLBASE", True), ("E1_VLCRUZ", True), ("A1_LC", True),
@@ -51,20 +51,20 @@ GH_CONTRATOS = [
 ]
 
 
-class TestMarfrigFiscal:
-    @pytest.mark.parametrize(("campo", "esperado"), MARFRIG_FISCAL)
+class TestFiscalNfe:
+    @pytest.mark.parametrize(("campo", "esperado"), FISCAL_NFE)
     def test_classificacao(self, campo: str, esperado: bool) -> None:
         assert is_financial_field(campo) is esperado
 
 
-class TestViveoFiscal:
-    @pytest.mark.parametrize(("campo", "esperado"), VIVEO_FISCAL)
+class TestFinanceiroTitulos:
+    @pytest.mark.parametrize(("campo", "esperado"), FINANCEIRO_TITULOS)
     def test_classificacao(self, campo: str, esperado: bool) -> None:
         assert is_financial_field(campo) is esperado
 
 
-class TestGHContratos:
-    @pytest.mark.parametrize(("campo", "esperado"), GH_CONTRATOS)
+class TestContratos:
+    @pytest.mark.parametrize(("campo", "esperado"), CONTRATOS)
     def test_classificacao(self, campo: str, esperado: bool) -> None:
         assert is_financial_field(campo) is esperado
 
