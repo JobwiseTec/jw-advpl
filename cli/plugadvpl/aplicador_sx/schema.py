@@ -151,44 +151,46 @@ SX7_COLS: list[Col] = [
 ]
 
 SX1_COLS: list[Col] = [
-    Col("X1_GRUPO", "grupo", "C", "", obrig=True, maxlen=6),
+    Col("X1_GRUPO", "grupo", "C", "", obrig=True, maxlen=10),
     Col("X1_ORDEM", "ordem", "C", "", obrig=True, maxlen=2),
     Col("X1_PERGUNT", "pergunta", "C", "", obrig=True, maxlen=30),
     Col("X1_PERSPA", "pergunta", "C", "", maxlen=30),
     Col("X1_PERENG", "pergunta", "C", "", maxlen=30),
-    Col("X1_VARIAVL", "variavel", "C", "", maxlen=6),
+    Col(
+        "X1_VARIAVL", "variavel", "C", "", maxlen=6
+    ),  # MV_CHx legado (≤6); NÃO é o MV_PARxx (vem da ordem)
     Col("X1_TIPO", "tipo", "C", "C", maxlen=1),
     Col("X1_TAMANHO", "tamanho", "N", 0),
     Col("X1_DECIMAL", "decimal", "N", 0),
     Col("X1_PRESEL", "presel", "N", 0),
-    Col("X1_GSC", None, "C", "G", maxlen=1),
+    Col("X1_GSC", "gsc", "C", "G", maxlen=1),  # 'G'=Get livre; '1'=radio (auto quando há opções)
     Col("X1_VALID", "valid", "C", "", maxlen=120),
     # bloco 01..05 (var/def/defspa/defeng/cnt). chaves expandidas de "opcoes" no emit.
-    Col("X1_VAR01", "var01", "C", "", maxlen=6),
+    Col("X1_VAR01", "var01", "C", "", maxlen=10),
     Col("X1_DEF01", "def01", "C", "", maxlen=40),
     Col("X1_DEFSPA1", "def01", "C", "", maxlen=40),
     Col("X1_DEFENG1", "def01", "C", "", maxlen=40),
-    Col("X1_CNT01", "cnt01", "C", "", maxlen=6),
-    Col("X1_VAR02", "var02", "C", "", maxlen=6),
+    Col("X1_CNT01", "cnt01", "C", "", maxlen=10),
+    Col("X1_VAR02", "var02", "C", "", maxlen=10),
     Col("X1_DEF02", "def02", "C", "", maxlen=40),
     Col("X1_DEFSPA2", "def02", "C", "", maxlen=40),
     Col("X1_DEFENG2", "def02", "C", "", maxlen=40),
-    Col("X1_CNT02", "cnt02", "C", "", maxlen=6),
-    Col("X1_VAR03", "var03", "C", "", maxlen=6),
+    Col("X1_CNT02", "cnt02", "C", "", maxlen=10),
+    Col("X1_VAR03", "var03", "C", "", maxlen=10),
     Col("X1_DEF03", "def03", "C", "", maxlen=40),
     Col("X1_DEFSPA3", "def03", "C", "", maxlen=40),
     Col("X1_DEFENG3", "def03", "C", "", maxlen=40),
-    Col("X1_CNT03", "cnt03", "C", "", maxlen=6),
-    Col("X1_VAR04", "var04", "C", "", maxlen=6),
+    Col("X1_CNT03", "cnt03", "C", "", maxlen=10),
+    Col("X1_VAR04", "var04", "C", "", maxlen=10),
     Col("X1_DEF04", "def04", "C", "", maxlen=40),
     Col("X1_DEFSPA4", "def04", "C", "", maxlen=40),
     Col("X1_DEFENG4", "def04", "C", "", maxlen=40),
-    Col("X1_CNT04", "cnt04", "C", "", maxlen=6),
-    Col("X1_VAR05", "var05", "C", "", maxlen=6),
+    Col("X1_CNT04", "cnt04", "C", "", maxlen=10),
+    Col("X1_VAR05", "var05", "C", "", maxlen=10),
     Col("X1_DEF05", "def05", "C", "", maxlen=40),
     Col("X1_DEFSPA5", "def05", "C", "", maxlen=40),
     Col("X1_DEFENG5", "def05", "C", "", maxlen=40),
-    Col("X1_CNT05", "cnt05", "C", "", maxlen=6),
+    Col("X1_CNT05", "cnt05", "C", "", maxlen=10),
     Col("X1_F3", "f3", "C", "", maxlen=10),
     Col("X1_PYME", None, "C", "", maxlen=1),
     Col("X1_GRPSXG", "grpsxg", "C", "", maxlen=3),
@@ -199,11 +201,13 @@ SX1_COLS: list[Col] = [
 
 SXA_COLS: list[Col] = [
     Col("XA_ALIAS", "alias", "C", "", obrig=True, maxlen=3),
-    Col("XA_ORDEM", "ordem", "C", "01", obrig=True, maxlen=2),
+    Col(
+        "XA_ORDEM", "ordem", "C", "1", obrig=True, maxlen=2
+    ),  # C(1) físico; '01' normalizado p/ '1' no emit
     Col("XA_DESCRIC", "descricao", "C", "", maxlen=30),
     Col("XA_DESCSPA", "descricao", "C", "", maxlen=30),
     Col("XA_DESCENG", "descricao", "C", "", maxlen=30),
-    Col("XA_AGRUP", "agrup", "C", "", maxlen=6),
+    Col("XA_AGRUP", "agrup", "C", "", maxlen=10),
     Col("XA_TIPO", "tipo", "C", "", maxlen=1),
     Col("XA_PROPRI", None, "C", "U", maxlen=1),
 ]
@@ -232,6 +236,24 @@ SX_COLS: dict[str, list[Col]] = {
 }
 
 
+# Colunas IDENTIFICADORAS: tamanho excedido é limite ESTRUTURAL (quebra/colide) ->
+# erro. Nas demais (títulos, descrições, valores, máscaras), exceder só trunca no
+# Protheus -> warning (não bloqueia a geração por um tamanho fora do padrão).
+_LEN_HARD: frozenset[str] = frozenset(
+    {
+        "X3_CAMPO",
+        "X3_ARQUIVO",
+        "X2_CHAVE",
+        "INDICE",
+        "XA_ALIAS",
+        "X5_TABELA",
+        "X7_CAMPO",
+        "X6_VAR",
+        "X1_GRUPO",
+    }
+)
+
+
 def validate_spec(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Retorna (erros, warnings). Erros bloqueiam a emissão; warnings só avisam."""
     erros: list[str] = []
@@ -251,7 +273,8 @@ def validate_spec(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
                 if c.obrig and (val is None or val == ""):
                     erros.append(f"{tipo}[{i}]: '{c.chave}' obrigatório ({c.nome}).")
                 if c.maxlen and isinstance(val, str) and len(val) > c.maxlen:
-                    erros.append(f"{tipo}[{i}]: '{c.chave}' excede {c.maxlen} chars ({c.nome}).")
+                    msg = f"{tipo}[{i}]: '{c.chave}' excede {c.maxlen} chars ({c.nome})."
+                    (erros if c.nome in _LEN_HARD else warnings).append(msg)
     # SIX: a chave do índice deve começar por ALIAS_FILIAL (spec §6). Índices que
     # não filtram por filial vazam dados entre filiais.
     for i, e in enumerate(spec.get("six", []) or []):

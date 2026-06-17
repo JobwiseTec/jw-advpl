@@ -29,7 +29,7 @@ O que vem no mapa:
 ## Execução
 
 ```bash
-uvx plugadvpl@0.43.0 --format md mapear $codigo
+uvx plugadvpl@0.43.1 --format md mapear $codigo
 ```
 
 > **Para agente IA:** passe `--format md` (ou `--format json` pra parsear). A flag `--format` vem **antes** do subcomando (é global no callback). O mapa confirma SÍMBOLOS (função/tabela), nunca o SENTIDO de negócio da rotina — afirmações de domínio precisam ser conferidas no fonte.

@@ -15,10 +15,11 @@ from .schema import SX_COLS, Col
 # Ordem canônica de emissão das seções FSAtu* no FSTProc (determinística).
 _ORDEM_TIPOS: tuple[str, ...] = ("sx2", "sx3", "six", "sx6", "sx7", "sx1", "sxa", "sx5")
 
-# Máscara X3_USADO "todos os módulos": 256 posições marcadas com 'x'.
-# Cada posição do campo X3_USADO representa um módulo do Protheus; preencher
-# todas com 'x' habilita o campo em todos os módulos. Tem exatamente 256 chars.
-_MASCARA_USADO_TODOS: str = "x" * 256
+# Máscara X3_USADO "todos os módulos" — extraída de aplicadores REAIS que funcionam:
+# 115 chars, com 'x' a cada 8 posições (slot de módulo): posições 0,8,16,…,112 e 114.
+# Cada slot de 8 chars é um módulo Protheus; 'x' no início do slot = campo ativo nele.
+# Campo X3_USADO vazio = inativo = NÃO funciona, por isso o gerador SEMPRE preenche.
+_MASCARA_USADO_TODOS: str = "x       " * 14 + "x x"  # 112 + 3 = 115 chars
 
 
 # Mapa tipo -> nomes ADVPL. "six" não segue o padrão SXn (alias/array/função
@@ -73,7 +74,8 @@ def _fmt_value(col: Col, entry: dict[str, Any]) -> str:
 
     Regras:
     - X3_TRIGGER: 'S' quando entry['trigger'] is True, senão ''.
-    - X3_USADO: máscara de 256 'x' quando o valor for a string 'todos'.
+    - X3_USADO: máscara de ativação por módulo (115 chars). SEMPRE preenchida —
+      vazio/'todos'/ausente -> todos os módulos; string custom -> respeita.
     - SHOWPESQ: bool -> 'S'/'N'; string 'S'/'N' passa direto (default 'N').
     - tipo 'N': inteiro. tipo 'L': .T./.F. char: 'valor'.
     - default-fill a partir de Col.default quando a chave não está no entry.
@@ -93,9 +95,16 @@ def _fmt_value(col: Col, entry: dict[str, Any]) -> str:
     if col.nome == "SHOWPESQ" and isinstance(raw, bool):
         raw = "S" if raw else "N"
 
-    # X3_USADO 'todos' -> máscara de 256 chars.
-    if col.nome == "X3_USADO" and isinstance(raw, str) and raw == "todos":
-        return _esc_char(_MASCARA_USADO_TODOS)
+    # XA_ORDEM (SXA) é C(1): os reais usam dígito único (1..9). '01' truncaria pra '0'
+    # no banco e o seek (XA_ALIAS+XA_ORDEM) não acharia o registro -> re-inserção.
+    if col.nome == "XA_ORDEM" and isinstance(raw, str) and raw.strip().isdigit():
+        raw = str(int(raw))
+
+    # X3_USADO: SEMPRE preenchido (vazio = campo inativo = não funciona).
+    # '' / 'todos' / ausente -> todos os módulos; máscara custom do usuário -> respeita.
+    if col.nome == "X3_USADO":
+        custom = isinstance(raw, str) and raw not in ("", "todos")
+        return _esc_char(raw if custom else _MASCARA_USADO_TODOS)
 
     if col.tipo == "N":
         try:
@@ -109,20 +118,26 @@ def _fmt_value(col: Col, entry: dict[str, Any]) -> str:
 
 
 def _expand_opcoes(entry: dict[str, Any]) -> dict[str, Any]:
-    """Expande ``entry['opcoes']`` (SX1) nas chaves var0N/def0N/cnt0N (N=1..5).
+    """Expande ``entry['opcoes']`` (SX1) no bloco de radio var0N/def0N/cnt0N (N=1..5).
 
-    Cada opção vira um bloco de pergunta (variável de retorno + descrição +
-    conteúdo). defspaN/defengN espelham defN via as colunas do schema (chave
-    'def0N'), então só precisamos popular var0N/def0N/cnt0N. No máximo 5 blocos.
+    Pergunta COM opções é radio mutuamente-exclusiva: `X1_GSC='1'` e o **label**
+    de cada opção vai em `X1_DEF0N` (defspaN/defengN espelham via schema). O valor
+    retornado em `MV_PARxx` é o ÍNDICE da opção (1..N). Cada opção pode ser uma
+    string (só o label) ou um dict `{def, var, cnt}` (avançado). Máx 5 blocos.
     """
     opcoes = entry.get("opcoes")
     if not opcoes:
         return entry
     out = dict(entry)
+    out["gsc"] = "1"  # com opções, a pergunta é radio (X1_GSC='1'), não Get livre ('G')
     for idx, opc in enumerate(opcoes[:5], start=1):
-        out[f"var0{idx}"] = opc.get("var", "")
-        out[f"def0{idx}"] = opc.get("def", "")
-        out[f"cnt0{idx}"] = opc.get("cnt", "")
+        if isinstance(opc, str):
+            label, var, cnt = opc, "", ""
+        else:
+            label, var, cnt = opc.get("def", ""), opc.get("var", ""), opc.get("cnt", "")
+        out[f"def0{idx}"] = label
+        out[f"var0{idx}"] = var  # vazio no radio simples
+        out[f"cnt0{idx}"] = cnt
     return out
 
 
@@ -689,8 +704,11 @@ AutoGrLog( CRLF + "Final da Atualizacao" + " {sx_label}" + CRLF + Replicate( "-"
 Return NIL"""
 
 
+# XA_ALIAS é padronizado à largura física (PadR) porque o índice grava o campo
+# completo: sem padding, seek 'ZXX'+'01' não casa o key 'ZXX   01' (XA_ALIAS C(6))
+# e o registro existente não é encontrado -> re-inserção (duplicata).
 _KEY_SXA: list[_KeyPart] = [
-    _KeyPart("XA_ALIAS", "nPosAli"),
+    _KeyPart("XA_ALIAS", "nPosAli", pad_var="nTamAli"),
     _KeyPart("XA_ORDEM", "nPosOrd"),
 ]
 _KEY_SX5: list[_KeyPart] = [
@@ -699,7 +717,9 @@ _KEY_SX5: list[_KeyPart] = [
     _KeyPart("X5_CHAVE", "nPosChv"),
 ]
 
-_LOCALS_SXA: str = _locals_insert_simples("aSXA", _KEY_SXA, "")
+_LOCALS_SXA: str = _locals_insert_simples(
+    "aSXA", _KEY_SXA, "Local nTamAli   := Len( SXA->XA_ALIAS )"
+)
 _LOOP_SXA: str = _loop_insert_simples("SXA", "aSXA", _KEY_SXA, "Pastas", "SXA")
 
 _LOCALS_SX5: str = _locals_insert_simples(

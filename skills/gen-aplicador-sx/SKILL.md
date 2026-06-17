@@ -57,11 +57,11 @@ As chaves abaixo são as que você preenche no spec; o gerador aplica os default
 | Tipo | Chaves do spec | Defaults aplicados |
 |---|---|---|
 | **sx2** (tabelas) | `alias`*, `nome`*, `modo`, `unico`, `display`, `rotina`, `path` | `modo='E'` |
-| **sx3** (campos) | `alias`*, `campo`*, `tipo`*, `tamanho`, `decimal`, `titulo`, `descric`, `picture`, `valid`, `when`, `usado`, `f3`, `cbox`, `relacao`, `folder`, `grpsxg`, `trigger`, `browse` | `tipo='C'`, `usado='todos'` (máscara 256 módulos), `browse='N'`; **X3_ORDEM automática** |
+| **sx3** (campos) | `alias`*, `campo`*, `tipo`*, `tamanho`, `decimal`, `titulo`, `descric`, `picture`, `valid`, `when`, `usado`, `obrigat`, `f3`, `cbox`, `relacao`, `folder`, `grpsxg`, `trigger`, `browse` | `tipo='C'`, **`usado` sempre preenchido** (todos os módulos), `browse='N'`; **X3_ORDEM automática** |
 | **six** (índices) | `alias`*, `ordem`*, `chave`*, `descricao`, `f3`, `nickname`, `showpesq` | `ordem='1'`, `showpesq='N'` |
 | **sx6** (params MV_*) | `var`*, `tipo`, `conteudo`, `descric`, `desc1`, `desc2`, `valid`, `init` | `tipo='C'`, filial global; **insert-only** |
 | **sx7** (gatilhos) | `campo`*, `sequenc`, `regra`, `cdomin`, `tipo`, `seek`, `xalias`, `xordem`, `xchave`, `condic` | `sequenc='001'`, `tipo='P'`, `seek='N'`; marca X3_TRIGGER='S' na origem |
-| **sx1** (perguntas) | `grupo`*, `ordem`*, `pergunta`*, `variavel`, `tipo`, `tamanho`, `valid`, `f3`, `help`, `opcoes:[{var,def,cnt}]` (até 5) | `tipo='C'`; **insert-only** |
+| **sx1** (perguntas) | `grupo`*, `ordem`*, `pergunta`*, `tipo`, `tamanho`, `valid`, `f3`, `help`, `opcoes:["label",…]` (até 5, vira radio), `variavel` | `tipo='C'`; **insert-only**; com `opcoes` → `X1_GSC='1'` (radio), labels em `X1_DEF0n` |
 | **sxa** (pastas) | `alias`*, `ordem`*, `descricao`, `agrup`, `tipo` | `ordem='01'`; **insert-only** |
 | **sx5** (tabelas genéricas) | `tabela`*, `chave`*, `descricao` | filial global; **insert-only** |
 
@@ -71,7 +71,10 @@ As chaves abaixo são as que você preenche no spec; o gerador aplica os default
 
 - **SIX:** a `chave` do índice **deve começar por `ALIAS_FILIAL`** (ex.: `ZXX_FILIAL+ZXX_COD`). Índice que não filtra por filial vaza dados entre filiais — a validação bloqueia.
 - **SX3 é insert-only:** só cria campo que ainda não existe; o **X3_ORDEM é calculado em runtime** (sequência por alias). Não altera campo existente.
+- **X3_USADO (ativação por módulo) é CRÍTICO:** campo com `X3_USADO` vazio fica **inativo e não funciona**. O gerador **sempre preenche** — default = todos os módulos (máscara de 115 chars, `'x'` a cada 8 = slot de módulo). Para ativar só em módulos específicos, passe `usado` com a máscara custom (ex.: `"x       x       "` = só os 2 primeiros módulos). **Não deixe de fora** se quiser controlar; mas omitir já ativa em todos.
+- **X3_OBRIGAT (campo obrigatório):** default vazio = **não-obrigatório** (o caso comum). Para tornar obrigatório, passe `obrigat` com a máscara de módulos (ex.: `"x"` = obrigatório no 1º módulo, `" xxxx"` = módulos 2–5).
 - **SX6 é insert-only:** respeita valores existentes — só insere o parâmetro quando a chave `X6_FIL+X6_VAR` não existe; nunca sobrescreve conteúdo de um MV já cadastrado.
+- **SX1 (perguntas):** o parâmetro é acessado por `MV_PARxx` segundo a **ordem** (`ordem='01'` → `MV_PAR01`) — **não** ponha `MV_PARxx` em `variavel`. `variavel` é o `MV_CHx` legado (campo C(6), pode ficar vazio). Pergunta de múltipla escolha: passe `opcoes:["Entrada","Saida"]` (vira radio `X1_GSC='1'`, os labels vão em `X1_DEF01..05`, e o `MV_PARxx` retorna o índice 1..N).
 - **SX7** marca `X3_TRIGGER='S'` no campo de origem (se ele existir no SX3). Gatilho sobre campo fora do spec → warning (pode pré-existir).
 - O programa roda em **modo EXCLUSIVO + backup primeiro** (`MyOpenSM0`/`RpcSetEnv`/`X31UpdTable`). Aplique fora do horário produtivo.
 
@@ -79,11 +82,11 @@ As chaves abaixo são as que você preenche no spec; o gerador aplica os default
 
 ```bash
 # spec em arquivo:
-uvx plugadvpl@0.43.0 gen-aplicador-sx --spec spec.json --out a099999.prw
+uvx plugadvpl@0.43.1 gen-aplicador-sx --spec spec.json --out a099999.prw
 
 # spec via stdin:
 echo '{"numero":"099999","sx6":[{"var":"MV_XEXMPL","tipo":"L","conteudo":".T."}]}' \
-  | uvx plugadvpl@0.43.0 gen-aplicador-sx --spec - --out a099999.prw
+  | uvx plugadvpl@0.43.1 gen-aplicador-sx --spec - --out a099999.prw
 ```
 
 `--spec <arquivo.json>` (ou `-` pra ler do stdin). `--out a<numero>.prw` grava em **cp1252**; sem `--out`, imprime o `.prw` no stdout. Validação inválida → exit ≠ 0 + `erro:` no stderr.

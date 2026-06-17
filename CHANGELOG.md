@@ -4,6 +4,16 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-06-17
+
+### Fixed
+
+- **`gen-aplicador-sx` — correções de fidelidade do dicionário, validadas contra registros reais aplicados no banco** (round de teste real: gerar → aplicar no Protheus → comparar com a base):
+  - **`X3_USADO`** (máscara de ativação por módulo): era `"x"*256` (sólido, comprimento errado) → o campo **não ativava**. Agora usa a máscara real de **115 chars** (`'x'` a cada 8 posições = todos os módulos) e é **sempre preenchida** (campo com `X3_USADO` vazio fica inativo); `usado:"todos"`/ausente → todos os módulos, máscara custom → respeitada.
+  - **SX1 (perguntas)**: pergunta **com opções** agora vira **radio** (`X1_GSC='1'`; antes ficava `'G'` = get livre, e as opções não funcionavam), com os labels em `X1_DEF0n` e o retorno em `MV_PARxx` pelo índice. `X1_VARIAVL` é C(6) legado (`MV_CHx`), **não** o `MV_PARxx` (que vem da ordem) — `maxlen` 10→6; `opcoes` aceita lista de labels.
+  - **SXA (pastas)**: `XA_ORDEM` é **C(1)** — `'01'` truncava para `'0'` no banco e o seek `XA_ALIAS+XA_ORDEM` nunca encontrava o registro → **re-inserção/duplicata** a cada execução. Agora o emit normaliza para dígito único e o seek faz `PadR(XA_ALIAS)`.
+  - **Validação de tamanho** passa a ser **warning** (não bloqueia a geração) exceto em campos identificadores (campo/alias/param/grupo), onde o limite é estrutural; `maxlen` de `X1_GRUPO`/`X1_VARIAVL`/`X1_VAR01..05` corrigidos para os tamanhos físicos reais.
+
 ## [0.43.0] - 2026-06-16
 
 ### Added

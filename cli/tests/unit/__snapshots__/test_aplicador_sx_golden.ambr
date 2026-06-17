@@ -522,7 +522,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -570,7 +570,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -618,7 +618,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -1068,7 +1068,7 @@
   	0, ; //X1_TAMANHO
   	0, ; //X1_DECIMAL
   	0, ; //X1_PRESEL
-  	'G', ; //X1_GSC
+  	'1', ; //X1_GSC
   	'', ; //X1_VALID
   	'MV_PAR01', ; //X1_VAR01
   	'Sintetico', ; //X1_DEF01
@@ -1167,6 +1167,7 @@
   Local nJ        := 0
   Local nPosAli   := 0
   Local nPosOrd   := 0
+  Local nTamAli   := Len( SXA->XA_ALIAS )
   
   AutoGrLog( "Inicio da Atualizacao" + " SXA" + CRLF )
   
@@ -1180,7 +1181,7 @@
   //
   aAdd( aSXA, { ;
   	'ZXX', ; //XA_ALIAS
-  	'01', ; //XA_ORDEM
+  	'1', ; //XA_ORDEM
   	'Cadastrais', ; //XA_DESCRIC
   	'Cadastrais', ; //XA_DESCSPA
   	'Cadastrais', ; //XA_DESCENG
@@ -1200,7 +1201,7 @@
   
   	oProcess:IncRegua2( "Atualizando Pastas (SXA) ..." )
   
-  	If !SXA->( dbSeek( aSXA[nI][nPosAli] + aSXA[nI][nPosOrd] ) )
+  	If !SXA->( dbSeek( PadR( aSXA[nI][nPosAli], nTamAli ) + aSXA[nI][nPosOrd] ) )
   
   		RecLock( "SXA", .T. )
   		For nJ := 1 To Len( aSXA[nI] )
@@ -2042,7 +2043,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -2090,7 +2091,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -3084,7 +3085,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL
@@ -3132,7 +3133,7 @@
   	'', ; //X3_DESCENG
   	'', ; //X3_PICTURE
   	'', ; //X3_VALID
-  	'', ; //X3_USADO
+  	'x       x       x       x       x       x       x       x       x       x       x       x       x       x       x x', ; //X3_USADO
   	'', ; //X3_RELACAO
   	'', ; //X3_F3
   	0, ; //X3_NIVEL

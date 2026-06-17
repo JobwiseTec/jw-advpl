@@ -268,7 +268,7 @@ def test_sxa_tem_8_colunas_e_primeira_e_alias():
 
 def test_sxa_defaults_ordem_propri():
     by = {c.nome: c for c in SXA_COLS}
-    assert by["XA_ORDEM"].default == "01"
+    assert by["XA_ORDEM"].default == "1"  # XA_ORDEM é C(1) (folder 1..9)
     assert by["XA_PROPRI"].default == "U"
 
 

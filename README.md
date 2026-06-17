@@ -994,6 +994,10 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.43.1 — `gen-aplicador-sx`: fidelidade do dicionário (validado no banco real)
+
+- Correções pegas ao **gerar → aplicar no Protheus → comparar com a base**: **`X3_USADO`** com a máscara real de 115 chars e sempre preenchida (campo vazio não ativava); **SX1** com opções vira radio (`X1_GSC='1'`) e `X1_VARIAVL` C(6); **SXA** com `XA_ORDEM` C(1) normalizado + `PadR(XA_ALIAS)` no seek (parava a re-inserção/duplicata). Validação de tamanho vira warning, exceto identificadores.
+
 ### v0.43.0 — `gen-aplicador-sx`: gerador determinístico de update de dicionário + lints de sintaxe
 
 - **`plugadvpl gen-aplicador-sx`** — de um spec JSON, emite um `.prw` ADVPL **estruturalmente idêntico** (boilerplate byte-estável + `FSAtu*` por tipo) que aplica customizações de dicionário em **modo EXCLUSIVO** (`X31UpdTable`), no lugar de `RecLock` ingênuo. Cobre os **8 dicionários** (SX2/SX3/SIX/SX6/SX7/SX1/SXA/SX5), cada campo. Mesmo spec → bytes idênticos (snapshot golden + determinismo + o `.prw` passa no próprio lint). Skill + integração no `advpl-code-generator`.

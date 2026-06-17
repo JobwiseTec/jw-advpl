@@ -33,10 +33,48 @@ def test_emit_aadd_sx3_trigger_bool_vira_S():  # noqa: N802
     assert "'S'" in linha.split("//X3_TRIGGER")[0].rsplit("aAdd", 1)[-1]
 
 
-def test_mascara_usado_todos_tem_256_chars():
+def test_mascara_usado_todos_115_chars_x_a_cada_8():
+    # extraída de aplicadores reais que funcionam: 115 chars, 'x' nas posições
+    # 0,8,16,...,112,114 (cada slot de 8 = módulo). 'x'*256 (errado) não ativa o campo.
     from plugadvpl.aplicador_sx.emit import _MASCARA_USADO_TODOS
 
-    assert len(_MASCARA_USADO_TODOS) == 256
+    assert len(_MASCARA_USADO_TODOS) == 115
+    assert [i for i, c in enumerate(_MASCARA_USADO_TODOS) if c == "x"] == [
+        0,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72,
+        80,
+        88,
+        96,
+        104,
+        112,
+        114,
+    ]
+
+
+def test_x3_usado_default_ativo_quando_ausente():
+    # X3_USADO vazio = campo inativo = não funciona. Sem 'usado' no spec, o gerador
+    # SEMPRE preenche com a máscara de todos os módulos (não deixa vazio).
+    from plugadvpl.aplicador_sx.emit import _MASCARA_USADO_TODOS
+
+    linha = emit_aadd("sx3", {"alias": "ZXX", "campo": "ZXX_X", "tipo": "C", "tamanho": 1})
+    assert f"'{_MASCARA_USADO_TODOS}'" in linha
+    assert "//X3_USADO" in linha
+
+
+def test_x3_usado_mascara_custom_respeitada():
+    custom = "x       x       "  # só os 2 primeiros módulos
+    linha = emit_aadd(
+        "sx3", {"alias": "ZXX", "campo": "ZXX_X", "tipo": "C", "tamanho": 1, "usado": custom}
+    )
+    assert f"'{custom}'" in linha
 
 
 def test_emit_fsatu_sx3_estrutura_completa():
@@ -418,7 +456,7 @@ def test_emit_aadd_sxa_pasta_simples():
     linha = emit_aadd("sxa", {"alias": "ZXX", "ordem": "01", "descricao": "Cadastrais"})
     assert "aAdd( aSXA, {" in linha
     assert "'ZXX'" in linha
-    assert "'01'" in linha
+    assert "'1', ; //XA_ORDEM" in linha  # '01' normalizado p/ '1' (XA_ORDEM é C(1))
     assert "'Cadastrais'" in linha
     assert "//XA_ALIAS" in linha
     assert linha.rstrip().endswith("//XA_PROPRI")
@@ -506,5 +544,54 @@ def test_esc_char_preserva_aspas_em_expressao():
 
 
 def test_esc_char_valor_simples_continua_aspas_simples():
-    linha = emit_aadd("sx3", {"alias": "ZXX", "campo": "ZXX_X", "tipo": "C", "tamanho": 1, "titulo": "Tit"})
+    linha = emit_aadd(
+        "sx3", {"alias": "ZXX", "campo": "ZXX_X", "tipo": "C", "tamanho": 1, "titulo": "Tit"}
+    )
     assert "'Tit'" in linha
+
+
+def test_sx1_opcoes_vira_radio_gsc1():
+    # pergunta COM opções (lista de labels) -> X1_GSC='1' (radio); label em X1_DEF0n, X1_VAR0n vazio.
+    fn = emit_aadd(
+        "sx1",
+        {
+            "grupo": "ZXX01",
+            "ordem": "01",
+            "pergunta": "Tipo?",
+            "tipo": "N",
+            "opcoes": ["Entrada", "Saida"],
+        },
+    )
+    assert "'1', ; //X1_GSC" in fn
+    assert "'Entrada', ; //X1_DEF01" in fn
+    assert "'Saida', ; //X1_DEF02" in fn
+    assert "'', ; //X1_VAR01" in fn
+
+
+def test_sx1_sem_opcoes_continua_get_livre():
+    fn = emit_aadd("sx1", {"grupo": "ZXX01", "ordem": "01", "pergunta": "Filial?", "tipo": "C"})
+    assert "'G', ; //X1_GSC" in fn
+
+
+def test_sx1_variavl_nao_recebe_mv_par():
+    # X1_VARIAVL é C(6) e legado; o gerador não força MV_PARxx (vem da ordem). Vazio é válido.
+    fn = emit_aadd("sx1", {"grupo": "ZXX01", "ordem": "01", "pergunta": "Filial?", "tipo": "C"})
+    assert "'', ; //X1_VARIAVL" in fn
+
+
+def test_sxa_seek_padroniza_xa_alias():
+    # sem PadR, seek 'ZXX'+'01' não casa o índice 'ZXX   01' (XA_ALIAS C(6)) e duplica.
+    from plugadvpl.aplicador_sx.emit import _LOOP_SXA
+
+    assert "PadR( aSXA[nI][nPosAli], nTamAli )" in _LOOP_SXA
+    assert "Len( SXA->XA_ALIAS )" in gen_prw(
+        {"numero": "099999", "sxa": [{"alias": "ZXX", "ordem": "01", "descricao": "X"}]}
+    )
+
+
+def test_sxa_ordem_normaliza_para_digito_unico():
+    # XA_ORDEM é C(1): '01' truncaria p/ '0' no banco e quebraria o seek -> vira '1'.
+    assert "'1', ; //XA_ORDEM" in emit_aadd(
+        "sxa", {"alias": "ZXX", "ordem": "01", "descricao": "X"}
+    )
+    assert "'2', ; //XA_ORDEM" in emit_aadd("sxa", {"alias": "ZXX", "ordem": "2", "descricao": "X"})
