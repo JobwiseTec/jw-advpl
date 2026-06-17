@@ -25,6 +25,7 @@ Gerar **um arquivo `.prw`/`.tlpp`** correto, idiomático, seguindo:
    - **REST/SOAP** — Web Service → skill `advpl-webservice`.
    - **PE** — Ponto-de-entrada → skill `advpl-pontos-entrada`.
    - **JOB** — Rotina batch / RPC → skill `advpl-jobs-rpc`.
+   - **DICIONÁRIO (SX/SIX)** — criar/alterar campo (SX3), tabela (SX2), índice (SIX), parâmetro `MV_*` (SX6), gatilho (SX7), pergunta (SX1) ou pasta (SXA) → **NÃO emita `RecLock` ingênuo no SX**. Monte um spec JSON e gere um aplicador em modo EXCLUSIVO com `gen-aplicador-sx` → skill `gen-aplicador-sx` (ver passo 5b).
    - **Workflow** — fluxo de aprovação.
 
 2. **Consulte o template mental** da skill temática carregada — a skill descreve a estrutura mínima.
@@ -46,6 +47,12 @@ Gerar **um arquivo `.prw`/`.tlpp`** correto, idiomático, seguindo:
    - **Transações:** `Begin Transaction ... End Transaction` envolvendo `RecLock+MsUnLock`.
    - **Tabelas:** `DbSelectArea("XXX")`, `XXX->(DbSetOrder(n))`, `XXX->(DbSeek(cChave))`. Nunca abra área sem fechar.
    - **Funções restritas:** consulte mentalmente — evitar `StaticCall`, `__GetTrace`, `_PRVT*`, `PTInternal`, `RunTrigger` interno. Quando em dúvida, pergunte.
+
+5b. **Customização de DICIONÁRIO (SX/SIX) → use `gen-aplicador-sx`, não `RecLock`:**
+   - Quando o pedido é criar/alterar **campo (SX3), tabela (SX2), índice (SIX), parâmetro `MV_*` (SX6), gatilho (SX7), pergunta (SX1) ou pasta (SXA)**, NÃO escreva um `RecLock("SX3", .T.)` solto: isso corrompe metadados (X3_ORDEM fora de sequência, índice físico não dropado, parâmetro sobreposto).
+   - Monte um **spec JSON** (`{"numero": "...", "sx3": [...], "six": [...], "sx6": [...], ...}` — seções opcionais) e gere um aplicador em **modo EXCLUSIVO + backup** com a skill `gen-aplicador-sx`:
+     - `uvx plugadvpl@0.3.1 gen-aplicador-sx --spec spec.json --out a<numero>.prw`
+   - O gerador é determinístico e aplica defaults seguros; confira a **regra de negócio** (X3_VALID/X3_WHEN, conteúdo do MV) — o aplicador confere símbolo, não sentido.
 
 6. **Encoding correto na escrita:**
    - `.prw` → escreva com encoding `cp1252` (Latin-1). Caracteres acentuados em strings devem estar nessa codificação.

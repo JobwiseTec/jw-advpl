@@ -61,6 +61,9 @@ jobs:
         plugadvpl/__main__.py
         plugadvpl/_skill_catalog.py
         plugadvpl/agent_doctor.py
+        plugadvpl/aplicador_sx/__init__.py
+        plugadvpl/aplicador_sx/schema.py
+        plugadvpl/aplicador_sx/emit.py
         plugadvpl/catalog.py
         plugadvpl/cli.py
         plugadvpl/codex_config.py

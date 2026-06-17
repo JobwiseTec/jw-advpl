@@ -4476,6 +4476,32 @@ def doc_writer_cmd(
         typer.echo(generate_protheus_doc(spec))
 
 
+@app.command(name="gen-aplicador-sx")
+def gen_aplicador_sx(
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
+    spec: Annotated[str, typer.Option("--spec", help="Caminho do spec JSON (ou '-' p/ stdin).")],
+    out: Annotated[str, typer.Option("--out", help="Arquivo .prw de saída (cp1252).")] = "",
+) -> None:
+    """Gera um 'aplicador de SXs' (.prw) a partir de um spec JSON. Determinístico, sem LLM."""
+    from .aplicador_sx import gen_prw, validate_spec
+
+    raw = sys.stdin.read() if spec == "-" else Path(spec).read_text("utf-8")
+    data = json.loads(raw)
+    erros, warns = validate_spec(data)
+    for w in warns:
+        typer.echo(f"aviso: {w}", err=True)
+    if erros:
+        for e in erros:
+            typer.echo(f"erro: {e}", err=True)
+        raise typer.Exit(2)
+    prw = gen_prw(data)
+    if out:
+        Path(out).write_text(prw, encoding="cp1252", errors="replace")
+        typer.echo(f"gerado: {out}")
+    else:
+        typer.echo(prw)
+
+
 # ---------------------------------------------------------------------------
 # edit-prw (v0.7.0 Fase 0 #5): converte CP1252 <-> UTF-8
 # ---------------------------------------------------------------------------

@@ -323,7 +323,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 72
+        assert len(rules) == 73
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -359,7 +359,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 72
+        assert len(rules) == 73
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -374,7 +374,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 72
+        assert len(rules) == 73
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
@@ -499,7 +499,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 72
+        assert len(instructions) == 73
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -542,7 +542,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 72
+        assert len(instructions) == 73
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -560,7 +560,7 @@ class TestInitCopilotInstructions:
                 "plugadvpl-*.instructions.md"
             )
         )
-        assert len(instructions) == 72
+        assert len(instructions) == 73
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -646,7 +646,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 72
+        assert len(skill_files) == 73
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -704,7 +704,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 72
+        assert len(skill_files) == 73
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner,
@@ -723,7 +723,7 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 72
+        assert len(skill_files) == 73
         arch_content = (
             synthetic_project
             / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
@@ -1043,15 +1043,15 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 72
+        assert len(cursor_files) == 73
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 72
+        assert len(copilot_files) == 73
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 72
+        assert len(gemini_files) == 73
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -4111,3 +4111,47 @@ class TestVerifyClaims:
         )
         assert result.exit_code == 0
         assert json.loads(result.stdout)["results"] == []
+
+
+class TestGenAplicadorSx:
+    """`gen-aplicador-sx` — gera .prw aplicador de SXs a partir de spec JSON."""
+
+    def test_gera_prw_de_spec_valido(self, tmp_path: Path, runner: CliRunner) -> None:
+        spec = tmp_path / "spec.json"
+        spec.write_text(
+            json.dumps(
+                {
+                    "numero": "099999",
+                    "sx3": [
+                        {
+                            "alias": "ZXX",
+                            "campo": "ZXX_COD",
+                            "tipo": "C",
+                            "tamanho": 6,
+                            "titulo": "Cod",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        out = tmp_path / "a099999.prw"
+        result = runner.invoke(app, ["gen-aplicador-sx", "--spec", str(spec), "--out", str(out)])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        assert out.exists()
+        conteudo = out.read_text(encoding="cp1252")
+        assert "User Function A099999" in conteudo
+
+    def test_spec_com_erro_de_validacao_sai_nao_zero(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        spec = tmp_path / "spec.json"
+        # falta 'campo' (obrigatório) -> erro de validação.
+        spec.write_text(
+            json.dumps({"numero": "099999", "sx3": [{"alias": "ZXX", "tipo": "C", "tamanho": 6}]}),
+            encoding="utf-8",
+        )
+        out = tmp_path / "a099999.prw"
+        result = runner.invoke(app, ["gen-aplicador-sx", "--spec", str(spec), "--out", str(out)])
+        assert result.exit_code != 0
+        assert "erro:" in (result.stderr or result.stdout)
