@@ -4,6 +4,13 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-06-16
+
+### Added
+
+- **`plugadvpl gen-aplicador-sx` — gerador determinístico de "aplicador de SXs"**: emite um `.prw` ADVPL **estruturalmente idêntico** (boilerplate byte-estável + `FSAtu*` por tipo) que aplica customizações de dicionário em **modo EXCLUSIVO** (`MyOpenSM0`/`RpcSetEnv`/`X31UpdTable`), no lugar de um `RecLock` ingênuo (que só grava o metadado e não materializa a coluna física via `X31UpdTable`/ALTER TABLE). A partir de um **spec JSON**, cobre os **8 dicionários** — SX2 (tabelas), SX3 (campos), SIX (índices), SX6 (params `MV_*`), SX7 (gatilhos), SX1 (perguntas), SXA (pastas), SX5 (genéricas) — cada campo com defaults seguros. Mesmo spec → **bytes idênticos** (travado por snapshot golden + teste de determinismo + o `.prw` emitido passa no próprio `lint`). Skill `gen-aplicador-sx` (ensina cada campo + monta o spec) + integração no agente `advpl-code-generator`. 100% determinístico, sem LLM no core; saída em cp1252.
+- **3 regras de lint de sintaxe ADVPL** (guard determinístico, issue #176): **`BP-009`** (warning) `Then` em condicional — ADVPL usa `If`/`EndIf` (regex ancorado em `If`/`ElseIf` p/ não pegar SQL `CASE WHEN THEN`); **`BP-010`** (warning) `EndFunction` — ADVPL fecha com `Return`; **`BP-011`** (info) identificador de função além do limite de 10 chars em `.prw` (User Function ≤ 8 pelo `U_`; Static/Main ≤ 10; `.tlpp` isento). Calibradas em base real: BP-009/010 = 0 falso-positivo; BP-011 = `info` (10-16% das funções excedem → advisory).
+
 ## [0.42.0] - 2026-06-16
 
 ### Added

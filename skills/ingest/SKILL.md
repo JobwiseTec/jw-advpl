@@ -43,7 +43,7 @@ O filtro vale igual em `ingest`, `reindex` e `status`. Um re-`ingest` **remove d
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.42.0 ingest $ARGUMENTS
+uvx plugadvpl@0.43.0 ingest $ARGUMENTS
 ```
 
 ## Exemplos

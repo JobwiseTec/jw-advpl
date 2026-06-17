@@ -994,6 +994,11 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.43.0 — `gen-aplicador-sx`: gerador determinístico de update de dicionário + lints de sintaxe
+
+- **`plugadvpl gen-aplicador-sx`** — de um spec JSON, emite um `.prw` ADVPL **estruturalmente idêntico** (boilerplate byte-estável + `FSAtu*` por tipo) que aplica customizações de dicionário em **modo EXCLUSIVO** (`X31UpdTable`), no lugar de `RecLock` ingênuo. Cobre os **8 dicionários** (SX2/SX3/SIX/SX6/SX7/SX1/SXA/SX5), cada campo. Mesmo spec → bytes idênticos (snapshot golden + determinismo + o `.prw` passa no próprio lint). Skill + integração no `advpl-code-generator`.
+- **Lints de sintaxe ADVPL** ([#176](https://github.com/JoniPraia/plugadvpl/issues/176)): `BP-009` (`Then` em condicional), `BP-010` (`EndFunction`), `BP-011` (limite de 10 chars do identificador em `.prw`) — calibradas em base real.
+
 ### v0.42.0 — `mapear`: dossiê determinístico de rotina + verificação (sem LLM)
 
 Productiza a "receita determinística como ferramenta" do PoC de harness local ([#173](https://github.com/JoniPraia/plugadvpl/issues/173)) — a inteligência mora no índice, não no modelo:
