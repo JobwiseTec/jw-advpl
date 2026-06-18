@@ -1,0 +1,99 @@
+# ==============================================================================
+# ETAPA 3: TROCA QUENTE (TQ) DO RPO
+# ==============================================================================
+TQ_DEST_APO="$(cfg TQ_DEST_APO)"
+if [[ -z "${TQ_DEST_APO}" || "${TQ_DEST_APO}" == "<"* ]]; then
+    echo ""
+    echo -e "${YELLOW}TQ nao configurada (TQ_DEST_APO vazio). Pulando Troca Quente.${RESET}"
+else
+    echo ""
+    echo -e "${YELLOW}--------------------------------------------------------------------------${RESET}"
+    echo -e "${YELLOW}ATENCAO: a TQ cria nova pasta datada no destino, copia o RPO de compilacao${RESET}"
+    echo -e "${YELLOW}e repointa o SourcePath nos appserver*.ini do destino. Execute com cuidado!${RESET}"
+    echo -e "${YELLOW}--------------------------------------------------------------------------${RESET}"
+
+    TQ_CMP_RPO="$(cfg TQ_CMP_RPO)"
+    TQ_DEST_BIN="$(cfg TQ_DEST_BIN)"
+    TQ_RPO_FILES="$(cfg TQ_RPO_FILES)"
+    TQ_RESTART_CMD="$(cfg TQ_RESTART_CMD)"
+    TQ_HEALTHCHECK_URL="$(cfg TQ_HEALTHCHECK_URL)"
+
+    for par in "TQ_CMP_RPO=${TQ_CMP_RPO}" "TQ_DEST_BIN=${TQ_DEST_BIN}"; do
+        k="${par%%=*}"; v="${par#*=}"
+        if [[ -z "${v}" || "${v}" == "<"* ]]; then
+            echo -e "${RED}ERRO: TQ '${k}' nao preenchido no config.${RESET}"
+            exit 1
+        fi
+    done
+    if [[ ! -d "${TQ_DEST_APO}" ]]; then
+        echo -e "${RED}ERRO: TQ_DEST_APO nao encontrado: ${TQ_DEST_APO}${RESET}"
+        exit 1
+    fi
+
+    # Acha o dir datado mais recente (ORIGEM) e cria o novo (DESTINO = agora)
+    ANO_ATUAL="$(date +%Y | cut -c1-3)"
+    ORIGEM="$(find "${TQ_DEST_APO}" -mindepth 1 -maxdepth 1 -type d -name "${ANO_ATUAL}*" \
+        -printf "%T@ %f\n" 2>/dev/null | sort -rn | head -n1 | awk '{print $2}')"
+    if [[ -z "${ORIGEM}" ]]; then
+        echo -e "${RED}ERRO: nenhum dir datado '${ANO_ATUAL}*' em ${TQ_DEST_APO}${RESET}"
+        exit 1
+    fi
+    DESTINO="$(date +%Y%m%d_%H%M)"
+    echo -e "${GREEN}TQ: ORIGEM=${ORIGEM}  ->  DESTINO=${DESTINO}${RESET}"
+
+    NOVO_DIR="${TQ_DEST_APO}/${DESTINO}"
+    mkdir -p "${NOVO_DIR}"
+    IFS=',' read -ra _rpos <<< "${TQ_RPO_FILES}"
+    for rpo in "${_rpos[@]}"; do
+        rpo="$(echo "${rpo}" | xargs)"  # trim
+        [[ -z "${rpo}" ]] && continue
+        src="${TQ_CMP_RPO}/${rpo}"
+        if [[ ! -f "${src}" ]]; then
+            echo -e "${RED}ERRO: RPO de compilacao nao encontrado: ${src}${RESET}"
+            exit 1
+        fi
+        cp -f "${src}" "${NOVO_DIR}/"
+        echo -e "${GREEN}  copiado: ${rpo}${RESET}"
+    done
+
+    # Repointa SourcePath (ORIGEM -> DESTINO) nos appserver*.ini do destino
+    while IFS= read -r -d '' ini; do
+        if grep -qF "${ORIGEM}" "${ini}"; then
+            sed -i "s|${ORIGEM}|${DESTINO}|g" "${ini}"
+            echo -e "${GREEN}  ini repointado: ${ini}${RESET}"
+        fi
+    done < <(find "${TQ_DEST_BIN}" -type f -iname "appserver*.ini" -print0)
+
+    # Restart (obrigatorio p/ appserver REST) + healthcheck, ambos opcionais
+    if [[ -n "${TQ_RESTART_CMD}" ]]; then
+        echo -e "${YELLOW}Reiniciando appserver destino...${RESET}"
+        bash -c "${TQ_RESTART_CMD}"
+        rc=$?
+        if [[ ${rc} -ne 0 ]]; then
+            echo -e "${RED}ERRO no restart (codigo ${rc}).${RESET}"
+            exit 1
+        fi
+        if [[ -n "${TQ_HEALTHCHECK_URL}" ]]; then
+            if ! command -v curl >/dev/null 2>&1; then
+                echo -e "${YELLOW}AVISO: 'curl' ausente - pulando healthcheck.${RESET}"
+            else
+                echo -e "${YELLOW}Healthcheck: ${TQ_HEALTHCHECK_URL}${RESET}"
+                ok=0
+                for _i in $(seq 1 30); do
+                    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${TQ_HEALTHCHECK_URL}" || echo 000)"
+                    if [[ "${code}" != "000" ]]; then ok=1; break; fi
+                    sleep 2
+                done
+                if [[ ${ok} -eq 1 ]]; then
+                    echo -e "${GREEN}REST respondeu - TQ OK.${RESET}"
+                else
+                    echo -e "${RED}AVISO: healthcheck nao respondeu em ~60s.${RESET}"
+                    exit 1
+                fi
+            fi
+        fi
+    else
+        echo -e "${YELLOW}AVISO: TQ_RESTART_CMD vazio - reinicie o appserver destino manualmente (obrigatorio p/ REST).${RESET}"
+    fi
+    echo -e "${GREEN}Troca Quente concluida.${RESET}"
+fi

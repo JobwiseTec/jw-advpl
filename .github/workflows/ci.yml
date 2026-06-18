@@ -83,6 +83,10 @@ jobs:
         plugadvpl/doc_writer.py
         plugadvpl/edit_prw.py
         plugadvpl/gemini_skills.py
+        plugadvpl/gera_script/__init__.py
+        plugadvpl/gera_script/emit.py
+        plugadvpl/gera_script/generate.py
+        plugadvpl/gera_script/schema.py
         plugadvpl/ignore.py
         plugadvpl/ingest.py
         plugadvpl/ingest_ini.py

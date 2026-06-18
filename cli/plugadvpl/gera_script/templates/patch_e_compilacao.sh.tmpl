@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+# Ambiente Linux (Bash)
+# GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+# Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+# ==============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="${1:-${SCRIPT_DIR}/patch_e_compilacao_config.json}"
+
+CYAN="\033[36m"; GREEN="\033[32m"; YELLOW="\033[33m"; RED="\033[31m"; RESET="\033[0m"
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo -e "${RED}ERRO: 'jq' nao encontrado. Instale (ex.: sudo apt install jq).${RESET}"
+    exit 1
+fi
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+    echo -e "${RED}ERRO: config nao encontrado: ${CONFIG_PATH}${RESET}"
+    echo -e "${YELLOW}Uso: ./patch_e_compilacao.sh [caminho_do_config.json]${RESET}"
+    exit 1
+fi
+
+cfg() { jq -r --arg k "$1" '.[$k] // ""' "${CONFIG_PATH}"; }
+
+BASE_DIR_PATCHES="$(cfg BASE_DIR_PATCHES)"
+BUILD_DIR="$(cfg BUILD_DIR)"
+FONTES_DIR="$(cfg FONTES_DIR)"
+INCLUDE_DIR="$(cfg INCLUDE_DIR)"
+LOG_DIR="$(cfg LOG_DIR)"
+
+PROTHEUS_SERVER="$(cfg PROTHEUS_SERVER)"
+PROTHEUS_PORT="$(cfg PROTHEUS_PORT)"
+PROTHEUS_SECURE="$(cfg PROTHEUS_SECURE)"
+PROTHEUS_BUILD="$(cfg PROTHEUS_BUILD)"
+PROTHEUS_ENV="$(cfg PROTHEUS_ENV)"
+PROTHEUS_USER="$(cfg PROTHEUS_USER)"
+
+# --- SENHA: env var (preferido) ou config ---
+PW_ENV_NAME="$(cfg PROTHEUS_PASSWORD_ENV)"
+if [[ -n "${PW_ENV_NAME}" ]]; then
+    PROTHEUS_PASSWORD="${!PW_ENV_NAME:-}"
+    if [[ -z "${PROTHEUS_PASSWORD}" ]]; then
+        echo -e "${RED}ERRO: variavel de ambiente '${PW_ENV_NAME}' nao definida.${RESET}"
+        echo -e "${YELLOW}Defina antes de rodar (ex.: export ${PW_ENV_NAME}='senha').${RESET}"
+        exit 1
+    fi
+else
+    PROTHEUS_PASSWORD="$(cfg PROTHEUS_PASSWORD)"
+fi
+
+# --- GUARDA DE PLACEHOLDER ---
+for pair in "BASE_DIR_PATCHES=${BASE_DIR_PATCHES}" "BUILD_DIR=${BUILD_DIR}" \
+            "PROTHEUS_SERVER=${PROTHEUS_SERVER}" "PROTHEUS_PORT=${PROTHEUS_PORT}" \
+            "PROTHEUS_ENV=${PROTHEUS_ENV}"; do
+    k="${pair%%=*}"; v="${pair#*=}"
+    if [[ -z "${v}" || "${v}" == "<"* ]]; then
+        echo -e "${RED}ERRO: '${k}' nao preenchido no config (valor: '${v}').${RESET}"
+        echo -e "${YELLOW}Preencha o ${CONFIG_PATH} antes de rodar.${RESET}"
+        exit 1
+    fi
+done
+
+PENDENTES_DIR="${BASE_DIR_PATCHES}/pendentes"
+ZIPS_PROCESSADOS_DIR="${BASE_DIR_PATCHES}/zips_processados"
+APLICADOS_DIR="${BASE_DIR_PATCHES}/aplicados"
+PATCH_INI_FILE="${BUILD_DIR}/apply_patches.ini"
+PATCH_LOG_FILE="${BUILD_DIR}/apply_patch.log"
+COMPILE_LST_FILE="${BUILD_DIR}/compila.txt"
+COMPILE_INI_FILE="${BUILD_DIR}/compila.ini"
+COMPILE_LOG_FILE="${LOG_DIR}/compila.log"
+ADVPLS_EXECUTABLE="${BUILD_DIR}/advpls"
+
+if [[ ! -x "${ADVPLS_EXECUTABLE}" ]]; then
+    echo -e "${RED}ERRO: advpls nao encontrado/sem permissao: ${ADVPLS_EXECUTABLE}${RESET}"
+    exit 1
+fi
+
+# ==============================================================================
+# ETAPA 1: APLICACAO DE PATCHES
+# ==============================================================================
+echo -e "${CYAN}=========================================${RESET}"
+echo -e "${CYAN} ETAPA 1: APLICACAO DE PATCHES${RESET}"
+echo -e "${CYAN}=========================================${RESET}"
+
+mkdir -p "${PENDENTES_DIR}" "${ZIPS_PROCESSADOS_DIR}" "${APLICADOS_DIR}"
+
+shopt -s nullglob nocaseglob
+zip_files=( "${PENDENTES_DIR}"/*.zip )
+shopt -u nocaseglob
+if [[ ${#zip_files[@]} -gt 0 ]]; then
+    echo -e "${GREEN}Extraindo ${#zip_files[@]} ZIP(s)...${RESET}"
+    for zip_file in "${zip_files[@]}"; do
+        echo -e "${YELLOW}  $(basename "${zip_file}")${RESET}"
+        unzip -o "${zip_file}" -d "${PENDENTES_DIR}" > /dev/null
+        mv -f "${zip_file}" "${ZIPS_PROCESSADOS_DIR}/"
+    done
+else
+    echo -e "${YELLOW}Nenhum ZIP para extrair.${RESET}"
+fi
+
+patch_files=()
+while IFS= read -r -d '' f; do
+    patch_files+=( "$f" )
+done < <(find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -print0 | sort -z)
+shopt -u nullglob
+
+if [[ ${#patch_files[@]} -gt 0 ]]; then
+    echo -e "${GREEN}Aplicando ${#patch_files[@]} patch(es) .PTM${RESET}"
+    {
+        cat <<EOF
+logToFile=${PATCH_LOG_FILE}
+showConsoleOutput=true
+
+[authentication]
+action=authentication
+server=${PROTHEUS_SERVER}
+port=${PROTHEUS_PORT}
+secure=${PROTHEUS_SECURE}
+build=${PROTHEUS_BUILD}
+environment=${PROTHEUS_ENV}
+user=${PROTHEUS_USER}
+psw=${PROTHEUS_PASSWORD}
+EOF
+        session_number=1
+        for patch_file in "${patch_files[@]}"; do
+            cat <<EOF
+
+[patchApply_${session_number}]
+action=patchApply
+patchFile=${patch_file}
+localPatch=True
+applyOldProgram=False
+EOF
+            session_number=$((session_number + 1))
+        done
+        cat <<EOF
+
+[defragRPO]
+action=defragRPO
+EOF
+    } > "${PATCH_INI_FILE}"
+
+    "${ADVPLS_EXECUTABLE}" cli "${PATCH_INI_FILE}"
+    rc=$?
+    if [[ ${rc} -ne 0 ]]; then
+        echo -e "${RED}ERRO ao aplicar patches (advpls retornou ${rc}).${RESET}"
+        exit 1
+    fi
+    find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -exec mv -f {} "${APLICADOS_DIR}/" \;
+    find "${PENDENTES_DIR}" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+    echo -e "${GREEN}Patches aplicados e arquivados.${RESET}"
+else
+    echo -e "${YELLOW}Nenhum .PTM encontrado. Pulando aplicacao.${RESET}"
+fi
+
+# ==============================================================================
+# ETAPA 2: COMPILACAO DOS FONTES
+# ==============================================================================
+echo ""
+echo -e "${CYAN}=========================================${RESET}"
+echo -e "${CYAN} ETAPA 2: COMPILACAO DE FONTES${RESET}"
+echo -e "${CYAN}=========================================${RESET}"
+
+if [[ ! -d "${FONTES_DIR}" ]]; then
+    echo -e "${YELLOW}Pasta de fontes nao encontrada: ${FONTES_DIR}. Pulando compilacao.${RESET}"
+else
+    shopt -s nullglob nocaseglob
+    fontes=( "${FONTES_DIR}"/*.prw "${FONTES_DIR}"/*.tlpp "${FONTES_DIR}"/*.prx )
+    shopt -u nullglob nocaseglob
+    if [[ ${#fontes[@]} -gt 0 ]]; then
+        echo -e "${GREEN}Compilando ${#fontes[@]} fonte(s)...${RESET}"
+        : > "${COMPILE_LST_FILE}"
+        for fonte in "${fontes[@]}"; do
+            basename "${fonte}" >> "${COMPILE_LST_FILE}"
+        done
+
+        cat > "${COMPILE_INI_FILE}" <<EOF
+logToFile=${COMPILE_LOG_FILE}
+showConsoleOutput=true
+
+[user]
+INCLUDE_DIR=${INCLUDE_DIR}
+LOG_DIR=${LOG_DIR}
+BUILD_DIR=${BUILD_DIR}
+
+[authentication]
+action=authentication
+server=${PROTHEUS_SERVER}
+port=${PROTHEUS_PORT}
+secure=${PROTHEUS_SECURE}
+build=${PROTHEUS_BUILD}
+environment=${PROTHEUS_ENV}
+user=${PROTHEUS_USER}
+psw=${PROTHEUS_PASSWORD}
+
+[compile]
+action=compile
+recompile=F
+programlist=${COMPILE_LST_FILE}
+includes=${INCLUDE_DIR}
+
+[defragRPO]
+action=defragRPO
+EOF
+
+        pushd "${FONTES_DIR}" > /dev/null
+        "${ADVPLS_EXECUTABLE}" cli "${COMPILE_INI_FILE}"
+        rc=$?
+        popd > /dev/null
+        if [[ ${rc} -ne 0 ]]; then
+            echo -e "${RED}ERRO na compilacao (advpls retornou ${rc}).${RESET}"
+            exit 1
+        fi
+        echo -e "${GREEN}Compilacao concluida.${RESET}"
+    else
+        echo -e "${YELLOW}Nenhum fonte (.prw/.tlpp/.prx) em ${FONTES_DIR}.${RESET}"
+    fi
+fi
+
+# {{TQ_PHASE}}
+echo ""
+echo -e "${CYAN}=========================================${RESET}"
+echo -e "${CYAN} PROCESSO FINALIZADO COM SUCESSO${RESET}"
+echo -e "${CYAN}=========================================${RESET}"

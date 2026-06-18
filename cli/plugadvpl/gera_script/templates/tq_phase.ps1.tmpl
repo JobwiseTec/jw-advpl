@@ -1,0 +1,99 @@
+# ==============================================================================
+# ETAPA 3: TROCA QUENTE (TQ) DO RPO
+# ==============================================================================
+$TQ_DEST_APO = $config.TQ_DEST_APO
+if ([string]::IsNullOrEmpty($TQ_DEST_APO) -or $TQ_DEST_APO.ToString().StartsWith("<")) {
+    Write-Host ""
+    Write-Host "TQ nao configurada (TQ_DEST_APO vazio). Pulando Troca Quente." -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "--------------------------------------------------------------------------" -ForegroundColor Yellow
+    Write-Host "ATENCAO: a TQ cria nova pasta datada no destino, copia o RPO de compilacao" -ForegroundColor Yellow
+    Write-Host "e repointa o SourcePath nos appserver*.ini do destino. Execute com cuidado!" -ForegroundColor Yellow
+    Write-Host "--------------------------------------------------------------------------" -ForegroundColor Yellow
+
+    $TQ_CMP_RPO         = $config.TQ_CMP_RPO
+    $TQ_DEST_BIN        = $config.TQ_DEST_BIN
+    $TQ_RPO_FILES       = $config.TQ_RPO_FILES
+    $TQ_RESTART_CMD     = $config.TQ_RESTART_CMD
+    $TQ_HEALTHCHECK_URL = $config.TQ_HEALTHCHECK_URL
+
+    foreach ($par in @(@("TQ_CMP_RPO", $TQ_CMP_RPO), @("TQ_DEST_BIN", $TQ_DEST_BIN))) {
+        if ([string]::IsNullOrEmpty($par[1]) -or $par[1].ToString().StartsWith("<")) {
+            Write-Host "ERRO: TQ '$($par[0])' nao preenchido no config." -ForegroundColor Red
+            exit 1
+        }
+    }
+    if (-not (Test-Path $TQ_DEST_APO)) {
+        Write-Host "ERRO: TQ_DEST_APO nao encontrado: $TQ_DEST_APO" -ForegroundColor Red
+        exit 1
+    }
+
+    # Acha o dir datado mais recente (ORIGEM) e cria o novo (DESTINO = agora)
+    $anoAtual = (Get-Date).Year.ToString().Substring(0, 3)
+    $origemDir = Get-ChildItem -Path $TQ_DEST_APO -Directory -Filter "${anoAtual}*" |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $origemDir) {
+        Write-Host "ERRO: nenhum dir datado '${anoAtual}*' em $TQ_DEST_APO" -ForegroundColor Red
+        exit 1
+    }
+    $ORIGEM = $origemDir.Name
+    $DESTINO = Get-Date -Format "yyyyMMdd_HHmm"
+    Write-Host "TQ: ORIGEM=$ORIGEM  ->  DESTINO=$DESTINO" -ForegroundColor Green
+
+    $novoDir = Join-Path $TQ_DEST_APO $DESTINO
+    New-Item -ItemType Directory -Path $novoDir -Force | Out-Null
+    foreach ($rpo in ($TQ_RPO_FILES -split ",")) {
+        $rpo = $rpo.Trim()
+        if ($rpo -eq "") { continue }
+        $src = Join-Path $TQ_CMP_RPO $rpo
+        if (-not (Test-Path $src)) {
+            Write-Host "ERRO: RPO de compilacao nao encontrado: $src" -ForegroundColor Red
+            exit 1
+        }
+        Copy-Item -Path $src -Destination $novoDir -Force
+        Write-Host "  copiado: $rpo" -ForegroundColor Green
+    }
+
+    # Repointa SourcePath (ORIGEM -> DESTINO) nos appserver*.ini do destino
+    $inis = Get-ChildItem -Path $TQ_DEST_BIN -Filter "appserver*.ini" -File -Recurse
+    foreach ($ini in $inis) {
+        $conteudo = Get-Content $ini.FullName -Raw
+        if ($conteudo -match [regex]::Escape($ORIGEM)) {
+            ($conteudo -replace [regex]::Escape($ORIGEM), $DESTINO) | Set-Content $ini.FullName -Force
+            Write-Host "  ini repointado: $($ini.FullName)" -ForegroundColor Green
+        }
+    }
+
+    # Restart (obrigatorio p/ appserver REST) + healthcheck, ambos opcionais
+    if (-not [string]::IsNullOrEmpty($TQ_RESTART_CMD)) {
+        Write-Host "Reiniciando appserver destino..." -ForegroundColor Yellow
+        cmd /c $TQ_RESTART_CMD
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERRO no restart (codigo $LASTEXITCODE)." -ForegroundColor Red
+            exit 1
+        }
+        if (-not [string]::IsNullOrEmpty($TQ_HEALTHCHECK_URL)) {
+            Write-Host "Healthcheck: $TQ_HEALTHCHECK_URL" -ForegroundColor Yellow
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+                try {
+                    Invoke-WebRequest -Uri $TQ_HEALTHCHECK_URL -UseBasicParsing -TimeoutSec 5 | Out-Null
+                    $ok = $true; break
+                } catch {
+                    if ($_.Exception.Response) { $ok = $true; break }  # respondeu (ate 4xx) = up
+                    Start-Sleep -Seconds 2
+                }
+            }
+            if ($ok) {
+                Write-Host "REST respondeu - TQ OK." -ForegroundColor Green
+            } else {
+                Write-Host "AVISO: healthcheck nao respondeu em ~60s." -ForegroundColor Red
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "AVISO: TQ_RESTART_CMD vazio - reinicie o appserver destino manualmente (obrigatorio p/ REST)." -ForegroundColor Yellow
+    }
+    Write-Host "Troca Quente concluida." -ForegroundColor Green
+}

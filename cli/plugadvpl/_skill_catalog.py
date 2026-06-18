@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 74 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 75 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -50,6 +50,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "grep": _PRW,
     "compile": _PRW,
     "gen-aplicador-sx": _PRW,
+    "gera-script": [],
     "verify-claims": _PRW,
     "mapear": _PRW,
     "tq": _PRW,

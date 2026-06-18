@@ -1,0 +1,1204 @@
+# serializer version: 1
+# name: test_golden_config_env
+  '''
+  {
+    "BASE_DIR_PATCHES": "<CAMINHO_BASE_DOS_PATCHES>",
+    "BUILD_DIR": "<CAMINHO_DO_BUILD_DIR>",
+    "FONTES_DIR": "<CAMINHO_DA_PASTA_DE_FONTES>",
+    "INCLUDE_DIR": "<CAMINHO_DOS_INCLUDES>",
+    "LOG_DIR": "<CAMINHO_DOS_LOGS>",
+    "PROTHEUS_SERVER": "127.0.0.1",
+    "PROTHEUS_PORT": "1234",
+    "PROTHEUS_SECURE": "0",
+    "PROTHEUS_BUILD": "7.00.231027P",
+    "PROTHEUS_ENV": "protheus_cmp",
+    "PROTHEUS_USER": "<USUARIO_COMPILACAO>",
+    "PROTHEUS_PASSWORD_ENV": "PROTHEUS_PASS"
+  }
+  
+  '''
+# ---
+# name: test_golden_config_secret
+  '''
+  {
+    "BASE_DIR_PATCHES": "<CAMINHO_BASE_DOS_PATCHES>",
+    "BUILD_DIR": "<CAMINHO_DO_BUILD_DIR>",
+    "FONTES_DIR": "<CAMINHO_DA_PASTA_DE_FONTES>",
+    "INCLUDE_DIR": "<CAMINHO_DOS_INCLUDES>",
+    "LOG_DIR": "<CAMINHO_DOS_LOGS>",
+    "PROTHEUS_SERVER": "127.0.0.1",
+    "PROTHEUS_PORT": "1234",
+    "PROTHEUS_SECURE": "0",
+    "PROTHEUS_BUILD": "7.00.231027P",
+    "PROTHEUS_ENV": "protheus_cmp",
+    "PROTHEUS_USER": "<USUARIO_COMPILACAO>",
+    "PROTHEUS_PASSWORD": "<SENHA_COMPILACAO>"
+  }
+  
+  '''
+# ---
+# name: test_golden_config_tq
+  '''
+  {
+    "BASE_DIR_PATCHES": "<CAMINHO_BASE_DOS_PATCHES>",
+    "BUILD_DIR": "<CAMINHO_DO_BUILD_DIR>",
+    "FONTES_DIR": "<CAMINHO_DA_PASTA_DE_FONTES>",
+    "INCLUDE_DIR": "<CAMINHO_DOS_INCLUDES>",
+    "LOG_DIR": "<CAMINHO_DOS_LOGS>",
+    "PROTHEUS_SERVER": "127.0.0.1",
+    "PROTHEUS_PORT": "1234",
+    "PROTHEUS_SECURE": "0",
+    "PROTHEUS_BUILD": "7.00.231027P",
+    "PROTHEUS_ENV": "protheus_cmp",
+    "PROTHEUS_USER": "<USUARIO_COMPILACAO>",
+    "PROTHEUS_PASSWORD_ENV": "PROTHEUS_PASS",
+    "TQ_DEST_APO": "<CAMINHO_APO_DO_DESTINO>",
+    "TQ_CMP_RPO": "<CAMINHO_RPO_DE_COMPILACAO>",
+    "TQ_DEST_BIN": "<CAMINHO_BIN_APPSERVER_DESTINO>",
+    "TQ_RPO_FILES": "tttm120.rpo,custom.rpo",
+    "TQ_RESTART_CMD": "",
+    "TQ_HEALTHCHECK_URL": ""
+  }
+  
+  '''
+# ---
+# name: test_golden_ps1
+  '''
+  # ==============================================================================
+  # Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+  # Ambiente Windows (PowerShell)
+  # GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+  # Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+  # ==============================================================================
+  
+  param (
+      [string]$ConfigPath = (Join-Path $PSScriptRoot "patch_e_compilacao_config.json")
+  )
+  
+  $ErrorActionPreference = "Stop"
+  
+  # --- CARREGAMENTO DO CONFIG JSON ---
+  if (-not (Test-Path $ConfigPath)) {
+      Write-Host "ERRO: config nao encontrado em: $ConfigPath" -ForegroundColor Red
+      Write-Host "Passe o caminho: .\patch_e_compilacao.ps1 -ConfigPath C:\caminho\config.json" -ForegroundColor Yellow
+      exit 1
+  }
+  try {
+      $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+  } catch {
+      Write-Host "ERRO ao ler/interpretar o JSON: $ConfigPath" -ForegroundColor Red
+      Write-Host $_.Exception.Message -ForegroundColor Yellow
+      exit 1
+  }
+  
+  # --- DIRETORIOS ---
+  $BASE_DIR_PATCHES = $config.BASE_DIR_PATCHES
+  $BUILD_DIR        = $config.BUILD_DIR
+  $FONTES_DIR       = $config.FONTES_DIR
+  $INCLUDE_DIR      = $config.INCLUDE_DIR
+  $LOG_DIR          = $config.LOG_DIR
+  
+  # --- SERVIDOR PROTHEUS ---
+  $PROTHEUS_SERVER = $config.PROTHEUS_SERVER
+  $PROTHEUS_PORT   = $config.PROTHEUS_PORT
+  $PROTHEUS_SECURE = $config.PROTHEUS_SECURE
+  $PROTHEUS_BUILD  = $config.PROTHEUS_BUILD
+  $PROTHEUS_ENV    = $config.PROTHEUS_ENV
+  $PROTHEUS_USER   = $config.PROTHEUS_USER
+  
+  # --- SENHA: env var (preferido) ou config ---
+  $pwEnvName = $config.PSObject.Properties.Name -contains 'PROTHEUS_PASSWORD_ENV'
+  if ($pwEnvName -and $config.PROTHEUS_PASSWORD_ENV) {
+      $PROTHEUS_PASSWORD = [Environment]::GetEnvironmentVariable($config.PROTHEUS_PASSWORD_ENV)
+      if ([string]::IsNullOrEmpty($PROTHEUS_PASSWORD)) {
+          Write-Host "ERRO: variavel de ambiente '$($config.PROTHEUS_PASSWORD_ENV)' nao definida." -ForegroundColor Red
+          Write-Host "Defina-a antes de rodar (ex.: `$env:$($config.PROTHEUS_PASSWORD_ENV)='senha')." -ForegroundColor Yellow
+          exit 1
+      }
+  } else {
+      $PROTHEUS_PASSWORD = $config.PROTHEUS_PASSWORD
+  }
+  
+  # --- GUARDA DE PLACEHOLDER (config nao preenchido) ---
+  $obrigatorios = @{
+      "BASE_DIR_PATCHES" = $BASE_DIR_PATCHES
+      "BUILD_DIR"        = $BUILD_DIR
+      "PROTHEUS_SERVER"  = $PROTHEUS_SERVER
+      "PROTHEUS_PORT"    = $PROTHEUS_PORT
+      "PROTHEUS_ENV"     = $PROTHEUS_ENV
+  }
+  foreach ($k in $obrigatorios.Keys) {
+      $v = $obrigatorios[$k]
+      if ([string]::IsNullOrEmpty($v) -or $v.ToString().StartsWith("<")) {
+          Write-Host "ERRO: '$k' nao preenchido no config (valor: '$v')." -ForegroundColor Red
+          Write-Host "Preencha o $ConfigPath antes de rodar." -ForegroundColor Yellow
+          exit 1
+      }
+  }
+  
+  # --- DERIVADOS ---
+  $PENDENTES_DIR        = Join-Path $BASE_DIR_PATCHES "pendentes"
+  $ZIPS_PROCESSADOS_DIR = Join-Path $BASE_DIR_PATCHES "zips_processados"
+  $APLICADOS_DIR        = Join-Path $BASE_DIR_PATCHES "aplicados"
+  $PATCH_INI_FILE       = Join-Path $BUILD_DIR "apply_patches.ini"
+  $PATCH_LOG_FILE       = Join-Path $BUILD_DIR "apply_patch.log"
+  $COMPILE_LST_FILE     = Join-Path $BUILD_DIR "compila.txt"
+  $COMPILE_INI_FILE     = Join-Path $BUILD_DIR "compila.ini"
+  $COMPILE_LOG_FILE     = Join-Path $LOG_DIR "compila.log"
+  $ADVPLS_EXECUTABLE    = Join-Path $BUILD_DIR "advpls.exe"
+  
+  if (-not (Test-Path $ADVPLS_EXECUTABLE)) {
+      Write-Host "ERRO: advpls.exe nao encontrado em: $ADVPLS_EXECUTABLE" -ForegroundColor Red
+      Write-Host "Verifique BUILD_DIR no config." -ForegroundColor Yellow
+      exit 1
+  }
+  
+  # ==============================================================================
+  # ETAPA 1: APLICACAO DE PATCHES
+  # ==============================================================================
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " ETAPA 1: APLICACAO DE PATCHES" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  if (-not (Test-Path $PENDENTES_DIR)) {
+      New-Item -ItemType Directory -Path $PENDENTES_DIR -Force | Out-Null
+  }
+  
+  $zip_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.zip" -File
+  if ($zip_files.Count -gt 0) {
+      Write-Host "Extraindo $($zip_files.Count) ZIP(s)..." -ForegroundColor Green
+      if (-not (Test-Path $ZIPS_PROCESSADOS_DIR)) {
+          New-Item -ItemType Directory -Path $ZIPS_PROCESSADOS_DIR -Force | Out-Null
+      }
+      foreach ($zip_file in $zip_files) {
+          Write-Host "  $($zip_file.Name)" -ForegroundColor Yellow
+          Expand-Archive -Path $zip_file.FullName -DestinationPath $PENDENTES_DIR -Force
+          Move-Item -Path $zip_file.FullName -Destination $ZIPS_PROCESSADOS_DIR -Force
+      }
+  } else {
+      Write-Host "Nenhum ZIP para extrair." -ForegroundColor Yellow
+  }
+  
+  # Ordem alfabetica garante aplicacao deterministica dos .PTM
+  $patch_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.PTM" -File | Sort-Object Name
+  if ($patch_files.Count -gt 0) {
+      Write-Host "Aplicando $($patch_files.Count) patch(es) .PTM" -ForegroundColor Green
+  
+      $iniContent = @"
+  logToFile=$PATCH_LOG_FILE
+  showConsoleOutput=true
+  
+  [authentication]
+  action=authentication
+  server=$PROTHEUS_SERVER
+  port=$PROTHEUS_PORT
+  secure=$PROTHEUS_SECURE
+  build=$PROTHEUS_BUILD
+  environment=$PROTHEUS_ENV
+  user=$PROTHEUS_USER
+  psw=$PROTHEUS_PASSWORD
+  
+  "@
+      $session_number = 1
+      foreach ($patch_file in $patch_files) {
+          $iniContent += @"
+  
+  [patchApply_$session_number]
+  action=patchApply
+  patchFile=$($patch_file.FullName)
+  localPatch=True
+  applyOldProgram=False
+  "@
+          $session_number++
+      }
+      $iniContent += @"
+  
+  [defragRPO]
+  action=defragRPO
+  "@
+      $iniContent | Out-File -FilePath $PATCH_INI_FILE -Encoding Default -Force
+  
+      & $ADVPLS_EXECUTABLE cli $PATCH_INI_FILE
+      if ($LASTEXITCODE -ne 0) {
+          Write-Host "ERRO ao aplicar patches (advpls retornou $LASTEXITCODE)." -ForegroundColor Red
+          exit 1
+      }
+  
+      if (-not (Test-Path $APLICADOS_DIR)) {
+          New-Item -ItemType Directory -Path $APLICADOS_DIR -Force | Out-Null
+      }
+      Get-ChildItem -Path $PENDENTES_DIR -Filter "*.ptm" -File | Move-Item -Destination $APLICADOS_DIR -Force
+      Get-ChildItem -Path $PENDENTES_DIR -Recurse | Remove-Item -Force -Recurse
+      Write-Host "Patches aplicados e arquivados." -ForegroundColor Green
+  } else {
+      Write-Host "Nenhum .PTM encontrado. Pulando aplicacao." -ForegroundColor Yellow
+  }
+  
+  # ==============================================================================
+  # ETAPA 2: COMPILACAO DOS FONTES
+  # ==============================================================================
+  Write-Host ""
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " ETAPA 2: COMPILACAO DE FONTES" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  if (-not (Test-Path $FONTES_DIR)) {
+      Write-Host "Pasta de fontes nao encontrada: $FONTES_DIR. Pulando compilacao." -ForegroundColor Yellow
+  } else {
+      $fontes = Get-ChildItem -Path "$FONTES_DIR\*.prw", "$FONTES_DIR\*.tlpp", "$FONTES_DIR\*.prx" -File
+      if ($fontes.Count -gt 0) {
+          Write-Host "Compilando $($fontes.Count) fonte(s)..." -ForegroundColor Green
+          if (Test-Path $COMPILE_LST_FILE) { Remove-Item $COMPILE_LST_FILE -Force }
+          $fontes | Select-Object -ExpandProperty Name | Out-File -FilePath $COMPILE_LST_FILE -Encoding Default
+  
+          $iniContentCompile = @"
+  logToFile=$COMPILE_LOG_FILE
+  showConsoleOutput=true
+  
+  [user]
+  INCLUDE_DIR=$INCLUDE_DIR
+  LOG_DIR=$LOG_DIR
+  BUILD_DIR=$BUILD_DIR
+  
+  [authentication]
+  action=authentication
+  server=$PROTHEUS_SERVER
+  port=$PROTHEUS_PORT
+  secure=$PROTHEUS_SECURE
+  build=$PROTHEUS_BUILD
+  environment=$PROTHEUS_ENV
+  user=$PROTHEUS_USER
+  psw=$PROTHEUS_PASSWORD
+  
+  [compile]
+  action=compile
+  recompile=F
+  programlist=$COMPILE_LST_FILE
+  includes=$INCLUDE_DIR
+  
+  [defragRPO]
+  action=defragRPO
+  "@
+          $iniContentCompile | Out-File -FilePath $COMPILE_INI_FILE -Encoding Default -Force
+  
+          Push-Location -Path "$FONTES_DIR"
+          & $ADVPLS_EXECUTABLE cli $COMPILE_INI_FILE
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) {
+              Write-Host "ERRO na compilacao (advpls retornou $rc)." -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Compilacao concluida." -ForegroundColor Green
+      } else {
+          Write-Host "Nenhum fonte (.prw/.tlpp/.prx) em $FONTES_DIR." -ForegroundColor Yellow
+      }
+  }
+  
+  Write-Host ""
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " PROCESSO FINALIZADO COM SUCESSO" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  '''
+# ---
+# name: test_golden_ps1_tq
+  '''
+  # ==============================================================================
+  # Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+  # Ambiente Windows (PowerShell)
+  # GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+  # Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+  # ==============================================================================
+  
+  param (
+      [string]$ConfigPath = (Join-Path $PSScriptRoot "patch_e_compilacao_config.json")
+  )
+  
+  $ErrorActionPreference = "Stop"
+  
+  # --- CARREGAMENTO DO CONFIG JSON ---
+  if (-not (Test-Path $ConfigPath)) {
+      Write-Host "ERRO: config nao encontrado em: $ConfigPath" -ForegroundColor Red
+      Write-Host "Passe o caminho: .\patch_e_compilacao.ps1 -ConfigPath C:\caminho\config.json" -ForegroundColor Yellow
+      exit 1
+  }
+  try {
+      $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+  } catch {
+      Write-Host "ERRO ao ler/interpretar o JSON: $ConfigPath" -ForegroundColor Red
+      Write-Host $_.Exception.Message -ForegroundColor Yellow
+      exit 1
+  }
+  
+  # --- DIRETORIOS ---
+  $BASE_DIR_PATCHES = $config.BASE_DIR_PATCHES
+  $BUILD_DIR        = $config.BUILD_DIR
+  $FONTES_DIR       = $config.FONTES_DIR
+  $INCLUDE_DIR      = $config.INCLUDE_DIR
+  $LOG_DIR          = $config.LOG_DIR
+  
+  # --- SERVIDOR PROTHEUS ---
+  $PROTHEUS_SERVER = $config.PROTHEUS_SERVER
+  $PROTHEUS_PORT   = $config.PROTHEUS_PORT
+  $PROTHEUS_SECURE = $config.PROTHEUS_SECURE
+  $PROTHEUS_BUILD  = $config.PROTHEUS_BUILD
+  $PROTHEUS_ENV    = $config.PROTHEUS_ENV
+  $PROTHEUS_USER   = $config.PROTHEUS_USER
+  
+  # --- SENHA: env var (preferido) ou config ---
+  $pwEnvName = $config.PSObject.Properties.Name -contains 'PROTHEUS_PASSWORD_ENV'
+  if ($pwEnvName -and $config.PROTHEUS_PASSWORD_ENV) {
+      $PROTHEUS_PASSWORD = [Environment]::GetEnvironmentVariable($config.PROTHEUS_PASSWORD_ENV)
+      if ([string]::IsNullOrEmpty($PROTHEUS_PASSWORD)) {
+          Write-Host "ERRO: variavel de ambiente '$($config.PROTHEUS_PASSWORD_ENV)' nao definida." -ForegroundColor Red
+          Write-Host "Defina-a antes de rodar (ex.: `$env:$($config.PROTHEUS_PASSWORD_ENV)='senha')." -ForegroundColor Yellow
+          exit 1
+      }
+  } else {
+      $PROTHEUS_PASSWORD = $config.PROTHEUS_PASSWORD
+  }
+  
+  # --- GUARDA DE PLACEHOLDER (config nao preenchido) ---
+  $obrigatorios = @{
+      "BASE_DIR_PATCHES" = $BASE_DIR_PATCHES
+      "BUILD_DIR"        = $BUILD_DIR
+      "PROTHEUS_SERVER"  = $PROTHEUS_SERVER
+      "PROTHEUS_PORT"    = $PROTHEUS_PORT
+      "PROTHEUS_ENV"     = $PROTHEUS_ENV
+  }
+  foreach ($k in $obrigatorios.Keys) {
+      $v = $obrigatorios[$k]
+      if ([string]::IsNullOrEmpty($v) -or $v.ToString().StartsWith("<")) {
+          Write-Host "ERRO: '$k' nao preenchido no config (valor: '$v')." -ForegroundColor Red
+          Write-Host "Preencha o $ConfigPath antes de rodar." -ForegroundColor Yellow
+          exit 1
+      }
+  }
+  
+  # --- DERIVADOS ---
+  $PENDENTES_DIR        = Join-Path $BASE_DIR_PATCHES "pendentes"
+  $ZIPS_PROCESSADOS_DIR = Join-Path $BASE_DIR_PATCHES "zips_processados"
+  $APLICADOS_DIR        = Join-Path $BASE_DIR_PATCHES "aplicados"
+  $PATCH_INI_FILE       = Join-Path $BUILD_DIR "apply_patches.ini"
+  $PATCH_LOG_FILE       = Join-Path $BUILD_DIR "apply_patch.log"
+  $COMPILE_LST_FILE     = Join-Path $BUILD_DIR "compila.txt"
+  $COMPILE_INI_FILE     = Join-Path $BUILD_DIR "compila.ini"
+  $COMPILE_LOG_FILE     = Join-Path $LOG_DIR "compila.log"
+  $ADVPLS_EXECUTABLE    = Join-Path $BUILD_DIR "advpls.exe"
+  
+  if (-not (Test-Path $ADVPLS_EXECUTABLE)) {
+      Write-Host "ERRO: advpls.exe nao encontrado em: $ADVPLS_EXECUTABLE" -ForegroundColor Red
+      Write-Host "Verifique BUILD_DIR no config." -ForegroundColor Yellow
+      exit 1
+  }
+  
+  # ==============================================================================
+  # ETAPA 1: APLICACAO DE PATCHES
+  # ==============================================================================
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " ETAPA 1: APLICACAO DE PATCHES" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  if (-not (Test-Path $PENDENTES_DIR)) {
+      New-Item -ItemType Directory -Path $PENDENTES_DIR -Force | Out-Null
+  }
+  
+  $zip_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.zip" -File
+  if ($zip_files.Count -gt 0) {
+      Write-Host "Extraindo $($zip_files.Count) ZIP(s)..." -ForegroundColor Green
+      if (-not (Test-Path $ZIPS_PROCESSADOS_DIR)) {
+          New-Item -ItemType Directory -Path $ZIPS_PROCESSADOS_DIR -Force | Out-Null
+      }
+      foreach ($zip_file in $zip_files) {
+          Write-Host "  $($zip_file.Name)" -ForegroundColor Yellow
+          Expand-Archive -Path $zip_file.FullName -DestinationPath $PENDENTES_DIR -Force
+          Move-Item -Path $zip_file.FullName -Destination $ZIPS_PROCESSADOS_DIR -Force
+      }
+  } else {
+      Write-Host "Nenhum ZIP para extrair." -ForegroundColor Yellow
+  }
+  
+  # Ordem alfabetica garante aplicacao deterministica dos .PTM
+  $patch_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.PTM" -File | Sort-Object Name
+  if ($patch_files.Count -gt 0) {
+      Write-Host "Aplicando $($patch_files.Count) patch(es) .PTM" -ForegroundColor Green
+  
+      $iniContent = @"
+  logToFile=$PATCH_LOG_FILE
+  showConsoleOutput=true
+  
+  [authentication]
+  action=authentication
+  server=$PROTHEUS_SERVER
+  port=$PROTHEUS_PORT
+  secure=$PROTHEUS_SECURE
+  build=$PROTHEUS_BUILD
+  environment=$PROTHEUS_ENV
+  user=$PROTHEUS_USER
+  psw=$PROTHEUS_PASSWORD
+  
+  "@
+      $session_number = 1
+      foreach ($patch_file in $patch_files) {
+          $iniContent += @"
+  
+  [patchApply_$session_number]
+  action=patchApply
+  patchFile=$($patch_file.FullName)
+  localPatch=True
+  applyOldProgram=False
+  "@
+          $session_number++
+      }
+      $iniContent += @"
+  
+  [defragRPO]
+  action=defragRPO
+  "@
+      $iniContent | Out-File -FilePath $PATCH_INI_FILE -Encoding Default -Force
+  
+      & $ADVPLS_EXECUTABLE cli $PATCH_INI_FILE
+      if ($LASTEXITCODE -ne 0) {
+          Write-Host "ERRO ao aplicar patches (advpls retornou $LASTEXITCODE)." -ForegroundColor Red
+          exit 1
+      }
+  
+      if (-not (Test-Path $APLICADOS_DIR)) {
+          New-Item -ItemType Directory -Path $APLICADOS_DIR -Force | Out-Null
+      }
+      Get-ChildItem -Path $PENDENTES_DIR -Filter "*.ptm" -File | Move-Item -Destination $APLICADOS_DIR -Force
+      Get-ChildItem -Path $PENDENTES_DIR -Recurse | Remove-Item -Force -Recurse
+      Write-Host "Patches aplicados e arquivados." -ForegroundColor Green
+  } else {
+      Write-Host "Nenhum .PTM encontrado. Pulando aplicacao." -ForegroundColor Yellow
+  }
+  
+  # ==============================================================================
+  # ETAPA 2: COMPILACAO DOS FONTES
+  # ==============================================================================
+  Write-Host ""
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " ETAPA 2: COMPILACAO DE FONTES" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  if (-not (Test-Path $FONTES_DIR)) {
+      Write-Host "Pasta de fontes nao encontrada: $FONTES_DIR. Pulando compilacao." -ForegroundColor Yellow
+  } else {
+      $fontes = Get-ChildItem -Path "$FONTES_DIR\*.prw", "$FONTES_DIR\*.tlpp", "$FONTES_DIR\*.prx" -File
+      if ($fontes.Count -gt 0) {
+          Write-Host "Compilando $($fontes.Count) fonte(s)..." -ForegroundColor Green
+          if (Test-Path $COMPILE_LST_FILE) { Remove-Item $COMPILE_LST_FILE -Force }
+          $fontes | Select-Object -ExpandProperty Name | Out-File -FilePath $COMPILE_LST_FILE -Encoding Default
+  
+          $iniContentCompile = @"
+  logToFile=$COMPILE_LOG_FILE
+  showConsoleOutput=true
+  
+  [user]
+  INCLUDE_DIR=$INCLUDE_DIR
+  LOG_DIR=$LOG_DIR
+  BUILD_DIR=$BUILD_DIR
+  
+  [authentication]
+  action=authentication
+  server=$PROTHEUS_SERVER
+  port=$PROTHEUS_PORT
+  secure=$PROTHEUS_SECURE
+  build=$PROTHEUS_BUILD
+  environment=$PROTHEUS_ENV
+  user=$PROTHEUS_USER
+  psw=$PROTHEUS_PASSWORD
+  
+  [compile]
+  action=compile
+  recompile=F
+  programlist=$COMPILE_LST_FILE
+  includes=$INCLUDE_DIR
+  
+  [defragRPO]
+  action=defragRPO
+  "@
+          $iniContentCompile | Out-File -FilePath $COMPILE_INI_FILE -Encoding Default -Force
+  
+          Push-Location -Path "$FONTES_DIR"
+          & $ADVPLS_EXECUTABLE cli $COMPILE_INI_FILE
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) {
+              Write-Host "ERRO na compilacao (advpls retornou $rc)." -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Compilacao concluida." -ForegroundColor Green
+      } else {
+          Write-Host "Nenhum fonte (.prw/.tlpp/.prx) em $FONTES_DIR." -ForegroundColor Yellow
+      }
+  }
+  
+  # ==============================================================================
+  # ETAPA 3: TROCA QUENTE (TQ) DO RPO
+  # ==============================================================================
+  $TQ_DEST_APO = $config.TQ_DEST_APO
+  if ([string]::IsNullOrEmpty($TQ_DEST_APO) -or $TQ_DEST_APO.ToString().StartsWith("<")) {
+      Write-Host ""
+      Write-Host "TQ nao configurada (TQ_DEST_APO vazio). Pulando Troca Quente." -ForegroundColor Yellow
+  } else {
+      Write-Host ""
+      Write-Host "--------------------------------------------------------------------------" -ForegroundColor Yellow
+      Write-Host "ATENCAO: a TQ cria nova pasta datada no destino, copia o RPO de compilacao" -ForegroundColor Yellow
+      Write-Host "e repointa o SourcePath nos appserver*.ini do destino. Execute com cuidado!" -ForegroundColor Yellow
+      Write-Host "--------------------------------------------------------------------------" -ForegroundColor Yellow
+  
+      $TQ_CMP_RPO         = $config.TQ_CMP_RPO
+      $TQ_DEST_BIN        = $config.TQ_DEST_BIN
+      $TQ_RPO_FILES       = $config.TQ_RPO_FILES
+      $TQ_RESTART_CMD     = $config.TQ_RESTART_CMD
+      $TQ_HEALTHCHECK_URL = $config.TQ_HEALTHCHECK_URL
+  
+      foreach ($par in @(@("TQ_CMP_RPO", $TQ_CMP_RPO), @("TQ_DEST_BIN", $TQ_DEST_BIN))) {
+          if ([string]::IsNullOrEmpty($par[1]) -or $par[1].ToString().StartsWith("<")) {
+              Write-Host "ERRO: TQ '$($par[0])' nao preenchido no config." -ForegroundColor Red
+              exit 1
+          }
+      }
+      if (-not (Test-Path $TQ_DEST_APO)) {
+          Write-Host "ERRO: TQ_DEST_APO nao encontrado: $TQ_DEST_APO" -ForegroundColor Red
+          exit 1
+      }
+  
+      # Acha o dir datado mais recente (ORIGEM) e cria o novo (DESTINO = agora)
+      $anoAtual = (Get-Date).Year.ToString().Substring(0, 3)
+      $origemDir = Get-ChildItem -Path $TQ_DEST_APO -Directory -Filter "${anoAtual}*" |
+          Sort-Object LastWriteTime -Descending | Select-Object -First 1
+      if (-not $origemDir) {
+          Write-Host "ERRO: nenhum dir datado '${anoAtual}*' em $TQ_DEST_APO" -ForegroundColor Red
+          exit 1
+      }
+      $ORIGEM = $origemDir.Name
+      $DESTINO = Get-Date -Format "yyyyMMdd_HHmm"
+      Write-Host "TQ: ORIGEM=$ORIGEM  ->  DESTINO=$DESTINO" -ForegroundColor Green
+  
+      $novoDir = Join-Path $TQ_DEST_APO $DESTINO
+      New-Item -ItemType Directory -Path $novoDir -Force | Out-Null
+      foreach ($rpo in ($TQ_RPO_FILES -split ",")) {
+          $rpo = $rpo.Trim()
+          if ($rpo -eq "") { continue }
+          $src = Join-Path $TQ_CMP_RPO $rpo
+          if (-not (Test-Path $src)) {
+              Write-Host "ERRO: RPO de compilacao nao encontrado: $src" -ForegroundColor Red
+              exit 1
+          }
+          Copy-Item -Path $src -Destination $novoDir -Force
+          Write-Host "  copiado: $rpo" -ForegroundColor Green
+      }
+  
+      # Repointa SourcePath (ORIGEM -> DESTINO) nos appserver*.ini do destino
+      $inis = Get-ChildItem -Path $TQ_DEST_BIN -Filter "appserver*.ini" -File -Recurse
+      foreach ($ini in $inis) {
+          $conteudo = Get-Content $ini.FullName -Raw
+          if ($conteudo -match [regex]::Escape($ORIGEM)) {
+              ($conteudo -replace [regex]::Escape($ORIGEM), $DESTINO) | Set-Content $ini.FullName -Force
+              Write-Host "  ini repointado: $($ini.FullName)" -ForegroundColor Green
+          }
+      }
+  
+      # Restart (obrigatorio p/ appserver REST) + healthcheck, ambos opcionais
+      if (-not [string]::IsNullOrEmpty($TQ_RESTART_CMD)) {
+          Write-Host "Reiniciando appserver destino..." -ForegroundColor Yellow
+          cmd /c $TQ_RESTART_CMD
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERRO no restart (codigo $LASTEXITCODE)." -ForegroundColor Red
+              exit 1
+          }
+          if (-not [string]::IsNullOrEmpty($TQ_HEALTHCHECK_URL)) {
+              Write-Host "Healthcheck: $TQ_HEALTHCHECK_URL" -ForegroundColor Yellow
+              $ok = $false
+              for ($i = 0; $i -lt 30; $i++) {
+                  try {
+                      Invoke-WebRequest -Uri $TQ_HEALTHCHECK_URL -UseBasicParsing -TimeoutSec 5 | Out-Null
+                      $ok = $true; break
+                  } catch {
+                      if ($_.Exception.Response) { $ok = $true; break }  # respondeu (ate 4xx) = up
+                      Start-Sleep -Seconds 2
+                  }
+              }
+              if ($ok) {
+                  Write-Host "REST respondeu - TQ OK." -ForegroundColor Green
+              } else {
+                  Write-Host "AVISO: healthcheck nao respondeu em ~60s." -ForegroundColor Red
+                  exit 1
+              }
+          }
+      } else {
+          Write-Host "AVISO: TQ_RESTART_CMD vazio - reinicie o appserver destino manualmente (obrigatorio p/ REST)." -ForegroundColor Yellow
+      }
+      Write-Host "Troca Quente concluida." -ForegroundColor Green
+  }
+  Write-Host ""
+  Write-Host "=========================================" -ForegroundColor Cyan
+  Write-Host " PROCESSO FINALIZADO COM SUCESSO" -ForegroundColor Cyan
+  Write-Host "=========================================" -ForegroundColor Cyan
+  
+  '''
+# ---
+# name: test_golden_sh
+  '''
+  #!/usr/bin/env bash
+  # ==============================================================================
+  # Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+  # Ambiente Linux (Bash)
+  # GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+  # Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+  # ==============================================================================
+  
+  set -euo pipefail
+  
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CONFIG_PATH="${1:-${SCRIPT_DIR}/patch_e_compilacao_config.json}"
+  
+  CYAN="\033[36m"; GREEN="\033[32m"; YELLOW="\033[33m"; RED="\033[31m"; RESET="\033[0m"
+  
+  if ! command -v jq >/dev/null 2>&1; then
+      echo -e "${RED}ERRO: 'jq' nao encontrado. Instale (ex.: sudo apt install jq).${RESET}"
+      exit 1
+  fi
+  if [[ ! -f "${CONFIG_PATH}" ]]; then
+      echo -e "${RED}ERRO: config nao encontrado: ${CONFIG_PATH}${RESET}"
+      echo -e "${YELLOW}Uso: ./patch_e_compilacao.sh [caminho_do_config.json]${RESET}"
+      exit 1
+  fi
+  
+  cfg() { jq -r --arg k "$1" '.[$k] // ""' "${CONFIG_PATH}"; }
+  
+  BASE_DIR_PATCHES="$(cfg BASE_DIR_PATCHES)"
+  BUILD_DIR="$(cfg BUILD_DIR)"
+  FONTES_DIR="$(cfg FONTES_DIR)"
+  INCLUDE_DIR="$(cfg INCLUDE_DIR)"
+  LOG_DIR="$(cfg LOG_DIR)"
+  
+  PROTHEUS_SERVER="$(cfg PROTHEUS_SERVER)"
+  PROTHEUS_PORT="$(cfg PROTHEUS_PORT)"
+  PROTHEUS_SECURE="$(cfg PROTHEUS_SECURE)"
+  PROTHEUS_BUILD="$(cfg PROTHEUS_BUILD)"
+  PROTHEUS_ENV="$(cfg PROTHEUS_ENV)"
+  PROTHEUS_USER="$(cfg PROTHEUS_USER)"
+  
+  # --- SENHA: env var (preferido) ou config ---
+  PW_ENV_NAME="$(cfg PROTHEUS_PASSWORD_ENV)"
+  if [[ -n "${PW_ENV_NAME}" ]]; then
+      PROTHEUS_PASSWORD="${!PW_ENV_NAME:-}"
+      if [[ -z "${PROTHEUS_PASSWORD}" ]]; then
+          echo -e "${RED}ERRO: variavel de ambiente '${PW_ENV_NAME}' nao definida.${RESET}"
+          echo -e "${YELLOW}Defina antes de rodar (ex.: export ${PW_ENV_NAME}='senha').${RESET}"
+          exit 1
+      fi
+  else
+      PROTHEUS_PASSWORD="$(cfg PROTHEUS_PASSWORD)"
+  fi
+  
+  # --- GUARDA DE PLACEHOLDER ---
+  for pair in "BASE_DIR_PATCHES=${BASE_DIR_PATCHES}" "BUILD_DIR=${BUILD_DIR}" \
+              "PROTHEUS_SERVER=${PROTHEUS_SERVER}" "PROTHEUS_PORT=${PROTHEUS_PORT}" \
+              "PROTHEUS_ENV=${PROTHEUS_ENV}"; do
+      k="${pair%%=*}"; v="${pair#*=}"
+      if [[ -z "${v}" || "${v}" == "<"* ]]; then
+          echo -e "${RED}ERRO: '${k}' nao preenchido no config (valor: '${v}').${RESET}"
+          echo -e "${YELLOW}Preencha o ${CONFIG_PATH} antes de rodar.${RESET}"
+          exit 1
+      fi
+  done
+  
+  PENDENTES_DIR="${BASE_DIR_PATCHES}/pendentes"
+  ZIPS_PROCESSADOS_DIR="${BASE_DIR_PATCHES}/zips_processados"
+  APLICADOS_DIR="${BASE_DIR_PATCHES}/aplicados"
+  PATCH_INI_FILE="${BUILD_DIR}/apply_patches.ini"
+  PATCH_LOG_FILE="${BUILD_DIR}/apply_patch.log"
+  COMPILE_LST_FILE="${BUILD_DIR}/compila.txt"
+  COMPILE_INI_FILE="${BUILD_DIR}/compila.ini"
+  COMPILE_LOG_FILE="${LOG_DIR}/compila.log"
+  ADVPLS_EXECUTABLE="${BUILD_DIR}/advpls"
+  
+  if [[ ! -x "${ADVPLS_EXECUTABLE}" ]]; then
+      echo -e "${RED}ERRO: advpls nao encontrado/sem permissao: ${ADVPLS_EXECUTABLE}${RESET}"
+      exit 1
+  fi
+  
+  # ==============================================================================
+  # ETAPA 1: APLICACAO DE PATCHES
+  # ==============================================================================
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} ETAPA 1: APLICACAO DE PATCHES${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  mkdir -p "${PENDENTES_DIR}" "${ZIPS_PROCESSADOS_DIR}" "${APLICADOS_DIR}"
+  
+  shopt -s nullglob nocaseglob
+  zip_files=( "${PENDENTES_DIR}"/*.zip )
+  shopt -u nocaseglob
+  if [[ ${#zip_files[@]} -gt 0 ]]; then
+      echo -e "${GREEN}Extraindo ${#zip_files[@]} ZIP(s)...${RESET}"
+      for zip_file in "${zip_files[@]}"; do
+          echo -e "${YELLOW}  $(basename "${zip_file}")${RESET}"
+          unzip -o "${zip_file}" -d "${PENDENTES_DIR}" > /dev/null
+          mv -f "${zip_file}" "${ZIPS_PROCESSADOS_DIR}/"
+      done
+  else
+      echo -e "${YELLOW}Nenhum ZIP para extrair.${RESET}"
+  fi
+  
+  patch_files=()
+  while IFS= read -r -d '' f; do
+      patch_files+=( "$f" )
+  done < <(find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -print0 | sort -z)
+  shopt -u nullglob
+  
+  if [[ ${#patch_files[@]} -gt 0 ]]; then
+      echo -e "${GREEN}Aplicando ${#patch_files[@]} patch(es) .PTM${RESET}"
+      {
+          cat <<EOF
+  logToFile=${PATCH_LOG_FILE}
+  showConsoleOutput=true
+  
+  [authentication]
+  action=authentication
+  server=${PROTHEUS_SERVER}
+  port=${PROTHEUS_PORT}
+  secure=${PROTHEUS_SECURE}
+  build=${PROTHEUS_BUILD}
+  environment=${PROTHEUS_ENV}
+  user=${PROTHEUS_USER}
+  psw=${PROTHEUS_PASSWORD}
+  EOF
+          session_number=1
+          for patch_file in "${patch_files[@]}"; do
+              cat <<EOF
+  
+  [patchApply_${session_number}]
+  action=patchApply
+  patchFile=${patch_file}
+  localPatch=True
+  applyOldProgram=False
+  EOF
+              session_number=$((session_number + 1))
+          done
+          cat <<EOF
+  
+  [defragRPO]
+  action=defragRPO
+  EOF
+      } > "${PATCH_INI_FILE}"
+  
+      "${ADVPLS_EXECUTABLE}" cli "${PATCH_INI_FILE}"
+      rc=$?
+      if [[ ${rc} -ne 0 ]]; then
+          echo -e "${RED}ERRO ao aplicar patches (advpls retornou ${rc}).${RESET}"
+          exit 1
+      fi
+      find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -exec mv -f {} "${APLICADOS_DIR}/" \;
+      find "${PENDENTES_DIR}" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+      echo -e "${GREEN}Patches aplicados e arquivados.${RESET}"
+  else
+      echo -e "${YELLOW}Nenhum .PTM encontrado. Pulando aplicacao.${RESET}"
+  fi
+  
+  # ==============================================================================
+  # ETAPA 2: COMPILACAO DOS FONTES
+  # ==============================================================================
+  echo ""
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} ETAPA 2: COMPILACAO DE FONTES${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  if [[ ! -d "${FONTES_DIR}" ]]; then
+      echo -e "${YELLOW}Pasta de fontes nao encontrada: ${FONTES_DIR}. Pulando compilacao.${RESET}"
+  else
+      shopt -s nullglob nocaseglob
+      fontes=( "${FONTES_DIR}"/*.prw "${FONTES_DIR}"/*.tlpp "${FONTES_DIR}"/*.prx )
+      shopt -u nullglob nocaseglob
+      if [[ ${#fontes[@]} -gt 0 ]]; then
+          echo -e "${GREEN}Compilando ${#fontes[@]} fonte(s)...${RESET}"
+          : > "${COMPILE_LST_FILE}"
+          for fonte in "${fontes[@]}"; do
+              basename "${fonte}" >> "${COMPILE_LST_FILE}"
+          done
+  
+          cat > "${COMPILE_INI_FILE}" <<EOF
+  logToFile=${COMPILE_LOG_FILE}
+  showConsoleOutput=true
+  
+  [user]
+  INCLUDE_DIR=${INCLUDE_DIR}
+  LOG_DIR=${LOG_DIR}
+  BUILD_DIR=${BUILD_DIR}
+  
+  [authentication]
+  action=authentication
+  server=${PROTHEUS_SERVER}
+  port=${PROTHEUS_PORT}
+  secure=${PROTHEUS_SECURE}
+  build=${PROTHEUS_BUILD}
+  environment=${PROTHEUS_ENV}
+  user=${PROTHEUS_USER}
+  psw=${PROTHEUS_PASSWORD}
+  
+  [compile]
+  action=compile
+  recompile=F
+  programlist=${COMPILE_LST_FILE}
+  includes=${INCLUDE_DIR}
+  
+  [defragRPO]
+  action=defragRPO
+  EOF
+  
+          pushd "${FONTES_DIR}" > /dev/null
+          "${ADVPLS_EXECUTABLE}" cli "${COMPILE_INI_FILE}"
+          rc=$?
+          popd > /dev/null
+          if [[ ${rc} -ne 0 ]]; then
+              echo -e "${RED}ERRO na compilacao (advpls retornou ${rc}).${RESET}"
+              exit 1
+          fi
+          echo -e "${GREEN}Compilacao concluida.${RESET}"
+      else
+          echo -e "${YELLOW}Nenhum fonte (.prw/.tlpp/.prx) em ${FONTES_DIR}.${RESET}"
+      fi
+  fi
+  
+  echo ""
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} PROCESSO FINALIZADO COM SUCESSO${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  '''
+# ---
+# name: test_golden_sh_tq
+  '''
+  #!/usr/bin/env bash
+  # ==============================================================================
+  # Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+  # Ambiente Linux (Bash)
+  # GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+  # Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+  # ==============================================================================
+  
+  set -euo pipefail
+  
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CONFIG_PATH="${1:-${SCRIPT_DIR}/patch_e_compilacao_config.json}"
+  
+  CYAN="\033[36m"; GREEN="\033[32m"; YELLOW="\033[33m"; RED="\033[31m"; RESET="\033[0m"
+  
+  if ! command -v jq >/dev/null 2>&1; then
+      echo -e "${RED}ERRO: 'jq' nao encontrado. Instale (ex.: sudo apt install jq).${RESET}"
+      exit 1
+  fi
+  if [[ ! -f "${CONFIG_PATH}" ]]; then
+      echo -e "${RED}ERRO: config nao encontrado: ${CONFIG_PATH}${RESET}"
+      echo -e "${YELLOW}Uso: ./patch_e_compilacao.sh [caminho_do_config.json]${RESET}"
+      exit 1
+  fi
+  
+  cfg() { jq -r --arg k "$1" '.[$k] // ""' "${CONFIG_PATH}"; }
+  
+  BASE_DIR_PATCHES="$(cfg BASE_DIR_PATCHES)"
+  BUILD_DIR="$(cfg BUILD_DIR)"
+  FONTES_DIR="$(cfg FONTES_DIR)"
+  INCLUDE_DIR="$(cfg INCLUDE_DIR)"
+  LOG_DIR="$(cfg LOG_DIR)"
+  
+  PROTHEUS_SERVER="$(cfg PROTHEUS_SERVER)"
+  PROTHEUS_PORT="$(cfg PROTHEUS_PORT)"
+  PROTHEUS_SECURE="$(cfg PROTHEUS_SECURE)"
+  PROTHEUS_BUILD="$(cfg PROTHEUS_BUILD)"
+  PROTHEUS_ENV="$(cfg PROTHEUS_ENV)"
+  PROTHEUS_USER="$(cfg PROTHEUS_USER)"
+  
+  # --- SENHA: env var (preferido) ou config ---
+  PW_ENV_NAME="$(cfg PROTHEUS_PASSWORD_ENV)"
+  if [[ -n "${PW_ENV_NAME}" ]]; then
+      PROTHEUS_PASSWORD="${!PW_ENV_NAME:-}"
+      if [[ -z "${PROTHEUS_PASSWORD}" ]]; then
+          echo -e "${RED}ERRO: variavel de ambiente '${PW_ENV_NAME}' nao definida.${RESET}"
+          echo -e "${YELLOW}Defina antes de rodar (ex.: export ${PW_ENV_NAME}='senha').${RESET}"
+          exit 1
+      fi
+  else
+      PROTHEUS_PASSWORD="$(cfg PROTHEUS_PASSWORD)"
+  fi
+  
+  # --- GUARDA DE PLACEHOLDER ---
+  for pair in "BASE_DIR_PATCHES=${BASE_DIR_PATCHES}" "BUILD_DIR=${BUILD_DIR}" \
+              "PROTHEUS_SERVER=${PROTHEUS_SERVER}" "PROTHEUS_PORT=${PROTHEUS_PORT}" \
+              "PROTHEUS_ENV=${PROTHEUS_ENV}"; do
+      k="${pair%%=*}"; v="${pair#*=}"
+      if [[ -z "${v}" || "${v}" == "<"* ]]; then
+          echo -e "${RED}ERRO: '${k}' nao preenchido no config (valor: '${v}').${RESET}"
+          echo -e "${YELLOW}Preencha o ${CONFIG_PATH} antes de rodar.${RESET}"
+          exit 1
+      fi
+  done
+  
+  PENDENTES_DIR="${BASE_DIR_PATCHES}/pendentes"
+  ZIPS_PROCESSADOS_DIR="${BASE_DIR_PATCHES}/zips_processados"
+  APLICADOS_DIR="${BASE_DIR_PATCHES}/aplicados"
+  PATCH_INI_FILE="${BUILD_DIR}/apply_patches.ini"
+  PATCH_LOG_FILE="${BUILD_DIR}/apply_patch.log"
+  COMPILE_LST_FILE="${BUILD_DIR}/compila.txt"
+  COMPILE_INI_FILE="${BUILD_DIR}/compila.ini"
+  COMPILE_LOG_FILE="${LOG_DIR}/compila.log"
+  ADVPLS_EXECUTABLE="${BUILD_DIR}/advpls"
+  
+  if [[ ! -x "${ADVPLS_EXECUTABLE}" ]]; then
+      echo -e "${RED}ERRO: advpls nao encontrado/sem permissao: ${ADVPLS_EXECUTABLE}${RESET}"
+      exit 1
+  fi
+  
+  # ==============================================================================
+  # ETAPA 1: APLICACAO DE PATCHES
+  # ==============================================================================
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} ETAPA 1: APLICACAO DE PATCHES${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  mkdir -p "${PENDENTES_DIR}" "${ZIPS_PROCESSADOS_DIR}" "${APLICADOS_DIR}"
+  
+  shopt -s nullglob nocaseglob
+  zip_files=( "${PENDENTES_DIR}"/*.zip )
+  shopt -u nocaseglob
+  if [[ ${#zip_files[@]} -gt 0 ]]; then
+      echo -e "${GREEN}Extraindo ${#zip_files[@]} ZIP(s)...${RESET}"
+      for zip_file in "${zip_files[@]}"; do
+          echo -e "${YELLOW}  $(basename "${zip_file}")${RESET}"
+          unzip -o "${zip_file}" -d "${PENDENTES_DIR}" > /dev/null
+          mv -f "${zip_file}" "${ZIPS_PROCESSADOS_DIR}/"
+      done
+  else
+      echo -e "${YELLOW}Nenhum ZIP para extrair.${RESET}"
+  fi
+  
+  patch_files=()
+  while IFS= read -r -d '' f; do
+      patch_files+=( "$f" )
+  done < <(find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -print0 | sort -z)
+  shopt -u nullglob
+  
+  if [[ ${#patch_files[@]} -gt 0 ]]; then
+      echo -e "${GREEN}Aplicando ${#patch_files[@]} patch(es) .PTM${RESET}"
+      {
+          cat <<EOF
+  logToFile=${PATCH_LOG_FILE}
+  showConsoleOutput=true
+  
+  [authentication]
+  action=authentication
+  server=${PROTHEUS_SERVER}
+  port=${PROTHEUS_PORT}
+  secure=${PROTHEUS_SECURE}
+  build=${PROTHEUS_BUILD}
+  environment=${PROTHEUS_ENV}
+  user=${PROTHEUS_USER}
+  psw=${PROTHEUS_PASSWORD}
+  EOF
+          session_number=1
+          for patch_file in "${patch_files[@]}"; do
+              cat <<EOF
+  
+  [patchApply_${session_number}]
+  action=patchApply
+  patchFile=${patch_file}
+  localPatch=True
+  applyOldProgram=False
+  EOF
+              session_number=$((session_number + 1))
+          done
+          cat <<EOF
+  
+  [defragRPO]
+  action=defragRPO
+  EOF
+      } > "${PATCH_INI_FILE}"
+  
+      "${ADVPLS_EXECUTABLE}" cli "${PATCH_INI_FILE}"
+      rc=$?
+      if [[ ${rc} -ne 0 ]]; then
+          echo -e "${RED}ERRO ao aplicar patches (advpls retornou ${rc}).${RESET}"
+          exit 1
+      fi
+      find "${PENDENTES_DIR}" -maxdepth 1 -type f -iname "*.ptm" -exec mv -f {} "${APLICADOS_DIR}/" \;
+      find "${PENDENTES_DIR}" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true
+      echo -e "${GREEN}Patches aplicados e arquivados.${RESET}"
+  else
+      echo -e "${YELLOW}Nenhum .PTM encontrado. Pulando aplicacao.${RESET}"
+  fi
+  
+  # ==============================================================================
+  # ETAPA 2: COMPILACAO DOS FONTES
+  # ==============================================================================
+  echo ""
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} ETAPA 2: COMPILACAO DE FONTES${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  if [[ ! -d "${FONTES_DIR}" ]]; then
+      echo -e "${YELLOW}Pasta de fontes nao encontrada: ${FONTES_DIR}. Pulando compilacao.${RESET}"
+  else
+      shopt -s nullglob nocaseglob
+      fontes=( "${FONTES_DIR}"/*.prw "${FONTES_DIR}"/*.tlpp "${FONTES_DIR}"/*.prx )
+      shopt -u nullglob nocaseglob
+      if [[ ${#fontes[@]} -gt 0 ]]; then
+          echo -e "${GREEN}Compilando ${#fontes[@]} fonte(s)...${RESET}"
+          : > "${COMPILE_LST_FILE}"
+          for fonte in "${fontes[@]}"; do
+              basename "${fonte}" >> "${COMPILE_LST_FILE}"
+          done
+  
+          cat > "${COMPILE_INI_FILE}" <<EOF
+  logToFile=${COMPILE_LOG_FILE}
+  showConsoleOutput=true
+  
+  [user]
+  INCLUDE_DIR=${INCLUDE_DIR}
+  LOG_DIR=${LOG_DIR}
+  BUILD_DIR=${BUILD_DIR}
+  
+  [authentication]
+  action=authentication
+  server=${PROTHEUS_SERVER}
+  port=${PROTHEUS_PORT}
+  secure=${PROTHEUS_SECURE}
+  build=${PROTHEUS_BUILD}
+  environment=${PROTHEUS_ENV}
+  user=${PROTHEUS_USER}
+  psw=${PROTHEUS_PASSWORD}
+  
+  [compile]
+  action=compile
+  recompile=F
+  programlist=${COMPILE_LST_FILE}
+  includes=${INCLUDE_DIR}
+  
+  [defragRPO]
+  action=defragRPO
+  EOF
+  
+          pushd "${FONTES_DIR}" > /dev/null
+          "${ADVPLS_EXECUTABLE}" cli "${COMPILE_INI_FILE}"
+          rc=$?
+          popd > /dev/null
+          if [[ ${rc} -ne 0 ]]; then
+              echo -e "${RED}ERRO na compilacao (advpls retornou ${rc}).${RESET}"
+              exit 1
+          fi
+          echo -e "${GREEN}Compilacao concluida.${RESET}"
+      else
+          echo -e "${YELLOW}Nenhum fonte (.prw/.tlpp/.prx) em ${FONTES_DIR}.${RESET}"
+      fi
+  fi
+  
+  # ==============================================================================
+  # ETAPA 3: TROCA QUENTE (TQ) DO RPO
+  # ==============================================================================
+  TQ_DEST_APO="$(cfg TQ_DEST_APO)"
+  if [[ -z "${TQ_DEST_APO}" || "${TQ_DEST_APO}" == "<"* ]]; then
+      echo ""
+      echo -e "${YELLOW}TQ nao configurada (TQ_DEST_APO vazio). Pulando Troca Quente.${RESET}"
+  else
+      echo ""
+      echo -e "${YELLOW}--------------------------------------------------------------------------${RESET}"
+      echo -e "${YELLOW}ATENCAO: a TQ cria nova pasta datada no destino, copia o RPO de compilacao${RESET}"
+      echo -e "${YELLOW}e repointa o SourcePath nos appserver*.ini do destino. Execute com cuidado!${RESET}"
+      echo -e "${YELLOW}--------------------------------------------------------------------------${RESET}"
+  
+      TQ_CMP_RPO="$(cfg TQ_CMP_RPO)"
+      TQ_DEST_BIN="$(cfg TQ_DEST_BIN)"
+      TQ_RPO_FILES="$(cfg TQ_RPO_FILES)"
+      TQ_RESTART_CMD="$(cfg TQ_RESTART_CMD)"
+      TQ_HEALTHCHECK_URL="$(cfg TQ_HEALTHCHECK_URL)"
+  
+      for par in "TQ_CMP_RPO=${TQ_CMP_RPO}" "TQ_DEST_BIN=${TQ_DEST_BIN}"; do
+          k="${par%%=*}"; v="${par#*=}"
+          if [[ -z "${v}" || "${v}" == "<"* ]]; then
+              echo -e "${RED}ERRO: TQ '${k}' nao preenchido no config.${RESET}"
+              exit 1
+          fi
+      done
+      if [[ ! -d "${TQ_DEST_APO}" ]]; then
+          echo -e "${RED}ERRO: TQ_DEST_APO nao encontrado: ${TQ_DEST_APO}${RESET}"
+          exit 1
+      fi
+  
+      # Acha o dir datado mais recente (ORIGEM) e cria o novo (DESTINO = agora)
+      ANO_ATUAL="$(date +%Y | cut -c1-3)"
+      ORIGEM="$(find "${TQ_DEST_APO}" -mindepth 1 -maxdepth 1 -type d -name "${ANO_ATUAL}*" \
+          -printf "%T@ %f\n" 2>/dev/null | sort -rn | head -n1 | awk '{print $2}')"
+      if [[ -z "${ORIGEM}" ]]; then
+          echo -e "${RED}ERRO: nenhum dir datado '${ANO_ATUAL}*' em ${TQ_DEST_APO}${RESET}"
+          exit 1
+      fi
+      DESTINO="$(date +%Y%m%d_%H%M)"
+      echo -e "${GREEN}TQ: ORIGEM=${ORIGEM}  ->  DESTINO=${DESTINO}${RESET}"
+  
+      NOVO_DIR="${TQ_DEST_APO}/${DESTINO}"
+      mkdir -p "${NOVO_DIR}"
+      IFS=',' read -ra _rpos <<< "${TQ_RPO_FILES}"
+      for rpo in "${_rpos[@]}"; do
+          rpo="$(echo "${rpo}" | xargs)"  # trim
+          [[ -z "${rpo}" ]] && continue
+          src="${TQ_CMP_RPO}/${rpo}"
+          if [[ ! -f "${src}" ]]; then
+              echo -e "${RED}ERRO: RPO de compilacao nao encontrado: ${src}${RESET}"
+              exit 1
+          fi
+          cp -f "${src}" "${NOVO_DIR}/"
+          echo -e "${GREEN}  copiado: ${rpo}${RESET}"
+      done
+  
+      # Repointa SourcePath (ORIGEM -> DESTINO) nos appserver*.ini do destino
+      while IFS= read -r -d '' ini; do
+          if grep -qF "${ORIGEM}" "${ini}"; then
+              sed -i "s|${ORIGEM}|${DESTINO}|g" "${ini}"
+              echo -e "${GREEN}  ini repointado: ${ini}${RESET}"
+          fi
+      done < <(find "${TQ_DEST_BIN}" -type f -iname "appserver*.ini" -print0)
+  
+      # Restart (obrigatorio p/ appserver REST) + healthcheck, ambos opcionais
+      if [[ -n "${TQ_RESTART_CMD}" ]]; then
+          echo -e "${YELLOW}Reiniciando appserver destino...${RESET}"
+          bash -c "${TQ_RESTART_CMD}"
+          rc=$?
+          if [[ ${rc} -ne 0 ]]; then
+              echo -e "${RED}ERRO no restart (codigo ${rc}).${RESET}"
+              exit 1
+          fi
+          if [[ -n "${TQ_HEALTHCHECK_URL}" ]]; then
+              if ! command -v curl >/dev/null 2>&1; then
+                  echo -e "${YELLOW}AVISO: 'curl' ausente - pulando healthcheck.${RESET}"
+              else
+                  echo -e "${YELLOW}Healthcheck: ${TQ_HEALTHCHECK_URL}${RESET}"
+                  ok=0
+                  for _i in $(seq 1 30); do
+                      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${TQ_HEALTHCHECK_URL}" || echo 000)"
+                      if [[ "${code}" != "000" ]]; then ok=1; break; fi
+                      sleep 2
+                  done
+                  if [[ ${ok} -eq 1 ]]; then
+                      echo -e "${GREEN}REST respondeu - TQ OK.${RESET}"
+                  else
+                      echo -e "${RED}AVISO: healthcheck nao respondeu em ~60s.${RESET}"
+                      exit 1
+                  fi
+              fi
+          fi
+      else
+          echo -e "${YELLOW}AVISO: TQ_RESTART_CMD vazio - reinicie o appserver destino manualmente (obrigatorio p/ REST).${RESET}"
+      fi
+      echo -e "${GREEN}Troca Quente concluida.${RESET}"
+  fi
+  echo ""
+  echo -e "${CYAN}=========================================${RESET}"
+  echo -e "${CYAN} PROCESSO FINALIZADO COM SUCESSO${RESET}"
+  echo -e "${CYAN}=========================================${RESET}"
+  
+  '''
+# ---

@@ -1,0 +1,236 @@
+# ==============================================================================
+# Script unificado: aplicacao de patches (.PTM) + compilacao de fontes Protheus
+# Ambiente Windows (PowerShell)
+# GERADO por: plugadvpl gera-script  (deterministico, sem IA)
+# Edite o patch_e_compilacao_config.json antes de rodar. Nao versione o config.
+# ==============================================================================
+
+param (
+    [string]$ConfigPath = (Join-Path $PSScriptRoot "patch_e_compilacao_config.json")
+)
+
+$ErrorActionPreference = "Stop"
+
+# --- CARREGAMENTO DO CONFIG JSON ---
+if (-not (Test-Path $ConfigPath)) {
+    Write-Host "ERRO: config nao encontrado em: $ConfigPath" -ForegroundColor Red
+    Write-Host "Passe o caminho: .\patch_e_compilacao.ps1 -ConfigPath C:\caminho\config.json" -ForegroundColor Yellow
+    exit 1
+}
+try {
+    $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+} catch {
+    Write-Host "ERRO ao ler/interpretar o JSON: $ConfigPath" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    exit 1
+}
+
+# --- DIRETORIOS ---
+$BASE_DIR_PATCHES = $config.BASE_DIR_PATCHES
+$BUILD_DIR        = $config.BUILD_DIR
+$FONTES_DIR       = $config.FONTES_DIR
+$INCLUDE_DIR      = $config.INCLUDE_DIR
+$LOG_DIR          = $config.LOG_DIR
+
+# --- SERVIDOR PROTHEUS ---
+$PROTHEUS_SERVER = $config.PROTHEUS_SERVER
+$PROTHEUS_PORT   = $config.PROTHEUS_PORT
+$PROTHEUS_SECURE = $config.PROTHEUS_SECURE
+$PROTHEUS_BUILD  = $config.PROTHEUS_BUILD
+$PROTHEUS_ENV    = $config.PROTHEUS_ENV
+$PROTHEUS_USER   = $config.PROTHEUS_USER
+
+# --- SENHA: env var (preferido) ou config ---
+$pwEnvName = $config.PSObject.Properties.Name -contains 'PROTHEUS_PASSWORD_ENV'
+if ($pwEnvName -and $config.PROTHEUS_PASSWORD_ENV) {
+    $PROTHEUS_PASSWORD = [Environment]::GetEnvironmentVariable($config.PROTHEUS_PASSWORD_ENV)
+    if ([string]::IsNullOrEmpty($PROTHEUS_PASSWORD)) {
+        Write-Host "ERRO: variavel de ambiente '$($config.PROTHEUS_PASSWORD_ENV)' nao definida." -ForegroundColor Red
+        Write-Host "Defina-a antes de rodar (ex.: `$env:$($config.PROTHEUS_PASSWORD_ENV)='senha')." -ForegroundColor Yellow
+        exit 1
+    }
+} else {
+    $PROTHEUS_PASSWORD = $config.PROTHEUS_PASSWORD
+}
+
+# --- GUARDA DE PLACEHOLDER (config nao preenchido) ---
+$obrigatorios = @{
+    "BASE_DIR_PATCHES" = $BASE_DIR_PATCHES
+    "BUILD_DIR"        = $BUILD_DIR
+    "PROTHEUS_SERVER"  = $PROTHEUS_SERVER
+    "PROTHEUS_PORT"    = $PROTHEUS_PORT
+    "PROTHEUS_ENV"     = $PROTHEUS_ENV
+}
+foreach ($k in $obrigatorios.Keys) {
+    $v = $obrigatorios[$k]
+    if ([string]::IsNullOrEmpty($v) -or $v.ToString().StartsWith("<")) {
+        Write-Host "ERRO: '$k' nao preenchido no config (valor: '$v')." -ForegroundColor Red
+        Write-Host "Preencha o $ConfigPath antes de rodar." -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+# --- DERIVADOS ---
+$PENDENTES_DIR        = Join-Path $BASE_DIR_PATCHES "pendentes"
+$ZIPS_PROCESSADOS_DIR = Join-Path $BASE_DIR_PATCHES "zips_processados"
+$APLICADOS_DIR        = Join-Path $BASE_DIR_PATCHES "aplicados"
+$PATCH_INI_FILE       = Join-Path $BUILD_DIR "apply_patches.ini"
+$PATCH_LOG_FILE       = Join-Path $BUILD_DIR "apply_patch.log"
+$COMPILE_LST_FILE     = Join-Path $BUILD_DIR "compila.txt"
+$COMPILE_INI_FILE     = Join-Path $BUILD_DIR "compila.ini"
+$COMPILE_LOG_FILE     = Join-Path $LOG_DIR "compila.log"
+$ADVPLS_EXECUTABLE    = Join-Path $BUILD_DIR "advpls.exe"
+
+if (-not (Test-Path $ADVPLS_EXECUTABLE)) {
+    Write-Host "ERRO: advpls.exe nao encontrado em: $ADVPLS_EXECUTABLE" -ForegroundColor Red
+    Write-Host "Verifique BUILD_DIR no config." -ForegroundColor Yellow
+    exit 1
+}
+
+# ==============================================================================
+# ETAPA 1: APLICACAO DE PATCHES
+# ==============================================================================
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " ETAPA 1: APLICACAO DE PATCHES" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+
+if (-not (Test-Path $PENDENTES_DIR)) {
+    New-Item -ItemType Directory -Path $PENDENTES_DIR -Force | Out-Null
+}
+
+$zip_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.zip" -File
+if ($zip_files.Count -gt 0) {
+    Write-Host "Extraindo $($zip_files.Count) ZIP(s)..." -ForegroundColor Green
+    if (-not (Test-Path $ZIPS_PROCESSADOS_DIR)) {
+        New-Item -ItemType Directory -Path $ZIPS_PROCESSADOS_DIR -Force | Out-Null
+    }
+    foreach ($zip_file in $zip_files) {
+        Write-Host "  $($zip_file.Name)" -ForegroundColor Yellow
+        Expand-Archive -Path $zip_file.FullName -DestinationPath $PENDENTES_DIR -Force
+        Move-Item -Path $zip_file.FullName -Destination $ZIPS_PROCESSADOS_DIR -Force
+    }
+} else {
+    Write-Host "Nenhum ZIP para extrair." -ForegroundColor Yellow
+}
+
+# Ordem alfabetica garante aplicacao deterministica dos .PTM
+$patch_files = Get-ChildItem -Path $PENDENTES_DIR -Filter "*.PTM" -File | Sort-Object Name
+if ($patch_files.Count -gt 0) {
+    Write-Host "Aplicando $($patch_files.Count) patch(es) .PTM" -ForegroundColor Green
+
+    $iniContent = @"
+logToFile=$PATCH_LOG_FILE
+showConsoleOutput=true
+
+[authentication]
+action=authentication
+server=$PROTHEUS_SERVER
+port=$PROTHEUS_PORT
+secure=$PROTHEUS_SECURE
+build=$PROTHEUS_BUILD
+environment=$PROTHEUS_ENV
+user=$PROTHEUS_USER
+psw=$PROTHEUS_PASSWORD
+
+"@
+    $session_number = 1
+    foreach ($patch_file in $patch_files) {
+        $iniContent += @"
+
+[patchApply_$session_number]
+action=patchApply
+patchFile=$($patch_file.FullName)
+localPatch=True
+applyOldProgram=False
+"@
+        $session_number++
+    }
+    $iniContent += @"
+
+[defragRPO]
+action=defragRPO
+"@
+    $iniContent | Out-File -FilePath $PATCH_INI_FILE -Encoding Default -Force
+
+    & $ADVPLS_EXECUTABLE cli $PATCH_INI_FILE
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERRO ao aplicar patches (advpls retornou $LASTEXITCODE)." -ForegroundColor Red
+        exit 1
+    }
+
+    if (-not (Test-Path $APLICADOS_DIR)) {
+        New-Item -ItemType Directory -Path $APLICADOS_DIR -Force | Out-Null
+    }
+    Get-ChildItem -Path $PENDENTES_DIR -Filter "*.ptm" -File | Move-Item -Destination $APLICADOS_DIR -Force
+    Get-ChildItem -Path $PENDENTES_DIR -Recurse | Remove-Item -Force -Recurse
+    Write-Host "Patches aplicados e arquivados." -ForegroundColor Green
+} else {
+    Write-Host "Nenhum .PTM encontrado. Pulando aplicacao." -ForegroundColor Yellow
+}
+
+# ==============================================================================
+# ETAPA 2: COMPILACAO DOS FONTES
+# ==============================================================================
+Write-Host ""
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " ETAPA 2: COMPILACAO DE FONTES" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+
+if (-not (Test-Path $FONTES_DIR)) {
+    Write-Host "Pasta de fontes nao encontrada: $FONTES_DIR. Pulando compilacao." -ForegroundColor Yellow
+} else {
+    $fontes = Get-ChildItem -Path "$FONTES_DIR\*.prw", "$FONTES_DIR\*.tlpp", "$FONTES_DIR\*.prx" -File
+    if ($fontes.Count -gt 0) {
+        Write-Host "Compilando $($fontes.Count) fonte(s)..." -ForegroundColor Green
+        if (Test-Path $COMPILE_LST_FILE) { Remove-Item $COMPILE_LST_FILE -Force }
+        $fontes | Select-Object -ExpandProperty Name | Out-File -FilePath $COMPILE_LST_FILE -Encoding Default
+
+        $iniContentCompile = @"
+logToFile=$COMPILE_LOG_FILE
+showConsoleOutput=true
+
+[user]
+INCLUDE_DIR=$INCLUDE_DIR
+LOG_DIR=$LOG_DIR
+BUILD_DIR=$BUILD_DIR
+
+[authentication]
+action=authentication
+server=$PROTHEUS_SERVER
+port=$PROTHEUS_PORT
+secure=$PROTHEUS_SECURE
+build=$PROTHEUS_BUILD
+environment=$PROTHEUS_ENV
+user=$PROTHEUS_USER
+psw=$PROTHEUS_PASSWORD
+
+[compile]
+action=compile
+recompile=F
+programlist=$COMPILE_LST_FILE
+includes=$INCLUDE_DIR
+
+[defragRPO]
+action=defragRPO
+"@
+        $iniContentCompile | Out-File -FilePath $COMPILE_INI_FILE -Encoding Default -Force
+
+        Push-Location -Path "$FONTES_DIR"
+        & $ADVPLS_EXECUTABLE cli $COMPILE_INI_FILE
+        $rc = $LASTEXITCODE
+        Pop-Location
+        if ($rc -ne 0) {
+            Write-Host "ERRO na compilacao (advpls retornou $rc)." -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "Compilacao concluida." -ForegroundColor Green
+    } else {
+        Write-Host "Nenhum fonte (.prw/.tlpp/.prx) em $FONTES_DIR." -ForegroundColor Yellow
+    }
+}
+
+# {{TQ_PHASE}}
+Write-Host ""
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " PROCESSO FINALIZADO COM SUCESSO" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan

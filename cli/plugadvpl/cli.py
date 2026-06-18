@@ -4534,6 +4534,106 @@ def gen_aplicador_sx(
         typer.echo(prw)
 
 
+@app.command(name="gera-script")
+def gera_script(
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
+    use_server: Annotated[
+        str,
+        typer.Option(
+            "--use-server", help="Server do registry p/ preencher conexao (host/port/...)."
+        ),
+    ] = "",
+    shell: Annotated[
+        str, typer.Option("--shell", help="Qual script gerar: ps1 | sh | both.")
+    ] = "both",
+    secret: Annotated[
+        str, typer.Option("--secret", help="Senha: env (env var) | config (campo no JSON).")
+    ] = "env",
+    out: Annotated[str, typer.Option("--out", help="Diretorio de saida dos artefatos.")] = ".",
+    force: Annotated[
+        bool, typer.Option("--force", help="Sobrescreve artefatos existentes.")
+    ] = False,
+    tq: Annotated[
+        bool,
+        typer.Option("--tq", help="Inclui a 3a fase: Troca Quente do RPO no ambiente destino."),
+    ] = False,
+    example: Annotated[
+        bool, typer.Option("--example", help="Imprime um config JSON de exemplo e sai.")
+    ] = False,
+    schema: Annotated[
+        bool, typer.Option("--schema", help="Imprime o schema do config (JSON) e sai.")
+    ] = False,
+) -> None:
+    """Gera script .ps1/.sh de aplicacao de patch + compilacao. Deterministico, sem LLM.
+
+    Forja um script autossuficiente + um config JSON pre-preenchido para um operador
+    humano rodar na base do cliente SEM plugadvpl/IA. A conexao vem de --use-server
+    (registry ~/.plugadvpl/servers.json); os paths da maquina-cliente viram placeholder;
+    a senha fica via env var (--secret env, default) ou no config (--secret config).
+
+    Com --tq, inclui a 3a fase (Troca Quente): promove o RPO de compilacao para o
+    ambiente destino (novo dir datado + repointa o SourcePath nos appserver*.ini) e,
+    se TQ_RESTART_CMD estiver no config, reinicia o appserver destino (obrigatorio p/ REST).
+
+    Ex.: gera-script --use-server qa-cmp --shell both --tq --out ./deploy
+    """
+    from .compile_servers import get_server
+    from .gera_script import (
+        CONFIG_NAME,
+        build_config,
+        config_schema,
+        emit_config_json,
+        remaining_placeholders,
+    )
+    from .gera_script.generate import ArtifactExistsError, generate
+
+    if example:
+        typer.echo(emit_config_json(build_config(secret=secret, tq=tq)))
+        return
+    if schema:
+        typer.echo(json.dumps(config_schema(), ensure_ascii=False, indent=2))
+        return
+
+    if shell not in ("ps1", "sh", "both"):
+        typer.echo(f"erro: --shell invalido: {shell!r} (use ps1 | sh | both).", err=True)
+        raise typer.Exit(2)
+    if secret not in ("env", "config"):
+        typer.echo(f"erro: --secret invalido: {secret!r} (use env | config).", err=True)
+        raise typer.Exit(2)
+
+    server = None
+    if use_server:
+        server = get_server(use_server)
+        if server is None:
+            typer.echo(
+                f"erro: server {use_server!r} nao encontrado em ~/.plugadvpl/servers.json.",
+                err=True,
+            )
+            raise typer.Exit(2)
+
+    try:
+        escritos, cfg = generate(out, server=server, secret=secret, shell=shell, force=force, tq=tq)
+    except ArtifactExistsError as exc:
+        typer.echo(f"erro: ja existe(m): {exc}. Use --force para sobrescrever.", err=True)
+        raise typer.Exit(2) from exc
+
+    for path in escritos:
+        typer.echo(f"gerado: {path}")
+
+    falta = remaining_placeholders(cfg)
+    if falta:
+        typer.echo(
+            f"aviso: preencha no {CONFIG_NAME}: {', '.join(falta)}",
+            err=True,
+        )
+    if secret == "env":
+        env_name = cfg.get("PROTHEUS_PASSWORD_ENV", "PROTHEUS_PASS")
+        typer.echo(
+            f"aviso: defina a senha na env var {env_name} antes de rodar (nao versione o config).",
+            err=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # edit-prw (v0.7.0 Fase 0 #5): converte CP1252 <-> UTF-8
 # ---------------------------------------------------------------------------

@@ -216,7 +216,7 @@ class TestInstallGeminiSkills:
 
         assert result.installed_global_home is True
         assert result.installed_project_md is True
-        assert result.installed_skills_count == 74
+        assert result.installed_skills_count == 75
         assert not result.errors
         # Files exist
         assert (fake_home / ".gemini" / "GEMINI.md").exists()
@@ -224,7 +224,7 @@ class TestInstallGeminiSkills:
         skill_files = list(
             (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(skill_files) == 74
+        assert len(skill_files) == 75
 
     def test_no_op_without_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -265,8 +265,8 @@ class TestInstallGeminiSkills:
         gemini_files = list(
             (project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md")
         )
-        assert len(gemini_files) == 74
-        assert result.installed_skills_count == 74
+        assert len(gemini_files) == 75
+        assert result.installed_skills_count == 75
         # .agents/skills permanece vazio — gemini cedeu o cross-write
         agents_files = list(
             (project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
