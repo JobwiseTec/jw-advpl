@@ -994,6 +994,10 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.43.2 — `gen-aplicador-sx` auto-descritível para IAs
+
+- `--example` imprime um spec JSON completo e válido (8 tipos, pronto pra editar/pipar); `--schema` imprime as chaves aceitas por tipo (derivado de `SX_COLS`, sempre em sync). `--help` enriquecido; `--spec` opcional. Fecha o furo de descoberta — qualquer IA no CLI cru (Codex/Copilot/Gemini) acha o formato sem caçar exemplo.
+
 ### v0.43.1 — `gen-aplicador-sx`: fidelidade do dicionário (validado no banco real)
 
 - Correções pegas ao **gerar → aplicar no Protheus → comparar com a base**: **`X3_USADO`** com a máscara real de 115 chars e sempre preenchida (campo vazio não ativava); **SX1** com opções vira radio (`X1_GSC='1'`) e `X1_VARIAVL` C(6); **SXA** com `XA_ORDEM` C(1) normalizado + `PadR(XA_ALIAS)` no seek (parava a re-inserção/duplicata). Validação de tamanho vira warning, exceto identificadores.

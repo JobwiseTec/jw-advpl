@@ -29,7 +29,7 @@ cliente (v1.1.0+).
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.43.1 coletadb $ARGUMENTS
+uvx plugadvpl@0.43.2 coletadb $ARGUMENTS
 ```
 
 ## Depois de extrair

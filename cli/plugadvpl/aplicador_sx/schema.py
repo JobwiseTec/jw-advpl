@@ -291,3 +291,141 @@ def validate_spec(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
                 f"sx7[{i}]: campo '{e['campo']}' não está no spec (pode ser pré-existente)."
             )
     return erros, warnings
+
+
+def spec_schema() -> dict[str, list[dict[str, Any]]]:
+    """Referência das chaves de spec por tipo (machine-readable), derivada de ``SX_COLS``.
+
+    Para cada dicionário lista as chaves que o spec aceita, deduplicando colunas
+    espelhadas (``titulo`` -> X3_TITULO/TITSPA/TITENG = 1 chave só). ``opcoes`` (SX1)
+    é uma chave virtual expandida no emit, então é acrescentada à mão. Sempre em sync
+    com o schema — serve o ``--schema`` do CLI pra qualquer IA descobrir o formato.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    for tipo, cols in SX_COLS.items():
+        vistos: list[str] = []
+        chaves: list[dict[str, Any]] = []
+        for c in cols:
+            if c.chave is None or c.chave in vistos:
+                continue
+            vistos.append(c.chave)
+            chaves.append(
+                {"chave": c.chave, "obrigatorio": c.obrig, "tipo": c.tipo, "maxlen": c.maxlen}
+            )
+        out[tipo] = chaves
+    out["sx1"].append({"chave": "opcoes", "obrigatorio": False, "tipo": "lista", "maxlen": None})
+    return out
+
+
+def example_spec() -> dict[str, Any]:
+    """Spec JSON de exemplo, completo e VÁLIDO — cobre os 8 dicionários.
+
+    Ponto de partida pronto pra editar e auto-documentação do formato:
+    ``gen-aplicador-sx --example > spec.json``. Tudo sintético (ZXX / MV_X*).
+    """
+    return {
+        "numero": "900100",
+        "sx2": [
+            {"alias": "ZXX", "nome": "Cadastro Exemplo", "modo": "C", "unico": "ZXX_FILIAL+ZXX_COD"}
+        ],
+        "sx3": [
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_FILIAL",
+                "tipo": "C",
+                "tamanho": 2,
+                "titulo": "Filial",
+                "descric": "Filial",
+                "browse": "N",
+            },
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_COD",
+                "tipo": "C",
+                "tamanho": 6,
+                "titulo": "Codigo",
+                "descric": "Codigo do registro",
+                "picture": "@!",
+            },
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_DESC",
+                "tipo": "C",
+                "tamanho": 40,
+                "titulo": "Descricao",
+                "descric": "Descricao",
+            },
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_VALOR",
+                "tipo": "N",
+                "tamanho": 14,
+                "decimal": 2,
+                "titulo": "Valor",
+                "descric": "Valor",
+                "picture": "@E 999,999,999.99",
+            },
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_DATA",
+                "tipo": "D",
+                "tamanho": 8,
+                "titulo": "Data",
+                "descric": "Data",
+            },
+            {
+                "alias": "ZXX",
+                "campo": "ZXX_TIPO",
+                "tipo": "C",
+                "tamanho": 1,
+                "titulo": "Tipo",
+                "descric": "Tipo",
+                "cbox": "1=Entrada;2=Saida",
+            },
+        ],
+        "six": [
+            {
+                "alias": "ZXX",
+                "ordem": "1",
+                "chave": "ZXX_FILIAL+ZXX_COD",
+                "descricao": "Filial + Codigo",
+                "showpesq": "S",
+            }
+        ],
+        "sx6": [
+            {
+                "var": "MV_XEXEMP1",
+                "tipo": "C",
+                "conteudo": "001",
+                "descric": "Parametro de exemplo 1",
+            },
+            {
+                "var": "MV_XEXEMP2",
+                "tipo": "N",
+                "conteudo": "10",
+                "descric": "Parametro de exemplo 2 (numerico)",
+            },
+        ],
+        "sx7": [
+            {
+                "campo": "ZXX_COD",
+                "sequenc": "001",
+                "regra": "Posicione('ZXX',1,xFilial('ZXX')+M->ZXX_COD,'ZXX_DESC')",
+                "cdomin": "ZXX_DESC",
+                "tipo": "P",
+            }
+        ],
+        "sx1": [
+            {"grupo": "ZXX01", "ordem": "01", "pergunta": "Da Filial ?", "tipo": "C", "tamanho": 2},
+            {
+                "grupo": "ZXX01",
+                "ordem": "02",
+                "pergunta": "Tipo ?",
+                "tipo": "N",
+                "tamanho": 1,
+                "opcoes": ["Entrada", "Saida"],
+            },
+        ],
+        "sxa": [{"alias": "ZXX", "ordem": "1", "descricao": "Dados Gerais"}],
+        "sx5": [{"tabela": "ZX", "chave": "001", "descricao": "Opcao Exemplo 1"}],
+    }

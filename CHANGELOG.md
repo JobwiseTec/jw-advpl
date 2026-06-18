@@ -4,6 +4,12 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.43.2] - 2026-06-18
+
+### Added
+
+- **`gen-aplicador-sx` auto-descritível para IAs** — `--example` imprime um **spec JSON completo e válido** (cobre os 8 dicionários, pronto pra editar/pipar) e `--schema` imprime as **chaves aceitas por tipo** (JSON, derivado de `SX_COLS` → sempre em sync). O `--help` ganhou a estrutura do spec; `--spec` virou opcional (sem nada, o erro orienta para as flags). Fecha o furo de descoberta: uma IA no CLI cru (Codex/Copilot/Gemini ou só `--help`) agora descobre o formato do spec **sem depender da skill nem caçar exemplo no projeto**. Fluxo: `gen-aplicador-sx --example > spec.json` → editar → `--spec spec.json --out a.prw`.
+
 ## [0.43.1] - 2026-06-17
 
 ### Fixed

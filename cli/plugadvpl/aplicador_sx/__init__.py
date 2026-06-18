@@ -11,6 +11,6 @@ Re-exports (preenchidos ao longo do Chunk 1):
 from __future__ import annotations
 
 from .emit import emit_prw as gen_prw
-from .schema import validate_spec
+from .schema import example_spec, spec_schema, validate_spec
 
-__all__ = ["gen_prw", "validate_spec"]
+__all__ = ["example_spec", "gen_prw", "spec_schema", "validate_spec"]

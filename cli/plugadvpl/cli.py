@@ -4479,11 +4479,43 @@ def doc_writer_cmd(
 @app.command(name="gen-aplicador-sx")
 def gen_aplicador_sx(
     ctx: typer.Context,  # noqa: ARG001 -- typer convencao
-    spec: Annotated[str, typer.Option("--spec", help="Caminho do spec JSON (ou '-' p/ stdin).")],
+    spec: Annotated[
+        str, typer.Option("--spec", help="Caminho do spec JSON (ou '-' p/ stdin).")
+    ] = "",
     out: Annotated[str, typer.Option("--out", help="Arquivo .prw de saída (cp1252).")] = "",
+    example: Annotated[
+        bool,
+        typer.Option("--example", help="Imprime um spec JSON completo de exemplo e sai."),
+    ] = False,
+    schema: Annotated[
+        bool,
+        typer.Option("--schema", help="Imprime as chaves do spec por tipo (JSON) e sai."),
+    ] = False,
 ) -> None:
-    """Gera um 'aplicador de SXs' (.prw) a partir de um spec JSON. Determinístico, sem LLM."""
-    from .aplicador_sx import gen_prw, validate_spec
+    """Gera um 'aplicador de SXs' (.prw) a partir de um spec JSON. Determinístico, sem LLM.
+
+    O spec JSON tem 'numero' (id do update) + seções opcionais por dicionário, cada uma
+    uma lista de objetos: sx2 (tabelas), sx3 (campos), six (índices), sx6 (params MV_*),
+    sx7 (gatilhos), sx1 (perguntas), sxa (pastas), sx5 (genéricas).
+
+    Descoberta do formato (sem doc externa): --example imprime um spec completo e válido,
+    pronto pra editar; --schema imprime as chaves aceitas por tipo (machine-readable).
+    Ex.: gen-aplicador-sx --example > spec.json && gen-aplicador-sx --spec spec.json --out a.prw
+    """
+    from .aplicador_sx import example_spec, gen_prw, spec_schema, validate_spec
+
+    if example:
+        typer.echo(json.dumps(example_spec(), ensure_ascii=False, indent=2))
+        return
+    if schema:
+        typer.echo(json.dumps(spec_schema(), ensure_ascii=False, indent=2))
+        return
+    if not spec:
+        typer.echo(
+            "erro: informe --spec <arquivo|-> (ou --example / --schema p/ ver o formato).",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     raw = sys.stdin.read() if spec == "-" else Path(spec).read_text("utf-8")
     data = json.loads(raw)
