@@ -5689,6 +5689,206 @@ def _tq_hints(result: TqResult, srv: Server, hc_port: int, timeout_s: int) -> li
     return []
 
 
+@app.command("apply-patch")
+def apply_patch_cmd(  # noqa: PLR0912, PLR0915 -- orquestrador CLI: resolve server/creds/binário, valida prod-safety, dispara batch
+    ctx: typer.Context,
+    input_path: Annotated[
+        str,
+        typer.Argument(help="Arquivo .PTM, .zip de patches, ou diretório com .PTM"),
+    ] = "",
+    use_server: Annotated[
+        str,
+        typer.Option("--use-server", help="Server do registry (~/.plugadvpl/servers.json)"),
+    ] = "",
+    environment: Annotated[
+        str,
+        typer.Option(
+            "--environment", help="Environment alvo (default: default_environment do server)"
+        ),
+    ] = "",
+    list_applied: Annotated[
+        bool,
+        typer.Option(
+            "--list-applied", help="Lista patches já aplicados no env (lê patches_applied)"
+        ),
+    ] = False,
+    apply_old: Annotated[
+        bool,
+        typer.Option(
+            "--apply-old", help="applyOldProgram=True (aplica também recursos mais antigos)"
+        ),
+    ] = False,
+    rpo_path: Annotated[
+        str,
+        typer.Option(
+            "--rpo-path", help="Caminho do RPO local pra backup pré-patch (AppServer local)"
+        ),
+    ] = "",
+    no_backup: Annotated[
+        bool,
+        typer.Option("--no-backup", help="Pula backup do RPO (proibido em server prod)"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Mostra o plano (patches + skip), não aplica"),
+    ] = False,
+    confirm_prod: Annotated[
+        bool,
+        typer.Option("--confirm-prod", help="Confirma aplicação em server marcado PROD"),
+    ] = False,
+) -> None:
+    """Aplica .PTM via advpls (patchApply) com backup/idempotência/rollback (U6, issue #4)."""
+    from dataclasses import asdict
+
+    from plugadvpl.apply_patch import env_lock, is_applied, run_apply_patch
+    from plugadvpl.compile import _resolve_advpls
+    from plugadvpl.compile_servers import get_server
+    from plugadvpl.credentials import resolve_credentials
+
+    if not use_server:
+        typer.secho("--use-server obrigatório", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    srv = get_server(use_server)
+    if srv is None:
+        typer.secho(
+            f"Server '{use_server}' não cadastrado.\n  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    env = environment or srv.default_environment
+
+    db_path: Path = ctx.obj["db"]
+    conn = open_db(db_path)
+    apply_migrations(conn)
+
+    # --list-applied: só consulta, não toca em nada.
+    if list_applied:
+        cur = conn.execute(
+            "SELECT ptm_name, ptm_hash, status, build, applied_at, batch_ts "
+            "FROM patches_applied WHERE env = ? ORDER BY applied_at DESC",
+            (env,),
+        )
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+        _render_from_ctx(
+            ctx,
+            rows,
+            columns=["ptm_name", "status", "build", "applied_at", "batch_ts"],
+            title=f"patches aplicados ({env})",
+        )
+        raise typer.Exit(code=0)
+
+    if not input_path:
+        typer.secho(
+            "input (arquivo .PTM/.zip ou diretório) obrigatório", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+    src = Path(input_path)
+    if not src.exists():
+        typer.secho(f"input não encontrado: {src}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    # PROD safety
+    if srv.is_prod:
+        if not confirm_prod and not dry_run:
+            typer.secho(
+                f"Server '{use_server}' está marcado como PROD.\n"
+                f"  Pra prosseguir: plugadvpl apply-patch {input_path} --use-server {use_server} --confirm-prod",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if no_backup:
+            typer.secho("--no-backup é proibido em server PROD", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+
+    # dry-run: lista o plano sem aplicar (reusa discover + skip-check).
+    if dry_run:
+        import shutil
+        import tempfile
+
+        from plugadvpl.apply_patch import discover_ptms, sha256_file
+
+        workdir = Path(tempfile.mkdtemp(prefix="plugadvpl-patch-dry-"))
+        try:
+            ptms = discover_ptms(src, workdir)
+            rows = []
+            for p in ptms:
+                h = sha256_file(p)
+                rows.append(
+                    {
+                        "ptm_name": p.name,
+                        "plano": "SKIP (já aplicado)" if is_applied(conn, env, h) else "APLICAR",
+                        "hash": h[:16] + "…",
+                    }
+                )
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+        _render_from_ctx(
+            ctx,
+            rows,
+            columns=["ptm_name", "plano", "hash"],
+            title=f"apply-patch --dry-run ({srv.name}/{env})",
+            next_steps=[
+                f"plugadvpl apply-patch {input_path} --use-server {srv.name}  # aplica de verdade"
+            ],
+        )
+        raise typer.Exit(code=0)
+
+    res = resolve_credentials(srv.name, "PROTHEUS_USER", "PROTHEUS_PASSWORD")
+    if not res.is_complete:
+        typer.secho(
+            f"Credenciais incompletas pro server '{srv.name}'.\n"
+            "  Configure env PROTHEUS_USER/PROTHEUS_PASSWORD, ou keyring "
+            "(plugadvpl compile --set-credentials).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=3)
+
+    try:
+        binary = _resolve_advpls(None)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=3) from exc
+
+    backup_rpo = Path(rpo_path) if (rpo_path and not no_backup) else None
+    audit_base = (
+        Path.home() / ".plugadvpl" / "ops" / "apply-patch" / re.sub(r"[^A-Za-z0-9_.-]", "_", env)
+    )
+
+    try:
+        with env_lock(env):
+            result = run_apply_patch(
+                input_path=src,
+                server=srv,
+                environment=env,
+                user=res.user,
+                password=res.password,
+                binary=binary,
+                conn=conn,
+                audit_base=audit_base,
+                apply_old=apply_old,
+                backup_rpo_path=backup_rpo,
+            )
+    except RuntimeError as exc:  # lock ocupado
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5) from exc
+
+    rows = [asdict(p) for p in result.patches]
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["ptm_name", "status", "detail"],
+        title=f"apply-patch ({srv.name}/{env}) — {result.summary}",
+        next_steps=None
+        if result.ok
+        else ["# ≥1 patch falhou — veja os logs em " + str(audit_base)],
+    )
+    raise typer.Exit(code=0 if result.ok else 4)
+
+
 def _handle_list_servers(ctx: typer.Context) -> None:
     """Lista servers cadastrados em ~/.plugadvpl/servers.json."""
     from plugadvpl.compile_servers import default_server, list_servers, registry_path

@@ -137,14 +137,14 @@ class TestInstallCopilotInstructions:
         (project / ".github").mkdir(parents=True)
         result = install_copilot_instructions(project, version="0.16.3")
         assert result.installed_global is True
-        assert result.installed_local_count == 73
+        assert result.installed_local_count == 74
         assert not result.errors
         # Files
         assert (project / ".github" / "copilot-instructions.md").exists()
         instructions = list(
             (project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 73
+        assert len(instructions) == 74
 
     def test_no_op_without_github(self, tmp_path: Path) -> None:
         from plugadvpl.copilot_instructions import install_copilot_instructions

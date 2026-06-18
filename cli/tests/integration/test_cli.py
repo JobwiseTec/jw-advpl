@@ -334,7 +334,7 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 73
+        assert len(rules) == 74
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
@@ -364,7 +364,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 73
+        assert len(rules) == 74
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
@@ -378,7 +378,7 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 73
+        assert len(rules) == 74
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
         arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(
             encoding="utf-8"
@@ -499,7 +499,7 @@ class TestInitCopilotInstructions:
         instructions = list(
             (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 73
+        assert len(instructions) == 74
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
@@ -532,7 +532,7 @@ class TestInitCopilotInstructions:
         instructions = list(
             (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 73
+        assert len(instructions) == 74
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
@@ -547,7 +547,7 @@ class TestInitCopilotInstructions:
         instructions = list(
             (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 73
+        assert len(instructions) == 74
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -626,7 +626,7 @@ class TestInitGeminiSkills:
         assert result.exit_code == 0
         assert (synthetic_project / "GEMINI.md").exists()
         skill_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(skill_files) == 73
+        assert len(skill_files) == 74
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
@@ -673,7 +673,7 @@ class TestInitGeminiSkills:
         assert result.exit_code == 0
         assert "Gemini skills" not in result.stdout
         skill_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(skill_files) == 73
+        assert len(skill_files) == 74
 
     def test_idempotent_does_not_duplicate(
         self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
@@ -687,7 +687,7 @@ class TestInitGeminiSkills:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         skill_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(skill_files) == 73
+        assert len(skill_files) == 74
         arch_content = (
             synthetic_project / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
         ).read_text(encoding="utf-8")
@@ -994,17 +994,17 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 73
+        assert len(cursor_files) == 74
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list(
             (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(copilot_files) == 73
+        assert len(copilot_files) == 74
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 73
+        assert len(gemini_files) == 74
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 

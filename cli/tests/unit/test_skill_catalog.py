@@ -17,8 +17,8 @@ from plugadvpl._skill_catalog import (
 
 
 class TestSkillGlobs:
-    def test_has_71_skills(self) -> None:
-        assert len(_SKILL_GLOBS) == 73
+    def test_has_74_skills(self) -> None:
+        assert len(_SKILL_GLOBS) == 74
 
     def test_matches_actual_skill_dirs(self) -> None:
         """_SKILL_GLOBS deve bater com as skills embarcadas em skills/."""

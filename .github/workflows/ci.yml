@@ -64,6 +64,7 @@ jobs:
         plugadvpl/aplicador_sx/__init__.py
         plugadvpl/aplicador_sx/schema.py
         plugadvpl/aplicador_sx/emit.py
+        plugadvpl/apply_patch.py
         plugadvpl/catalog.py
         plugadvpl/cli.py
         plugadvpl/codex_config.py

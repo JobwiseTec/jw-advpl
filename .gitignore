@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+
+# Logs locais (ex.: console_error.log gerado em runtime)
+console_error.log
+*.log
 .ruff_cache/
 .mypy_cache/
 .coverage
