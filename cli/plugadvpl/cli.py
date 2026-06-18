@@ -47,6 +47,10 @@ from plugadvpl.db import (
     seed_lookups,
     set_meta,
 )
+
+# dtc (#12): app vendorizado de tbarbito/dtcat (MIT). Importar não carrega
+# pandas (import lazy só no export). Registrado via add_typer mais abaixo.
+from plugadvpl.dtc.cli import app as dtc_app
 from plugadvpl.ignore import IgnoreMatcher, load_ignore_file
 from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
@@ -5236,6 +5240,12 @@ compile_app = typer.Typer(
     invoke_without_command=True,
 )
 app.add_typer(compile_app, name="compile")
+
+
+# dtc (#12): leitor/exporter de .dtc (FairCom c-tree ISAM) standalone.
+# App vendorizado de tbarbito/dtcat (MIT) — ver plugadvpl/dtc/ e NOTICE.
+# dtc_app é importado no topo do módulo (junto dos demais imports).
+app.add_typer(dtc_app, name="dtc")
 
 
 @compile_app.callback()

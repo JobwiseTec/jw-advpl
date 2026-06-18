@@ -303,12 +303,12 @@ class TestInstallCursorRules:
         result = install_cursor_rules(project, version="0.16.2")
 
         assert result.installed_global is True
-        assert result.installed_local_count == 75
+        assert result.installed_local_count == 76
         assert not result.errors
         # Smoke: arquivos foram criados
         assert (fake_home / ".cursor" / "rules" / "plugadvpl.mdc").exists()
         local_rules = list((project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(local_rules) == 75
+        assert len(local_rules) == 76
 
     def test_no_op_when_no_signals(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
