@@ -271,7 +271,10 @@ class TestFamilyIncludeTables:
         assert "SA1 (execauto)" in by["MOD102.prw"]["tables_write"]
 
     def test_max_tables_trunca_com_indicador(self, db_fam_tables: sqlite3.Connection) -> None:
-        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True, max_tables=1)}
+        by = {
+            r["arquivo"]: r
+            for r in family(db_fam_tables, "MOD10", include_tables=True, max_tables=1)
+        }
         rd = by["MOD100.prw"]["tables_read"]
         assert rd.startswith("SZV") and rd.endswith("+2")
 
@@ -304,9 +307,7 @@ class TestMvcAndExecAutoWrite:
         )
         # fonte que grava via MsExecAuto MATA030 (-> SA1 no catalogo)
         (src / "ABCEA.prw").write_bytes(
-            b"User Function ABCEA()\n"
-            b"  MSExecAuto({|x,y| MATA030(x,y)}, aDados, 3)\n"
-            b"Return\n"
+            b"User Function ABCEA()\n  MSExecAuto({|x,y| MATA030(x,y)}, aDados, 3)\nReturn\n"
         )
         # ModelDef read-only (SetOnlyView) NAO deve gravar
         (src / "ABCRO.prw").write_bytes(
@@ -499,7 +500,6 @@ class TestCallees:
         adjacentes — Method da classe + Static helper — e validamos que
         chamadas em cada uma sao corretamente atribuidas.
         """
-        from plugadvpl.db import apply_migrations, init_meta, open_db, seed_lookups
         from plugadvpl.ingest import ingest as do_ingest
         from plugadvpl.query import callees as cq
 
@@ -654,6 +654,29 @@ class TestLintQuery:
         rows = lint_query(conn, regra_id="BP-002")
         finding = next(r for r in rows if r["arquivo"] == "FAKE2.prw")
         assert finding["sonar_rules"] == []
+
+    def test_lint_query_ordena_por_severidade_grave_primeiro(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """CRITICAL no topo: gravidades misturadas devem sair critical→error→warning→info
+        (não em ordem de linha), pra quem trunca a saída não perder os achados graves."""
+        _, conn = db_with_three_sources
+        arq = "ORD.prw"
+        dados = [
+            (arq, "Fn", 10, "BP-A", "info", "s", "f"),
+            (arq, "Fn", 20, "BP-B", "warning", "s", "f"),
+            (arq, "Fn", 30, "BP-C", "critical", "s", "f"),
+            (arq, "Fn", 40, "BP-D", "error", "s", "f"),
+        ]
+        conn.executemany(
+            "INSERT INTO lint_findings "
+            "(arquivo, funcao, linha, regra_id, severidade, snippet, sugestao_fix) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            dados,
+        )
+        conn.commit()
+        sev = [r["severidade"] for r in lint_query(conn, arquivo=arq)]
+        assert sev == ["critical", "error", "warning", "info"]
 
 
 class TestStatus:

@@ -4,6 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+
+- **Detecção de campo custom no SX reconhece o range completo de cliente (X/Y/Z)** — `_is_custom_field` marcava como custom só campos cujo nome (2ª parte, após `_`) começa com `X`; campos `*_Y*`/`*_Z*` (ex.: `A1_YBOLETO`, `A1_ZZPMAGI`) caíam erroneamente como standard. Agora reconhece **X, Y e Z**, alinhando com o detector de TABELA custom (`Z*`/`SZ*`/`Q*`) que o plugadvpl já usa.
+- **Detecção de encoding do SX agora é determinística** — a leitura dos CSVs de dicionário decidia o encoding com `chardet` primeiro, que confunde cp1252↔cp1250 em amostras curtas e corrompia acentos de títulos/descrições (ex.: `Descrição` → `Descriçăo`). Passa a seguir a mesma ordem determinística do parser de código (`_decode_bytes`): BOM → ASCII (→cp1252) → UTF-8 estrito → cp1252, com `chardet` só como último recurso.
+
+### Changed
+
+- **`lint` ordena os achados por severidade (graves no topo)** — `lint_query` ordenava por arquivo/linha; agora ordena `critical → error → warning → info` primeiro (depois arquivo/linha), pra que consumidores que truncam a lista (LLM/REST) não percam os achados graves no meio.
+
 ## [0.43.2] - 2026-06-18
 
 ### Added

@@ -28,24 +28,42 @@ csv.field_size_limit(10_000_000)  # 10MB
 # Magic number para detectar XLSX disfarçado de .csv (header ZIP).
 _XLSX_MAGIC = b"PK\x03\x04"
 
-# Bytes lidos para sniff de encoding (chardet em chunk pequeno é tão preciso quanto
-# em arquivo inteiro e infinitamente mais rápido em CSVs de centenas de MB).
+# Bytes lidos para sniff de encoding (decisão determinística no chunk; chardet só vira
+# último recurso, então ler o chunk basta mesmo em CSVs de centenas de MB).
 _ENCODING_SNIFF_BYTES = 4096
 
 
-def _detect_encoding(file_path: Path) -> str:
-    """Detecta encoding do CSV via BOM + chardet (sniff dos primeiros 4KB).
+def _looks_utf8(chunk: bytes) -> bool:
+    """``True`` se o chunk é UTF-8 válido, tolerando uma sequência multibyte truncada no
+    limite do chunk (um caractere cortado no fim dos 4KB não invalida o veredito)."""
+    try:
+        chunk.decode("utf-8")
+        return True
+    except UnicodeDecodeError as exc:
+        return exc.start >= len(chunk) - 3 and "end of data" in exc.reason
 
-    Retorna ``utf-8-sig`` se houver BOM UTF-8, caso contrário o resultado do
-    chardet (default ``cp1252`` se chardet não decidir — encoding canonical
-    Protheus para exports Configurador → Misc → Exportar Dicionário).
+
+def _detect_encoding(file_path: Path) -> str:
+    """Detecta encoding do CSV de forma DETERMINÍSTICA (não depende do chardet).
+
+    BOM → ``utf-8-sig``; ASCII → ``cp1252`` (subset; canonical Protheus); UTF-8 estrito
+    → ``utf-8``; senão ``cp1252`` (resolve os acentos do export Configurador → Misc →
+    Exportar Dicionário). ``chardet`` vira último recurso — antes ele decidia primeiro e
+    confundia cp1252↔cp1250 em amostras curtas, corrompendo acentos (``Descrição`` →
+    ``Descriçăo``). Espelha o ``_decode_bytes`` determinístico do parser de código.
     """
-    raw = file_path.read_bytes()[:_ENCODING_SNIFF_BYTES]
-    if raw[:3] == b"\xef\xbb\xbf":
+    head = file_path.read_bytes()[:_ENCODING_SNIFF_BYTES]
+    if head[:3] == b"\xef\xbb\xbf":
         return "utf-8-sig"
-    result = chardet.detect(raw)
-    detected: str | None = result.get("encoding")
-    return detected or "cp1252"
+    if head.isascii():
+        return "cp1252"
+    if _looks_utf8(head):
+        return "utf-8"
+    try:
+        head.decode("cp1252")
+        return "cp1252"
+    except UnicodeDecodeError:
+        return chardet.detect(head).get("encoding") or "cp1252"
 
 
 def _detect_delimiter(file_path: Path, encoding: str) -> str:
@@ -79,9 +97,16 @@ _FIELD_PARTS_MIN = 2  # campo segue padrão TABELA_NOME (split em '_' produz >=2
 
 
 def _is_custom_field(campo: str) -> bool:
-    """Detecta campo custom: 2ª parte (depois de ``_``) começa com ``X`` (ex: ``A1_XCUST``)."""
+    """Detecta campo custom: 2ª parte (após ``_``) começa com letra do range de cliente.
+
+    ``X``, ``Y`` ou ``Z`` (ex.: ``A1_XCUST``, ``A1_YBOLETO``, ``A1_ZZPMAGI``) — análogo
+    ao range custom de TABELA (``Z*``/``SZ*``/``Q*`` em ``_is_custom_table``). Antes só
+    reconhecia ``X``, e campos ``*_Y*``/``*_Z*`` caíam erroneamente como standard.
+    """
     parts = campo.split("_")
-    return len(parts) >= _FIELD_PARTS_MIN and parts[1].startswith("X")
+    if len(parts) < _FIELD_PARTS_MIN or not parts[1]:
+        return False
+    return parts[1][0].upper() in ("X", "Y", "Z")
 
 
 def _sanitize_text(text: str) -> str:

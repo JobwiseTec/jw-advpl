@@ -902,7 +902,12 @@ def lint_query(
         "       f.snippet, f.sugestao_fix, r.sonar_rules "
         "FROM lint_findings f LEFT JOIN lint_rules r ON r.regra_id = f.regra_id "
         f"{where_clause} "
-        "ORDER BY f.arquivo, f.linha"
+        # severidade primeiro: graves no topo global, pra quem trunca a saída não perder
+        # critical/error no meio da lista (depois agrupa por arquivo/linha).
+        "ORDER BY CASE f.severidade "
+        "           WHEN 'critical' THEN 0 WHEN 'error' THEN 1 "
+        "           WHEN 'warning' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, "
+        "         f.arquivo, f.linha"
     )
     rows = conn.execute(sql, params).fetchall()
     cols = [
