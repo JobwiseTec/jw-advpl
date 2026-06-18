@@ -22,7 +22,7 @@ cliente) e lista os significados por discriminador. Não precisa de índice.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.43.2 --format md semantica $ARGUMENTS
+uvx plugadvpl@0.44.0 --format md semantica $ARGUMENTS
 ```
 
 ## Exemplo

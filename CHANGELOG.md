@@ -4,6 +4,15 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-06-18
+
+### Added
+
+- **`plugadvpl apply-patch` — aplica patch `.PTM` no RPO** via advpls (`patchApply`), com **backup**, **idempotência por hash** (não re-aplica o mesmo patch) e **rollback** granular/por batch. Para "aplica esse `.PTM`/pacote de correção TOTVS". Skill `apply-patch` + agente `advpl-patch-orchestrator`.
+- **`plugadvpl gera-script` — gera um script `.ps1`/`.sh` determinístico** de aplicação de patch (`.PTM`) + compilação de fontes, **pré-preenchido a partir de um servidor do registry**, para um operador humano rodar na base do cliente **sem plugadvpl nem IA** (extrai ZIP → `patchApply` em ordem → `defragRPO` → compila `.prw/.tlpp/.prx`). Mesma entrada → mesmos bytes. Flag **`--tq` (Troca Quente)**: 3ª fase que promove o RPO de compilação para o ambiente destino (copia o RPO para uma pasta datada no `apo` e repointa o `SourcePath` nos `appserver*.ini`). Skill `gera-script`.
+- **`plugadvpl dtc` — leitor/exporter de `.dtc` (FairCom c-tree ISAM)**: `dtc info` (parser nativo, sem deps extras) e `dtc export` para CSV/JSON/XLSX. O export usa `pandas`/`openpyxl`, disponíveis no **extra opcional** `pip install 'plugadvpl[dtc]'` (o CLI base segue leve; `dtc export` avisa se faltar o extra). Código vendorizado do projeto `dtcat` (MIT, atribuído em `NOTICE`/`LICENSES`). Skill `dtc`.
+- **Harness experimental de LLM local** (`experimental/`, fora do pacote distribuído) — PoC de geração/correção + especialista grounded sobre o índice. Não afeta o CLI nem os usuários do plugin.
+
 ### Fixed
 
 - **Detecção de campo custom no SX reconhece o range completo de cliente (X/Y/Z)** — `_is_custom_field` marcava como custom só campos cujo nome (2ª parte, após `_`) começa com `X`; campos `*_Y*`/`*_Z*` (ex.: `A1_YBOLETO`, `A1_ZZPMAGI`) caíam erroneamente como standard. Agora reconhece **X, Y e Z**, alinhando com o detector de TABELA custom (`Z*`/`SZ*`/`Q*`) que o plugadvpl já usa.

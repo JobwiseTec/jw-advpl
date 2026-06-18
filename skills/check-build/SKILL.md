@@ -28,7 +28,7 @@ Não precisa de índice ingerido — lê o catálogo embarcado + o fonte direto.
 ## Execução
 
 ```bash
-uvx plugadvpl@0.43.2 --format md check-build $ARGUMENTS
+uvx plugadvpl@0.44.0 --format md check-build $ARGUMENTS
 ```
 
 > **Para agente IA:** rode ANTES de compilar/smoke-test quando o cliente roda uma

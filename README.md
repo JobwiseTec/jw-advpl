@@ -994,6 +994,10 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
 
+### v0.44.0 — apply-patch, gera-script (+Troca Quente), dtc + fixes de SX/lint
+
+- **`apply-patch`** — aplica `.PTM` no RPO (advpls `patchApply`) com backup, idempotência por hash e rollback. **`gera-script`** — forja um `.ps1`/`.sh` determinístico de patch+compilação pra operador humano rodar sem plugadvpl/IA, com flag `--tq` (Troca Quente: promove o RPO de compilação pro ambiente destino). **`dtc`** — leitor/exporter de `.dtc` (FairCom c-tree ISAM): `dtc info` nativo + `dtc export` CSV/JSON/XLSX (extra opcional `plugadvpl[dtc]`, base segue leve). Mais: campo custom no SX reconhece X/Y/Z, encoding de SX determinístico (cp1252 antes de chardet), e `lint` ordenado por severidade.
+
 ### v0.43.2 — `gen-aplicador-sx` auto-descritível para IAs
 
 - `--example` imprime um spec JSON completo e válido (8 tipos, pronto pra editar/pipar); `--schema` imprime as chaves aceitas por tipo (derivado de `SX_COLS`, sempre em sync). `--help` enriquecido; `--spec` opcional. Fecha o furo de descoberta — qualquer IA no CLI cru (Codex/Copilot/Gemini) acha o formato sem caçar exemplo.

@@ -84,11 +84,11 @@ As chaves abaixo são as que você preenche no spec; o gerador aplica os default
 
 ```bash
 # spec em arquivo:
-uvx plugadvpl@0.43.2 gen-aplicador-sx --spec spec.json --out a099999.prw
+uvx plugadvpl@0.44.0 gen-aplicador-sx --spec spec.json --out a099999.prw
 
 # spec via stdin:
 echo '{"numero":"099999","sx6":[{"var":"MV_XEXMPL","tipo":"L","conteudo":".T."}]}' \
-  | uvx plugadvpl@0.43.2 gen-aplicador-sx --spec - --out a099999.prw
+  | uvx plugadvpl@0.44.0 gen-aplicador-sx --spec - --out a099999.prw
 ```
 
 `--spec <arquivo.json>` (ou `-` pra ler do stdin). `--out a<numero>.prw` grava em **cp1252**; sem `--out`, imprime o `.prw` no stdout. Validação inválida → exit ≠ 0 + `erro:` no stderr.

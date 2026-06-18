@@ -41,13 +41,13 @@ layout variável caem no caminho c-tree (que exige FairCom DB Developer Edition)
 
 ```bash
 # Schema + count + amostra (parser nativo, sem dependência externa)
-uvx plugadvpl@0.43.2 dtc info $ARGUMENTS
+uvx plugadvpl@0.44.0 dtc info $ARGUMENTS
 
 # Export pra CSV/JSON/XLSX (pandas/openpyxl já são core)
-uvx plugadvpl@0.43.2 dtc export $ARGUMENTS --format csv
+uvx plugadvpl@0.44.0 dtc export $ARGUMENTS --format csv
 
 # Valida pré-requisitos do caminho c-tree
-uvx plugadvpl@0.43.2 dtc doctor
+uvx plugadvpl@0.44.0 dtc doctor
 ```
 
 ## Exemplos
