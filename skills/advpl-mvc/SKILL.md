@@ -220,13 +220,36 @@ EndIf
 
 A estrutura é lida do dicionário **SX3** (campos) + **SX7** (gatilhos) + **SXA** (pastas). Para ver/alterar embutidos, veja `[[advpl-dicionario-sx]]` e `[[advpl-dicionario-sx-validacoes]]`.
 
-Customizações ad-hoc:
+Customizações ad-hoc na estrutura (sem alterar o SX3):
 
 ```advpl
-oStruZZZ:RemoveField("ZZZ_INTERN")              // remove campo da estrutura
-oStruZZZ:SetProperty("ZZZ_COD", MODEL_FIELD_NOUPD, .T.)  // bloqueia alteração
-oStruZZZ:AddField(...)                          // adiciona campo virtual
+oStruZZZ:RemoveField("ZZZ_INTERN")                       // remove campo da estrutura
+oStruZZZ:AddField(...)                                   // adiciona campo virtual
+oStruZZZ:SetProperty("ZZZ_COD", MODEL_FIELD_NOUPD, .T.)  // propriedade booleana: bloqueia alteração
 ```
+
+### Alterar WHEN / VALID / INIT por código (`SetProperty` + `FWBuildFeature`)
+
+Propriedade **booleana** (`OBRIGAT`, `NOUPD`, `VIRTUAL`...) recebe `.T.`/`.F.` direto. Mas **WHEN, VALID e INIT são expressões** — precisam ser embrulhadas em `FWBuildFeature`, senão o `SetProperty` não toma efeito:
+
+```advpl
+// ❌ NÃO funciona — WHEN/VALID/INIT não aceitam string/bloco cru:
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_WHEN, ".F.")
+
+// ✅ correto — FWBuildFeature monta o bloco que o framework espera:
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_WHEN,  FWBuildFeature(STRUCT_FEATURE_WHEN,   ".F."))           // read-only só nesta rotina
+oStru:SetProperty("ZZZ_STATUS", MODEL_FIELD_INIT,  FWBuildFeature(STRUCT_FEATURE_INIPAD, "'1'"))           // valor inicial forçado
+oStru:SetProperty("ZZZ_VALOR",  MODEL_FIELD_VALID, FWBuildFeature(STRUCT_FEATURE_VALID,  "ZZZ_VALOR > 0")) // valid custom
+```
+
+| Propriedade (constante) | Tipo do valor | Forma |
+|---|---|---|
+| `MODEL_FIELD_OBRIGAT`, `MODEL_FIELD_NOUPD`, `MODEL_FIELD_VIRTUAL` | booleano | `.T.` / `.F.` direto |
+| `MODEL_FIELD_WHEN` | expressão | `FWBuildFeature(STRUCT_FEATURE_WHEN, "<expr>")` |
+| `MODEL_FIELD_VALID` | expressão | `FWBuildFeature(STRUCT_FEATURE_VALID, "<expr>")` |
+| `MODEL_FIELD_INIT` | expressão | `FWBuildFeature(STRUCT_FEATURE_INIPAD, "<expr>")` |
+
+Vale para `FWFormStruct(1,...)` (Model) e `FWFormStruct(2,...)` (View), em `.prw` e `.tlpp`. Use quando precisar mudar o comportamento de um campo **só naquela rotina**, sem customizar o dicionário (SX3) globalmente. Para validações embutidas no próprio dicionário, veja `[[advpl-dicionario-sx-validacoes]]`.
 
 ## Sub-models — cabeçalho + grid de itens
 
@@ -348,6 +371,36 @@ FWMVCRotAuto(oModel, "ZZ1", MODEL_OPERATION_INSERT, ;
     {{"ZZ1MASTER", aCab}, {"ZZ2DETAIL", aItens}})
 ```
 
+## Checklist de geração MVC (antes de entregar)
+
+Antes de considerar um cadastro MVC pronto, confira:
+
+**Model (`ModelDef`)**
+- [ ] `FWFormStruct(1, "<ALIAS>")` para **cada** tabela (cabeçalho + cada grid).
+- [ ] `MPFormModel():New("<ID_UNICO>")` com ID exclusivo no ambiente.
+- [ ] `AddFields` (cabeçalho) e `AddGrid` (cada detalhe).
+- [ ] `SetRelation` ligando cada grid ao pai (master-detail).
+- [ ] `SetPrimaryKey({...})` **não-vazio** em cadastro com inclusão (vazio só em monitor view-only).
+- [ ] `SetUniqueLine` nas grids onde a chave não pode repetir.
+- [ ] Hooks via `FWModelEvent` + `InstallEvent` — **nunca** `bCommit`/`bTudoOk` (descontinuados).
+
+**View (`ViewDef`)**
+- [ ] `FWLoadModel("<ROTINA>")` (em `.tlpp`: `namespace.funçãoPrincipal` — ver `[[advpl-mvc-tlpp]]`).
+- [ ] `FWFormStruct(2, ...)` por entidade · `SetModel`.
+- [ ] `AddField`/`AddGrid` · boxes (`CreateHorizontalBox`/`CreateVerticalBox`/`CreateFolder`) + `SetOwnerView` para **cada** componente.
+
+**Menu (`MenuDef`)**
+- [ ] CRUD via `FWMVCMenu` (`.prw`) ou `ADD OPTION` manual (`.tlpp` — `FWMVCMenu` não resolve com namespace).
+- [ ] opções custom (`ACTION`) registradas, se houver.
+
+**Qualidade (cruza com `[[advpl-code-review]]`)**
+- [ ] gravação só via `FWFormCommit(oModel)` / `FWModelEvent` — nunca sobrescrever `FormCommit`.
+- [ ] **sem UI** (`MsgAlert`/`Help`/`Pergunte`) dentro de handler em transação (`InTTS`).
+- [ ] `Try/Catch` em vez de `ErrorBlock`; `FWLogMsg` em vez de `ConOut`.
+- [ ] `GetMV`/`ExistBlock` cacheados **antes** de loop de grid (não dentro).
+- [ ] estrutura lida via `FWFormStruct`/dicionário — sem `DbSelectArea("SX3")` cru.
+- [ ] fonte `.tlpp`? confira a casca de namespace e as *Def como `User Function` (`[[advpl-mvc-tlpp]]`).
+
 ## Anti-padrões
 
 - **`RecLock` dentro de `bCommit` legado** → registro fica preso se erro entre RecLock e MsUnlock. Use `FWModelEvent.InTTS` com try-protected.
@@ -420,6 +473,10 @@ Veja a pasta [`exemplos/`](exemplos/) ao lado deste SKILL.md para fontes reais T
 - `custom.mvc.quote.tlpp` — cotação com cabeçalho + grid (sub-models).
 - `custom.mvc.transferOrder.tlpp` — ordem de transferência com validações cruzadas.
 - `custom.mvc.confirmationOfReceipt.tlpp` — confirmação com hooks de commit.
+
+E um exemplo **MVC clássico (`.prw`)** — a contraparte ADVPL (Static Functions, referência pelo nome do fonte) dos `.tlpp` acima:
+
+- `ZEXPEDIDO.prw` — cadastro **master-detail** (capa ZX1 + itens ZX2): `FWMVCMenu` + opção custom, `AddFields`/`AddGrid`/`SetRelation`, `SetPrimaryKey`/`SetUniqueLine`, validação de linha, hook `FWModelEvent` (`InTTS`/`AfterTTS`) e aprovação headless via `FWLoadModel`. O miolo é o mesmo do `.tlpp`; só a casca muda (ver `[[advpl-mvc-tlpp]]`).
 
 ## Sources
 

@@ -180,6 +180,11 @@ XB_WCONTEM  Quando contém (filtro adicional)
 
 Atribui ao campo via `X3_F3 := "SA1XYZ"`. Quando user pressiona F3 no campo, abre a consulta.
 
+Para **consulta específica** (SXB que chama função em vez de browsear tabela por índice) e o
+padrão de **F3 genérico** (uma SXB + dispatcher por `ReadVar` roteando vários campos), veja
+`[[advpl-consulta-padrao]]` — inclui a estrutura de registros por `XB_TIPO` (1/2/5) e o
+contrato da função (retorna lógico + grava o valor).
+
 Lint relacionado:
 - `SX-011` — `X3_F3` aponta pra alias SXB que não existe.
 

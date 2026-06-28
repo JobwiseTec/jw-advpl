@@ -13,7 +13,7 @@ Estrutura master-detail:
   - Tabela de apoio .. ZX3 (Catálogo de Itens), origem da descrição
 
 Demonstra a CASCA de resolução TLPP (o que muda vs .prw):
-  1. *Def como User Function dentro do namespace (nunca Static Function).
+  1. *Def como Function U_Nome() dentro do namespace (nunca Static Function).
   2. SetMenuDef / FWLoadModel / ACTION recebem "namespace.funçãoPrincipal".
   3. aRotina manual com ADD OPTION (FWMVCMenu("FONTE") é padrão .prw).
   4. Validação de linha chamando função do mesmo fonte (sem prefixo).
@@ -23,7 +23,7 @@ Pré-requisito: release 12.1.2410+ / LIB 20240520+ com includes atualizados.
 @type  User Function
 @since 10/06/2026
 /*/
-User Function zx1Cad()
+Function U_zx1Cad()
     Local oBrowse := FWMBrowse():New()
 
     oBrowse:SetAlias("ZX1")
@@ -36,7 +36,7 @@ Return Nil
 /*/{Protheus.doc} MenuDef
 aRotina manual: em TLPP não há suporte documentado pra FWMVCMenu("FONTE").
 /*/
-User Function MenuDef() as array
+Function U_MenuDef() as array
     Local aRotina := {} as array
 
     ADD OPTION aRotina TITLE "Visualizar" ACTION "ViewDef.custom.exemplo.zx1.zx1Cad" OPERATION MODEL_OPERATION_VIEW   ACCESS 0
@@ -51,7 +51,7 @@ Return aRotina
 Cabeçalho ZX1 + grid ZX2 com campo virtual, unicidade e validação de linha.
 O MIOLO é idêntico ao ADVPL (veja a skill advpl-mvc) — só a casca muda.
 /*/
-User Function ModelDef()
+Function U_ModelDef()
     Local oModel  := Nil
     Local oStrZX1 := FWFormStruct(1, "ZX1")
     Local oStrZX2 := FWFormStruct(1, "ZX2")
@@ -96,7 +96,7 @@ Return oModel
 /*/{Protheus.doc} ViewDef
 Form do cabeçalho + grid dos itens (espelha o campo virtual da ModelDef).
 /*/
-User Function ViewDef()
+Function U_ViewDef()
     Local oModel  := FWLoadModel("custom.exemplo.zx1.zx1Cad")  // namespace + função principal
     Local oView   := FWFormView():New()
     Local oStrZX1 := FWFormStruct(2, "ZX1")
@@ -144,7 +144,7 @@ Validação de linha da grid: só aceita item ativo no catálogo (ZX3).
 Função auxiliar do MESMO fonte — declarada como User Function e chamada
 sem prefixo dentro do fonte (de outro fonte seria custom.exemplo.zx1.u_zx1VldLin()).
 /*/
-User Function zx1VldLin(oGrid, nLine)
+Function U_zx1VldLin(oGrid, nLine)
     Local lRet  := .T. as logical
     Local cItem := oGrid:GetValue("ZX2_CODITM") as character
 
@@ -167,6 +167,6 @@ Return lRet
 /*/{Protheus.doc} zx1Print
 Ação custom do menu — referenciada no aRotina como "custom.exemplo.zx1.u_zx1Print()".
 /*/
-User Function zx1Print()
+Function U_zx1Print()
     FwAlertInfo("Posicionado no grupo " + AllTrim(ZX1->ZX1_COD) + ".", "Imprimir")
 Return Nil

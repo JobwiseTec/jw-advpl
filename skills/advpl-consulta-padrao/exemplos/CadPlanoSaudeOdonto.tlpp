@@ -1,0 +1,544 @@
+#include "totvs.ch"
+#include "fwmvcdef.ch"
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+#Include "TopConn.ch"
+
+
+namespace custom.rh.planosaude
+
+/*/{Protheus.doc} U_CadPlanoSaude
+Cadastro de Planos de Saude e Odontologico (TELA 2 - Mapa de Beneficios).
+
+Abordagem simples:
+  - Browse de pesquisa sobre uma TABELA TEMPORARIA montada com as querys
+    QUERIE_PLANO_SAUDE + QUERIE_PLANO_ODONTO (origem RCC). Cada linha = um plano
+    disponivel (colunas CD_FORNECE, COD_PLANO, COD_RCC, RCC_SEQUEN = chave de
+    ligacao; NM_FORNECE, DSC_PLANO, TP_DESCONT, DSC_BENEF = exibicao).
+  - MVC e um cadastro SIMPLES da tabela PAU (sem master-detail).
+  - Ao Alterar/Visualizar, U_AbrePlano le a chave da linha do browse, faz DbSeek
+    na PAU: existe -> ALTERAR; nao existe -> INCLUIR (qualifica o plano).
+  - Os campos da RCC (origem temp) entram como CAMPOS VIRTUAIS read-only na PAU,
+    alimentados pela linha selecionada (vars Private cSel*). A chave (CODFOR/
+    CODPLA/CODRCC/SEQRCC) e gravada na inclusao via INIT e fica nao-editavel.
+
+Chave da PAU: PAU_FILIAL + PAU_CODFOR(3) + PAU_CODPLA(2) + PAU_CODRCC(4) + PAU_SEQRCC(3)
+
+@type    Function
+@author  jobwisetec
+@since   12/06/2026
+@version 3.0
+/*/
+Function U_CadPlanoSaude()
+
+    Local oBrowse  := Nil
+    Local aBrwCols := {}
+    Local aSeek    := {}
+    Local aFiltro  := {}
+
+    // Compartilhado com U_AbrePlano (vive na pilha do Activate)
+    Private cAliasPlan := GetNextAlias()
+    Private oTmpPlan   := Nil
+
+    oTmpPlan := fCriaTempPlanos()
+    aBrwCols := fBrwCols()
+
+    // Filtro nativo + pesquisa (SetSeek) sobre a temp -- mesmo padrao do U_F3Custom.
+    // Precisa da temp ja criada: nOrder do seek = FieldPos = numero do indice por campo.
+    fSeekFiltro(aSeek, aFiltro)
+
+    oBrowse := FWMBrowse():New()
+    oBrowse:SetAlias(cAliasPlan)
+    oBrowse:SetTemporary(.T.)
+    oBrowse:SetDescription("Planos de Saude e Odontologico")
+    oBrowse:SetColumns(aBrwCols)
+    oBrowse:SetDBFFilter(.T.)
+    oBrowse:SetUseFilter(.T.)                  // habilita filtro no browse
+    oBrowse:SetFieldFilter(aFiltro)            // temp nao expoe struct pelo alias -> lista campos
+    oBrowse:SetSeek(.T., aSeek)                // habilita pesquisa de registros
+    oBrowse:SetFilterDefault("")
+    oBrowse:SetMenuDef("custom.rh.planosaude.CadPlanoSaude")
+    oBrowse:DisableDetails()
+
+    oBrowse:Activate()
+
+    oBrowse:DeActivate()
+    oBrowse:Destroy()
+
+    If oTmpPlan != Nil
+        (cAliasPlan)->(DbCloseArea())
+        oTmpPlan:Delete()
+    EndIf
+
+Return Nil
+
+/*/{Protheus.doc} U_MenuDef
+Visualizar + Alterar. As acoes chamam U_AbrePlano (decide INCLUIR/ALTERAR/VISUALIZAR
+conforme a PAU existe ou nao para a chave selecionada no browse).
+@type    User Function
+@return  array
+/*/
+Function U_MenuDef()
+
+    Local aRotina := {}
+
+    ADD OPTION aRotina TITLE "Visualizar" ACTION "custom.rh.planosaude.u_AbrePlano(1)" OPERATION MODEL_OPERATION_VIEW   ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"    ACTION "custom.rh.planosaude.u_AbrePlano(2)" OPERATION MODEL_OPERATION_UPDATE ACCESS 0
+
+Return aRotina
+
+/*/{Protheus.doc} U_AbrePlano
+Le a chave da linha corrente do browse (temp), guarda os dados do plano em vars
+Private (cSel*) para a ModelDef alimentar os campos, faz DbSeek na PAU e abre a
+view: VIEW (1), ou ALTERAR/INCLUIR (2) conforme a PAU exista para a chave.
+@type    User Function
+@param   nOpc, numeric, 1=Visualizar 2=Alterar/Incluir
+/*/
+Function U_AbrePlano(nOpc)
+
+    Local nOper  := 0
+    Local lExist := .F.
+    Local cChave := ""
+
+    // Dados da linha selecionada -> usados pelos INIT/virtuais da ModelDef
+    Private cSelBenef := ""
+    Private cSelFor   := ""
+    Private cSelNmFor := ""
+    Private cSelPla   := ""
+    Private cSelDsPla := ""
+    Private cSelRcc   := ""
+    Private cSelSeq   := ""
+    Private cSelTpDes := ""
+
+    Default nOpc := 2
+
+    If Select(cAliasPlan) == 0 .Or. (cAliasPlan)->(Eof())
+        Return
+    EndIf
+
+    cSelBenef := AllTrim((cAliasPlan)->DSC_BENEF)
+    cSelFor   := AllTrim((cAliasPlan)->CD_FORNECE)
+    cSelNmFor := AllTrim((cAliasPlan)->NM_FORNECE)
+    cSelPla   := AllTrim((cAliasPlan)->COD_PLANO)
+    cSelDsPla := AllTrim((cAliasPlan)->DSC_PLANO)
+    cSelRcc   := AllTrim((cAliasPlan)->COD_RCC)
+    cSelSeq   := AllTrim((cAliasPlan)->RCC_SEQUEN)
+    cSelTpDes := AllTrim((cAliasPlan)->TP_DESCONT)
+
+    PAU->(DbSetOrder(1)) // PAU_FILIAL + CODFOR + CODPLA + CODRCC + SEQRCC
+    
+    cChave :=PadR(xFilial("PAU"),len(PAU->PAU_FILIAL)) + PadR(cSelFor,3) + PadR(cSelPla,2) + PadR(cSelRcc,4) + PadR(cSelSeq,3)
+
+    lExist := PAU->(DbSeek(cChave))
+
+    If nOpc == 1
+        If !lExist
+            Help(, , "CADPLSAU", , "Plano ainda nao qualificado (sem registro na PAU).", 1, 0)
+            Return
+        EndIf
+        nOper := MODEL_OPERATION_VIEW
+    Else
+        nOper := Iif(lExist, MODEL_OPERATION_UPDATE, MODEL_OPERATION_INSERT)
+    EndIf
+
+    FWExecView("Plano de Saude / Odontologico", "VIEWDEF.custom.rh.planosaude.CadPlanoSaude", nOper, , {|| .T. })
+
+Return
+
+/*/{Protheus.doc} U_ModelDef
+Cadastro simples da PAU. Campos virtuais (read-only) exibem os dados da RCC
+(origem temp); a chave (verde) e semeada na inclusao a partir das vars Private
+cSel* e fica nao-editavel.
+@type    User Function
+@return  object
+/*/
+Function U_ModelDef()
+
+    Local oModel := Nil
+    Local oStPAU := FWFormStruct(1, "PAU")
+
+    // -- Campos virtuais (RCC, origem temp) -- read-only --------------------
+    oStPAU:AddField("Beneficio"        , "Saude / Odontologico", "PAU_XBENEF", "C",   6, 0, ;
+        Nil, Nil, Nil, .F., FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelBenef"), Nil, .F., .T.)
+    oStPAU:AddField("Nome Fornecedor"  , "Nome do Fornecedor"  , "PAU_XNMFOR", "C", 150, 0, ;
+        Nil, Nil, Nil, .F., FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelNmFor"), Nil, .F., .T.)
+    oStPAU:AddField("Descricao Plano"  , "Descricao do Plano"  , "PAU_XDSPLA", "C",  40, 0, ;
+        Nil, Nil, Nil, .F., FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelDsPla"), Nil, .F., .T.)
+
+    // Virtual: nome do fornecedor permanente. Em registro existente, deriva da RCC
+    // (S018) via U_xConsForPerm no modo INIT (MESMA query da F3) -- Posicione nao
+    // serve aqui porque o codigo vem de SUBSTR(RCC_CONTEU,1,3), nao e chave indexada.
+    // No INIPAD o oModel NAO chega no codeblock (params a,b,c = campo/id/nil), por
+    // isso o modo INIT le PAU->PAU_FORPER (alias posicionado em U_AbrePlano).
+    // Na F3 (modo VALID) e gravado direto pela mesma U_xConsForPerm.
+    oStPAU:AddField("Nome Forn.Perm." , "Nome do Fornecedor Permanente", "PAU_XNMFPE", "C", 30, 0, ;
+        Nil, Nil, Nil, .F., ;
+        FwBuildFeature(STRUCT_FEATURE_INIPAD, 'custom.rh.planosaude.u_xConsForPerm(Nil, .T., .T.)'), ;
+        Nil, .F., .T.)
+
+    // Consulta/F3 do fornecedor permanente (RCC S018): ao confirmar grava
+    // PAU_FORPER + PAU_XNMFPE. Vazio = abre lookup; preenchido = valida o digitado.
+    oStPAU:SetProperty("PAU_FORPER", MODEL_FIELD_VALID, ;
+        {|oMdl| custom.rh.planosaude.u_xConsForPerm(oMdl)})
+
+    // -- Chave (verde): semeada na inclusao + nao editavel ------------------
+    oStPAU:SetProperty("PAU_CODFOR", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelFor"))
+    oStPAU:SetProperty("PAU_CODPLA", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelPla"))
+    oStPAU:SetProperty("PAU_CODRCC", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelRcc"))
+    oStPAU:SetProperty("PAU_SEQRCC", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelSeq"))
+    // WHEN .F. trava edicao em Inclusao E Alteracao (valor vem da temp do browse,
+    // usuario nunca digita); o INIT semeia o valor mesmo com WHEN .F.
+    oStPAU:SetProperty("PAU_CODFOR", MODEL_FIELD_WHEN, {|| .F.})
+    oStPAU:SetProperty("PAU_CODPLA", MODEL_FIELD_WHEN, {|| .F.})
+    oStPAU:SetProperty("PAU_CODRCC", MODEL_FIELD_WHEN, {|| .F.})
+    oStPAU:SetProperty("PAU_SEQRCC", MODEL_FIELD_WHEN, {|| .F.})
+
+    // Tipo de desconto (real PAU_TPDESC): semeado da RCC na inclusao, nunca editavel.
+    oStPAU:SetProperty("PAU_TPDESC", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, "cSelTpDes"))
+    oStPAU:SetProperty("PAU_TPDESC", MODEL_FIELD_WHEN, {|| .F.})
+
+    // Default "S" (disponivel na admissao) na inclusao.
+    oStPAU:SetProperty("PAU_DISPAD", MODEL_FIELD_INIT, FwBuildFeature(STRUCT_FEATURE_INIPAD, '"S"'))
+
+    oModel := MPFormModel():New("CADPLSAU")
+    oModel:SetDescription("Planos de Saude e Odontologico")
+
+    oModel:AddFields("PAUMASTER", /*cOwner*/, oStPAU)
+    oModel:SetPrimaryKey({"PAU_FILIAL", "PAU_CODFOR", "PAU_CODPLA", "PAU_CODRCC", "PAU_SEQRCC"})
+
+Return oModel
+
+/*/{Protheus.doc} U_ViewDef
+Formulario unico da PAU. Ordem dos campos conforme TELA 2.
+@type    User Function
+@return  object
+/*/
+Function U_ViewDef()
+
+    Local oView  := Nil
+    Local oModel := FWLoadModel("custom.rh.planosaude.CadPlanoSaude")
+    Local oStPAU := FWFormStruct(2, "PAU")
+
+    // Campos virtuais espelhados na view (read-only)
+    oStPAU:AddField("PAU_XBENEF", "01", "Beneficio"      , "Saude / Odontologico", Nil, "C", "@!", Nil, Nil, .F., Nil, Nil, Nil, Nil, Nil, .T.)
+    oStPAU:AddField("PAU_XNMFOR", "05", "Nome Fornecedor", "Nome do Fornecedor"  , Nil, "C", "@!", Nil, Nil, .F., Nil, Nil, Nil, Nil, Nil, .T.)
+    oStPAU:AddField("PAU_XDSPLA", "07", "Descricao Plano", "Descricao do Plano"  , Nil, "C", "@!", Nil, Nil, .F., Nil, Nil, Nil, Nil, Nil, .T.)
+    oStPAU:AddField("PAU_XNMFPE", "14", "Nome Forn.Perm.", "Nome do Fornecedor Permanente", Nil, "C", "@!", Nil, Nil, .F., Nil, Nil, Nil, Nil, Nil, .T.)
+
+    // Ordem conforme TELA 2 (sobrepoe X3_ORDEM)
+    oStPAU:SetProperty("PAU_XBENEF", MVC_VIEW_ORDEM, "01")
+    oStPAU:SetProperty("PAU_SEQRCC", MVC_VIEW_ORDEM, "02")
+    oStPAU:SetProperty("PAU_TPDESC", MVC_VIEW_ORDEM, "03")
+    oStPAU:SetProperty("PAU_CODFOR", MVC_VIEW_ORDEM, "04")
+    oStPAU:SetProperty("PAU_XNMFOR", MVC_VIEW_ORDEM, "05")
+    oStPAU:SetProperty("PAU_CODPLA", MVC_VIEW_ORDEM, "06")
+    oStPAU:SetProperty("PAU_XDSPLA", MVC_VIEW_ORDEM, "07")
+    oStPAU:SetProperty("PAU_DISPAD", MVC_VIEW_ORDEM, "08")
+    oStPAU:SetProperty("PAU_TPBENE", MVC_VIEW_ORDEM, "09")
+    oStPAU:SetProperty("PAU_TPACOM", MVC_VIEW_ORDEM, "10")
+    oStPAU:SetProperty("PAU_PLATIT", MVC_VIEW_ORDEM, "11")
+    oStPAU:SetProperty("PAU_INDEXP", MVC_VIEW_ORDEM, "12")
+    oStPAU:SetProperty("PAU_FORPER", MVC_VIEW_ORDEM, "13")
+    oStPAU:SetProperty("PAU_XNMFPE", MVC_VIEW_ORDEM, "14")
+    oStPAU:SetProperty("PAU_PLPERM", MVC_VIEW_ORDEM, "15")
+    oStPAU:SetProperty("PAU_NMREDU", MVC_VIEW_ORDEM, "16")
+    oStPAU:SetProperty("PAU_CODRCC", MVC_VIEW_ORDEM, "17")
+
+    //Define a consulta padrão do campo de observação
+    oStPAU:SetProperty("PAU_FORPER", MVC_VIEW_LOOKUP, 'RHF3GE')
+
+    oView := FWFormView():New()
+    oView:SetModel(oModel)
+
+    oView:AddField("VIEW_PAU", oStPAU, "PAUMASTER")
+
+    oView:CreateHorizontalBox("BOXPRIN", 100)
+    oView:SetOwnerView("VIEW_PAU", "BOXPRIN")
+
+    oView:EnableTitleView("VIEW_PAU", "Plano de Saude / Odontologico")
+
+Return oView
+
+/*/{Protheus.doc} U_xConsForPerm
+Valida o fornecedor permanente do plano pelo codigo (RCC, codigo S018). RCC_CONTEU =
+cod(3)+nome(30). NAO abre picker: o F3 do campo e nativo (SXB RHF3GEN -> U_F3Disp).
+Esta funcao so faz query-por-codigo e preenche o nome:
+- lInit .T. (INIPAD do PAU_XNMFPE): le PAU->PAU_FORPER e RETORNA o nome (string).
+- lInit .F. (VALID do PAU_FORPER): le do model, preenche PAU_XNMFPE, retorna logico.
+@type    User Function
+@param   oModel, object, modelo PAU (modo VALID)
+@param   lInit, logical, .T. = chamada pelo INIPAD (default .F.)
+@return  character no modo INIT (nome), logical no modo VALID
+/*/
+Function U_xConsForPerm(oModel, lInit)
+
+    Local lRetorno  := .F.
+    Local cConsSQLM := ""
+    Local cCodFor   := ""
+    Local cNomeFor  := ""
+
+    Default lInit   := .F.
+
+    // INIT le o alias posicionado (oModel nao chega no INIPAD); VALID le do model
+    cCodFor := AllTrim( IIf(lInit, PAU->PAU_FORPER, oModel:GetValue("PAU_FORPER")) )
+
+    If Empty(cCodFor) .and. lInit
+        Return cNomeFor
+    EndIf
+
+    // Query por codigo (SUBSTR 1,3 da RCC nao e chave indexada -> query, nao Posicione)
+    cConsSQLM := " SELECT CAST(SUBSTR(RCC.RCC_CONTEU,4,30) AS CHAR(30)) AS NM_FORNEC "
+    cConsSQLM += "   FROM " + RetSqlName("RCC") + " RCC "
+    cConsSQLM += "  WHERE RCC.RCC_CODIGO = 'S018' "
+    cConsSQLM += "    AND TRIM(SUBSTR(RCC.RCC_CONTEU,1,3)) = '" + cCodFor + "' "
+    cConsSQLM += "    AND RCC.D_E_L_E_T_ = ' ' "
+
+    TCQuery cConsSQLM New Alias "QRY_FPE"
+    If ! QRY_FPE->(EoF())
+        cNomeFor := AllTrim(QRY_FPE->NM_FORNEC)
+        lRetorno := .T.
+    EndIf
+    QRY_FPE->(DbCloseArea())
+
+    If lInit  
+        Return cNomeFor                      // INIPAD popula PAU_XNMFPE
+    else
+        // VALID
+        If ! lRetorno
+            //oModel:LoadValue("PAU_XNMFPE", cNomeFor)
+            Help(, , "CADPLSAU", , "Fornecedor permanente " + cCodFor + " nao encontrado (RCC S018).", 1, 0)
+        endIf
+    EndIf
+
+Return lRetorno
+
+/*/{Protheus.doc} U_F3ForPerm
+Picker do fornecedor permanente (RCC S018), acionado pelo F3 nativo via SXB RHF3GEN
+-> U_F3Disp. Monta a query e abre o U_F3Custom; retorna o codigo selecionado ("" se
+cancelar). O nome (PAU_XNMFPE) e preenchido depois pelo VALID do PAU_FORPER.
+@type    User Function
+@return  character, codigo do fornecedor selecionado
+/*/
+Function U_F3ForPerm()
+
+    Local cConsSQLM := ""
+    Local oActModel := FWModelActive()
+    Local oModel := oActModel:GetModel("PAUMASTER")
+    Local ojSonRet := JsonObject():New()
+
+    cConsSQLM := " SELECT CAST(SUBSTR(RCC.RCC_CONTEU,1,3) AS CHAR(3) ) AS CD_FORNEC, "
+    cConsSQLM += "        CAST(SUBSTR(RCC.RCC_CONTEU,4,30) AS CHAR(30)) AS NM_FORNEC "
+    cConsSQLM += "   FROM " + RetSqlName("RCC") + " RCC "
+    cConsSQLM += "  WHERE RCC.RCC_CODIGO = 'S018' "
+    cConsSQLM += "    AND RCC.D_E_L_E_T_ = ' ' "
+    cConsSQLM += "  ORDER BY CD_FORNEC "
+
+    oJsonRet := custom.rh.beneficio.util.U_F3Custom('Fornecedor Permanente', cConsSQLM, ;
+        {"CD_FORNEC", "NM_FORNEC"}, {"CD_FORNEC", "NM_FORNEC"})
+    
+    ojSonRet['lRetorno'] := !Empty(oJsonRet["CD_FORNEC"])
+
+    // Confirmou: grava codigo + tipo + descricao + valor + tipo-descr direto (valores do query, sem trigger)
+    If ojSonRet['lRetorno']
+        ojSonRet['xRetorno'] := oJsonRet["CD_FORNEC"]
+        oModel:LoadValue("PAU_FORPER",  oJsonRet["CD_FORNEC"])
+        oModel:LoadValue("PAU_XNMFPE",  oJsonRet["NM_FORNEC"])    
+    endif
+
+Return ojSonRet
+
+/*/{Protheus.doc} fColsMeta
+Metadados das colunas da temporaria. Fonte unica reusada pelo browse.
+Cada item: { cId, cTipo, nTam, nDec, cTitulo }
+@type    Static Function
+@return  array
+/*/
+Static Function fColsMeta()
+Return { ;
+    {"DSC_BENEF" , "C",   6, 0, "Beneficio"}     , ;
+    {"CD_FORNECE", "C",   3, 0, "Cd.Fornec"}     , ;
+    {"NM_FORNECE", "C", 150, 0, "Fornecedor"}    , ;
+    {"COD_PLANO" , "C",   2, 0, "Cd.Plano"}      , ;
+    {"DSC_PLANO" , "C",  23, 0, "Desc.Plano"}    , ;
+    {"COD_RCC"   , "C",   4, 0, "Cd.RCC"}        , ;
+    {"RCC_SEQUEN", "C",   3, 0, "Seq.RCC"}       , ;
+    {"TP_DESCONT", "C",  40, 0, "Tipo Desconto"}   }
+
+/*/{Protheus.doc} fBrwCols
+Colunas do FWMBrowse sobre a temporaria (temp nao tem SX3).
+@type    Static Function
+@return  array de FWBrwColumn
+/*/
+Static Function fBrwCols()
+
+    Local aCols := fColsMeta()
+    Local aRet  := {}
+    Local oCol
+    Local nI
+
+    For nI := 1 To Len(aCols)
+        oCol := FWBrwColumn():New()
+        oCol:SetData(&('{|| ' + cAliasPlan + '->' + aCols[nI][1] + '}'))
+        oCol:SetTitle(aCols[nI][5])
+        oCol:SetType(aCols[nI][2])
+        oCol:SetSize(aCols[nI][3])
+        oCol:SetDecimal(aCols[nI][4])
+        aAdd(aRet, oCol)
+    Next
+
+Return aRet
+
+/*/{Protheus.doc} fSeekFiltro
+Monta os arrays do filtro nativo (SetFieldFilter) e da pesquisa (SetSeek) do browse
+sobre a temp. Mesmo padrao do U_F3Custom: a temp nao expoe struct pelo alias, entao
+os campos do filtro vao listados; e nOrder do seek = FieldPos na temp = numero do
+indice por campo criado em fCriaTempPlanos. Requer a temp ja criada (cAliasPlan).
+Arrays recebidos por referencia.
+@type    Static Function
+@param   aSeek, array, saida (vazio na entrada) -> itens p/ SetSeek
+@param   aFiltro, array, saida (vazio na entrada) -> itens p/ SetFieldFilter
+/*/
+Static Function fSeekFiltro(aSeek, aFiltro)
+
+    Local aCols := fColsMeta()
+    Local nI    := 0
+    Local nOrd  := 0
+    Local cId   := ""
+
+    For nI := 1 To Len(aCols)
+        cId  := aCols[nI][1]
+        // numero do indice = posicao do campo na temp (mesma ordem do AddIndex)
+        nOrd := (cAliasPlan)->(FieldPos(cId))
+
+        // filtro nativo: {nome, titulo, tipo, tam, dec, picture}
+        aAdd(aFiltro, {cId, aCols[nI][5], aCols[nI][2], aCols[nI][3], aCols[nI][4], ""})
+
+        // pesquisa: {titulo, {{"",tipo,tam,dec,titulo,pic}}, nOrder, lDefault}
+        aAdd(aSeek, {aCols[nI][5], ;
+            {{"", aCols[nI][2], aCols[nI][3], aCols[nI][4], aCols[nI][5], ""}}, ;
+            nOrd, .T.})
+    Next
+
+Return
+
+/*/{Protheus.doc} fCriaTempPlanos
+Cria a tabela temporaria a partir da estrutura da query (DbStruct) e popula com
+os planos (saude + odonto). Mesmo padrao de RhUtil (FWTemporaryTable, clamp de
+campo virtual gigante, 1 indice por campo + chave composta).
+@type    Static Function
+@return  object FWTemporaryTable
+/*/
+Static Function fCriaTempPlanos()
+
+    Local oTemp   := Nil
+    Local aStru   := {}
+    Local aFields := {}
+    Local cCampo  := ""
+    Local nI
+    Local cSql    := "" as Character
+
+    cSql := fQryPlanos()
+
+    TCQuery cSql New Alias "QRY_PLAN"
+    aStru := QRY_PLAN->(DbStruct())
+
+    For nI := 1 To Len(aStru)
+        If aStru[nI][2] == "N"
+            TCSetField('QRY_PLAN', aStru[nI][1], 'N', aStru[nI][3], aStru[nI][4])
+        ElseIf aStru[nI][2] == "C" .And. aStru[nI][3] > 254
+            aStru[nI][3] := 254
+        EndIf
+        aAdd(aFields, {aStru[nI][1], aStru[nI][2], aStru[nI][3], aStru[nI][4]})
+    Next
+
+    oTemp := FWTemporaryTable():New(cAliasPlan)
+    oTemp:SetFields(aFields)
+    For nI := 1 To Len(aStru)
+        oTemp:AddIndex(StrZero(nI, 2), {AllTrim(aStru[nI][1])})
+    Next
+    oTemp:AddIndex("99", {"CD_FORNECE", "COD_PLANO", "COD_RCC", "RCC_SEQUEN"})
+    oTemp:Create()
+
+    While ! QRY_PLAN->(EoF())
+        RecLock(cAliasPlan, .T.)
+        For nI := 1 To Len(aStru)
+            cCampo := aStru[nI][1]
+            If ValType(&("QRY_PLAN->" + cCampo)) == "C"
+                (cAliasPlan)->&(cCampo) := AllTrim(&("QRY_PLAN->" + cCampo))
+            Else
+                (cAliasPlan)->&(cCampo) := &("QRY_PLAN->" + cCampo)
+            EndIf
+        Next
+        (cAliasPlan)->(MsUnlock())
+        QRY_PLAN->(DbSkip())
+    EndDo
+    QRY_PLAN->(DbCloseArea())
+
+    DbSelectArea(cAliasPlan)
+    (cAliasPlan)->(DbSetOrder(1))
+    (cAliasPlan)->(DbGoTop())
+
+Return oTemp
+
+/*/{Protheus.doc} fQryPlanos
+Monta a query de selecao de planos (saude + odonto) a partir da RCC, conforme
+Docs/QUERIE_PLANO_SAUDE.sql e QUERIE_PLANO_ODONTO.sql, normalizada nas 7 colunas
+comuns (chave + exibicao) + DSC_BENEF ('SAUDE'/'ODONTO'). Portavel PG/Oracle.
+@type    Static Function
+@return  character, SQL (UNION ALL das 9 variacoes)
+/*/
+Static Function fQryPlanos()
+
+    Local cSql := ""
+
+    // -- Saude (fornecedores em S016) ------------------------------------
+    cSql +=             fBranch("S016", "S059", "SAUDE",   95, 20, "S016 - S059 - SALARIO/ETARIA")
+    cSql += " UNION ALL " + fBranch("S016", "S028", "SAUDE",   95, 20, "S016 - S028 - VALOR FIXO")
+    cSql += " UNION ALL " + fBranch("S016", "S008", "SAUDE",   92, 20, "S016 - S008 - FAIXA SALARIAL")
+    cSql += " UNION ALL " + fBranch("S016", "S009", "SAUDE",   83, 20, "S016 - S009 - FAIXA ETARIA")
+    cSql += " UNION ALL " + fBranch("S016", "S029", "SAUDE",  113, 20, "S016 - S029 - PERCENTUAL SALARIO")
+
+    // -- Odonto (fornecedores em S017) -----------------------------------
+    cSql += " UNION ALL " + fBranch("S017", "S030", "ODONTO",  95, 20, "S017 - S030 - VALOR FIXO")
+    cSql += " UNION ALL " + fBranch("S017", "S013", "ODONTO",  92, 20, "S017 - S013 - FAIXA SALARIAL")
+    cSql += " UNION ALL " + fBranch("S017", "S014", "ODONTO",  83, 23, "S017 - S014 - FAIXA ETARIA")
+    cSql += " UNION ALL " + fBranch("S017", "S031", "ODONTO", 113, 20, "S017 - S031 - PERCENTUAL SALARIO")
+
+Return cSql
+
+/*/{Protheus.doc} fBranch
+Monta um SELECT (uma variacao de tipo de desconto) da query de planos.
+@type    Static Function
+@param   cRccOut , RCC_CODIGO externo (fornecedores: S016/S017)
+@param   cRccIn  , RCC_CODIGO da subquery (tipo de desconto)
+@param   cBenef  , 'SAUDE' ou 'ODONTO'
+@param   nForOff , offset do CD_FORNECE no RCC_CONTEU da subquery
+@param   nDscLen , tamanho da DSC_PLANO no RCC_CONTEU da subquery
+@param   cLabel  , rotulo do TP_DESCONT
+@return  character, um SELECT
+/*/
+Static Function fBranch(cRccOut, cRccIn, cBenef, nForOff, nDscLen, cLabel)
+
+    Local cRcc := RetSqlName("RCC")
+    Local cSel := ""
+
+    cSel += " SELECT CAST(SUBSTR(RCC.RCC_CONTEU,1,3) AS CHAR(3))             AS CD_FORNECE, "
+    cSel += "        CAST(TRIM(SUBSTR(RCC.RCC_CONTEU,4,150)) AS CHAR(150))   AS NM_FORNECE, "
+    cSel += "        I.COD_PLANO                                             AS COD_PLANO, "
+    cSel += "        I.DSC_PLANO                                             AS DSC_PLANO, "
+    cSel += "        RCC.RCC_CODIGO                                          AS COD_RCC, "
+    cSel += "        CAST(RCC.RCC_SEQUEN AS CHAR(3))                         AS RCC_SEQUEN, "
+    cSel += "        CAST('" + cLabel + "' AS CHAR(40))                      AS TP_DESCONT, "
+    cSel += "        CAST('" + cBenef + "' AS CHAR(6))                       AS DSC_BENEF "
+    cSel += "   FROM " + cRcc + " RCC, "
+    cSel += "        ( SELECT CAST(SUBSTR(RCCC.RCC_CONTEU," + cValToChar(nForOff) + ",3) AS CHAR(3)) AS CD_FORNECE, "
+    cSel += "                 CAST(SUBSTR(RCCC.RCC_CONTEU,1,2) AS CHAR(2))                          AS COD_PLANO, "
+    cSel += "                 CAST(TRIM(SUBSTR(RCCC.RCC_CONTEU,3," + cValToChar(nDscLen) + ")) AS CHAR(23)) AS DSC_PLANO "
+    cSel += "            FROM " + cRcc + " RCCC "
+    cSel += "           WHERE RCCC.RCC_CODIGO = '" + cRccIn + "' "
+    cSel += "             AND RCCC.D_E_L_E_T_ <> '*' ) I "
+    cSel += "  WHERE RCC.RCC_CODIGO  = '" + cRccOut + "' "
+    cSel += "    AND RCC.D_E_L_E_T_ <> '*' "
+    cSel += "    AND TRIM(SUBSTR(RCC.RCC_CONTEU,1,3)) = TRIM(I.CD_FORNECE) "
+
+Return cSel

@@ -1,17 +1,14 @@
 {
-  "name": "plugadvpl-marketplace",
-  "description": "Marketplace do plugadvpl — plugin Claude Code + CLI para ADVPL/TLPP (TOTVS Protheus): indexa fontes em SQLite/FTS5, compila via advpls, edita .prw cp1252 sem corromper acentos, guarda credenciais no cofre do OS.",
+  "name": "jw-advpl-marketplace",
+  "description": "Marketplace jw-advpl — fork de plugadvpl (JoniPraia) por JobwiseTec. Plugin Claude Code + CLI para ADVPL/TLPP (TOTVS Protheus): indexa fontes em SQLite/FTS5, compila via advpls, edita .prw cp1252 sem corromper acentos, guarda credenciais no cofre do OS.",
   "owner": {
-    "name": "JoniPraia"
+    "name": "JobwiseTec"
   },
   "plugins": [
     {
-      "name": "plugadvpl",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/JoniPraia/plugadvpl.git"
-      },
-      "description": "Plugin Claude Code + CLI pra ADVPL/TLPP (Protheus): indexa em SQLite/FTS5, compila via advpls, edita .prw cp1252 e guarda credenciais no cofre do OS. ~16× menos contexto.",
+      "name": "jw-advpl",
+      "source": "./",
+      "description": "Fork jw-advpl do plugadvpl (Protheus ADVPL/TLPP): índice SQLite/FTS5, lint, compile via advpls, edit cp1252, cofre de credenciais. ~16× menos contexto. Base: plugadvpl (JoniPraia, MIT).",
       "version": "0.37.0",
       "strict": true
     }
