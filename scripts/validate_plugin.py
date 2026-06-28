@@ -96,9 +96,11 @@ def check_plugin_json() -> list[str]:
     for field in ["name", "version", "description"]:
         if field not in data:
             errors.append(f"plugin.json missing field: {field}")
-    if data.get("name") != "plugadvpl":
+    allowed_names = {"plugadvpl", "jw-advpl"}
+    if data.get("name") not in allowed_names:
         errors.append(
-            f"plugin.json: name must be 'plugadvpl', got '{data.get('name')}'"
+            "plugin.json: name must be one of "
+            f"{sorted(allowed_names)}, got '{data.get('name')}'"
         )
     return errors
 
