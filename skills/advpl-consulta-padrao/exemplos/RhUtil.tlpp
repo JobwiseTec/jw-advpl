@@ -1,0 +1,303 @@
+#Include "Totvs.ch"
+#Include "TopConn.ch"
+#Include "tlpp-core.th"
+#include "fwmvcdef.ch"
+
+namespace custom.rh.beneficio.util
+
+Static xRetVal := ''
+
+/*/{Protheus.doc} U_F3RHGet
+F3 generico: a SXB "RHF3GEN" (consulta especifica) chama esta funcao. ReadVar() da
+o campo em foco -> Do Case roteia pra funcao de picker de cada campo (que monta a
+query e chama U_F3Custom no proprio fonte) e retorna o codigo, que cai no campo.
+Campo novo = +1 Case aqui apontando pra funcao do fonte dono.
+@type    User Function
+@return  character, codigo selecionado ("" se cancelar)
+/*/
+FUNCTION U_F3RHGet()
+    Local cVar   := AllTrim(ReadVar())             // "M->PAU_FORPER"
+    Local cCampo := IIf("->" $ cVar, SubStr(cVar, At("->", cVar) + 2), cVar)
+    Local oJsonRet := JsonObject():New()
+    Local lRetorno   := .F.
+
+    Do Case
+    Case cCampo == "PAU_FORPER"
+        oJsonRet := custom.rh.planosaude.u_F3ForPerm(@xRetVal)
+    EndCase
+
+    if oJsonRet["lRetorno"]
+        lRetorno := .T.    
+        xRetVal := oJsonRet["xRetorno"]
+    EndIf
+
+Return lRetorno
+
+/*/{Protheus.doc} U_F3RHSet
+F3 generico: a SXB "RHF3GEN" (consulta especifica) chama esta funcao. ReadVar() da
+o campo em foco -> Do Case roteia pra funcao de picker de cada campo (que monta a
+query e chama U_F3Custom no proprio fonte) e retorna o codigo, que cai no campo.
+Campo novo = +1 Case aqui apontando pra funcao do fonte dono.
+@type    User Function
+@return  character, codigo selecionado ("" se cancelar)
+/*/
+FUNCTION U_F3RHSet()
+Return xRetVal
+
+
+/*/{Protheus.doc} U_F3Custom
+F3 generico reaproveitavel: roda cQuery -> temporaria -> FWMBrowse modal. Usuario
+escolhe linha; retorna JsonObject com os campos de aColRet (vazio se cancelar).
+@type    User Function
+@param   cxTitulo, character, titulo da janela
+@param   cQuery,   character, SQL que alimenta o grid
+@param   aColShow, array, campos exibidos no browse (cruzados com SX3)
+@param   aColRet,  array, campos devolvidos no JSON de retorno
+@return  object, JsonObject com chaves de aColRet
+/*/
+FUNCTION U_F3Custom(cxTitulo, cQuery, aColShow, aColRet)
+    Local aArea := FWGetArea() as array
+	Local nI as integer
+	
+	Local aStru    := {} as array
+
+	Default aColShow := {}
+	Default aColRet  := {}
+
+	Private oJsonSel := JsonObject():New() //resultado: campos de aColRet (preenchido no confirma, vazio no cancela)
+	Private oTempTable := Nil
+	Private cAliasTmp := GetNextAlias()
+	Private aColOrdem := {} //nOrder (posicao em aStru / numero do indice) por coluna do browse
+	Private aFiltro   := {} //campos do filtro nativo (temp nao le struct pelo alias) {nome,titulo,tipo,tam,dec,pic}
+
+	//Pre-inicializa o JSON com as chaves de retorno vazias (contrato: caller le
+    //oJsonGSel["CAMPO"] mesmo quando cancela)
+    For nI := 1 To Len(aColRet)
+        oJsonSel[ aColRet[nI] ] := ""
+    Next
+
+    //Roda o SQL -> temporaria (estrutura dinamica via DbStruct)
+    aStru := fLoadDados(cQuery)
+
+	aColunas := fCriaCols(aColShow, aStru)
+
+	fMontaTela(cxTitulo, aColunas, aColRet)
+
+	//Limpeza
+	If oTempTable != Nil
+		(cAliasTmp)->(DbCloseArea())
+		oTempTable:Delete()
+	EndIf
+
+	FWRestArea(aArea)
+
+Return oJsonSel
+
+/*/{Protheus.doc} fMontaTela
+Monta FWDialogModal + FWMBrowse index-driven sobre a temp. Confirmar/duplo-clique
+grava linha (fGravaRet) e fecha; Fechar deixa retorno vazio.
+@type Static Function
+/*/
+Static Function fMontaTela(cxTitulo, aColunas, aColRet)
+
+	Local oPanel 	As Object
+	Local oPanGrid 	As Object
+	Local cFontPad    := 'Tahoma'
+	Local oFontGrid   := TFont():New(cFontPad,,-14)
+	Local aSeek  := {} as array
+	Local aIndex := {} as array
+	Local nI     := 0
+	
+	Private oDlgF3 As Object
+
+	Define Font oFontBold Name "ARIAL" Size 0, -11 Bold
+
+	oDlgF3 := FWDialogModal():New()
+	oDlgF3:SetBackground( .T. )
+	oDlgF3:SetTitle( cxTitulo )
+	oDlgF3:SetEscClose( .F. )
+	oDlgF3:SetSize( 250 , 450 ) // Altura - Largura
+	oDlgF3:EnableFormBar( .T. )
+	oDlgF3:CreateDialog()
+	oDlgF3:CreateFormBar()
+    //Confirmar: grava linha corrente em oJsonSel e fecha. Fechar: deixa oJsonSel vazio.
+    oDlgF3:AddButton( 'Confirmar' , {|| fGravaRet(aColRet), oDlgF3:Deactivate() } , "", , .T., .F., .T., {||.T.} )
+    oDlgF3:AddButton( 'Fechar',{|| oDlgF3:Deactivate() }, '' , , .T., .F., .T., )
+
+	oPanel := oDlgF3:GetPanelMain()
+
+	oFWLayer := FWLayer():New()						// -- Container
+	oFWLayer:Init(oPanel, .F., .F.)					// -- Inicializa container
+
+	oFWLayer:AddLine('LIN01', 100, .F.)           	// -- Linha
+	oFWLayer:AddCollumn('01', 100, .T., 'LIN01')	// -- Coluna
+	oPanGrid := oFWLayer:GetColPanel('01', 'LIN01')
+
+	for nI := 1 To Len(aColunas)
+    	oCol := aColunas[nI]
+    	//nOrder = numero do indice na temp (posicao do campo em aStru), NAO a posicao da coluna
+    	aAdd(aSeek,{oCol:cTitle, {{"", oCol:cType, oCol:nSize, oCol:nDecimal, AllTrim(oCol:cTitle), AllTrim(oCol:xPicture)}}, aColOrdem[nI], .T.  } )
+		aAdd(aIndex,oCol:cTitle)
+	next
+
+    oBrowse:= FWMBrowse():New()
+    oBrowse:SetAlias(cAliasTmp)
+    oBrowse:SetTemporary(.T.) //Indica que o Browse utiliza tabela tempor?ria
+    oBrowse:SetColumns(aColunas)
+	oBrowse:SetDataTable(.t.)
+
+    oBrowse:SetDBFFilter(.T.)
+    oBrowse:SetUseFilter(.T.) //Habilita a utiliza??o do filtro no Browse
+    oBrowse:SetFieldFilter(aFiltro) //temp nao le struct pelo alias -> lista campos reais no filtro
+    oBrowse:SetFixedBrowse(.T.)
+    oBrowse:SetWalkThru(.F.) //Habilita a utiliza??o da funcionalidade Walk-Thru no Browse
+    oBrowse:SetAmbiente(.T.) //Habilita a utiliza??o da funcionalidade Ambiente no Browse
+    oBrowse:SetSeek(.T.,aSeek) //Habilita a utiliza??o da pesquisa de registros no Browse
+    oBrowse:SetDoubleClick({|| fGravaRet(aColRet), oDlgF3:Deactivate() }) //duplo-clique = confirmar linha
+    oBrowse:SetFilterDefault("") //Indica o filtro padr?o do Browse
+    oBrowse:SetFontBrowse(oFontGrid)
+    oBrowse:SetOwner(oPanGrid)
+	oBrowse:DisableReport() 
+	oBrowse:DisableConfig() 
+    //oBrowse:SetDescription("Pedidos de Compra") //Titulo da Janela
+    oBrowse:Activate()
+	
+	oDlgF3:Activate()
+
+	oBrowse:DeActivate()
+
+Return
+
+/*/{Protheus.doc} fGravaRet
+Preenche oJsonSel (Private) com os valores da linha corrente da temp, so para os
+campos pedidos em aColRet. Datas viram AAAAMMDD (DtoS). Campo inexistente e ignorado.
+@type Static Function
+/*/
+Static Function fGravaRet(aColRet)
+    Local nI     := 0
+    Local cCampo := ""
+    Local xVal
+
+    For nI := 1 To Len(aColRet)
+        cCampo := AllTrim(aColRet[nI])
+        If (cAliasTmp)->(FieldPos(cCampo)) > 0
+            xVal := (cAliasTmp)->&(cCampo)
+            If ValType(xVal) == "D"
+                xVal := DtoS(xVal)
+            elseif ValType(xVal) == "C"
+                xVal := alltrim(xVal)
+            EndIf
+            oJsonSel[cCampo] := xVal
+        EndIf
+    Next
+Return
+
+/*/{Protheus.doc} fLoadDados
+Roda a query e cria a temporaria com a MESMA estrutura (DbStruct). Copia as linhas.
+@type Static Function
+/*/
+Static Function fLoadDados(cQuery)
+    Local nI      := 0
+    Local aFields := {}
+    Local cCampo  := ""
+	Local aStru := {}
+
+    TCQuery cQuery New Alias "QRY_GRD"
+    aStru := QRY_GRD->(DbStruct())
+
+    For nI := 1 To Len(aStru)
+        If aStru[nI][2] == "D"
+            TCSetField('QRY_GRD', aStru[nI][1], 'D')
+        ElseIf aStru[nI][2] == "N"
+            TCSetField('QRY_GRD', aStru[nI][1], 'N', aStru[nI][3], aStru[nI][4])
+        ElseIf aStru[nI][2] == "C" .And. aStru[nI][3] > 254
+            //Campo virtual (CASE/expressao) sem tamanho definido -> driver reporta tamanho gigante.
+            //Clampa para nao estourar a estrutura da temporaria.
+            aStru[nI][3] := 254
+        EndIf
+        aAdd(aFields, {aStru[nI][1], aStru[nI][2], aStru[nI][3], aStru[nI][4]})
+    Next
+
+    oTempTable := FWTemporaryTable():New(cAliasTmp)
+    oTempTable:SetFields(aFields)
+    //FWMBrowse e index-driven: cria UM indice por campo, na ordem de aStru.
+    //Indice numero K = campo aStru[K] -> SetSeek faz DbSetOrder(K) sem "Index not found".
+    For nI := 1 To Len(aStru)
+        oTempTable:AddIndex( StrZero(nI,2), {AllTrim(aStru[nI][1])} )
+    Next
+    oTempTable:Create()
+
+    While ! QRY_GRD->(EoF())
+        RecLock(cAliasTmp, .T.)
+        For nI := 1 To Len(aStru)
+            cCampo := aStru[nI][1]
+            If ValType(&("QRY_GRD->" + cCampo)) == "C"
+                (cAliasTmp)->&(cCampo) := alltrim(&("QRY_GRD->" + cCampo))
+            else
+                (cAliasTmp)->&(cCampo) := &("QRY_GRD->" + cCampo)
+            EndIf
+        Next
+        (cAliasTmp)->(MsUnlock())
+        QRY_GRD->(DbSkip())
+    EndDo
+    QRY_GRD->(DbCloseArea())
+
+    DbSelectArea(cAliasTmp)
+    (cAliasTmp)->(DbGoTop())
+
+Return aStru
+
+/*/{Protheus.doc} fCriaCols
+Gera as colunas do FWBrowse a partir de aColShow. Titulo/picture cruzados com SX3.
+@type Static Function
+@return array, lista de FWBrwColumn
+/*/
+Static Function fCriaCols(aColShow, aStru)
+    Local aAreaX3  := SX3->(GetArea())
+    Local aColunas := {}
+    Local oColumn
+    Local nI       := 0
+    Local nPos     := 0
+    Local cCampo   := ""
+    Local cTit     := ""
+    Local cPic     := ""
+
+    SX3->(DbSetOrder(2)) // X3_CAMPO
+
+    For nI := 1 To Len(aColShow)
+        cCampo := aColShow[nI]
+        //Confere se o campo existe na query
+        nPos := aScan(aStru, {|x| AllTrim(x[1]) == AllTrim(cCampo)})
+        If nPos == 0
+            Loop
+        EndIf
+
+        If SX3->(DbSeek(cCampo))
+            cTit := AllTrim(X3Titulo())
+            cPic := PesqPict(SX3->X3_ARQUIVO, cCampo)
+        Else
+            cTit := Capital(StrTran(AllTrim(cCampo), '_', ' '))
+            cPic := ""
+        EndIf
+
+        oColumn := FWBrwColumn():New()
+        oColumn:SetData(&('{|| ' + cAliasTmp + '->' + cCampo + '}'))
+        oColumn:SetTitle(cTit)
+        oColumn:SetType(aStru[nPos][2])
+        oColumn:SetSize(aStru[nPos][3])
+        oColumn:SetDecimal(aStru[nPos][4])
+        If !Empty(cPic)
+            oColumn:SetPicture(cPic)
+        EndIf
+
+        aAdd(aColunas, oColumn)
+        //nPos = posicao do campo em aStru = numero do indice criado em fLoadDados.
+        //Guarda como nOrder dessa coluna (usado no aSeek de fMontaTela).
+        aAdd(aColOrdem, nPos)
+        //campo do filtro nativo: temp nao expoe struct pelo alias -> alimenta SetFieldFilter
+        aAdd(aFiltro, {cCampo, cTit, aStru[nPos][2], aStru[nPos][3], aStru[nPos][4], cPic})
+    Next
+
+    RestArea(aAreaX3)
+Return aColunas
+

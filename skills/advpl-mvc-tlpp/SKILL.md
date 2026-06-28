@@ -150,9 +150,87 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 5. Usou `FWMVCMenu("FONTE")`? Troque por aRotina manual com `ADD OPTION`.
 6. Persiste? Adicione o bootstrap explícito (variante 1) e teste de novo.
 
+## Browse sobre tabela temporária — filtro + pesquisa (SetSeek)
+
+Quando o browse não é sobre uma tabela física e sim sobre uma **temp** (`FWTemporaryTable`,
+ex.: linhas montadas por query/UNION), o `FWMBrowse` precisa de habilitação **manual** de
+filtro e pesquisa — a temp **não expõe a struct pelo alias**, então o framework não descobre
+os campos sozinho. Receita validada:
+
+```advpl
+// 1. Na criação da temp: UM índice por campo, na ordem do DbStruct (aStru).
+//    O índice número K (ordinal de criação) = campo na posição K = FieldPos(campo).
+For nI := 1 To Len(aStru)
+    oTemp:AddIndex(StrZero(nI, 2), {AllTrim(aStru[nI][1])})
+Next
+// (pode adicionar uma chave composta depois; vira o índice N+1, não atrapalha o seek)
+
+// 2. Monta os arrays do filtro e do seek a partir dos metadados das colunas:
+//    aFiltro item = {nome, titulo, tipo, tam, dec, picture}
+//    aSeek   item = {titulo, {{"", tipo, tam, dec, titulo, picture}}, nOrder, lDefault}
+//    nOrder = FieldPos(campo) na temp = número do índice por campo (NÃO a posição da coluna)
+nOrd := (cAliasTmp)->(FieldPos(cId))
+aAdd(aFiltro, {cId, cTit, cTipo, nTam, nDec, ""})
+aAdd(aSeek,   {cTit, {{"", cTipo, nTam, nDec, cTit, ""}}, nOrd, .T.})
+
+// 3. Liga no browse:
+oBrowse:SetDBFFilter(.T.)
+oBrowse:SetUseFilter(.T.)        // habilita filtro
+oBrowse:SetFieldFilter(aFiltro)  // lista os campos reais (temp não expõe struct)
+oBrowse:SetSeek(.T., aSeek)      // habilita pesquisa por campo
+oBrowse:SetFilterDefault("")
+```
+
+Pegadinha: a ordem do `DbStruct`/`aStru` (que define o número do índice) costuma **diferir**
+da ordem das colunas exibidas. Por isso `nOrder` vem de `FieldPos` (posição real na temp),
+nunca do índice do laço de colunas — senão a pesquisa ordena pelo campo errado ou dá
+"Index not found".
+
+## F3 / consulta num campo — o que funciona (e o que NÃO)
+
+`MODEL_FIELD_VALID` **só dispara quando o valor do campo MUDA** (digitou e saiu). Ele **não**
+abre picker ao clicar/entrar num campo vazio. Para validar o código digitado contra uma
+consulta, é o caminho certo (recebe o **componente**, então `GetValue("CAMPO")`/`LoadValue`
+de 1 arg resolvem):
+
+```advpl
+oStModel:SetProperty("ZX1_CAMPO", MODEL_FIELD_VALID, ;
+    {|oMdl| custom.ns.u_minhaConsulta(oMdl)})   // valida o digitado; ao achar, LoadValue
+```
+
+⚠️ **NÃO use `MVC_VIEW_LOOKUP` para "abrir um diálogo F3 custom".** Ele **sequestra a ação
+do browse** — o resultado observado é o botão **Alterar** abrindo o lookup em vez da tela de
+edição (`SETKEY`/`FWLOOKUP.PRW` amarrado errado). Padrão real F3 sob demanda numa view MVC:
+
+- **Consulta padrão SXB** referenciada por **`X3_F3`** no dicionário (mecanismo nativo da lupa).
+  Se a fonte é custom (ex.: query na RCC), crie uma SXB que aponte pra ela.
+- Ou fique **só no `MODEL_FIELD_VALID`** (digita o código, valida) — sem picker visual.
+
+(Pegadinha relacionada de objeto: o `VALID` recebe o **componente** do model, onde `GetValue`
+de 1 arg resolve; o `oModel` **completo** da ViewDef precisa de `:GetModel("COMPONENTE")` antes
+de `GetValue("CAMPO")`, senão estoura `cIDField NIL / previsto C->U`.)
+
+## Pegadinha — `oModel` NÃO chega no codeblock do `INIPAD`
+
+O codeblock real de um `STRUCT_FEATURE_INIPAD` é `{|a,b,c| FWInitCpo(a,b,c), ... }` onde
+`a`=objeto do campo, `b`=id do campo, `c`=nil. **Não recebe o model.** Referenciar `oModel`
+dentro da string do INIPAD estoura `variable does not exist OMODEL`. Saídas:
+
+- Ler o **alias posicionado** (`ALIAS->CAMPO`) quando o registro já está posicionado (ex.: um
+  `DbSeek` feito antes do `FWExecView`). É determinístico.
+- `FWModelActive()` **não** é garantido aqui: no load inicial (`INITDATA`/`INITVALUE`) o model
+  pode ainda não estar ativo, e a ordem de carga dos campos pode não ter populado o campo lido.
+
+Em contraste, o codeblock de `MVC_VIEW_LOOKUP`/`MODEL_FIELD_VALID` **tem** acesso a `oModel`
+(o `VALID` recebe o model como 1º argumento; o `LOOKUP` captura o `oModel` Local da ViewDef).
+
 ## Anti-padrões
 
 - **`Static Function ModelDef/ViewDef/MenuDef` em `.tlpp`** → o framework não alcança (StaticCall inibida). É exatamente o esqueleto `.prw` da `[[advpl-mvc]]` — não copie a casca de lá.
+- **`MVC_VIEW_LOOKUP` p/ abrir diálogo F3 custom** → sequestra a ação do browse (Alterar abre o lookup). F3 nativo é via consulta padrão `X3_F3`/SXB; senão fique no `MODEL_FIELD_VALID`.
+- **`oModel` na string do `INIPAD`** → `variable does not exist OMODEL`; leia `ALIAS->CAMPO` posicionado.
+- **`GetValue("CAMPO")`/`LoadValue` no model COMPLETO** (ex.: o `oModel` da ViewDef num `MVC_VIEW_LOOKUP`) → `cIDField NIL / previsto C->U`; use `oModel:GetModel("COMPONENTE")` primeiro.
+- **`SetSeek`/filtro com `nOrder` = posição da coluna** → use `FieldPos` (posição na temp = número do índice).
 - **`SetMenuDef("NOMEFONTE")` / `FWLoadModel("NOMEFONTE")`** → em TLPP o eixo é o namespace, não o arquivo.
 - **`FWMVCMenu("FONTE")`** → sem suporte documentado com namespace; monte o aRotina manual.
 - **`oModel:SetPrimaryKey({})`** em cadastro com inclusão → informe a chave real (em monitor view-only passa despercebido).
@@ -180,6 +258,7 @@ FWMVCRotAuto(oModel, "ZX1", MODEL_OPERATION_INSERT, {{"ZX1MASTER", aDados}})
 - `[[advpl-tlpp]]` — namespace, escopos, StaticCall inibida, tipagem `as`.
 - `[[advpl-tlpp-named-params]]` — named args (`=`) nas chamadas TLPP.
 - `[[advpl-mvc-avancado]]` — PEs `*STRU`/AddTrigger em MVC padrão (os PEs em TLPP seguem a regra do `U_` acima).
+- `[[advpl-consulta-padrao]]` — F3/SXB específica (chama função) e o F3 genérico (dispatcher por `ReadVar`) pra campo MVC; alternativa correta ao anti-padrão `MVC_VIEW_LOOKUP`.
 - `[[advpl-encoding]]` — `.tlpp` = UTF-8.
 
 ## Comandos plugadvpl relacionados
