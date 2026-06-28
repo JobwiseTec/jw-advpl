@@ -1,6 +1,6 @@
 # Ledger de melhorias — downstream `jw-advpl`
 
-> **Só existe no branch `jobwise`.** Fonte da verdade do que é seu, do que foi proposto upstream e do status.
+> **Vive no branch `main` (downstream).** Fonte da verdade do que é seu, do que foi proposto upstream e do status.
 > Atualizado automaticamente pelo `scripts/jw-enviar-melhoria.sh`.
 
 **Fork:** [`JobwiseTec/jw-advpl`](https://github.com/JobwiseTec/jw-advpl) · **Upstream:** [`JoniPraia/plugadvpl`](https://github.com/JoniPraia/plugadvpl)
@@ -9,8 +9,8 @@
 
 - `proposed` — issue + PR abertos no upstream, aguardando review.
 - `accepted` — PR mergeado upstream (já chega via sync do `main`).
-- `rejected` — upstream recusou; vive **só** no `jobwise`.
-- `local-only` — decisão consciente de não propor (específico seu); vive só no `jobwise`.
+- `rejected` — upstream recusou; vive **só** no downstream `main`.
+- `local-only` — decisão consciente de não propor (específico seu); vive só no downstream `main`.
 - `superseded` — substituído por outra melhoria/refactor.
 
 ## Melhorias
@@ -42,7 +42,7 @@ No Claude Code dá pra trocar com `/model`, e subagentes podem usar modelo difer
 | Implementar feature nova ou refactor com nuance | **Sonnet 4.6** (ou Opus) | precisa de design, mas escopado |
 | Resolver conflito de merge não-trivial (ex.: marca vs upstream) | **Opus 4.8** | julgamento |
 | Debugar CI/tooling (ruff/version drift, schedule/default-branch/Issues off) | **Opus 4.8** | diagnóstico de causa por ausência de erro |
-| Decisão de arquitetura/fluxo, comparação ambígua, "o que portar do jobwise" | **Opus 4.8** | trade-offs sob ambiguidade |
+| Decisão de arquitetura/fluxo, comparação ambígua, "o que portar do downstream" | **Opus 4.8** | trade-offs sob ambiguidade |
 | Escolher entre abordagens / fazer as perguntas certas antes de agir | **Opus 4.8** | clarificação dirigida |
 
 > Heads-up: o gate do `jw-enviar-melhoria.sh` deixa o **ruff não-bloqueante** — então, rodando o ciclo

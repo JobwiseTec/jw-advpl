@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # jw-enviar-melhoria.sh — roda gates, publica no fork, abre issue+PR upstream,
-#   integra a melhoria no branch jobwise (cópia local sempre usável) e atualiza o ledger.
+#   integra a melhoria no branch main (downstream, cópia local sempre usável) e atualiza o ledger.
 # Uso: scripts/jw-enviar-melhoria.sh <slug> "<título da melhoria>"
-# (downstream-only — existe apenas no branch jobwise)
+# (downstream-only)
 set -euo pipefail
 
 SLUG="${1:?uso: jw-enviar-melhoria.sh <slug> \"<título>\"}"
@@ -13,16 +13,16 @@ BRANCH="feat/$SLUG"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-if [ "$(git rev-parse --abbrev-ref HEAD)" = "jobwise" ]; then
-  echo "ERRO: rode este script do clone principal, não do worktree jobwise." >&2
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]; then
+  echo "ERRO: rode este script do clone principal, não do worktree main de integração." >&2
   exit 1
 fi
 
-# descobre o worktree que está no branch jobwise (onde a melhoria é integrada)
-JOBWISE_WT="$(git worktree list --porcelain \
-  | awk '/^worktree /{wt=substr($0,10)} /^branch refs\/heads\/jobwise$/{print wt; exit}')"
-if [ -z "${JOBWISE_WT:-}" ]; then
-  echo "ERRO: worktree do branch jobwise não encontrado (crie com: git worktree add ../jw-advpl-work jobwise)." >&2
+# descobre o worktree que está no branch main (onde a melhoria é integrada)
+MAIN_WT="$(git worktree list --porcelain \
+  | awk '/^worktree /{wt=substr($0,10)} /^branch refs\/heads\/main$/{print wt; exit}')"
+if [ -z "${MAIN_WT:-}" ]; then
+  echo "ERRO: worktree do branch main não encontrado (crie com: git worktree add ../jw-advpl-work main)." >&2
   exit 1
 fi
 
@@ -98,9 +98,9 @@ _(o que foi validado: unit/integration)_")
 PR_NUM="${PR_URL##*/}"
 echo "   PR: $PR_URL"
 
-echo ">> integrando a melhoria no branch jobwise (no worktree $JOBWISE_WT)..."
+echo ">> integrando a melhoria no branch main (no worktree $MAIN_WT)..."
 (
-  cd "$JOBWISE_WT"
+  cd "$MAIN_WT"
   git merge --no-ff "$BRANCH" -m "merge($SLUG): integra melhoria no downstream jw-advpl"
   # insere a linha DENTRO da tabela (após o marcador) — não no fim do arquivo,
   # que hoje tem seções depois da tabela.
@@ -110,7 +110,7 @@ echo ">> integrando a melhoria no branch jobwise (no worktree $JOBWISE_WT)..."
   awk -v marker="$MARKER" -v row="$ROW" '{print} index($0,marker){print row}' MELHORIAS.md > "$_tmp" && mv "$_tmp" MELHORIAS.md
   git add MELHORIAS.md
   git commit -m "docs(melhorias): registra $SLUG (issue #$ISSUE_NUM, PR #$PR_NUM)"
-  git push origin jobwise
+  git push origin main
 )
 
 cat <<EOF
@@ -118,7 +118,7 @@ cat <<EOF
 OK ✅  '$SLUG' concluído:
   - issue upstream : $ISSUE_URL
   - PR upstream    : $PR_URL
-  - integrado em   : jobwise (cópia local sempre usável)
+  - integrado em   : main (downstream, cópia local sempre usável)
   - ledger         : MELHORIAS.md atualizado (status: proposed)
 
 Edite a issue/PR no GitHub para preencher os detalhes (os corpos foram criados como template).

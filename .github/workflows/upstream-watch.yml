@@ -1,9 +1,9 @@
 name: Upstream Watch
 
-# Downstream-only (vive só no branch jobwise). Avisa quando o upstream
-# JoniPraia/plugadvpl lança release nova, abrindo uma issue neste fork.
-# OBS: schedule só dispara a partir da branch DEFAULT do repo — por isso
-# o default do fork é `jobwise`.
+# Downstream-only. Avisa quando o upstream JoniPraia/plugadvpl lança release
+# nova, abrindo uma issue neste fork.
+# OBS: schedule só dispara a partir da branch DEFAULT do repo — o default do
+# fork é `main`.
 
 on:
   schedule:
@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           UPSTREAM="JoniPraia/plugadvpl"
 
-          # versão atualmente sincronizada no jobwise (placeholder de marca)
+          # versão atualmente sincronizada no main (placeholder de marca)
           pinned=$(jq -r '.version' .claude-plugin/plugin.json)
           # última release do upstream (fallback: última tag)
           latest=$(gh release view -R "$UPSTREAM" --json tagName -q .tagName 2>/dev/null \
@@ -44,7 +44,7 @@ jobs:
             echo "Fork >= upstream (v$pinned >= v$latest)."; exit 0
           fi
 
-          title="upstream(plugadvpl): nova versão v$latest disponível (jobwise em v$pinned)"
+          title="upstream(plugadvpl): nova versão v$latest disponível (main em v$pinned)"
           existing=$(gh issue list -R "${{ github.repository }}" --state open \
                      --search "$title in:title" --json number -q '.[0].number' || true)
           if [ -n "$existing" ]; then
@@ -56,18 +56,18 @@ jobs:
             -c FBCA04 -d "Sincronização com o upstream plugadvpl" --force >/dev/null 2>&1 || true
 
           body=$(printf '%s\n' \
-            "Upstream **$UPSTREAM** lançou **v$latest** — jobwise está em **v$pinned**." \
+            "Upstream **$UPSTREAM** lançou **v$latest** — main está em **v$pinned**." \
             "" \
             "## Sincronizar" \
             '```bash' \
-            "cd …/plugins_advpl/plugadvpl" \
-            "git checkout main && git fetch upstream && git reset --hard upstream/main && git push origin main" \
-            "git -C ../jw-advpl-work merge main   # resolver conflito de marca: manter jw-advpl" \
+            "cd …/plugins_advpl/jw-advpl-work" \
+            "git fetch upstream" \
+            "git merge upstream/main   # resolver conflito de marca: manter jw-advpl" \
             "# (rodar pytest/mypy; bump version p/ v$latest nos manifests de marca)" \
-            "git -C ../jw-advpl-work push origin jobwise" \
+            "git push origin main" \
             '```' \
             "" \
-            "- [ ] sync main → jobwise (manter jw-advpl em marketplace.json/plugin.json)" \
+            "- [ ] merge upstream/main → main (manter jw-advpl em marketplace.json/plugin.json)" \
             "- [ ] bump version p/ v$latest nos manifests de marca" \
             "- [ ] rodar pytest/mypy" \
             "- [ ] revisar se algo do upstream cobre uma melhoria local (atualizar MELHORIAS.md)" \
