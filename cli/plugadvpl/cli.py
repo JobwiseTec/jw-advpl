@@ -47,6 +47,10 @@ from plugadvpl.db import (
     seed_lookups,
     set_meta,
 )
+
+# dtc (#12): app vendorizado de tbarbito/dtcat (MIT). Importar não carrega
+# pandas (import lazy só no export). Registrado via add_typer mais abaixo.
+from plugadvpl.dtc.cli import app as dtc_app
 from plugadvpl.ignore import IgnoreMatcher, load_ignore_file
 from plugadvpl.ingest import PARSER_VERSION, _write_parsed
 from plugadvpl.ingest import ingest as do_ingest
@@ -155,6 +159,9 @@ from plugadvpl.query import (
 )
 from plugadvpl.query import (
     status as q_status,
+)
+from plugadvpl.query import (
+    table_meta as q_table_meta,
 )
 from plugadvpl.query import (
     tables_catalog as q_tables_catalog,
@@ -550,6 +557,22 @@ Sintetize o que encontrar nos passos 1-6 num parágrafo: o que faz + dependênci
 
 Para ver versão / status do índice: `plugadvpl status`. Para ver todos os comandos:
 `plugadvpl --help`.
+
+### Verificação grounded (anti-alucinação)
+
+Quando sua resposta afirmar símbolos ADVPL (funções, tabelas, campos SX3, `MV_*`),
+liste-os no fim num bloco para verificação automática contra o índice:
+
+```
+<plugadvpl-claims>
+{"claims":[{"id":"c1","kind":"function","symbol":"FWFormStruct"},
+           {"id":"c2","kind":"field","symbol":"ZX1_STATUS"}]}
+</plugadvpl-claims>
+```
+
+`kind` ∈ function|table|field|param|call_edge|trigger. O hook `Stop` roda
+`plugadvpl verify-claims` e pede correção só dos símbolos `not_found` de alta
+confiança. Resposta sem símbolo afirmado dispensa o bloco (não custa nada).
 
 ### Output format — IMPORTANTE para agentes IA
 
@@ -1195,6 +1218,7 @@ def ingest(
         no_content=no_content,
         redact_secrets=redact_secrets,
         exclude=exclude,
+        db_path=ctx.obj["db"],
     )
 
     summary: dict[str, object] = {
@@ -1446,6 +1470,83 @@ def find(
     )
 
 
+@app.command("verify-claims")
+def verify_claims_cmd(
+    ctx: typer.Context,
+    stdin: Annotated[
+        bool,
+        typer.Option("--stdin", help='Lê {"claims":[...]} de stdin (lote).'),
+    ] = False,
+    kind: Annotated[
+        str,
+        typer.Option("--kind", help="Forma curta: tipo do claim (function/table/field/param/...)."),
+    ] = "",
+    symbol: Annotated[
+        str,
+        typer.Option("--symbol", help="Forma curta: símbolo a verificar."),
+    ] = "",
+) -> None:
+    """Verifica símbolos afirmados contra o índice (sound verifier determinístico).
+
+    Recebe os símbolos que uma resposta afirmou (funções, tabelas, campos SX3,
+    ``MV_*``, arestas de chamada, gatilhos) e devolve um verdict por claim —
+    ``exists`` / ``not_found`` / ``relation_holds`` / ``relation_absent`` /
+    ``unsupported_kind`` — com um bloco de cobertura. Ver
+    docs/roadmap-ia/01-verify-claims.md. ``not_found`` é mundo aberto (não
+    significa "alucinado"); use o bloco ``coverage`` para interpretar.
+    """
+    from .verify import verify_claims as _verify_claims
+
+    claims: list[dict[str, Any]] = []
+    if stdin:
+        raw = sys.stdin.read()
+        if raw.strip():
+            try:
+                claims = json.loads(raw).get("claims", []) or []
+            except (ValueError, AttributeError):
+                claims = []
+    elif kind and symbol:
+        claims = [{"id": "c1", "kind": kind, "symbol": symbol}]
+
+    verdict = _with_ro_db(ctx, lambda c: _verify_claims(c, claims))
+
+    if ctx.obj["format"] == "json":
+        payload = json.dumps(verdict, ensure_ascii=False, indent=2)
+        typer.echo(_mask_text_if_privacy(ctx, payload))
+    else:
+        _render_from_ctx(ctx, verdict["results"], title="verify-claims")
+
+
+@app.command()
+def mapear(
+    ctx: typer.Context,
+    codigo: Annotated[str, typer.Argument(help="Função/rotina a mapear (ex.: ZROT, U_MINHAF).")],
+    detalhe: Annotated[
+        bool,
+        typer.Option("--detalhe", help="Expande o que cada user function interna chama."),
+    ] = False,
+) -> None:
+    """Dossiê determinístico de uma rotina (identidade, tabelas, grafo) + verificação.
+
+    Reúne TUDO que o índice sabe da rotina (``find`` -> ``arch`` -> ``callers`` ->
+    ``callees``) e confirma cada símbolo contra o índice (``verify-claims``),
+    separando "fora do dicionário (cobertura)" de símbolo ausente. 100%
+    determinístico, SEM LLM — serve de fonte-de-verdade pra qualquer agente.
+    Productiza a "receita determinística" do PoC de harness local (issue #173):
+    1 chamada robusta no lugar de o modelo orquestrar 4 passos frágeis.
+    """
+    from .mapear import format_mapa
+    from .mapear import mapear as _mapear
+
+    result = _with_ro_db(ctx, lambda c: _mapear(c, codigo, detalhe=detalhe))
+
+    if ctx.obj["format"] == "json":
+        payload = json.dumps(result, ensure_ascii=False, indent=2)
+        typer.echo(_mask_text_if_privacy(ctx, payload))
+    else:
+        typer.echo(_mask_text_if_privacy(ctx, format_mapa(result)))
+
+
 @app.command()
 def family(
     ctx: typer.Context,
@@ -1579,10 +1680,23 @@ def tables(
                 err=True,
             )
             raise typer.Exit(code=1)
+        # SP2 awareness: expõe a chave única (X2_UNICO) pro agente consultar antes
+        # de gerar/gravar e não duplicar a chave. No formato `table` (humano) vai
+        # no título; em `md` (formato do agente) o título é ignorado pelo render,
+        # então emitimos a chave como linha de stdout antes da tabela.
+        meta = _with_ro_db(ctx, lambda c: q_table_meta(c, tabela))
+        title = f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)"
+        if meta and meta.get("unico"):
+            title += f" | X2_UNICO (chave única): {meta['unico']}"
+            if ctx.obj["format"] == "md":
+                typer.echo(
+                    f"> **X2_UNICO (chave única) de {tabela.upper()}:** `{meta['unico']}` — "
+                    "faça DbSeek/ExistCpo da chave antes de incluir (evita duplicar).\n"
+                )
         _render_from_ctx(
             ctx,
             rows,
-            title=f"Catálogo de campos: {tabela.upper()} ({len(rows)} campos)",
+            title=title,
             next_steps=[f"plugadvpl tables {tabela.upper()} --mode write"],
         )
         return
@@ -4366,6 +4480,164 @@ def doc_writer_cmd(
         typer.echo(generate_protheus_doc(spec))
 
 
+@app.command(name="gen-aplicador-sx")
+def gen_aplicador_sx(
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
+    spec: Annotated[
+        str, typer.Option("--spec", help="Caminho do spec JSON (ou '-' p/ stdin).")
+    ] = "",
+    out: Annotated[str, typer.Option("--out", help="Arquivo .prw de saída (cp1252).")] = "",
+    example: Annotated[
+        bool,
+        typer.Option("--example", help="Imprime um spec JSON completo de exemplo e sai."),
+    ] = False,
+    schema: Annotated[
+        bool,
+        typer.Option("--schema", help="Imprime as chaves do spec por tipo (JSON) e sai."),
+    ] = False,
+) -> None:
+    """Gera um 'aplicador de SXs' (.prw) a partir de um spec JSON. Determinístico, sem LLM.
+
+    O spec JSON tem 'numero' (id do update) + seções opcionais por dicionário, cada uma
+    uma lista de objetos: sx2 (tabelas), sx3 (campos), six (índices), sx6 (params MV_*),
+    sx7 (gatilhos), sx1 (perguntas), sxa (pastas), sx5 (genéricas).
+
+    Descoberta do formato (sem doc externa): --example imprime um spec completo e válido,
+    pronto pra editar; --schema imprime as chaves aceitas por tipo (machine-readable).
+    Ex.: gen-aplicador-sx --example > spec.json && gen-aplicador-sx --spec spec.json --out a.prw
+    """
+    from .aplicador_sx import example_spec, gen_prw, spec_schema, validate_spec
+
+    if example:
+        typer.echo(json.dumps(example_spec(), ensure_ascii=False, indent=2))
+        return
+    if schema:
+        typer.echo(json.dumps(spec_schema(), ensure_ascii=False, indent=2))
+        return
+    if not spec:
+        typer.echo(
+            "erro: informe --spec <arquivo|-> (ou --example / --schema p/ ver o formato).",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    raw = sys.stdin.read() if spec == "-" else Path(spec).read_text("utf-8")
+    data = json.loads(raw)
+    erros, warns = validate_spec(data)
+    for w in warns:
+        typer.echo(f"aviso: {w}", err=True)
+    if erros:
+        for e in erros:
+            typer.echo(f"erro: {e}", err=True)
+        raise typer.Exit(2)
+    prw = gen_prw(data)
+    if out:
+        Path(out).write_text(prw, encoding="cp1252", errors="replace")
+        typer.echo(f"gerado: {out}")
+    else:
+        typer.echo(prw)
+
+
+@app.command(name="gera-script")
+def gera_script(
+    ctx: typer.Context,  # noqa: ARG001 -- typer convencao
+    use_server: Annotated[
+        str,
+        typer.Option(
+            "--use-server", help="Server do registry p/ preencher conexao (host/port/...)."
+        ),
+    ] = "",
+    shell: Annotated[
+        str, typer.Option("--shell", help="Qual script gerar: ps1 | sh | both.")
+    ] = "both",
+    secret: Annotated[
+        str, typer.Option("--secret", help="Senha: env (env var) | config (campo no JSON).")
+    ] = "env",
+    out: Annotated[str, typer.Option("--out", help="Diretorio de saida dos artefatos.")] = ".",
+    force: Annotated[
+        bool, typer.Option("--force", help="Sobrescreve artefatos existentes.")
+    ] = False,
+    tq: Annotated[
+        bool,
+        typer.Option("--tq", help="Inclui a 3a fase: Troca Quente do RPO no ambiente destino."),
+    ] = False,
+    example: Annotated[
+        bool, typer.Option("--example", help="Imprime um config JSON de exemplo e sai.")
+    ] = False,
+    schema: Annotated[
+        bool, typer.Option("--schema", help="Imprime o schema do config (JSON) e sai.")
+    ] = False,
+) -> None:
+    """Gera script .ps1/.sh de aplicacao de patch + compilacao. Deterministico, sem LLM.
+
+    Forja um script autossuficiente + um config JSON pre-preenchido para um operador
+    humano rodar na base do cliente SEM plugadvpl/IA. A conexao vem de --use-server
+    (registry ~/.plugadvpl/servers.json); os paths da maquina-cliente viram placeholder;
+    a senha fica via env var (--secret env, default) ou no config (--secret config).
+
+    Com --tq, inclui a 3a fase (Troca Quente): promove o RPO de compilacao para o
+    ambiente destino (novo dir datado + repointa o SourcePath nos appserver*.ini) e,
+    se TQ_RESTART_CMD estiver no config, reinicia o appserver destino (obrigatorio p/ REST).
+
+    Ex.: gera-script --use-server qa-cmp --shell both --tq --out ./deploy
+    """
+    from .compile_servers import get_server
+    from .gera_script import (
+        CONFIG_NAME,
+        build_config,
+        config_schema,
+        emit_config_json,
+        remaining_placeholders,
+    )
+    from .gera_script.generate import ArtifactExistsError, generate
+
+    if example:
+        typer.echo(emit_config_json(build_config(secret=secret, tq=tq)))
+        return
+    if schema:
+        typer.echo(json.dumps(config_schema(), ensure_ascii=False, indent=2))
+        return
+
+    if shell not in ("ps1", "sh", "both"):
+        typer.echo(f"erro: --shell invalido: {shell!r} (use ps1 | sh | both).", err=True)
+        raise typer.Exit(2)
+    if secret not in ("env", "config"):
+        typer.echo(f"erro: --secret invalido: {secret!r} (use env | config).", err=True)
+        raise typer.Exit(2)
+
+    server = None
+    if use_server:
+        server = get_server(use_server)
+        if server is None:
+            typer.echo(
+                f"erro: server {use_server!r} nao encontrado em ~/.plugadvpl/servers.json.",
+                err=True,
+            )
+            raise typer.Exit(2)
+
+    try:
+        escritos, cfg = generate(out, server=server, secret=secret, shell=shell, force=force, tq=tq)
+    except ArtifactExistsError as exc:
+        typer.echo(f"erro: ja existe(m): {exc}. Use --force para sobrescrever.", err=True)
+        raise typer.Exit(2) from exc
+
+    for path in escritos:
+        typer.echo(f"gerado: {path}")
+
+    falta = remaining_placeholders(cfg)
+    if falta:
+        typer.echo(
+            f"aviso: preencha no {CONFIG_NAME}: {', '.join(falta)}",
+            err=True,
+        )
+    if secret == "env":
+        env_name = cfg.get("PROTHEUS_PASSWORD_ENV", "PROTHEUS_PASS")
+        typer.echo(
+            f"aviso: defina a senha na env var {env_name} antes de rodar (nao versione o config).",
+            err=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # edit-prw (v0.7.0 Fase 0 #5): converte CP1252 <-> UTF-8
 # ---------------------------------------------------------------------------
@@ -4970,6 +5242,12 @@ compile_app = typer.Typer(
 app.add_typer(compile_app, name="compile")
 
 
+# dtc (#12): leitor/exporter de .dtc (FairCom c-tree ISAM) standalone.
+# App vendorizado de tbarbito/dtcat (MIT) — ver plugadvpl/dtc/ e NOTICE.
+# dtc_app é importado no topo do módulo (junto dos demais imports).
+app.add_typer(dtc_app, name="dtc")
+
+
 @compile_app.callback()
 def compile_callback(  # noqa: PLR0911, PLR0912, PLR0915 -- typer command dispatcher: --doctor / --install / --list-servers / --add-server / --remove-server / --import-tds / --probe / --set-credentials / --clear-credentials / --explain-config / --set-restart-cmd / --mark-prod / --no-prod / --all-envs ; cada um e um handler curto, mas a soma estoura limits. Split viraria 14 sub-commands typer com duplicacao de options globais
     ctx: typer.Context,
@@ -5519,6 +5797,206 @@ def _tq_hints(result: TqResult, srv: Server, hc_port: int, timeout_s: int) -> li
             "verifique permissão de execução e PATH (cmd absoluto evita ambiguidade)",
         ]
     return []
+
+
+@app.command("apply-patch")
+def apply_patch_cmd(  # noqa: PLR0912, PLR0915 -- orquestrador CLI: resolve server/creds/binário, valida prod-safety, dispara batch
+    ctx: typer.Context,
+    input_path: Annotated[
+        str,
+        typer.Argument(help="Arquivo .PTM, .zip de patches, ou diretório com .PTM"),
+    ] = "",
+    use_server: Annotated[
+        str,
+        typer.Option("--use-server", help="Server do registry (~/.plugadvpl/servers.json)"),
+    ] = "",
+    environment: Annotated[
+        str,
+        typer.Option(
+            "--environment", help="Environment alvo (default: default_environment do server)"
+        ),
+    ] = "",
+    list_applied: Annotated[
+        bool,
+        typer.Option(
+            "--list-applied", help="Lista patches já aplicados no env (lê patches_applied)"
+        ),
+    ] = False,
+    apply_old: Annotated[
+        bool,
+        typer.Option(
+            "--apply-old", help="applyOldProgram=True (aplica também recursos mais antigos)"
+        ),
+    ] = False,
+    rpo_path: Annotated[
+        str,
+        typer.Option(
+            "--rpo-path", help="Caminho do RPO local pra backup pré-patch (AppServer local)"
+        ),
+    ] = "",
+    no_backup: Annotated[
+        bool,
+        typer.Option("--no-backup", help="Pula backup do RPO (proibido em server prod)"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Mostra o plano (patches + skip), não aplica"),
+    ] = False,
+    confirm_prod: Annotated[
+        bool,
+        typer.Option("--confirm-prod", help="Confirma aplicação em server marcado PROD"),
+    ] = False,
+) -> None:
+    """Aplica .PTM via advpls (patchApply) com backup/idempotência/rollback (U6, issue #4)."""
+    from dataclasses import asdict
+
+    from plugadvpl.apply_patch import env_lock, is_applied, run_apply_patch
+    from plugadvpl.compile import _resolve_advpls
+    from plugadvpl.compile_servers import get_server
+    from plugadvpl.credentials import resolve_credentials
+
+    if not use_server:
+        typer.secho("--use-server obrigatório", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    srv = get_server(use_server)
+    if srv is None:
+        typer.secho(
+            f"Server '{use_server}' não cadastrado.\n  Liste: plugadvpl compile --list-servers",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    env = environment or srv.default_environment
+
+    db_path: Path = ctx.obj["db"]
+    conn = open_db(db_path)
+    apply_migrations(conn)
+
+    # --list-applied: só consulta, não toca em nada.
+    if list_applied:
+        cur = conn.execute(
+            "SELECT ptm_name, ptm_hash, status, build, applied_at, batch_ts "
+            "FROM patches_applied WHERE env = ? ORDER BY applied_at DESC",
+            (env,),
+        )
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+        _render_from_ctx(
+            ctx,
+            rows,
+            columns=["ptm_name", "status", "build", "applied_at", "batch_ts"],
+            title=f"patches aplicados ({env})",
+        )
+        raise typer.Exit(code=0)
+
+    if not input_path:
+        typer.secho(
+            "input (arquivo .PTM/.zip ou diretório) obrigatório", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+    src = Path(input_path)
+    if not src.exists():
+        typer.secho(f"input não encontrado: {src}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    # PROD safety
+    if srv.is_prod:
+        if not confirm_prod and not dry_run:
+            typer.secho(
+                f"Server '{use_server}' está marcado como PROD.\n"
+                f"  Pra prosseguir: plugadvpl apply-patch {input_path} --use-server {use_server} --confirm-prod",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        if no_backup:
+            typer.secho("--no-backup é proibido em server PROD", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+
+    # dry-run: lista o plano sem aplicar (reusa discover + skip-check).
+    if dry_run:
+        import shutil
+        import tempfile
+
+        from plugadvpl.apply_patch import discover_ptms, sha256_file
+
+        workdir = Path(tempfile.mkdtemp(prefix="plugadvpl-patch-dry-"))
+        try:
+            ptms = discover_ptms(src, workdir)
+            rows = []
+            for p in ptms:
+                h = sha256_file(p)
+                rows.append(
+                    {
+                        "ptm_name": p.name,
+                        "plano": "SKIP (já aplicado)" if is_applied(conn, env, h) else "APLICAR",
+                        "hash": h[:16] + "…",
+                    }
+                )
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+        _render_from_ctx(
+            ctx,
+            rows,
+            columns=["ptm_name", "plano", "hash"],
+            title=f"apply-patch --dry-run ({srv.name}/{env})",
+            next_steps=[
+                f"plugadvpl apply-patch {input_path} --use-server {srv.name}  # aplica de verdade"
+            ],
+        )
+        raise typer.Exit(code=0)
+
+    res = resolve_credentials(srv.name, "PROTHEUS_USER", "PROTHEUS_PASSWORD")
+    if not res.is_complete:
+        typer.secho(
+            f"Credenciais incompletas pro server '{srv.name}'.\n"
+            "  Configure env PROTHEUS_USER/PROTHEUS_PASSWORD, ou keyring "
+            "(plugadvpl compile --set-credentials).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=3)
+
+    try:
+        binary = _resolve_advpls(None)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=3) from exc
+
+    backup_rpo = Path(rpo_path) if (rpo_path and not no_backup) else None
+    audit_base = (
+        Path.home() / ".plugadvpl" / "ops" / "apply-patch" / re.sub(r"[^A-Za-z0-9_.-]", "_", env)
+    )
+
+    try:
+        with env_lock(env):
+            result = run_apply_patch(
+                input_path=src,
+                server=srv,
+                environment=env,
+                user=res.user,
+                password=res.password,
+                binary=binary,
+                conn=conn,
+                audit_base=audit_base,
+                apply_old=apply_old,
+                backup_rpo_path=backup_rpo,
+            )
+    except RuntimeError as exc:  # lock ocupado
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5) from exc
+
+    rows = [asdict(p) for p in result.patches]
+    _render_from_ctx(
+        ctx,
+        rows,
+        columns=["ptm_name", "status", "detail"],
+        title=f"apply-patch ({srv.name}/{env}) — {result.summary}",
+        next_steps=None
+        if result.ok
+        else ["# ≥1 patch falhou — veja os logs em " + str(audit_base)],
+    )
+    raise typer.Exit(code=0 if result.ok else 4)
 
 
 def _handle_list_servers(ctx: typer.Context) -> None:

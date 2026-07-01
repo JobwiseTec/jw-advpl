@@ -194,7 +194,7 @@ Resumo do fluxo correto apos `uv tool upgrade`:
 | `env_openers`                  | `RpcSetEnv`/`PrepareEnv` calls                       |
 | `log_calls`                    | `ConOut`/`FwLogMsg` calls                            |
 | `defines`                      | `#define` constants extraidos                        |
-| `lint_findings`                | Achados do lint (35 regras: 24 single-file + 11 cross-file SX-*) |
+| `lint_findings`                | Achados do lint (38 regras: 27 single-file + 11 cross-file SX-*) |
 
 **Lookups (catalogos pre-populados):**
 

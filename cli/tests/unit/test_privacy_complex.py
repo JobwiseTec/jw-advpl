@@ -85,14 +85,14 @@ class TestFormatPreserving:
 
 
 # =====================================================================
-# 2. CONTRATOS / FINANCEIRO (inspirado no GH/GCT)
+# 2. CONTRATOS / FINANCEIRO (chave de título + CNPJ literal)
 # =====================================================================
 class TestContratoFinanceiro:
     def test_chave_titulo_prefixo_mantido_cnpj_mascarado(self) -> None:
-        # chave = prefixo "GCT" + num; com CNPJ literal junto
-        code = f'cChave := "GCT" + cNum ; cDoc := "{CNPJ_A}"'
+        # chave = prefixo "CTR" + num; com CNPJ literal junto
+        code = f'cChave := "CTR" + cNum ; cDoc := "{CNPJ_A}"'
         out = _m().mask_text(code)
-        assert '"GCT"' in out  # prefixo estrutural intacto
+        assert '"CTR"' in out  # prefixo estrutural intacto
         assert CNPJ_A not in out
 
     def test_campo_referencia_nao_mascarado(self) -> None:
@@ -101,7 +101,7 @@ class TestContratoFinanceiro:
         assert _m().mask_text(code) == code
 
     def test_mv_param_nome_mantido(self) -> None:
-        code = 'nPerc := SuperGetMV("MV_XPCOMGH")'
+        code = 'nPerc := SuperGetMV("MV_XPCOM01")'
         assert _m().mask_text(code) == code  # MV_* não é PII
 
     def test_cnpj_em_comentario_de_contrato(self) -> None:
@@ -127,7 +127,7 @@ class TestContratoFinanceiro:
 
 
 # =====================================================================
-# 3. NFe / FISCAL (inspirado no MARFRIG)
+# 3. NFe / FISCAL (chave de acesso de 44 dígitos contém CNPJ)
 # =====================================================================
 class TestNFeFiscal:
     CHAVE_NFE = "35200711222333000181550010000000071123456780"  # 44 dígitos
@@ -145,12 +145,12 @@ class TestNFeFiscal:
 
     def test_connstring_alias_infra_mantido(self) -> None:
         # alias TopConnect/infra é estrutural (a IA pode precisar saber "usa Oracle")
-        code = 'cDBStr := GetMv("MGF_FAT59A",,"@!!@ORACLE/SPED")'
+        code = 'cDBStr := GetMv("ABC_FAT59A",,"@!!@ORACLE/SPED")'
         out = _m().mask_text(code)
         assert "ORACLE/SPED" in out
 
     def test_unc_path_servidor_mantido(self) -> None:
-        code = 'cDir := GetMv("MGF_FAT41A",,"\\\\SPDWVAPL182\\XML_NFE\\")'
+        code = 'cDir := GetMv("ABC_FAT41A",,"\\\\SRVAPP01\\XML_NFE\\")'
         out = _m().mask_text(code)
         assert "XML_NFE" in out  # path de rede mantido (não é credencial)
 
@@ -180,7 +180,7 @@ class TestNFeFiscal:
 
 
 # =====================================================================
-# 4. SQL / REST (inspirado no VIVEO)
+# 4. SQL / REST (CNPJ em WHERE, CPF em DbSeek)
 # =====================================================================
 class TestSQLeREST:
     def test_cnpj_em_sql_where(self) -> None:
@@ -204,7 +204,7 @@ class TestSQLeREST:
         assert '"razao": "ACME LTDA"' in out
 
     def test_wsmethod_assinatura_intacta(self) -> None:
-        code = "WSMETHOD POST Clientes WSSERVICE 4MDGAPI"
+        code = "WSMETHOD POST Clientes WSSERVICE APICLI"
         assert _m().mask_text(code) == code
 
     def test_query_in_clause_multiplos_cnpj(self) -> None:
@@ -214,8 +214,8 @@ class TestSQLeREST:
         assert "A1_CGC IN (" in out
 
     def test_email_em_header_http(self) -> None:
-        out = _m().mask_text('cHdr := "From: suporte@viveo.com.br"')
-        assert "suporte@viveo.com.br" not in out
+        out = _m().mask_text('cHdr := "From: suporte@empresa.com.br"')
+        assert "suporte@empresa.com.br" not in out
         assert "From:" in out
 
     def test_fpe_sql_where_continua_valido(self) -> None:

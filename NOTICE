@@ -27,4 +27,10 @@ This product includes:
    trimming parsers out of v0.3.0 scope (parse_padrao_*, parse_jobs,
    parse_schedules, parse_mpmenu — reserved for v0.4+).
 
+7. Leitor/exporter de .dtc (FairCom c-tree ISAM) em plugadvpl/dtc/ — vendorizado
+   do projeto dtcat (https://github.com/tbarbito/dtcat) por Tiago Barbieri,
+   licença MIT. Fontes re-namespeados para o pacote plugadvpl e expostos via
+   `plugadvpl dtc *`. Parser DODA nativo, driver c-tree e docs de setup incluídos
+   (#12). Licença MIT do upstream preservada em LICENSES/dtcat-LICENSE.
+
 Todas as fontes acima estão sob licença MIT compatível.

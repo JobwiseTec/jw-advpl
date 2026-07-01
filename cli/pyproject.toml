@@ -29,6 +29,14 @@ dependencies = [
     "keyring >=24.0",
 ]
 
+[project.optional-dependencies]
+# dtc (#12): `dtc export` (CSV/JSON/XLSX) usa pandas/openpyxl. Mantidos como
+# EXTRA OPCIONAL pra nao inflar o core leve do plugadvpl (~50-70 MB com numpy)
+# pra quem nunca exporta. `dtc info` (parser DODA nativo) e o resto do CLI
+# seguem no install base; so `dtc export` pede `plugadvpl[dtc]`. O import e
+# lazy e guardado (mensagem amigavel se o extra nao estiver instalado).
+dtc = ["pandas >=2.2", "openpyxl >=3.1"]
+
 [project.urls]
 Homepage = "https://github.com/JoniPraia/plugadvpl"
 Issues = "https://github.com/JoniPraia/plugadvpl/issues"
@@ -43,10 +51,14 @@ dev = [
     "pytest >=8.0",
     "pytest-benchmark >=5.0",
     "pytest-cov >=5.0",
+    "pytest-mock >=3.12",
     "hypothesis >=6.100",
     "syrupy >=4.0",
     "ruff >=0.6",
     "mypy >=1.10",
+    # dtc (#12): pytest-mock pros testes vendorizados do dtcat (mocker).
+    # pandas/openpyxl ficam no extra opcional [dtc] (ver optional-dependencies);
+    # os testes de export usam o extra (resolvido no uv.lock / `uv sync --extra dtc`).
 ]
 
 [build-system]
@@ -111,6 +123,18 @@ ignore = ["E501", "PLR0913"]  # line-length pelo formatter; PLR0913=too-many-arg
     # desse __init__). Padrão idêntico ao cli.py.
     "PLC0415",
 ]
+"plugadvpl/dtc/**" = [
+    # Código vendorizado de tbarbito/dtcat (MIT) — parser c-tree ISAM (#12).
+    # Mantido fiel ao upstream (ruleset mais leve: E/F/I/B/UP/SIM/RUF).
+    "PLR2004",  # bytes/offsets mágicos (0x5F, faixas ASCII) são idiomáticos no parser binário
+    "PLC0415",  # imports lazy: pandas só no export, driver nativo só no fallback c-tree
+    "TC001", "TC002", "TC003",  # imports em runtime preservados como no upstream
+]
+"tests/dtc/**" = [
+    # Testes vendorizados do dtcat: fixtures usadas por efeito colateral
+    # (monkeypatch de env/PID) entram como args sem uso direto.
+    "ARG001", "ARG002", "ARG005",
+]
 
 [tool.ruff.format]
 docstring-code-format = true   # formata exemplos de código dentro de docstrings
@@ -123,10 +147,18 @@ warn_return_any = true
 warn_unreachable = true
 enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
 
+# dtc (#12): código vendorizado de tbarbito/dtcat (MIT) — parser c-tree ISAM
+# com ctypes/struct e driver nativo opcional. Upstream usa mypy não-strict;
+# manter fiel ao upstream em vez de anotar tudo sob strict=true do plugadvpl.
+# Coberto por ruff/format + suíte de testes própria (tests/dtc/).
+[[tool.mypy.overrides]]
+module = "plugadvpl.dtc.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = [
-    "-m", "not local",
+    "-m", "not local and not integration and not e2e",
     "--strict-markers",
     "--cov=plugadvpl",
     "--cov-branch",
@@ -137,4 +169,6 @@ markers = [
     "local: testes que precisam de fixtures locais não distribuídas. Excluídos em CI. Veja CONTRIBUTING.md.",
     "slow: testes que demoram >1s. Rodar com -m slow para incluir.",
     "smoke: smoke tests that hit real advpls (require PLUGADVPL_SMOKE=1)",
+    "integration: dtc (#12) — requer FairCom DB instalado (FAIRCOM_HOME). Fora do CI.",
+    "e2e: dtc (#12) — requer FairCom + fixture .dtc. Fora do CI.",
 ]

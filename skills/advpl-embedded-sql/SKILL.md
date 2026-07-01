@@ -184,11 +184,12 @@ Catalogadas mas **não implementadas** (use como checklist mental):
 3. **Liste explicitamente** as colunas (`SELECT F2_DOC, F2_SERIE, ...`) — nunca `SELECT *`.
 4. Adicione `%notDel%` em **toda** tabela ADVPL que aparecer no `FROM`/`JOIN`.
 5. Adicione `%xfilial:TABLE%` no `WHERE` para filtro multi-filial.
+5b. **Cobertura de índice (SIX):** ao filtrar (`WHERE`) ou ordenar (`ORDER BY`), prefira colunas que casam o **início de um índice SIX** da tabela — senão é full table scan (caro em SF1/SD2/SE1/SF3). Veja a chave única e os campos com `/plugadvpl:tables <T> --catalog` (mostra `X2_UNICO`) e os índices com `/plugadvpl:arch`; o lint `PERF-006` acusa filtro fora do índice. Se nenhum índice cobre o filtro, avalie criar um índice SIX.
 6. Bind variáveis com `%exp:` — nunca concatene.
 7. Após `EndSql`, chame `TCSetField` para `D` (data) e `N` (numérico) se a coluna não for dicionarizada. Em legacy com `MPSysOpenQuery`, isso é automático.
 8. Sempre `DbCloseArea()` no fim ou em `Recover` (proteção contra leak de cursor).
 9. Para DML em massa, use `TCSqlExec` dentro de `Begin Transaction`, com check de retorno (`nRet < 0` indica erro).
-10. Rode `/plugadvpl:lint <arq>` pra confirmar — pega `PERF-001/002/003`.
+10. Rode `/plugadvpl:lint <arq>` pra confirmar — pega `PERF-001/002/003` e **`PERF-006`** (WHERE/ORDER BY fora de índice SIX). Trate o `PERF-006` antes de entregar: ou ajuste o filtro pra uma coluna indexada, ou justifique/crie o índice.
 
 ## Anti-padrões
 

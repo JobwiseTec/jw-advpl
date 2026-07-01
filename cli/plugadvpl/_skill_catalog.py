@@ -2,7 +2,7 @@
 copilot_instructions (v0.16.3+).
 
 Fonte canônica de:
-- `_SKILL_GLOBS`: dict[str, list[str]] com 70 skills + seus globs
+- `_SKILL_GLOBS`: dict[str, list[str]] com 77 skills + seus globs
 - Regex constants (frontmatter, description, slash, uvx version)
 - Helpers puros: `_parse_skill_md`, `_transform_body`, `_skills_root`
 - `WriteOutcome` enum + `_write_managed_file` (idempotência via marker)
@@ -49,6 +49,10 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     "check-build": _PRW,
     "grep": _PRW,
     "compile": _PRW,
+    "gen-aplicador-sx": _PRW,
+    "gera-script": [],
+    "verify-claims": _PRW,
+    "mapear": _PRW,
     "tq": _PRW,
     "edit-prw": _PRW,
     "deploy": _PRW,
@@ -59,6 +63,7 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     # Knowledge / reference skills
     "advpl-advanced": _PRW,
     "advpl-code-review": _PRW,
+    "advpl-consulta-padrao": _PRW,  # fork jw-advpl: F3/SXB + F3 genérico
     "advpl-debugging": _PRW,
     "advpl-dicionario-sx": _PRW,
     "advpl-dicionario-sx-validacoes": _PRW,
@@ -91,6 +96,8 @@ _SKILL_GLOBS: dict[str, list[str]] = {
     # Contexto específico
     "ini-audit": ["**/*.ini"],
     "log-diagnose": ["**/*.log"],
+    "dtc": ["**/*.dtc", "**/*.DTC"],
+    "apply-patch": ["**/*.ptm", "**/*.PTM"],
     # Meta-skills — sem escopo
     "init": [],
     "ingest": [],

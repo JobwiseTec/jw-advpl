@@ -1003,3 +1003,66 @@ class TestLintCrossFile:
         # Filtrando por regra deve retornar pelo menos 1 finding SX-002.
         assert all(r["regra_id"] == "SX-002" for r in payload["rows"])
         assert payload["total"] >= 1
+
+
+class TestSxExtraColumns:
+    """Sub-projeto 1 (spec SX completo): novas colunas SX2/SX3/SX9 ingeridas no DB."""
+
+    def test_new_columns_are_populated(self, tmp_path: Path) -> None:
+        csv_dir = tmp_path / "csv"
+        csv_dir.mkdir()
+        (csv_dir / "sx2.csv").write_text(
+            '"X2_CHAVE","X2_NOME","X2_MODO","X2_UNICO","X2_MODOUN","X2_MODOEMP"\n'
+            '"ZX1","Pedidos","C","ZX1_FILIAL+ZX1_NUM","1","2"\n',
+            encoding="utf-8",
+        )
+        (csv_dir / "sx3.csv").write_text(
+            '"X3_ARQUIVO","X3_CAMPO","X3_TIPO","X3_ORDEM","X3_INIBRW","X3_INIT","X3_RELACAO"\n'
+            '"ZX1","ZX1_STATUS","C","05","S","\'1\'","POSICIONE(\'ZX2\')"\n',
+            encoding="utf-8",
+        )
+        (csv_dir / "sx9.csv").write_text(
+            '"X9_DOM","X9_IDENT","X9_CDOM","X9_USEFIL","X9_VINFIL","X9_CHVFOR"\n'
+            '"ZX1","001","ZX2","S","N","ZX2_FILIAL+ZX2_NUM"\n',
+            encoding="utf-8",
+        )
+        db = tmp_path / "idx.db"
+        ingest_sx(csv_dir, db)
+
+        conn = _connect(db)
+        try:
+            t = conn.execute(
+                "SELECT unico, modo_unico, modo_emp FROM tabelas WHERE codigo='ZX1'"
+            ).fetchone()
+            assert t == ("ZX1_FILIAL+ZX1_NUM", "1", "2")
+            c = conn.execute(
+                "SELECT ordem, inibrw, relacao, inicializador FROM campos WHERE campo='ZX1_STATUS'"
+            ).fetchone()
+            assert c == ("05", "S", "POSICIONE('ZX2')", "'1'")
+            r = conn.execute(
+                "SELECT usa_filial, vincula_filial, chave_estrangeira FROM relacionamentos"
+            ).fetchone()
+            assert r == ("S", "N", "ZX2_FILIAL+ZX2_NUM")
+        finally:
+            conn.close()
+
+    def test_tables_catalog_md_expoe_x2_unico(self, tmp_path: Path, runner: CliRunner) -> None:
+        """Awareness: `tables --catalog --format md` (formato do agente) mostra X2_UNICO."""
+        csv_dir = tmp_path / "csv"
+        csv_dir.mkdir()
+        (csv_dir / "sx2.csv").write_text(
+            '"X2_CHAVE","X2_NOME","X2_UNICO"\n"ZX1","Pedidos","ZX1_FILIAL+ZX1_NUM"\n',
+            encoding="utf-8",
+        )
+        (csv_dir / "sx3.csv").write_text(
+            '"X3_ARQUIVO","X3_CAMPO","X3_TIPO"\n"ZX1","ZX1_NUM","C"\n', encoding="utf-8"
+        )
+        db = tmp_path / "idx.db"
+        ingest_sx(csv_dir, db)
+        result = runner.invoke(
+            app,
+            ["--db", str(db), "--root", str(tmp_path), "--format", "md", "tables", "ZX1", "--catalog"],
+        )
+        assert result.exit_code == 0
+        assert "X2_UNICO" in result.stdout
+        assert "ZX1_FILIAL+ZX1_NUM" in result.stdout

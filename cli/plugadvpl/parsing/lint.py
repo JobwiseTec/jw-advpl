@@ -2193,6 +2193,139 @@ def _check_ws004_orest_invalid_method(
     return findings
 
 
+# --- BP-009/010/011: guard de sintaxe ADVPL (issue #176) ---------------------
+
+# Ancorado: só `If/ElseIf <cond> Then` (condicional ADVPL). NAO casa `Then` de SQL
+# `CASE WHEN ... THEN` em BeginSql (que nao comeca com If) nem `Then` em meio de linha.
+_THEN_RE = re.compile(r"(?im)^[ \t]*(?:if|elseif)\b[^\n]*?\bthen\b")
+_ENDFUNCTION_RE = re.compile(r"(?i)\bendfunction\b")
+# .prw/.prx: compilador usa so os 10 primeiros chars do identificador.
+# User Function: o prefixo de chamada 'U_' consome 2 -> sobram 8 uteis no nome.
+_BP011_LIMIT_USER = 8
+_BP011_LIMIT_FUNC = 10
+_BP011_FUNC_KINDS = frozenset({"static_function", "main_function"})
+
+
+def _func_at_line(funcoes: list[dict[str, Any]], linha: int) -> str:
+    """Nome (upper) da funcao cujo range contem ``linha``; '' se nenhuma."""
+    for f in funcoes:
+        ini = int(f.get("linha_inicio", 0) or 0)
+        fim = int(f.get("linha_fim", ini) or ini)
+        if ini <= linha <= fim:
+            return (f.get("nome", "") or "").upper()
+    return ""
+
+
+def _check_bp009_then_keyword(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-009 (warning): `Then` em condicional — ADVPL/TLPP usa `If <cond>` ... `EndIf`.
+
+    `Then` e palavra de outra linguagem (VB/xBase); nao existe em ADVPL/TLPP. Strings
+    e comentarios sao limpos pelo ``strip_advpl`` (zero falso-positivo em texto); o
+    regex ancorado em `If/ElseIf` ignora `Then` de SQL `CASE WHEN THEN` em BeginSql.
+    """
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    stripped = strip_advpl(content, strip_strings=True)
+    for m in _THEN_RE.finditer(stripped):
+        linha = stripped[: m.start()].count("\n") + 1
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _func_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "BP-009",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Remova `Then`: em ADVPL/TLPP o condicional e `If <cond>` ... `EndIf` "
+                    "(sem `Then`)."
+                ),
+            }
+        )
+    return findings
+
+
+def _check_bp010_endfunction_keyword(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-010 (warning): `EndFunction` — ADVPL/TLPP fecha funcao com `Return`.
+
+    Nao existe `EndFunction` em ADVPL/TLPP (e VB/outras linguagens). Strings e
+    comentarios limpos pelo ``strip_advpl``.
+    """
+    findings: list[dict[str, Any]] = []
+    funcoes = parsed.get("funcoes", []) or []
+    stripped = strip_advpl(content, strip_strings=True)
+    for m in _ENDFUNCTION_RE.finditer(stripped):
+        linha = stripped[: m.start()].count("\n") + 1
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": _func_at_line(funcoes, linha),
+                "linha": linha,
+                "regra_id": "BP-010",
+                "severidade": "warning",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    "Troque `EndFunction` por `Return`: em ADVPL/TLPP a funcao termina com "
+                    "`Return [valor]`."
+                ),
+            }
+        )
+    return findings
+
+
+def _check_bp011_identifier_over_limit(
+    arquivo: str, parsed: dict[str, Any], content: str
+) -> list[dict[str, Any]]:
+    """BP-011 (info): identificador de funcao alem do limite de 10 chars em `.prw`.
+
+    Em `.prw`/`.prx` o compilador so considera os 10 primeiros chars do identificador
+    -> nomes mais longos truncam e podem COLIDIR silenciosamente. User Function: max 8
+    (o prefixo `U_` consome 2 dos 10). Static/Main: max 10. `.tlpp` NAO tem limite
+    (isento). Usa a lista de funcoes ja parseada (kind), nao regex crua. Severidade
+    `info`: e risco LATENTE (o fonte ja compila) — advisory pra codegen/migracao; em
+    bases reais 10-16% das funcoes excedem, entao nao polui o nivel `warning`.
+    """
+    findings: list[dict[str, Any]] = []
+    if not arquivo.lower().endswith((".prw", ".prx")):
+        return findings
+    for f in parsed.get("funcoes", []) or []:
+        kind = f.get("kind", "")
+        nome = f.get("nome", "") or ""
+        if not nome:
+            continue
+        if kind == "user_function":
+            limite = _BP011_LIMIT_USER
+            ctx = "User Function (o `U_` consome 2 dos 10)"
+        elif kind in _BP011_FUNC_KINDS:
+            limite = _BP011_LIMIT_FUNC
+            ctx = kind.replace("_", " ")
+        else:
+            continue  # method/ws_method: sem limite de 10 aplicavel
+        if len(nome) <= limite:
+            continue
+        linha = int(f.get("linha_inicio", 1) or 1)
+        findings.append(
+            {
+                "arquivo": arquivo,
+                "funcao": nome.upper(),
+                "linha": linha,
+                "regra_id": "BP-011",
+                "severidade": "info",
+                "snippet": _snippet_at_line(content, linha),
+                "sugestao_fix": (
+                    f"Nome '{nome}' tem {len(nome)} chars; em `.prw` o limite efetivo e "
+                    f"{limite} ({ctx}). Encurte o nome ou migre o fonte p/ `.tlpp` (sem "
+                    "limite) — acima de 10 chars o compilador trunca e pode colidir."
+                ),
+            }
+        )
+    return findings
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 
@@ -2218,6 +2351,9 @@ def lint_source(parsed: dict[str, Any], content: str) -> list[dict[str, Any]]:
     findings.extend(_check_bp006_mixed_reclock_rawapi(arquivo, parsed, content))
     findings.extend(_check_bp007_no_protheus_doc(arquivo, parsed, content))
     findings.extend(_check_bp008_shadowed_reserved(arquivo, parsed, content))
+    findings.extend(_check_bp009_then_keyword(arquivo, parsed, content))
+    findings.extend(_check_bp010_endfunction_keyword(arquivo, parsed, content))
+    findings.extend(_check_bp011_identifier_over_limit(arquivo, parsed, content))
     findings.extend(_check_sec001_rpcsetenv_in_restful(arquivo, parsed, content))
     findings.extend(_check_sec002_user_function_no_prefix(arquivo, parsed, content))
     findings.extend(_check_sec003_pii_in_logs(arquivo, parsed, content))
@@ -2896,6 +3032,94 @@ def _check_mod003_static_funcs_to_class(
     return findings
 
 
+# SP2 (spec SX completo): código de tabela custom (Z*/SZ*/Q*). Padrão TOTVS
+# não é indexado por design, então só símbolos custom ausentes são órfãos reais.
+_CUSTOM_TABLE_RE = re.compile(r"^(SZ[0-9A-Z]|Q[A-Z][0-9A-Z]|Z[0-9A-Z][0-9A-Z]?)$")
+
+
+def _check_sx012_relacionamento_orfao(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """SX-012 (warning): SX9 aponta pra tabela custom (Z*/SZ*) que não existe no SX2.
+
+    Warning (não error): relacionamento órfão é config inerte — não navega, mas não
+    quebra runtime como SX-002/SX-011. Em bases reais aparece em volume (~140/base).
+    """
+    findings: list[dict[str, Any]] = []
+    known = {r[0].upper() for r in conn.execute("SELECT codigo FROM tabelas")}
+    if not known:
+        return findings
+    rows = conn.execute(
+        "SELECT tabela_origem, identificador, tabela_destino FROM relacionamentos "
+        "WHERE tabela_destino != ''"
+    ).fetchall()
+    for orig, ident, dest in rows:
+        d = (dest or "").strip().upper()
+        if d and _CUSTOM_TABLE_RE.match(d) and d not in known:
+            findings.append(
+                {
+                    "arquivo": f"SX:relac:{orig}",
+                    "funcao": f"#{ident}",
+                    "linha": 0,
+                    "regra_id": "SX-012",
+                    "severidade": "warning",
+                    "snippet": f"{orig} -> {dest}",
+                    "sugestao_fix": (
+                        f"Relacionamento SX9 {orig}#{ident} aponta para tabela custom {dest} "
+                        "que não existe no dicionário (SX2). Typo ou export incompleto."
+                    ),
+                }
+            )
+    return findings
+
+
+_RECLOCK_ADD_RE = re.compile(r'\bRecLock\s*\(\s*["\'](\w{2,7})["\']\s*,\s*\.T\.', re.IGNORECASE)
+_SEEK_RE = re.compile(r"\b(DbSeek|MsSeek|ExistCpo|Posicione)\b", re.IGNORECASE)
+_GETSX8_RE = re.compile(r"\bGetSx8Num\b", re.IGNORECASE)
+
+
+def _check_sx013_dupkey(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """SX-013 (info): RecLock add a tabela com X2_UNICO sem seek/numerador no escopo.
+
+    Conservador (baixo ruído): só dispara em ``RecLock('TBL', .T.)`` (inclusão) numa
+    tabela que tem chave única definida, quando a função NÃO tem nenhum
+    ``DbSeek``/``MsSeek``/``ExistCpo``/``Posicione``, ``GetSx8Num`` nem ``MsExecAuto``
+    no escopo — os caminhos legítimos de garantir unicidade. Heurística function-local.
+    """
+    findings: list[dict[str, Any]] = []
+    unico_tables = {
+        r[0].upper() for r in conn.execute("SELECT codigo FROM tabelas WHERE unico != ''")
+    }
+    if not unico_tables:
+        return findings
+    rows = conn.execute(
+        "SELECT arquivo, funcao, content, linha_inicio FROM fonte_chunks WHERE content != ''"
+    ).fetchall()
+    for arquivo, funcao, content, linha in rows:
+        if not content:
+            continue
+        if _SEEK_RE.search(content) or _GETSX8_RE.search(content) or _MSEXECAUTO_RE.search(content):
+            continue
+        for m in _RECLOCK_ADD_RE.finditer(content):
+            tbl = m.group(1).upper()
+            if tbl in unico_tables:
+                findings.append(
+                    {
+                        "arquivo": arquivo,
+                        "funcao": funcao or "",
+                        "linha": linha or 0,
+                        "regra_id": "SX-013",
+                        "severidade": "info",
+                        "snippet": f"RecLock('{tbl}', .T.)",
+                        "sugestao_fix": (
+                            f"Inclusão em {tbl} (chave única X2_UNICO) sem DbSeek/ExistCpo antes "
+                            "— risco de duplicar a chave. Cheque a existência antes do RecLock add "
+                            "(ignore se a unicidade é garantida por numerador/integração)."
+                        ),
+                    }
+                )
+                break
+    return findings
+
+
 # Tupla: (regra_id, check_fn, requires_sx).
 # requires_sx=True → so roda quando dicionario SX foi ingerido.
 # requires_sx=False → roda sempre (ex: MOD-003 usa so fonte_chunks).
@@ -2911,6 +3135,8 @@ _CROSS_FILE_RULES: list[tuple[str, Any, bool]] = [
     ("SX-009", _check_sx009_obrigat_with_empty_init, True),
     ("SX-010", _check_sx010_pesquisar_sem_seek, True),
     ("SX-011", _check_sx011_x3_f3_consulta_inexistente, True),
+    ("SX-012", _check_sx012_relacionamento_orfao, True),
+    ("SX-013", _check_sx013_dupkey, True),
     ("MOD-003", _check_mod003_static_funcs_to_class, False),
     ("PERF-006", _check_perf006_where_orderby_no_index, True),
     # v0.7.0 Fase 0 #6

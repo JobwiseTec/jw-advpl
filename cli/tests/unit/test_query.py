@@ -271,7 +271,10 @@ class TestFamilyIncludeTables:
         assert "SA1 (execauto)" in by["MOD102.prw"]["tables_write"]
 
     def test_max_tables_trunca_com_indicador(self, db_fam_tables: sqlite3.Connection) -> None:
-        by = {r["arquivo"]: r for r in family(db_fam_tables, "MOD10", include_tables=True, max_tables=1)}
+        by = {
+            r["arquivo"]: r
+            for r in family(db_fam_tables, "MOD10", include_tables=True, max_tables=1)
+        }
         rd = by["MOD100.prw"]["tables_read"]
         assert rd.startswith("SZV") and rd.endswith("+2")
 
@@ -304,9 +307,7 @@ class TestMvcAndExecAutoWrite:
         )
         # fonte que grava via MsExecAuto MATA030 (-> SA1 no catalogo)
         (src / "ABCEA.prw").write_bytes(
-            b"User Function ABCEA()\n"
-            b"  MSExecAuto({|x,y| MATA030(x,y)}, aDados, 3)\n"
-            b"Return\n"
+            b"User Function ABCEA()\n  MSExecAuto({|x,y| MATA030(x,y)}, aDados, 3)\nReturn\n"
         )
         # ModelDef read-only (SetOnlyView) NAO deve gravar
         (src / "ABCRO.prw").write_bytes(
@@ -396,6 +397,47 @@ class TestTablesCatalog:
     def test_tabela_inexistente(self, db_sx: sqlite3.Connection) -> None:
         assert tables_catalog(db_sx, "SXX") == []
 
+    def test_inclui_ordem_relacao_inibrw(self, db_sx: sqlite3.Connection) -> None:
+        # SP1 (spec SX completo): catálogo expõe as colunas SX3 novas.
+        db_sx.execute(
+            "UPDATE campos SET ordem='05', relacao=\"POSICIONE('SZ2')\", inibrw='S' "
+            "WHERE campo='ZT_COD'"
+        )
+        db_sx.commit()
+        by = {r["campo"]: r for r in tables_catalog(db_sx, "SZT")}
+        assert by["ZT_COD"]["ordem"] == "05"
+        assert by["ZT_COD"]["relacao"] == "POSICIONE('SZ2')"
+        assert by["ZT_COD"]["inibrw"] == "S"
+
+
+class TestTableMeta:
+    """SP2 awareness: meta da tabela (chave única X2_UNICO) pro agente evitar duplicar."""
+
+    def test_returns_unico_and_modo(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, open_db
+        from plugadvpl.query import table_meta
+
+        conn = open_db(tmp_path / "idx.db")
+        apply_migrations(conn)
+        conn.execute(
+            "INSERT INTO tabelas (codigo, modo, custom, unico, modo_emp) "
+            "VALUES ('ZX1', 'C', 1, 'ZX1_FILIAL+ZX1_NUM', '2')"
+        )
+        conn.commit()
+        m = table_meta(conn, "zx1")  # case-insensitive
+        assert m is not None
+        assert m["unico"] == "ZX1_FILIAL+ZX1_NUM"
+        assert m["modo"] == "C"
+        assert m["modo_emp"] == "2"
+
+    def test_missing_table_is_none(self, tmp_path: Path) -> None:
+        from plugadvpl.db import apply_migrations, open_db
+        from plugadvpl.query import table_meta
+
+        conn = open_db(tmp_path / "idx.db")
+        apply_migrations(conn)
+        assert table_meta(conn, "SXX") is None
+
 
 class TestFindFunction:
     def test_finds_user_function_case_insensitive(
@@ -458,7 +500,6 @@ class TestCallees:
         adjacentes — Method da classe + Static helper — e validamos que
         chamadas em cada uma sao corretamente atribuidas.
         """
-        from plugadvpl.db import apply_migrations, init_meta, open_db, seed_lookups
         from plugadvpl.ingest import ingest as do_ingest
         from plugadvpl.query import callees as cq
 
@@ -613,6 +654,29 @@ class TestLintQuery:
         rows = lint_query(conn, regra_id="BP-002")
         finding = next(r for r in rows if r["arquivo"] == "FAKE2.prw")
         assert finding["sonar_rules"] == []
+
+    def test_lint_query_ordena_por_severidade_grave_primeiro(
+        self, db_with_three_sources: tuple[Path, sqlite3.Connection]
+    ) -> None:
+        """CRITICAL no topo: gravidades misturadas devem sair critical→error→warning→info
+        (não em ordem de linha), pra quem trunca a saída não perder os achados graves."""
+        _, conn = db_with_three_sources
+        arq = "ORD.prw"
+        dados = [
+            (arq, "Fn", 10, "BP-A", "info", "s", "f"),
+            (arq, "Fn", 20, "BP-B", "warning", "s", "f"),
+            (arq, "Fn", 30, "BP-C", "critical", "s", "f"),
+            (arq, "Fn", 40, "BP-D", "error", "s", "f"),
+        ]
+        conn.executemany(
+            "INSERT INTO lint_findings "
+            "(arquivo, funcao, linha, regra_id, severidade, snippet, sugestao_fix) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            dados,
+        )
+        conn.commit()
+        sev = [r["severidade"] for r in lint_query(conn, arquivo=arq)]
+        assert sev == ["critical", "error", "warning", "info"]
 
 
 class TestStatus:

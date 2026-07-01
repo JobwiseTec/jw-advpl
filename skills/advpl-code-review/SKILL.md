@@ -1,10 +1,10 @@
 ---
-description: 35 regras de code review ADVPL/TLPP implementadas — 100% do catálogo (22 single-file via regex + 13 cross-file: 12 que requerem ingest-sx + MOD-003 só fontes). Use após gerar/editar fonte ADVPL, antes de marcar tarefa como concluída, ou quando o usuário pede "revise este código".
+description: 38 regras de code review ADVPL/TLPP implementadas (25 single-file via regex + 13 cross-file: 12 que requerem ingest-sx + MOD-003 só fontes). Use após gerar/editar fonte ADVPL, antes de marcar tarefa como concluída, ou quando o usuário pede "revise este código".
 ---
 
 # advpl-code-review — As regras de code review do plugadvpl
 
-`plugadvpl` cataloga **35 regras de code review** para ADVPL/TLPP — **TODAS detectadas automaticamente** desde v0.3.27: **22 single-file** via regex/AST/lookup sobre o conteúdo do fonte, e **13 cross-file** — 12 que requerem `ingest-sx` (11 `SX-*` + `PERF-006` que cruza SQL embarcado com índices SIX) + `MOD-003` que opera só em `fonte_chunks` (roda sem SX). Catálogo 100% ativo, zero regras `planned`.
+`plugadvpl` cataloga **38 regras de code review** para ADVPL/TLPP — **TODAS detectadas automaticamente**: **25 single-file** via regex/AST/lookup sobre o conteúdo do fonte, e **13 cross-file** — 12 que requerem `ingest-sx` (11 `SX-*` + `PERF-006` que cruza SQL embarcado com índices SIX) + `MOD-003` que opera só em `fonte_chunks` (roda sem SX). Catálogo 100% ativo, zero regras `planned`.
 
 > **Catálogo alinhado com a impl** desde v0.3.4. Antes (v0.3.0..v0.3.3), o
 > `lookups/lint_rules.json` tinha 25 itens em drift com `parsing/lint.py`
@@ -37,6 +37,9 @@ Rode `/plugadvpl:lint <arq>` para resultado de fato — esta skill é o **guia m
 | `BP-006`   | error    | Mistura `RecLock` + `dbAppend()`/`DbRLock` raw na mesma função                  |
 | `BP-007`   | info     | Função sem header `/*/{Protheus.doc}` nas 30 linhas anteriores — **novo em v0.3.24** |
 | `BP-008`   | critical | Shadowing de variável reservada framework (`cFilAnt`, `cEmpAnt`, `dDataBase`, `PARAMIXB`, `lMsErroAuto`, `INCLUI`, etc. — **20 reservadas** cobertas) — novo em v0.3.5, expandido em v0.3.10 |
+| `BP-009`   | warning  | `Then` em condicional — ADVPL/TLPP usa `If`/`EndIf` (sem `Then`); `strip_advpl` ignora string/comentário e SQL `CASE WHEN THEN` — **novo (#176)** |
+| `BP-010`   | warning  | `EndFunction` — ADVPL/TLPP fecha função com `Return` (não existe `EndFunction`) — **novo (#176)** |
+| `BP-011`   | info     | Identificador de função além do limite de 10 chars em `.prw` (User Function ≤ 8 pelo `U_`; Static/Main ≤ 10; `.tlpp` isento) — risco latente de truncar/colidir — **novo (#176)** |
 | `SEC-001`  | critical | `RpcSetEnv` dentro de classe que herda de `WSRESTFUL`                          |
 | `SEC-002`  | warning  | `User Function` sem prefixo cliente (2-3 letras) ou nome de PE oficial         |
 | `SEC-003`  | warning  | PII/credenciais em log (`ConOut`/`FwLogMsg`/`MsgLog`) — variável `cCpf`/`cSenha`/`cToken`, campo `A1_CGC`/`A1_CPF`/`RA_CIC`, ou CPF/CNPJ literal — **novo em v0.3.19** |
@@ -455,7 +458,7 @@ Decisão: **remover** do SX3 + script de delete, OU implementar uso pendente.
 
 ### Catálogo 100% automatizado (v0.3.27+)
 
-Todas as 35 regras têm detector. Rode `lint <arq>` (single-file) ou `lint --cross-file` (cross-file: SX + MOD-003 + PERF-006) — não precisa mais de checklist mental para nenhum item do catálogo.
+Todas as 38 regras têm detector. Rode `lint <arq>` (single-file) ou `lint --cross-file` (cross-file: SX + MOD-003 + PERF-006) — não precisa mais de checklist mental para nenhum item do catálogo.
 
 ## Anti-padrões gerais
 

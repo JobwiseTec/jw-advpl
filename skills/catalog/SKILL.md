@@ -20,7 +20,7 @@ cruzar funcao com fonte) viram invocacoes curtas.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.37.0 --format md catalog $alias --group-by ZT_TIPOREG --count --decode-cbox
+uvx plugadvpl@0.44.0 --format md catalog $alias --group-by ZT_TIPOREG --count --decode-cbox
 ```
 
 ## Exemplos

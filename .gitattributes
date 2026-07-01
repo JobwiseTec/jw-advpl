@@ -5,6 +5,7 @@
 *.prx            text eol=lf
 *.apw            text eol=lf
 *.ch             text eol=lf
+*.tmpl           text eol=lf
 
 # SQL files
 *.sql            text eol=lf

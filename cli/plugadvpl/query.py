@@ -384,13 +384,13 @@ def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]
     """
     rows = conn.execute(
         """
-        SELECT campo, tipo, tamanho, decimal, titulo, cbox
+        SELECT campo, tipo, tamanho, decimal, titulo, cbox, ordem, relacao, inibrw
         FROM campos WHERE tabela = upper(?) ORDER BY campo
         """,
         (tabela,),
     ).fetchall()
     out: list[dict[str, Any]] = []
-    for campo, tipo, tam, dec, titulo, cbox in rows:
+    for campo, tipo, tam, dec, titulo, cbox, ordem, relacao, inibrw in rows:
         cbox_dec = _decode_cbox(cbox or "")
         if not tipo:
             tipo_fmt = ""
@@ -406,9 +406,34 @@ def tables_catalog(conn: sqlite3.Connection, tabela: str) -> list[dict[str, Any]
                 "titulo": titulo or "",
                 "cbox": cbox_dec,
                 "discriminador": "sim" if is_discr else "",
+                # SP1 (spec SX completo): X3_ORDEM / X3_RELACAO / X3_INIBRW
+                "ordem": ordem or "",
+                "relacao": relacao or "",
+                "inibrw": inibrw or "",
             }
         )
     return out
+
+
+def table_meta(conn: sqlite3.Connection, tabela: str) -> dict[str, Any] | None:
+    """Metadados de cabeçalho da tabela SX2: modo + chave única (X2_UNICO).
+
+    SP2 (spec SX completo) — awareness: o agente consulta a chave única antes de
+    gerar/gravar para não duplicar. ``None`` se a tabela não está no dicionário.
+    """
+    row = conn.execute(
+        "SELECT codigo, modo, unico, modo_unico, modo_emp FROM tabelas WHERE codigo = upper(?)",
+        (tabela,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "codigo": row[0],
+        "modo": row[1] or "",
+        "unico": row[2] or "",
+        "modo_unico": row[3] or "",
+        "modo_emp": row[4] or "",
+    }
 
 
 def param_query(conn: sqlite3.Connection, parametro: str) -> list[dict[str, Any]]:
@@ -877,7 +902,12 @@ def lint_query(
         "       f.snippet, f.sugestao_fix, r.sonar_rules "
         "FROM lint_findings f LEFT JOIN lint_rules r ON r.regra_id = f.regra_id "
         f"{where_clause} "
-        "ORDER BY f.arquivo, f.linha"
+        # severidade primeiro: graves no topo global, pra quem trunca a saída não perder
+        # critical/error no meio da lista (depois agrupa por arquivo/linha).
+        "ORDER BY CASE f.severidade "
+        "           WHEN 'critical' THEN 0 WHEN 'error' THEN 1 "
+        "           WHEN 'warning' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, "
+        "         f.arquivo, f.linha"
     )
     rows = conn.execute(sql, params).fetchall()
     cols = [

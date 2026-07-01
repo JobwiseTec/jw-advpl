@@ -30,10 +30,10 @@
 |---|---|---|
 | **Claude Code** | `CLAUDE.md` (fragment versionado) | sempre |
 | **AGENTS.md ecosystem** | `AGENTS.md` (gêmeo idêntico) | sempre |
-| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 70 | `.cursor/` no projeto |
-| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 70 | `.github/` no projeto |
-| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 70 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
-| **Codex CLI** | `.codex/config.toml` + **skills nativas** `.agents/skills/plugadvpl-*/SKILL.md` × 70 (+ `.codex/skills/` legado; + `~/.agents/skills/` global se já existir) | `.codex/`, `.agents/`, ou `codex` no PATH |
+| **Cursor** | `.cursor/rules/plugadvpl-*.mdc` × 73 | `.cursor/` no projeto |
+| **GitHub Copilot** | `.github/copilot-instructions.md` + `.github/instructions/plugadvpl-*.instructions.md` × 73 | `.github/` no projeto |
+| **Gemini CLI** | `~/.gemini/GEMINI.md` (home) + `<project>/GEMINI.md` + `.gemini/skills/plugadvpl-*/SKILL.md` × 73 | `~/.gemini/` ou `gemini` no PATH ou `.gemini/` no projeto |
+| **Codex CLI** | `.codex/config.toml` + **skills nativas** `.agents/skills/plugadvpl-*/SKILL.md` × 73 (+ `.codex/skills/` legado; + `~/.agents/skills/` global se já existir) | `.codex/`, `.agents/`, ou `codex` no PATH |
 
 As skills do Codex usam o **open agent skills standard** (frontmatter `name` + `description`, prefixo `plugadvpl-`), os mesmos `SKILL.md` do Claude Code — os comandos viram `uvx plugadvpl@<ver> <subcomando>` e os links `[[skill]]` viram `[[plugadvpl-skill]]`. Use **`plugadvpl init --codex-only`** pra instalar só o Codex (mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini). Os diretórios gerados por agentes entram no `.plugadvplignore` (fora do índice). Valide com **`plugadvpl doctor --check-agents`** (cobre Codex também).
 
@@ -974,7 +974,7 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 - **Reconstrução de processos (#61–#65, #72, #75):** `tables --mode write` enxerga gravação via **MVC** (`ModelDef`/`FWFormStruct`) e **ExecAuto** (mantenedores antes invisíveis — 81 numa base real); `tables --catalog` decodifica o **X3_CBOX** dos discriminadores; `arch --include-header` extrai o cabeçalho declarativo; `family <prefixo>` + glob no `find` mapeiam a família inteira (`--include-tables` mostra read/write por fonte); e **`ingest-tsv` + `catalog`** importam o **conteúdo** das tabelas-catálogo (Z*/X*) pro índice e cruzam `*_FUNCAO` com os fontes — fechando a reconstrução em ~98%
 - **Segurança & Privacidade (opt-in, default off = byte-idêntico ao de sempre)** — `gitleaks` impede segredo de entrar no repo (Camada 0); `--privacy` mascara PII/segredo no egress (token HMAC estável + redação + bucketização classificada pela verdade do **SX3**); `PLUGADVPL_INJECTION_SCAN` detecta prompt injection (OWASP LLM01); `diagnose` relativiza o valor sensível devolvendo o desfecho **exato**. Determinístico, < 1 ms, sem dependência nova (stdlib)
 - **POUI (PO UI — frontend Angular TOTVS)** — `ingest-poui` detecta o projeto + compat Angular; **`poui-bridge` cruza as chamadas REST do front com as rotas TLPP do Protheus** (rastreabilidade ponta-a-ponta); `poui-componentes` é a referência verificada de **1053 bindings** (extraídos do source po-angular); `poui-lint` pega binding alucinado
-- **70 skills** (30 knowledge + 40 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
+- **73 skills** (30 knowledge + 43 slash command wrappers), 6 agents especializados (`advpl-analyzer`, `advpl-code-generator`, `advpl-reviewer-bot`, `advpl-impact-analyzer`, `advpl-log-investigator`, `advpl-ini-auditor`), 1 SessionStart hook
 - **Schema SQLite v27** — 27 migrations cobrindo todos os universos (incluindo `dominios`/`classificacoes_lgpd`/`schedules`/`jobs`/6 tabelas `mpmenu_*` + `ini_score`/`ini_summary` + procedência `ini_rules` + **POUI** `poui_projetos`/`poui_datasources`/`poui_componentes`/`poui_componentes_uso` + **`fonte_header_doc`** + **`catalog_meta`/`catalog_data`**)
 - **42 lint rules ADVPL** (30 single-file + 11 cross-file + 1 encoding) + **`POUI-PROP`** (binding `p-*` inexistente no catálogo)
 - **1953 testes verde** (unit + integration + bench + smoke real opcional) — ~70s suite full
@@ -993,6 +993,63 @@ Estado atual do projeto. Histórico detalhado em [Evolução por versão](#evolu
 ## Evolução por versão
 
 Histórico detalhado do que cada release entregou. Newest first. CHANGELOG completo em [CHANGELOG.md](CHANGELOG.md).
+
+### v0.44.0 — apply-patch, gera-script (+Troca Quente), dtc + fixes de SX/lint
+
+- **`apply-patch`** — aplica `.PTM` no RPO (advpls `patchApply`) com backup, idempotência por hash e rollback. **`gera-script`** — forja um `.ps1`/`.sh` determinístico de patch+compilação pra operador humano rodar sem plugadvpl/IA, com flag `--tq` (Troca Quente: promove o RPO de compilação pro ambiente destino). **`dtc`** — leitor/exporter de `.dtc` (FairCom c-tree ISAM): `dtc info` nativo + `dtc export` CSV/JSON/XLSX (extra opcional `plugadvpl[dtc]`, base segue leve). Mais: campo custom no SX reconhece X/Y/Z, encoding de SX determinístico (cp1252 antes de chardet), e `lint` ordenado por severidade.
+
+### v0.43.2 — `gen-aplicador-sx` auto-descritível para IAs
+
+- `--example` imprime um spec JSON completo e válido (8 tipos, pronto pra editar/pipar); `--schema` imprime as chaves aceitas por tipo (derivado de `SX_COLS`, sempre em sync). `--help` enriquecido; `--spec` opcional. Fecha o furo de descoberta — qualquer IA no CLI cru (Codex/Copilot/Gemini) acha o formato sem caçar exemplo.
+
+### v0.43.1 — `gen-aplicador-sx`: fidelidade do dicionário (validado no banco real)
+
+- Correções pegas ao **gerar → aplicar no Protheus → comparar com a base**: **`X3_USADO`** com a máscara real de 115 chars e sempre preenchida (campo vazio não ativava); **SX1** com opções vira radio (`X1_GSC='1'`) e `X1_VARIAVL` C(6); **SXA** com `XA_ORDEM` C(1) normalizado + `PadR(XA_ALIAS)` no seek (parava a re-inserção/duplicata). Validação de tamanho vira warning, exceto identificadores.
+
+### v0.43.0 — `gen-aplicador-sx`: gerador determinístico de update de dicionário + lints de sintaxe
+
+- **`plugadvpl gen-aplicador-sx`** — de um spec JSON, emite um `.prw` ADVPL **estruturalmente idêntico** (boilerplate byte-estável + `FSAtu*` por tipo) que aplica customizações de dicionário em **modo EXCLUSIVO** (`X31UpdTable`), no lugar de `RecLock` ingênuo. Cobre os **8 dicionários** (SX2/SX3/SIX/SX6/SX7/SX1/SXA/SX5), cada campo. Mesmo spec → bytes idênticos (snapshot golden + determinismo + o `.prw` passa no próprio lint). Skill + integração no `advpl-code-generator`.
+- **Lints de sintaxe ADVPL** ([#176](https://github.com/JoniPraia/plugadvpl/issues/176)): `BP-009` (`Then` em condicional), `BP-010` (`EndFunction`), `BP-011` (limite de 10 chars do identificador em `.prw`) — calibradas em base real.
+
+### v0.42.0 — `mapear`: dossiê determinístico de rotina + verificação (sem LLM)
+
+Productiza a "receita determinística como ferramenta" do PoC de harness local ([#173](https://github.com/JoniPraia/plugadvpl/issues/173)) — a inteligência mora no índice, não no modelo:
+- **`plugadvpl mapear <codigo> [--detalhe]`** — reúne tudo que o índice sabe de uma rotina (`find`→`arch`→`callers`→`callees`): identidade, funções, tabelas (read/write/reclock/execauto), grafo; e **verifica** cada símbolo via `verify-claims`.
+- **Cobertura honesta**: distingue "tabela no código fora do SX2 (cobertura, não erro)" de símbolo ausente. Nota no `md`: o verificador confere **símbolo, não sentido** de negócio.
+- **100% determinístico, sem dependência de LLM** — serve de fonte-de-verdade pra alimentar qualquer agente (nuvem ou local). `--format md/json`.
+
+### v0.41.0 — dicionário SX completo + lints de chave/índice/integridade
+
+Completa a ingestão do dicionário SX e adiciona análises de integridade/chave — **validado em base real** (14 dicionários, 0 falso-positivo na SX-012):
+- **9 colunas SX novas**: `X2_UNICO/MODOUN/MODOEMP`, `X3_ORDEM/INIBRW/RELACAO`, `X9_USEFIL/VINFIL/CHVFOR` (o `X3_RELACAO` antes era perdido).
+- **`SX-012`** (warning) relacionamento SX9 órfão (→ tabela custom inexistente) + **`SX-013`** (info) inclusão sem checar a chave única (X2_UNICO).
+- **Awareness X2_UNICO** no `tables --catalog` (inclusive no `md` do agente) + **guard de índice SIX** no codegen (`advpl-embedded-sql`/`advpl-code-generator`).
+
+### v0.40.0 — roadmap-ia: verify-claims + grounding (anti-alucinação determinístico)
+
+A maior alavanca de qualidade (deep-research): um **verificador externo determinístico** — que o índice plugadvpl já é. 4 fases (TDD):
+- **`plugadvpl verify-claims`** — símbolos afirmados → verdict por claim (`exists`/`not_found`/`relation_holds`/...) por set-membership contra o índice. `not_found` é mundo aberto. `--stdin` (lote) + `--kind/--symbol`.
+- **Fluxo grounded** — hook `Stop` verifica os símbolos do bloco `<plugadvpl-claims>` antes de finalizar e pede correção só do que falhou (alta confiança); pega funções `FW*`/`Ms*` inventadas (ex.: `FWLerExcel`).
+- **Eval harness** (faithfulness, $0) + **routing-eval / lint de descrições** de skill.
+- **Fix:** `ingest` passa a respeitar `--db`. Validado em 4 bases reais. Ver [docs/roadmap-ia/](docs/roadmap-ia/).
+
+### v0.39.0 — advpl-mvc lapidada + init fork-aware
+
+Lapidação da skill **`advpl-mvc`** (3 PRs) e um ajuste no `init` pra forks/rebrands:
+- **Exemplo MVC clássico `.prw`** (`exemplos/ZEXPEDIDO.prw`) — contraparte ADVPL clássica dos exemplos `.tlpp`: master-detail ZX1+ZX2 com `FWMVCMenu`, `SetRelation`/`SetUniqueLine`, validação de linha e hook `FWModelEvent` (`InTTS`/`AfterTTS`). #160
+- **`SetProperty` + `FWBuildFeature`** pra WHEN/VALID/INIT por código (são **expressões** — sem o wrapper o `SetProperty` não toma efeito). #156
+- **Checklist de geração MVC** (Model/View/Menu/Qualidade) pra pegar os erros clássicos antes de entregar. #158
+- **`init` resolve o namespace real do plugin** nos slash commands do fragment (`PLUGADVPL_SLASH_NS` → `name` do `plugin.json` → fallback `plugadvpl`) — forks/rebrands deixam de apontar pra `/plugadvpl:*` inexistente. Instalação oficial: **byte-idêntico**. #153
+
+### v0.38.0 — Codex CLI first-class (skills nativas)
+
+Feedback de quem instalou o plugin no **OpenAI Codex**: o `init` gerava `AGENTS.md` + `.codex/config.toml`, mas **não instalava as skills**. Agora o Codex é agente first-class:
+- **Skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (× 73, *open agent skills standard* — auto-discovery), replicadas em `.codex/skills/` (legado) e em `~/.agents/skills/` (global, só se `~/.agents` já existir). Frontmatter `name: plugadvpl-<X>` + `description`.
+- **`init --codex-only`**: modo isolado — só Codex (config + skills), mantém `AGENTS.md`, pula `CLAUDE.md`/Cursor/Copilot/Gemini.
+- **Reescrita de links** `[[skill]]` → `[[plugadvpl-skill]]` no transform compartilhado (além de `/plugadvpl:<X>` → `uvx plugadvpl@<ver> <X>`).
+- **`.plugadvplignore`** auto-populado com os dirs de agentes (`.agents/skills/**`, `.codex/**`, `.gemini/skills/**`, `.cursor/**`, `.github/instructions/**`) — fora do índice.
+- **`doctor --check-agents`** passa a validar as skills do Codex (`check_codex_skills`; 6 checks no total).
+- `gemini_skills.py` cedeu o cross-write de `.agents/skills` pro `codex_skills.py` (dono único — sem colisão de marker).
 
 ### v0.37.0 — skill advpl-word (Word no Protheus, anti-alucinação)
 

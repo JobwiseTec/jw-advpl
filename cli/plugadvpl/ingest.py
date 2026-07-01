@@ -986,6 +986,7 @@ def ingest(  # noqa: PLR0915 — orquestrador do pipeline (scan/parse/write/FTS)
     no_content: bool = False,
     redact_secrets: bool = False,
     exclude: list[str] | None = None,
+    db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Pipeline completo: scan -> parse -> write -> FTS5 rebuild.
 
@@ -1000,6 +1001,9 @@ def ingest(  # noqa: PLR0915 — orquestrador do pipeline (scan/parse/write/FTS)
             metadata — útil para reduzir DB size).
         redact_secrets: se True, regex-mask URLs com credenciais e tokens
             hex >=40 chars em snippets/contextos antes de gravar.
+        db_path: caminho explícito do índice. Se ``None`` (default), usa
+            ``root/.plugadvpl/index.db``. O CLI passa ``ctx.obj["db"]`` para
+            respeitar a flag global ``--db``.
 
     Returns:
         Dict com counters: ``arquivos_total``, ``arquivos_ok``,
@@ -1011,7 +1015,7 @@ def ingest(  # noqa: PLR0915 — orquestrador do pipeline (scan/parse/write/FTS)
     """
     start_time = time.time()
 
-    db_path = root / ".plugadvpl" / "index.db"
+    db_path = db_path or (root / ".plugadvpl" / "index.db")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = open_db(db_path)

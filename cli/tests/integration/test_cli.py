@@ -4,6 +4,7 @@ Usamos ``typer.testing.CliRunner`` para invocar subcomandos contra um
 diretório temporário com 3 fontes ADVPL sintéticos. Cada teste cobre
 1 subcomando ponta-a-ponta (parser -> DB -> render).
 """
+
 from __future__ import annotations
 
 import json
@@ -38,10 +39,7 @@ def synthetic_project(tmp_path: Path) -> Path:
         b"Return\n"
     )
     (src / "WSReg.tlpp").write_bytes(
-        b"Namespace api\n"
-        b"User Function WSReg()\n"
-        b'  HttpPost("http://api.foo/x", oJson)\n'
-        b"Return\n"
+        b'Namespace api\nUser Function WSReg()\n  HttpPost("http://api.foo/x", oJson)\nReturn\n'
     )
     return src
 
@@ -83,7 +81,10 @@ class TestVersion:
 
 class TestGlobalFlagPositioning:
     def test_misplaced_global_flag_shows_helpful_hint(
-        self, indexed_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+        self,
+        indexed_project: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """v0.3.15 — Bug #2 do QA report: usuario rodava
         `plugadvpl status --limit 20` e recebia "No such option: --limit"
@@ -137,18 +138,66 @@ class TestHelp:
         assert result.exit_code == 0
         # 14 comandos do MVP + 4 novos do v0.3.0 (ingest-sx, impacto, gatilho, sx-status) = 18.
         for cmd in (
-            "version", "init", "ingest", "reindex", "status",
-            "find", "callers", "callees", "tables", "param",
-            "arch", "lint", "doctor", "grep",
-            "ingest-sx", "impacto", "gatilho", "sx-status",
+            "version",
+            "init",
+            "ingest",
+            "reindex",
+            "status",
+            "find",
+            "callers",
+            "callees",
+            "tables",
+            "param",
+            "arch",
+            "lint",
+            "doctor",
+            "grep",
+            "ingest-sx",
+            "impacto",
+            "gatilho",
+            "sx-status",
         ):
             assert cmd in result.stdout
+
+
+class TestMapearCommand:
+    """`mapear` — dossiê determinístico + verificação (issue #173, sem LLM)."""
+
+    def test_md_produz_dossie_com_verificacao(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        r = runner.invoke(
+            app, ["--root", str(indexed_project), "--format", "md", "mapear", "WSReg"]
+        )
+        assert r.exit_code == 0, r.stderr or r.stdout
+        out = r.stdout
+        assert "WSReg" in out
+        assert "Tabelas" in out
+        assert "Verificação" in out
+
+    def test_json_estruturado(self, indexed_project: Path, runner: CliRunner) -> None:
+        r = runner.invoke(
+            app, ["--root", str(indexed_project), "--format", "json", "mapear", "WSReg"]
+        )
+        assert r.exit_code == 0, r.stderr or r.stdout
+        data = json.loads(r.stdout)
+        assert data["encontrado"] is True
+        assert data["dossie"]["funcao"].upper() == "WSREG"
+        assert "verificacao" in data
+
+    def test_inexistente_nao_quebra(self, indexed_project: Path, runner: CliRunner) -> None:
+        r = runner.invoke(
+            app, ["--root", str(indexed_project), "--format", "md", "mapear", "NAOEXISTE_XYZ"]
+        )
+        assert r.exit_code == 0
+        assert "não encontr" in r.stdout.lower()
 
 
 class TestInit:
     @pytest.fixture(autouse=True)
     def _isolate_cursor_home(
-        self, tmp_path_factory: pytest.TempPathFactory,
+        self,
+        tmp_path_factory: pytest.TempPathFactory,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Isola Path.home pra cada teste do TestInit (v0.16.2+; v0.16.4 add gemini).
@@ -161,17 +210,11 @@ class TestInit:
         """
         fake_home = tmp_path_factory.mktemp("isolated_home_init")
         monkeypatch.setattr(Path, "home", lambda: fake_home)
-        monkeypatch.setattr(
-            "plugadvpl.cursor_rules.shutil.which", lambda _: None
-        )
-        monkeypatch.setattr(
-            "plugadvpl.gemini_skills.shutil.which", lambda _: None
-        )
+        monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
+        monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
         # v0.16.5 — também mockar codex_config pra TestInit não acidentalmente
         # disparar install se dev tiver `codex` no PATH.
-        monkeypatch.setattr(
-            "plugadvpl.codex_config.shutil.which", lambda _: None
-        )
+        monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
 
     def test_init_creates_db_and_claude_md(
         self, synthetic_project: Path, runner: CliRunner
@@ -186,9 +229,7 @@ class TestInit:
         assert "<!-- BEGIN plugadvpl -->" in content
         assert "<!-- END plugadvpl -->" in content
 
-    def test_init_is_idempotent(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_init_is_idempotent(self, synthetic_project: Path, runner: CliRunner) -> None:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         claude_md = synthetic_project / "CLAUDE.md"
@@ -228,16 +269,16 @@ class TestInit:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         claude = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
         agents = (synthetic_project / "AGENTS.md").read_text(encoding="utf-8")
+
         # Extrai a janela BEGIN..END de cada arquivo e compara.
         def _fragment(text: str) -> str:
             start = text.index("<!-- BEGIN plugadvpl -->")
             end = text.index("<!-- END plugadvpl -->") + len("<!-- END plugadvpl -->")
             return text[start:end]
+
         assert _fragment(claude) == _fragment(agents)
 
-    def test_init_agents_md_is_idempotent(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_init_agents_md_is_idempotent(self, synthetic_project: Path, runner: CliRunner) -> None:
         """Segundo init não duplica fragment no AGENTS.md."""
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
@@ -254,8 +295,7 @@ class TestInit:
         assert "__VERSION__" not in content
 
     def test_init_slash_namespace_env_override(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """PLUGADVPL_SLASH_NS reescreve o namespace dos slash commands (fork/rebrand)."""
         monkeypatch.setenv("PLUGADVPL_SLASH_NS", "jw-advpl")
@@ -270,8 +310,7 @@ class TestInitCursorRules:
     """v0.16.2 — init detecta Cursor e gera .cursor/rules/*.mdc."""
 
     def test_skips_cursor_when_no_signals(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Sem ~/.cursor/, sem .cursor/ no projeto, sem cursor no PATH → no-op."""
         fake_home = synthetic_project.parent / "fake_home"
@@ -284,8 +323,7 @@ class TestInitCursorRules:
         assert "Cursor rules" not in result.stdout
 
     def test_installs_locals_when_project_has_cursor_dir(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`.cursor/` existe no projeto → init cria 52 locais."""
         fake_home = synthetic_project.parent / "fake_home"
@@ -296,47 +334,40 @@ class TestInitCursorRules:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 77
         assert "Cursor rules" in result.stdout
 
     def test_no_cursor_flag_skips_everything(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`init --no-cursor` → zero efeito mesmo com sinais presentes."""
         fake_home = synthetic_project.parent / "fake_home"
         (fake_home / ".cursor" / "rules").mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         (synthetic_project / ".cursor").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "init", "--no-cursor"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init", "--no-cursor"])
         assert result.exit_code == 0
         assert not (synthetic_project / ".cursor" / "rules").exists()
         assert not (fake_home / ".cursor" / "rules" / "plugadvpl.mdc").exists()
         assert "Cursor rules" not in result.stdout
 
     def test_quiet_suppresses_cursor_message(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         (synthetic_project / ".cursor").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "--quiet", "init"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "--quiet", "init"])
         assert result.exit_code == 0
         assert "Cursor rules" not in result.stdout
         # Verifica que rules foram criadas mesmo em quiet
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 77
 
     def test_idempotent_does_not_duplicate(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Dois inits seguidos → mesmo conteúdo, sem duplicar."""
         fake_home = synthetic_project.parent / "fake_home"
@@ -347,17 +378,19 @@ class TestInitCursorRules:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         rules = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(rules) == 70
+        assert len(rules) == 77
         # Conteúdo da rule deve ter marker da versão atual (não duplicado)
-        arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(encoding="utf-8")
+        arch_content = (synthetic_project / ".cursor" / "rules" / "plugadvpl-arch.mdc").read_text(
+            encoding="utf-8"
+        )
         assert arch_content.count("<!-- plugadvpl-rule-version:") == 1
 
     def test_overwrites_rule_with_old_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Rule com marker `0.15.0` → init sobrescreve pra versão atual."""
         from plugadvpl import __version__
+
         fake_home = synthetic_project.parent / "fake_home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -376,8 +409,7 @@ class TestInitCursorRules:
         assert f"<!-- plugadvpl-rule-version: {__version__} -->" in new_content
 
     def test_preserves_user_rule_without_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Rule plugadvpl-meu.mdc sem marker (user file) → preserva + warning."""
         fake_home = synthetic_project.parent / "fake_home"
@@ -397,8 +429,7 @@ class TestInitCursorRules:
         assert "sem marker plugadvpl" in (result.stderr or "")
 
     def test_handles_permission_error_in_global(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """~/.cursor/rules/ não-gravável → warning, init exit 0."""
         fake_home = synthetic_project.parent / "fake_home"
@@ -407,20 +438,22 @@ class TestInitCursorRules:
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         # Patcha _write_managed_file pra simular ERROR no global path
         from plugadvpl import cursor_rules as cr
+
         original = cr._write_managed_file
+
         def fake_write(path: Path, content: str, marker: str) -> cr.WriteOutcome:
             if "plugadvpl.mdc" in str(path) and "rules" in str(path.parent):
                 if path.parent == fake_home / ".cursor" / "rules":
                     return cr.WriteOutcome.ERROR
             return original(path, content, marker)
+
         monkeypatch.setattr(cr, "_write_managed_file", fake_write)
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0  # init NÃO quebra
         assert "Cursor rules:" in (result.stderr or "") or "Cursor rules:" in result.stdout
 
     def test_handles_skill_md_missing(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Skill embarcada ausente → warning, init exit 0, outras skills continuam."""
         # Edge case raro: wheel corrompido. Testa só que init não quebra.
@@ -437,8 +470,7 @@ class TestInitCopilotInstructions:
     """v0.16.3 — init detecta .github/ e gera Copilot instructions."""
 
     def test_skips_copilot_when_no_github(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Sem `.github/` no projeto → no-op pra Copilot."""
         fake_home = synthetic_project.parent / "fake_home_copilot"
@@ -451,8 +483,7 @@ class TestInitCopilotInstructions:
         assert "Copilot instructions" not in result.stdout
 
     def test_installs_when_project_has_github(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`.github/` no projeto → 1 global + 52 specifics."""
         fake_home = synthetic_project.parent / "fake_home_copilot2"
@@ -463,21 +494,16 @@ class TestInitCopilotInstructions:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0
         # Global
-        assert (
-            synthetic_project / ".github" / "copilot-instructions.md"
-        ).exists()
+        assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         # Locals
         instructions = list(
-            (synthetic_project / ".github" / "instructions").glob(
-                "plugadvpl-*.instructions.md"
-            )
+            (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 77
         assert "Copilot instructions" in result.stdout
 
     def test_no_copilot_flag_skips(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`--no-copilot` desabilita mesmo com .github/ presente."""
         fake_home = synthetic_project.parent / "fake_home_copilot3"
@@ -485,41 +511,31 @@ class TestInitCopilotInstructions:
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         (synthetic_project / ".github").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "init", "--no-copilot"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init", "--no-copilot"])
         assert result.exit_code == 0
-        assert not (
-            synthetic_project / ".github" / "copilot-instructions.md"
-        ).exists()
+        assert not (synthetic_project / ".github" / "copilot-instructions.md").exists()
         assert not (synthetic_project / ".github" / "instructions").exists()
         assert "Copilot instructions" not in result.stdout
 
     def test_quiet_suppresses_copilot_message(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_copilot4"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         (synthetic_project / ".github").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "--quiet", "init"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "--quiet", "init"])
         assert result.exit_code == 0
         assert "Copilot instructions" not in result.stdout
         # Rules ainda criadas
         instructions = list(
-            (synthetic_project / ".github" / "instructions").glob(
-                "plugadvpl-*.instructions.md"
-            )
+            (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 77
 
     def test_idempotent_does_not_duplicate(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_copilot5"
         fake_home.mkdir()
@@ -529,11 +545,9 @@ class TestInitCopilotInstructions:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         instructions = list(
-            (synthetic_project / ".github" / "instructions").glob(
-                "plugadvpl-*.instructions.md"
-            )
+            (synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md")
         )
-        assert len(instructions) == 70
+        assert len(instructions) == 77
         # Marker aparece uma vez por arquivo
         arch_content = (
             synthetic_project / ".github" / "instructions" / "plugadvpl-arch.instructions.md"
@@ -541,10 +555,10 @@ class TestInitCopilotInstructions:
         assert arch_content.count("<!-- plugadvpl-instructions-version:") == 1
 
     def test_overwrites_with_old_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from plugadvpl import __version__
+
         fake_home = synthetic_project.parent / "fake_home_copilot6"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -562,8 +576,7 @@ class TestInitCopilotInstructions:
         assert f"<!-- plugadvpl-instructions-version: {__version__} -->" in new_content
 
     def test_preserves_user_file_without_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_copilot7"
         fake_home.mkdir()
@@ -585,8 +598,7 @@ class TestInitGeminiSkills:
     """v0.16.4 — init detecta Gemini e gera GEMINI.md + skills."""
 
     def test_skips_gemini_when_no_signals(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Sem ~/.gemini/, sem gemini PATH, sem .gemini/ projeto → no-op."""
         fake_home = synthetic_project.parent / "fake_home_gemini"
@@ -601,8 +613,7 @@ class TestInitGeminiSkills:
         assert "Gemini skills" not in result.stdout
 
     def test_installs_when_project_has_gemini_dir(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`.gemini/` no projeto → project MD + 60 skills."""
         fake_home = synthetic_project.parent / "fake_home_gemini2"
@@ -619,12 +630,11 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 77
         assert "Gemini skills" in result.stdout
 
     def test_installs_global_home_when_home_has_gemini(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`~/.gemini/` mockado → ~/.gemini/GEMINI.md criado."""
         fake_home = synthetic_project.parent / "fake_home_gemini3"
@@ -640,8 +650,7 @@ class TestInitGeminiSkills:
         assert not (synthetic_project / "GEMINI.md").exists()
 
     def test_no_gemini_flag_skips_everything(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_gemini4"
         (fake_home / ".gemini").mkdir(parents=True)
@@ -649,17 +658,14 @@ class TestInitGeminiSkills:
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
         (synthetic_project / ".gemini").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "init", "--no-gemini"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init", "--no-gemini"])
         assert result.exit_code == 0
         assert not (synthetic_project / "GEMINI.md").exists()
         assert not (fake_home / ".gemini" / "GEMINI.md").exists()
         assert "Gemini skills" not in result.stdout
 
     def test_quiet_suppresses_message(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_gemini5"
         fake_home.mkdir()
@@ -667,9 +673,7 @@ class TestInitGeminiSkills:
         monkeypatch.setattr("plugadvpl.cursor_rules.shutil.which", lambda _: None)
         monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
         (synthetic_project / ".gemini").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "--quiet", "init"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "--quiet", "init"])
         assert result.exit_code == 0
         assert "Gemini skills" not in result.stdout
         skill_files = list(
@@ -677,11 +681,10 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 77
 
     def test_idempotent_does_not_duplicate(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_gemini6"
         fake_home.mkdir()
@@ -696,18 +699,17 @@ class TestInitGeminiSkills:
                 "plugadvpl-*/SKILL.md"
             )
         )
-        assert len(skill_files) == 70
+        assert len(skill_files) == 77
         arch_content = (
-            synthetic_project
-            / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
+            synthetic_project / ".gemini" / "skills" / "plugadvpl-arch" / "SKILL.md"
         ).read_text(encoding="utf-8")
         assert arch_content.count("<!-- plugadvpl-gemini-version:") == 1
 
     def test_overwrites_with_old_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from plugadvpl import __version__
+
         fake_home = synthetic_project.parent / "fake_home_gemini7"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -726,8 +728,7 @@ class TestInitGeminiSkills:
         assert f"<!-- plugadvpl-gemini-version: {__version__} -->" in new_content
 
     def test_preserves_user_file_without_marker(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = synthetic_project.parent / "fake_home_gemini8"
         fake_home.mkdir()
@@ -795,9 +796,7 @@ class TestInitCodexConfig:
         monkeypatch.setattr("plugadvpl.gemini_skills.shutil.which", lambda _: None)
         monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
         (synthetic_project / ".codex").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "init", "--no-codex"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init", "--no-codex"])
         assert result.exit_code == 0
         assert not (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -858,15 +857,11 @@ class TestInitCodexFirstClass:
         monkeypatch.setattr("plugadvpl.codex_config.shutil.which", lambda _: None)
         monkeypatch.setattr("plugadvpl.codex_skills.shutil.which", lambda _: None)
         (synthetic_project / ".codex").mkdir()
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "init", "--codex-only"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "init", "--codex-only"])
         assert result.exit_code == 0, result.stderr or result.stdout
         assert (synthetic_project / "AGENTS.md").exists()  # Codex usa AGENTS.md
         assert not (synthetic_project / "CLAUDE.md").exists()  # pulado no codex-only
-        agents = list(
-            (synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
-        )
+        agents = list((synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md"))
         assert agents
         # outros agentes pulados
         assert not (synthetic_project / ".cursor").exists()
@@ -893,12 +888,8 @@ class TestInitCodexFirstClass:
         result = runner.invoke(app, ["--root", str(synthetic_project), "init"])
         assert result.exit_code == 0, result.stderr or result.stdout
         assert (synthetic_project / "CLAUDE.md").exists()  # default mantém CLAUDE.md
-        agents = list(
-            (synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md")
-        )
-        codex = list(
-            (synthetic_project / ".codex" / "skills").glob("plugadvpl-*/SKILL.md")
-        )
+        agents = list((synthetic_project / ".agents" / "skills").glob("plugadvpl-*/SKILL.md"))
+        codex = list((synthetic_project / ".codex" / "skills").glob("plugadvpl-*/SKILL.md"))
         assert agents and codex
 
     def test_no_codex_signal_no_skills(
@@ -989,8 +980,7 @@ class TestInitMultiAgent:
     """v0.16.5 — init completo com 5 agentes detectados não conflita."""
 
     def test_init_with_all_5_agents_detected(
-        self, synthetic_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, synthetic_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Init com .cursor/, .github/, .gemini/, .codex/ no projeto +
         ~/.cursor/, ~/.gemini/ no home → todos 5 agentes instalados."""
@@ -1016,15 +1006,15 @@ class TestInitMultiAgent:
         # Cursor
         assert (synthetic_project / ".cursor" / "rules").exists()
         cursor_files = list((synthetic_project / ".cursor" / "rules").glob("plugadvpl-*.mdc"))
-        assert len(cursor_files) == 70
+        assert len(cursor_files) == 77
         # Copilot
         assert (synthetic_project / ".github" / "copilot-instructions.md").exists()
         copilot_files = list((synthetic_project / ".github" / "instructions").glob("plugadvpl-*.instructions.md"))
-        assert len(copilot_files) == 70
+        assert len(copilot_files) == 77
         # Gemini
         assert (synthetic_project / "GEMINI.md").exists()
         gemini_files = list((synthetic_project / ".gemini" / "skills").glob("plugadvpl-*/SKILL.md"))
-        assert len(gemini_files) == 70
+        assert len(gemini_files) == 77
         # Codex
         assert (synthetic_project / ".codex" / "config.toml").exists()
 
@@ -1035,29 +1025,35 @@ class TestDocWriter:
     def test_minimal_invocation_emits_block(
         self, synthetic_project: Path, runner: CliRunner
     ) -> None:
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "doc-writer", "MyFunc"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "doc-writer", "MyFunc"])
         assert result.exit_code == 0, result.stderr
         assert "/*/{Protheus.doc} MyFunc" in result.stdout
         assert "@type function" in result.stdout
         # Bloco fecha
         assert result.stdout.rstrip().endswith("/*/")
 
-    def test_full_metadata_via_flags(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_full_metadata_via_flags(self, synthetic_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
-                "--root", str(synthetic_project), "doc-writer", "CalcICMS",
-                "--type", "user_function",
-                "--author", "Joao Silva",
-                "--summary", "Calcula ICMS conforme TES.",
-                "--since", "2026-05",
-                "-p", "cTES,character,codigo TES",
-                "-p", "[nValor],numeric,valor base opcional",
-                "--return", "numeric,valor do ICMS",
+                "--root",
+                str(synthetic_project),
+                "doc-writer",
+                "CalcICMS",
+                "--type",
+                "user_function",
+                "--author",
+                "Joao Silva",
+                "--summary",
+                "Calcula ICMS conforme TES.",
+                "--since",
+                "2026-05",
+                "-p",
+                "cTES,character,codigo TES",
+                "-p",
+                "[nValor],numeric,valor base opcional",
+                "--return",
+                "numeric,valor do ICMS",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1070,16 +1066,21 @@ class TestDocWriter:
         assert "@param [nValor], numeric, valor base opcional" in out
         assert "@return numeric, valor do ICMS" in out
 
-    def test_json_format(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_json_format(self, synthetic_project: Path, runner: CliRunner) -> None:
         """--format json emite spec_to_dict() ao invés do bloco markdown."""
         result = runner.invoke(
             app,
             [
-                "--root", str(synthetic_project), "--format", "json",
-                "doc-writer", "X", "--author", "Joao",
-                "-p", "n,numeric,idx",
+                "--root",
+                str(synthetic_project),
+                "--format",
+                "json",
+                "doc-writer",
+                "X",
+                "--author",
+                "Joao",
+                "-p",
+                "n,numeric,idx",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1089,14 +1090,16 @@ class TestDocWriter:
         assert len(payload["params"]) == 1
         assert payload["params"][0]["name"] == "n"
 
-    def test_deprecated_with_reason(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_deprecated_with_reason(self, synthetic_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
-                "--root", str(synthetic_project), "doc-writer", "OldFunc",
-                "--deprecated", "Use NovaFunc no lugar",
+                "--root",
+                str(synthetic_project),
+                "doc-writer",
+                "OldFunc",
+                "--deprecated",
+                "Use NovaFunc no lugar",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1104,9 +1107,7 @@ class TestDocWriter:
 
 
 class TestIngest:
-    def test_ingest_after_init(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_ingest_after_init(self, synthetic_project: Path, runner: CliRunner) -> None:
         runner.invoke(app, ["--root", str(synthetic_project), "init"])
         result = runner.invoke(
             app, ["--root", str(synthetic_project), "--format", "json", "ingest"]
@@ -1134,9 +1135,7 @@ class TestIngest:
             conn.close()
 
         # Re-ingest incremental — todos os 3 arquivos têm mtime antigo, serão skipped.
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "ingest"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "ingest"])
         assert result.exit_code == 0
         assert "regras/lookups" in result.stderr
         assert "--no-incremental" in result.stderr
@@ -1178,9 +1177,7 @@ class TestIngest:
         finally:
             conn.close()
 
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "ingest", "--no-incremental"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "ingest", "--no-incremental"])
         assert result.exit_code == 0
         assert "--no-incremental" not in result.stderr  # sem aviso
 
@@ -1188,9 +1185,7 @@ class TestIngest:
         self, indexed_project: Path, runner: CliRunner
     ) -> None:
         """Caso normal: nada mudou → sem aviso amarelo."""
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "ingest"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "ingest"])
         assert result.exit_code == 0
         assert "Lookups" not in result.stderr
 
@@ -1209,17 +1204,13 @@ class TestIngest:
         finally:
             conn.close()
 
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--quiet", "ingest"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "--quiet", "ingest"])
         assert result.exit_code == 0
         assert "Lookups" not in result.stderr
 
 
 class TestFind:
-    def test_find_function(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_find_function(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             ["--root", str(indexed_project), "--format", "json", "find", "FATA050"],
@@ -1232,9 +1223,7 @@ class TestFind:
 
 
 class TestCallers:
-    def test_callers_of_fata050(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_callers_of_fata050(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             ["--root", str(indexed_project), "--format", "json", "callers", "FATA050"],
@@ -1245,9 +1234,7 @@ class TestCallers:
 
 
 class TestTables:
-    def test_tables_sc5(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_tables_sc5(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             ["--root", str(indexed_project), "--format", "json", "tables", "SC5"],
@@ -1258,14 +1245,16 @@ class TestTables:
 
 
 class TestParam:
-    def test_param_mv_localiza(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_param_mv_localiza(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
-                "--root", str(indexed_project), "--format", "json",
-                "param", "MV_LOCALIZA",
+                "--root",
+                str(indexed_project),
+                "--format",
+                "json",
+                "param",
+                "MV_LOCALIZA",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1274,23 +1263,23 @@ class TestParam:
 
 
 class TestArch:
-    def test_arch_fata050(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_arch_fata050(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
-                "--root", str(indexed_project), "--format", "json",
-                "arch", "FATA050.prw",
+                "--root",
+                str(indexed_project),
+                "--format",
+                "json",
+                "arch",
+                "FATA050.prw",
             ],
         )
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         assert payload["rows"][0]["arquivo"] == "FATA050.prw"
 
-    def test_arch_missing_exits_1(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_arch_missing_exits_1(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             ["--root", str(indexed_project), "arch", "naoexiste.prw"],
@@ -1299,12 +1288,8 @@ class TestArch:
 
 
 class TestStatus:
-    def test_status_reports_indexed_files(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--format", "json", "status"]
-        )
+    def test_status_reports_indexed_files(self, indexed_project: Path, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["--root", str(indexed_project), "--format", "json", "status"])
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         assert payload["rows"][0]["total_arquivos"] == "3"
@@ -1313,9 +1298,7 @@ class TestStatus:
         self, indexed_project: Path, runner: CliRunner
     ) -> None:
         """v0.3.12: status sempre traz `runtime_version` = __version__ do binário."""
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--format", "json", "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "--format", "json", "status"])
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         assert payload["rows"][0]["runtime_version"] == __version__
@@ -1360,7 +1343,9 @@ class TestStatus:
         content = claude_md.read_text(encoding="utf-8")
         # Remove marker simulando fragment antigo (sem versionamento).
         content = re.sub(
-            r"<!-- plugadvpl-fragment-version: [^>]+ -->\n?", "", content,
+            r"<!-- plugadvpl-fragment-version: [^>]+ -->\n?",
+            "",
+            content,
         )
         claude_md.write_text(content, encoding="utf-8")
 
@@ -1378,9 +1363,7 @@ class TestStatus:
         db = indexed_project / ".plugadvpl" / "index.db"
         conn = sqlite3.connect(db)
         try:
-            conn.execute(
-                "UPDATE meta SET valor='0.0.1-old' WHERE chave='plugadvpl_version'"
-            )
+            conn.execute("UPDATE meta SET valor='0.0.1-old' WHERE chave='plugadvpl_version'")
             conn.commit()
         finally:
             conn.close()
@@ -1400,8 +1383,7 @@ class TestStatus:
         assert "ingest --incremental" not in result.stderr
 
     def test_detects_stale_cursor_global_rule(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Rule global com marker old → status reporta arquivo + versão antiga."""
         fake_home = indexed_project.parent / "fake_home_status"
@@ -1411,17 +1393,14 @@ class TestStatus:
             "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
         )
         monkeypatch.setattr(Path, "home", lambda: fake_home)
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         # Mensagem inclui o nome do arquivo e a versão antiga
         combined = (result.stderr or "") + result.stdout
         assert "plugadvpl.mdc" in combined
         assert "0.15.0" in combined
 
     def test_detects_stale_cursor_local_rule(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Rule local com marker old → status reporta."""
         fake_home = indexed_project.parent / "fake_home_status2"
@@ -1432,9 +1411,7 @@ class TestStatus:
         (rules_dir / "plugadvpl-arch.mdc").write_text(
             "old <!-- plugadvpl-rule-version: 0.15.0 -->", encoding="utf-8"
         )
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "plugadvpl-arch.mdc" in combined
         assert "0.15.0" in combined
@@ -1446,22 +1423,17 @@ class TestStatus:
         db = indexed_project / ".plugadvpl" / "index.db"
         conn = sqlite3.connect(db)
         try:
-            conn.execute(
-                "UPDATE meta SET valor='0.0.1-old' WHERE chave='plugadvpl_version'"
-            )
+            conn.execute("UPDATE meta SET valor='0.0.1-old' WHERE chave='plugadvpl_version'")
             conn.commit()
         finally:
             conn.close()
 
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--quiet", "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "--quiet", "status"])
         assert result.exit_code == 0
         assert "0.0.1-old" not in result.stderr
 
     def test_detects_stale_copilot_global(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`.github/copilot-instructions.md` com marker old → status reporta."""
         fake_home = indexed_project.parent / "fake_home_copilot_status1"
@@ -1473,16 +1445,13 @@ class TestStatus:
             "stale <!-- plugadvpl-instructions-version: 0.15.0 -->",
             encoding="utf-8",
         )
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "copilot-instructions.md" in combined
         assert "0.15.0" in combined
 
     def test_detects_stale_copilot_local(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = indexed_project.parent / "fake_home_copilot_status2"
         fake_home.mkdir()
@@ -1493,16 +1462,13 @@ class TestStatus:
             "stale <!-- plugadvpl-instructions-version: 0.15.0 -->",
             encoding="utf-8",
         )
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "plugadvpl-arch.instructions.md" in combined
         assert "0.15.0" in combined
 
     def test_detects_stale_gemini_home(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`~/.gemini/GEMINI.md` com marker old → status reporta."""
         fake_home = indexed_project.parent / "fake_home_gemini_status1"
@@ -1513,16 +1479,13 @@ class TestStatus:
             encoding="utf-8",
         )
         monkeypatch.setattr(Path, "home", lambda: fake_home)
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "GEMINI.md" in combined
         assert "0.15.0" in combined
 
     def test_detects_stale_gemini_project(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """`<project>/GEMINI.md` com marker old → status reporta."""
         fake_home = indexed_project.parent / "fake_home_gemini_status2"
@@ -1532,16 +1495,13 @@ class TestStatus:
             "stale <!-- plugadvpl-gemini-version: 0.15.0 -->",
             encoding="utf-8",
         )
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "GEMINI.md" in combined
         assert "0.15.0" in combined
 
     def test_detects_stale_gemini_skill(
-        self, indexed_project: Path, runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch
+        self, indexed_project: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake_home = indexed_project.parent / "fake_home_gemini_status3"
         fake_home.mkdir()
@@ -1552,21 +1512,15 @@ class TestStatus:
             "stale <!-- plugadvpl-gemini-version: 0.15.0 -->",
             encoding="utf-8",
         )
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "status"]
-        )
+        result = runner.invoke(app, ["--root", str(indexed_project), "status"])
         combined = (result.stderr or "") + result.stdout
         assert "SKILL.md" in combined
         assert "0.15.0" in combined
 
 
 class TestDoctor:
-    def test_doctor_returns_diagnostics(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--format", "json", "doctor"]
-        )
+    def test_doctor_returns_diagnostics(self, indexed_project: Path, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["--root", str(indexed_project), "--format", "json", "doctor"])
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
         checks = {r["check"] for r in payload["rows"]}
@@ -1589,17 +1543,17 @@ class TestDoctor:
         src = tmp_path / "src"
         src.mkdir()
         (src / "Sample.tlpp").write_bytes(
-            b'Function U_Sample(cArg as character)\n'
-            b'Return\n'
-            b'\n'
-            b'static function helperA()\n'
-            b'Return\n'
-            b'\n'
-            b'Static Function HelperB()\n'
-            b'Return\n'
-            b'\n'
-            b'function helperC()\n'
-            b'Return\n'
+            b"Function U_Sample(cArg as character)\n"
+            b"Return\n"
+            b"\n"
+            b"static function helperA()\n"
+            b"Return\n"
+            b"\n"
+            b"Static Function HelperB()\n"
+            b"Return\n"
+            b"\n"
+            b"function helperC()\n"
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -1630,14 +1584,14 @@ class TestDoctor:
         # 1 funcao ativa + 1 funcao comentada (commenting-out intencional).
         # Parser corretamente ignora a comentada -> nao eh bug.
         (src / "Sample.prw").write_bytes(
-            b'User Function FnAtiva()\n'
-            b'Return\n'
-            b'\n'
-            b'/*\n'
-            b'Static Function FnComentada()\n'
-            b'   Return\n'
-            b'Return\n'
-            b'*/\n'
+            b"User Function FnAtiva()\n"
+            b"Return\n"
+            b"\n"
+            b"/*\n"
+            b"Static Function FnComentada()\n"
+            b"   Return\n"
+            b"Return\n"
+            b"*/\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -1671,16 +1625,20 @@ class TestDoctor:
         src = tmp_path / "src"
         src.mkdir()
         (src / "FnA.prw").write_bytes(
-            b'User Function FnA()\nReturn\n'
-            b'/*\nStatic Function FnAOld()\nReturn\n*/\n'
+            b"User Function FnA()\nReturn\n/*\nStatic Function FnAOld()\nReturn\n*/\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         result = runner.invoke(
             app,
             [
-                "--root", str(src), "--format", "json",
-                "doctor", "--check-funcs", "--detail",
+                "--root",
+                str(src),
+                "--format",
+                "json",
+                "doctor",
+                "--check-funcs",
+                "--detail",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1712,19 +1670,24 @@ class TestDoctor:
         # Cria 3 fontes com commenting-out cada
         for nome in ("FnA", "FnB", "FnC"):
             (src / f"{nome}.prw").write_bytes(
-                f'User Function {nome}()\n'.encode()
-                + b'Return\n'
-                + b'/*\n'
-                + f'Static Function {nome}Old()\nReturn\n'.encode()
-                + b'*/\n'
+                f"User Function {nome}()\n".encode()
+                + b"Return\n"
+                + b"/*\n"
+                + f"Static Function {nome}Old()\nReturn\n".encode()
+                + b"*/\n"
             )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         result = runner.invoke(
             app,
             [
-                "--root", str(src), "--format", "json",
-                "doctor", "--check-funcs", "--detail",
+                "--root",
+                str(src),
+                "--format",
+                "json",
+                "doctor",
+                "--check-funcs",
+                "--detail",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -1744,9 +1707,7 @@ class TestDoctor:
 
 
 class TestGrep:
-    def test_grep_fts_default(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_grep_fts_default(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             ["--root", str(indexed_project), "--format", "json", "grep", "RecLock"],
@@ -1776,12 +1737,8 @@ class TestGrep:
 
 
 class TestLint:
-    def test_lint_global(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
-        result = runner.invoke(
-            app, ["--root", str(indexed_project), "--format", "json", "lint"]
-        )
+    def test_lint_global(self, indexed_project: Path, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["--root", str(indexed_project), "--format", "json", "lint"])
         assert result.exit_code == 0, result.stderr
         # Pode estar vazio mas tem que retornar JSON válido.
         json.loads(result.stdout)
@@ -1799,9 +1756,7 @@ class TestLint:
         r2 = runner.invoke(app, ["--root", str(src), "--format", "md", "lint", "ZZUI.prw"])
         assert "não está no índice" not in r2.stderr
 
-    def test_lint_target_build_includes_build001(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_lint_target_build_includes_build001(self, tmp_path: Path, runner: CliRunner) -> None:
         """--target-build inclui findings BUILD-001 (método ausente na build) via
         catálogo apis_por_build, resolvendo oVar := Classe():New() por função."""
         src = tmp_path / "src"
@@ -1815,9 +1770,7 @@ class TestLint:
         runner.invoke(app, ["--root", str(src), "ingest"])
         # projeto fresco, sem build configurado: nenhum BUILD-001
         r0 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
-        assert not [
-            r for r in json.loads(r0.stdout)["rows"] if r.get("regra_id") == "BUILD-001"
-        ]
+        assert not [r for r in json.loads(r0.stdout)["rows"] if r.get("regra_id") == "BUILD-001"]
         # com a flag: BUILD-001 na linha certa
         result = runner.invoke(
             app,
@@ -1829,9 +1782,7 @@ class TestLint:
         assert len(build) == 1, f"esperado 1 BUILD-001, rows={rows}"
         assert build[0]["linha"] == 3
 
-    def test_lint_target_build_persists_to_meta(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_lint_target_build_persists_to_meta(self, tmp_path: Path, runner: CliRunner) -> None:
         """--target-build persiste em meta; lint subsequente (sem flag) reaproveita."""
         src = tmp_path / "src"
         src.mkdir()
@@ -1852,13 +1803,11 @@ class TestLint:
         # 2a vez: SEM a flag -> ainda BUILD-001 (lido do meta.target_build)
         r2 = runner.invoke(app, ["--root", str(src), "--format", "json", "lint"])
         assert r2.exit_code == 0, r2.stderr
-        assert [
-            f for f in json.loads(r2.stdout)["rows"] if f.get("regra_id") == "BUILD-001"
-        ], "build-check deveria rodar automaticamente a partir de meta.target_build"
+        assert [f for f in json.loads(r2.stdout)["rows"] if f.get("regra_id") == "BUILD-001"], (
+            "build-check deveria rodar automaticamente a partir de meta.target_build"
+        )
 
-    def test_callers_flags_is_self_call(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_callers_flags_is_self_call(self, tmp_path: Path, runner: CliRunner) -> None:
         """v0.3.18 — Bug #12 do QA report: `callers <nome>` misturava
         callsites externos com self-calls (FwLoadModel('X') dentro de X.prw)
         sem distincao. Agora cada row tem `is_self_call: bool` baseado em
@@ -1868,16 +1817,13 @@ class TestLint:
         # Self-call: dentro de SelfCall.prw, funcao SelfCall chama propria via FwLoadModel.
         (src / "SelfCall.prw").write_bytes(
             b'#include "totvs.ch"\n'
-            b'User Function SelfCall()\n'
+            b"User Function SelfCall()\n"
             b'  Local oModel := FwLoadModel("SelfCall")\n'
-            b'Return\n'
+            b"Return\n"
         )
         # External: outro fonte chama SelfCall.
         (src / "Caller.prw").write_bytes(
-            b'#include "totvs.ch"\n'
-            b'User Function Caller()\n'
-            b'  U_SelfCall()\n'
-            b'Return\n'
+            b'#include "totvs.ch"\nUser Function Caller()\n  U_SelfCall()\nReturn\n'
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -1897,9 +1843,7 @@ class TestLint:
         assert all("SelfCall" in r["arquivo"] for r in self_calls)
         assert all("Caller" in r["arquivo"] for r in external)
 
-    def test_arch_flags_tabelas_via_execauto(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_arch_flags_tabelas_via_execauto(self, tmp_path: Path, runner: CliRunner) -> None:
         """v0.3.18 — Bug #11 do QA report: programas que usam MsExecAuto
         delegam acesso a tabelas pra rotina chamada — `tabelas_*` do parser
         ficam vazias mesmo o programa "tocando" SC5/SC6/SF4 etc. Sem flag,
@@ -1910,15 +1854,15 @@ class TestLint:
         src.mkdir()
         (src / "ExecAutoCaller.prw").write_bytes(
             b'#include "totvs.ch"\n'
-            b'User Function ExecAutoCaller()\n'
+            b"User Function ExecAutoCaller()\n"
             b'  Local aCab := {{"C5_NUM", "001", Nil}}\n'
             b'  Local aIt  := {{{"C6_NUM", "001", Nil}}}\n'
-            b'  Private lMsErroAuto := .F.\n'
-            b'  MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, 3)\n'
-            b'  If lMsErroAuto\n'
-            b'    MostraErro()\n'
-            b'  EndIf\n'
-            b'Return\n'
+            b"  Private lMsErroAuto := .F.\n"
+            b"  MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, 3)\n"
+            b"  If lMsErroAuto\n"
+            b"    MostraErro()\n"
+            b"  EndIf\n"
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -1961,7 +1905,9 @@ class TestLint:
         src.mkdir()
         fixture = (
             Path(__file__).parent.parent
-            / "fixtures" / "synthetic" / "reclock_alias_dup_trigger.prw"
+            / "fixtures"
+            / "synthetic"
+            / "reclock_alias_dup_trigger.prw"
         )
         (src / "ZH3DupTrigger.prw").write_bytes(fixture.read_bytes())
         runner.invoke(app, ["--root", str(src), "init"])
@@ -1996,39 +1942,37 @@ class TestWorkflow:
         src.mkdir()
         # 1) workflow (TWFProcess)
         (src / "WFSalNeg.prw").write_bytes(
-            b'User Function WfSalNeg()\n'
+            b"User Function WfSalNeg()\n"
             b'  Local oWF := TWFProcess():New("SALNEG", "Saldo Negativo")\n'
-            b'  oWF:bReturn := {|o| U_WfRetSN(o)}\n'
-            b'  oWF:Start()\n'
-            b'Return\n'
+            b"  oWF:bReturn := {|o| U_WfRetSN(o)}\n"
+            b"  oWF:Start()\n"
+            b"Return\n"
         )
         # 2) schedule (SchedDef)
         (src / "FATR020.prw").write_bytes(
-            b'User Function FATR020()\n'
-            b'Return\n'
-            b'\n'
-            b'Static Function SchedDef()\n'
+            b"User Function FATR020()\n"
+            b"Return\n"
+            b"\n"
+            b"Static Function SchedDef()\n"
             b'  Local a := { "R", "FAT020", "SF2", {1,2}, "Faturamento" }\n'
-            b'Return a\n'
+            b"Return a\n"
         )
         # 3) multi-trigger: job_standalone + mail_send no mesmo fonte
         (src / "JobAviso.prw").write_bytes(
-            b'Main Function JobAviso()\n'
+            b"Main Function JobAviso()\n"
             b'  RpcSetEnv("01","01",,,"FAT","JobAviso")\n'
             b'  While !File("/stop_aviso.flg")\n'
             b'    MailAuto("a@x", "b@y", "Aviso", "msg", {})\n'
-            b'    Sleep(60000)\n'
-            b'  EndDo\n'
-            b'  RpcClearEnv()\n'
-            b'Return\n'
+            b"    Sleep(60000)\n"
+            b"  EndDo\n"
+            b"  RpcClearEnv()\n"
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         return src
 
-    def test_workflow_lists_all_kinds(
-        self, triggers_project: Path, runner: CliRunner
-    ) -> None:
+    def test_workflow_lists_all_kinds(self, triggers_project: Path, runner: CliRunner) -> None:
         """Sem filtro: lista os 4 kinds (workflow/schedule/job_standalone/mail_send)."""
         result = runner.invoke(
             app, ["--root", str(triggers_project), "--format", "json", "workflow"]
@@ -2040,15 +1984,18 @@ class TestWorkflow:
             f"esperado os 4 kinds, recebido {kinds}"
         )
 
-    def test_workflow_filter_by_kind(
-        self, triggers_project: Path, runner: CliRunner
-    ) -> None:
+    def test_workflow_filter_by_kind(self, triggers_project: Path, runner: CliRunner) -> None:
         """`--kind job_standalone` retorna só jobs daemon."""
         result = runner.invoke(
             app,
             [
-                "--root", str(triggers_project), "--format", "json",
-                "workflow", "--kind", "job_standalone",
+                "--root",
+                str(triggers_project),
+                "--format",
+                "json",
+                "workflow",
+                "--kind",
+                "job_standalone",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2057,15 +2004,18 @@ class TestWorkflow:
         assert rows[0]["kind"] == "job_standalone"
         assert rows[0]["target"] == "JobAviso"
 
-    def test_workflow_filter_by_arquivo(
-        self, triggers_project: Path, runner: CliRunner
-    ) -> None:
+    def test_workflow_filter_by_arquivo(self, triggers_project: Path, runner: CliRunner) -> None:
         """`--arquivo JobAviso.prw` retorna 2 triggers (job + mail) do multi-source."""
         result = runner.invoke(
             app,
             [
-                "--root", str(triggers_project), "--format", "json",
-                "workflow", "--arquivo", "JobAviso.prw",
+                "--root",
+                str(triggers_project),
+                "--format",
+                "json",
+                "workflow",
+                "--arquivo",
+                "JobAviso.prw",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2075,15 +2025,18 @@ class TestWorkflow:
             f"esperado job+mail no mesmo fonte, recebido {kinds}"
         )
 
-    def test_workflow_filter_by_target(
-        self, triggers_project: Path, runner: CliRunner
-    ) -> None:
+    def test_workflow_filter_by_target(self, triggers_project: Path, runner: CliRunner) -> None:
         """`--target FAT020` (pergunte SX1) localiza o schedule."""
         result = runner.invoke(
             app,
             [
-                "--root", str(triggers_project), "--format", "json",
-                "workflow", "--target", "FAT020",
+                "--root",
+                str(triggers_project),
+                "--format",
+                "json",
+                "workflow",
+                "--target",
+                "FAT020",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2091,15 +2044,16 @@ class TestWorkflow:
         assert len(rows) == 1
         assert rows[0]["kind"] == "schedule"
 
-    def test_workflow_rejects_invalid_kind(
-        self, triggers_project: Path, runner: CliRunner
-    ) -> None:
+    def test_workflow_rejects_invalid_kind(self, triggers_project: Path, runner: CliRunner) -> None:
         """v0.4.4 (UX #4): --kind invalido rejeitado com mensagem clara."""
         result = runner.invoke(
             app,
             [
-                "--root", str(triggers_project),
-                "workflow", "--kind", "tipoinexistente",
+                "--root",
+                str(triggers_project),
+                "workflow",
+                "--kind",
+                "tipoinexistente",
             ],
         )
         assert result.exit_code != 0
@@ -2118,16 +2072,16 @@ class TestWorkflow:
         src.mkdir()
         # 2 fontes com mesmo process_id 'CONFLITO' (real bug pattern)
         (src / "WfA.prw").write_bytes(
-            b'User Function WfA()\n'
+            b"User Function WfA()\n"
             b'   oWF := TWFProcess():New("CONFLITO", "Workflow A")\n'
-            b'   oWF:Start()\n'
-            b'Return\n'
+            b"   oWF:Start()\n"
+            b"Return\n"
         )
         (src / "WfB.prw").write_bytes(
-            b'User Function WfB()\n'
+            b"User Function WfB()\n"
             b'   oWF := TWFProcess():New("CONFLITO", "Workflow B (diferente)")\n'
-            b'   oWF:Start()\n'
-            b'Return\n'
+            b"   oWF:Start()\n"
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -2145,16 +2099,12 @@ class TestWorkflow:
         assert "WfA.prw" in conflito["arquivos"]
         assert "WfB.prw" in conflito["arquivos"]
 
-    def test_workflow_persisted_in_db(
-        self, triggers_project: Path
-    ) -> None:
+    def test_workflow_persisted_in_db(self, triggers_project: Path) -> None:
         """Sanity check: execution_triggers tabela existe e tem rows do ingest."""
         db = triggers_project / ".plugadvpl" / "index.db"
         conn = sqlite3.connect(db)
         try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM execution_triggers"
-            ).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM execution_triggers").fetchone()[0]
         finally:
             conn.close()
         assert count >= 4, f"esperado >=4 triggers, encontrado {count}"
@@ -2170,29 +2120,25 @@ class TestExecauto:
         src.mkdir()
         # MATA410 inclusao — SC5/SC6 + secundarias.
         (src / "ABCCOMBO.prw").write_bytes(
-            b'User Function ABCCOMBO()\n'
-            b'   MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, 3)\n'
-            b'Return\n'
+            b"User Function ABCCOMBO()\n"
+            b"   MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, aIt, 3)\n"
+            b"Return\n"
         )
         # FINA050 inclusao — SE2.
         (src / "ABCFIN50.prw").write_bytes(
-            b'User Function ABCFIN50()\n'
-            b'   MsExecAuto({|x,y| FINA050(x,y)}, aArr, 3)\n'
-            b'Return\n'
+            b"User Function ABCFIN50()\n   MsExecAuto({|x,y| FINA050(x,y)}, aArr, 3)\nReturn\n"
         )
         # Dynamic — &(cVar).
         (src / "ABCDYN.prw").write_bytes(
-            b'User Function ABCDYN()\n'
-            b'   MsExecAuto({|x,y,z| &(cRot).(x,y,z)}, aCab, aIt, 3)\n'
-            b'Return\n'
+            b"User Function ABCDYN()\n"
+            b"   MsExecAuto({|x,y,z| &(cRot).(x,y,z)}, aCab, aIt, 3)\n"
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         return src
 
-    def test_execauto_lists_all(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_lists_all(self, execauto_project: Path, runner: CliRunner) -> None:
         """Sem filtro: lista as 3 chamadas (MATA410, FINA050, dynamic)."""
         result = runner.invoke(
             app, ["--root", str(execauto_project), "--format", "json", "execauto"]
@@ -2203,15 +2149,18 @@ class TestExecauto:
         routines = {r["routine"] or "(dynamic)" for r in rows}
         assert routines == {"MATA410", "FINA050", "(dynamic)"}
 
-    def test_execauto_filter_by_routine(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_filter_by_routine(self, execauto_project: Path, runner: CliRunner) -> None:
         """`--routine MATA410` retorna só a chamada com SC5/SC6."""
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "execauto", "--routine", "MATA410",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "execauto",
+                "--routine",
+                "MATA410",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2223,15 +2172,18 @@ class TestExecauto:
         assert "SC6" in rows[0]["tabelas"]
         assert rows[0]["op"] == "inclusao"
 
-    def test_execauto_filter_by_modulo(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_filter_by_modulo(self, execauto_project: Path, runner: CliRunner) -> None:
         """`--modulo SIGAFIN` localiza só FINA050."""
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "execauto", "--modulo", "SIGAFIN",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "execauto",
+                "--modulo",
+                "SIGAFIN",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2239,15 +2191,17 @@ class TestExecauto:
         assert len(rows) == 1
         assert rows[0]["routine"] == "FINA050"
 
-    def test_execauto_filter_dynamic_only(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_filter_dynamic_only(self, execauto_project: Path, runner: CliRunner) -> None:
         """`--dynamic` retorna só calls não-resolvíveis."""
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "execauto", "--dynamic",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "execauto",
+                "--dynamic",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2255,15 +2209,18 @@ class TestExecauto:
         assert len(rows) == 1
         assert rows[0]["routine"] == "(dynamic)"
 
-    def test_execauto_filter_op_inc(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_filter_op_inc(self, execauto_project: Path, runner: CliRunner) -> None:
         """`--op inc` retorna só inclusões (op_code=3)."""
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "execauto", "--op", "inc",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "execauto",
+                "--op",
+                "inc",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2280,8 +2237,12 @@ class TestExecauto:
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "arch", "ABCCOMBO.prw",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "arch",
+                "ABCCOMBO.prw",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2300,8 +2261,12 @@ class TestExecauto:
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project), "--format", "json",
-                "arch", "ABCDYN.prw",
+                "--root",
+                str(execauto_project),
+                "--format",
+                "json",
+                "arch",
+                "ABCDYN.prw",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2317,8 +2282,11 @@ class TestExecauto:
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project),
-                "execauto", "--modulo", "SIGAINEXISTENTE",
+                "--root",
+                str(execauto_project),
+                "execauto",
+                "--modulo",
+                "SIGAINEXISTENTE",
             ],
         )
         assert result.exit_code == 0
@@ -2340,8 +2308,11 @@ class TestExecauto:
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project),
-                "execauto", "--arquivo", "NAOEXISTE.prw",
+                "--root",
+                str(execauto_project),
+                "execauto",
+                "--arquivo",
+                "NAOEXISTE.prw",
             ],
         )
         assert result.exit_code == 0
@@ -2350,9 +2321,7 @@ class TestExecauto:
             f"(estava sugerindo desnecessariamente). stderr: {result.stderr!r}"
         )
 
-    def test_execauto_rejects_invalid_op(
-        self, execauto_project: Path, runner: CliRunner
-    ) -> None:
+    def test_execauto_rejects_invalid_op(self, execauto_project: Path, runner: CliRunner) -> None:
         """v0.4.4 (UX #4): --op invalida deve ser rejeitada com mensagem
         clara antes de chegar na query (vs antes que retornava vazio sem
         aviso).
@@ -2360,8 +2329,11 @@ class TestExecauto:
         result = runner.invoke(
             app,
             [
-                "--root", str(execauto_project),
-                "execauto", "--op", "invalida",
+                "--root",
+                str(execauto_project),
+                "execauto",
+                "--op",
+                "invalida",
             ],
         )
         # Typer Enum violation → exit code 2 e mensagem listando opcoes
@@ -2409,61 +2381,57 @@ class TestDocs:
         src.mkdir(parents=True)
         # 1) Doc completo
         (src / "MT460FIM.tlpp").write_bytes(
-            b'/*/{Protheus.doc} MT460FIM\n'
-            b'Ponto de Entrada apos faturamento.\n'
-            b'@type user function\n'
-            b'@author Fernando Vernier\n'
-            b'@since 18/10/2025\n'
-            b'@version 2.0\n'
+            b"/*/{Protheus.doc} MT460FIM\n"
+            b"Ponto de Entrada apos faturamento.\n"
+            b"@type user function\n"
+            b"@author Fernando Vernier\n"
+            b"@since 18/10/2025\n"
+            b"@version 2.0\n"
             b'@param cNumNF, character, "Numero da NF"\n'
             b'@return logical, ".T. se sucesso"\n'
-            b'/*/\n'
-            b'User Function MT460FIM(cNumNF)\n'
-            b'Return .T.\n'
+            b"/*/\n"
+            b"User Function MT460FIM(cNumNF)\n"
+            b"Return .T.\n"
         )
         # 2) Deprecated
         (src / "MT460OLD.tlpp").write_bytes(
-            b'/*/{Protheus.doc} MT460OLD\n'
-            b'Versao antiga do PE.\n'
-            b'@type user function\n'
-            b'@author Joao\n'
-            b'@deprecated Use MT460FIM no lugar\n'
-            b'/*/\n'
-            b'User Function MT460OLD()\n'
-            b'Return\n'
+            b"/*/{Protheus.doc} MT460OLD\n"
+            b"Versao antiga do PE.\n"
+            b"@type user function\n"
+            b"@author Joao\n"
+            b"@deprecated Use MT460FIM no lugar\n"
+            b"/*/\n"
+            b"User Function MT460OLD()\n"
+            b"Return\n"
         )
         # 3) Órfão (sem doc) — gera BP-007.
         (src / "MT460NEW.tlpp").write_bytes(
-            b'User Function MT460NEW()\n'
-            b'   ConOut("sem doc")\n'
-            b'Return\n'
+            b'User Function MT460NEW()\n   ConOut("sem doc")\nReturn\n'
         )
         runner.invoke(app, ["--root", str(tmp_path / "src"), "init"])
         runner.invoke(app, ["--root", str(tmp_path / "src"), "ingest"])
         return tmp_path / "src"
 
-    def test_docs_lists_all(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_lists_all(self, docs_project: Path, runner: CliRunner) -> None:
         """Sem filtro: lista 2 docs (MT460FIM + MT460OLD; órfão NÃO aparece aqui)."""
-        result = runner.invoke(
-            app, ["--root", str(docs_project), "--format", "json", "docs"]
-        )
+        result = runner.invoke(app, ["--root", str(docs_project), "--format", "json", "docs"])
         assert result.exit_code == 0, result.stderr
         rows = json.loads(result.stdout)["rows"]
         assert len(rows) == 2
         funcs = {r["funcao"] for r in rows}
         assert funcs == {"MT460FIM", "MT460OLD"}
 
-    def test_docs_filter_by_modulo(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_filter_by_modulo(self, docs_project: Path, runner: CliRunner) -> None:
         """Path `src/SIGAFAT/...` infere SIGAFAT."""
         result = runner.invoke(
             app,
             [
-                "--root", str(docs_project), "--format", "json",
-                "docs", "SIGAFAT",
+                "--root",
+                str(docs_project),
+                "--format",
+                "json",
+                "docs",
+                "SIGAFAT",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2472,15 +2440,17 @@ class TestDocs:
         for r in rows:
             assert r["modulo"] == "SIGAFAT"
 
-    def test_docs_filter_deprecated(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_filter_deprecated(self, docs_project: Path, runner: CliRunner) -> None:
         """`--deprecated` retorna só MT460OLD."""
         result = runner.invoke(
             app,
             [
-                "--root", str(docs_project), "--format", "json",
-                "docs", "--deprecated",
+                "--root",
+                str(docs_project),
+                "--format",
+                "json",
+                "docs",
+                "--deprecated",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2489,15 +2459,18 @@ class TestDocs:
         assert rows[0]["funcao"] == "MT460OLD"
         assert rows[0]["deprecated"] == "sim"
 
-    def test_docs_filter_author(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_filter_author(self, docs_project: Path, runner: CliRunner) -> None:
         """`--author Fernando` LIKE match localiza só MT460FIM."""
         result = runner.invoke(
             app,
             [
-                "--root", str(docs_project), "--format", "json",
-                "docs", "--author", "Fernando",
+                "--root",
+                str(docs_project),
+                "--format",
+                "json",
+                "docs",
+                "--author",
+                "Fernando",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2505,13 +2478,9 @@ class TestDocs:
         assert len(rows) == 1
         assert rows[0]["funcao"] == "MT460FIM"
 
-    def test_docs_show_renders_markdown(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_show_renders_markdown(self, docs_project: Path, runner: CliRunner) -> None:
         """`--show MT460FIM` retorna Markdown estruturado."""
-        result = runner.invoke(
-            app, ["--root", str(docs_project), "docs", "--show", "MT460FIM"]
-        )
+        result = runner.invoke(app, ["--root", str(docs_project), "docs", "--show", "MT460FIM"])
         assert result.exit_code == 0, result.stderr
         out = result.stdout
         assert "## MT460FIM" in out
@@ -2521,24 +2490,24 @@ class TestDocs:
         assert "cNumNF" in out
         assert "### Retorno" in out
 
-    def test_docs_show_not_found_exits_1(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_show_not_found_exits_1(self, docs_project: Path, runner: CliRunner) -> None:
         """`--show <inexistente>` retorna exit 1."""
         result = runner.invoke(
             app, ["--root", str(docs_project), "docs", "--show", "FnInexistente"]
         )
         assert result.exit_code == 1
 
-    def test_docs_orphans_lists_bp007(
-        self, docs_project: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_orphans_lists_bp007(self, docs_project: Path, runner: CliRunner) -> None:
         """`--orphans` lista funções sem header (cross-ref BP-007)."""
         result = runner.invoke(
             app,
             [
-                "--root", str(docs_project), "--format", "json",
-                "docs", "--orphans",
+                "--root",
+                str(docs_project),
+                "--format",
+                "json",
+                "docs",
+                "--orphans",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2555,20 +2524,18 @@ class TestDocs:
         src = tmp_path / "src"
         src.mkdir()
         (src / "FnA.prw").write_bytes(
-            b'/*/{Protheus.doc} HomFn\nDoc do A.\n@author Anna\n/*/\n'
-            b'User Function HomFn()\nReturn\n'
+            b"/*/{Protheus.doc} HomFn\nDoc do A.\n@author Anna\n/*/\n"
+            b"User Function HomFn()\nReturn\n"
         )
         (src / "FnB.prw").write_bytes(
-            b'/*/{Protheus.doc} HomFn\nDoc do B.\n@author Beto\n/*/\n'
-            b'User Function HomFn()\nReturn\n'
+            b"/*/{Protheus.doc} HomFn\nDoc do B.\n@author Beto\n/*/\n"
+            b"User Function HomFn()\nReturn\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
 
         # Sem --arquivo: aviso em stderr + mostra primeiro alfabeticamente
-        result = runner.invoke(
-            app, ["--root", str(src), "docs", "--show", "HomFn"]
-        )
+        result = runner.invoke(app, ["--root", str(src), "docs", "--show", "HomFn"])
         assert result.exit_code == 0
         assert "2 fontes" in result.stderr or "Aviso" in result.stderr
         assert "Anna" in result.stdout  # FnA.prw vem antes alfabeticamente
@@ -2580,26 +2547,24 @@ class TestDocs:
         assert result2.exit_code == 0
         assert "Beto" in result2.stdout
 
-    def test_docs_show_ws_constructs_end_to_end(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_docs_show_ws_constructs_end_to_end(self, tmp_path: Path, runner: CliRunner) -> None:
         """v0.4.4 (BUG #2): docs --funcao e --show funcionam pra
         WSSTRUCT/WSSERVICE/WSMETHOD (antes ficavam órfãos)."""
         src = tmp_path / "src"
         src.mkdir()
         (src / "MyWS.tlpp").write_bytes(
-            b'/*/{Protheus.doc} WSXDATA\n@type property\n/*/\n'
-            b'WSSTRUCT WSXDATA\n'
-            b'   WSDATA cId AS STRING\n'
-            b'ENDWSSTRUCT\n'
-            b'\n'
-            b'/*/{Protheus.doc} MyWS\n@type class\n/*/\n'
+            b"/*/{Protheus.doc} WSXDATA\n@type property\n/*/\n"
+            b"WSSTRUCT WSXDATA\n"
+            b"   WSDATA cId AS STRING\n"
+            b"ENDWSSTRUCT\n"
+            b"\n"
+            b"/*/{Protheus.doc} MyWS\n@type class\n/*/\n"
             b'WSSERVICE MyWS DESCRIPTION "Servico"\n'
-            b'\n'
-            b'/*/{Protheus.doc} GravData\n@type method\n/*/\n'
+            b"\n"
+            b"/*/{Protheus.doc} GravData\n@type method\n/*/\n"
             b'WSMETHOD GravData DESCRIPTION "Grava" WSSERVICE MyWS\n'
-            b'   Local lOk := .T.\n'
-            b'Return lOk\n'
+            b"   Local lOk := .T.\n"
+            b"Return lOk\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -2615,9 +2580,7 @@ class TestDocs:
             assert len(rows) == 1, f"esperado 1 row pra {nome}, recebi {len(rows)}"
 
         # --show formatado
-        r = runner.invoke(
-            app, ["--root", str(src), "docs", "--show", "GravData"]
-        )
+        r = runner.invoke(app, ["--root", str(src), "docs", "--show", "GravData"])
         assert r.exit_code == 0, r.stderr
         assert "## GravData" in r.stdout
         assert "@type method" in r.stdout
@@ -2643,23 +2606,19 @@ class TestTrace:
         src.mkdir()
         # Fonte que define função, tem Protheus.doc, e chama MsExecAuto MATA410
         (src / "MyCmp.prw").write_bytes(
-            b'/*/{Protheus.doc} U_MyCmp\n'
-            b'Helper que toca SA1 via ExecAuto.\n'
-            b'@type user function\n@author Tester\n'
-            b'/*/\n'
-            b'User Function U_MyCmp()\n'
-            b'   Local aCab := {}\n'
-            b'   MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, {}, 3)\n'
+            b"/*/{Protheus.doc} U_MyCmp\n"
+            b"Helper que toca SA1 via ExecAuto.\n"
+            b"@type user function\n@author Tester\n"
+            b"/*/\n"
+            b"User Function U_MyCmp()\n"
+            b"   Local aCab := {}\n"
+            b"   MsExecAuto({|x,y,z| MATA410(x,y,z)}, aCab, {}, 3)\n"
             b'   dbSelectArea("SA1")\n'
             b'   SA1->A1_COD := "001"\n'
-            b'Return\n'
+            b"Return\n"
         )
         # Fonte que chama U_MyCmp
-        (src / "Caller.prw").write_bytes(
-            b'User Function CallerFn()\n'
-            b'   U_MyCmp()\n'
-            b'Return\n'
-        )
+        (src / "Caller.prw").write_bytes(b"User Function CallerFn()\n   U_MyCmp()\nReturn\n")
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         return src
@@ -2681,9 +2640,7 @@ class TestTrace:
         cb_rows = [r for r in rows if r["edge"] == "called_by"]
         assert any("Caller.prw" in r["arquivo"] for r in cb_rows)
 
-    def test_trace_funcao_via_execauto(
-        self, trace_project: Path, runner: CliRunner
-    ) -> None:
+    def test_trace_funcao_via_execauto(self, trace_project: Path, runner: CliRunner) -> None:
         """trace de MATA410 (rotina TOTVS) retorna via_execauto da chamada."""
         result = runner.invoke(
             app,
@@ -2723,15 +2680,19 @@ class TestTrace:
         edges = {r["edge"] for r in rows}
         assert "touched_via_execauto" in edges, f"edges={edges}"
 
-    def test_trace_filter_universo(
-        self, trace_project: Path, runner: CliRunner
-    ) -> None:
+    def test_trace_filter_universo(self, trace_project: Path, runner: CliRunner) -> None:
         """--universo 3 limita a hits do Universo 3 (workflow/execauto/docs)."""
         result = runner.invoke(
             app,
             [
-                "--root", str(trace_project), "--format", "json",
-                "trace", "U_MyCmp", "--universo", "3",
+                "--root",
+                str(trace_project),
+                "--format",
+                "json",
+                "trace",
+                "U_MyCmp",
+                "--universo",
+                "3",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -2767,7 +2728,8 @@ class TestTrace:
             if tdef_idx is not None:
                 # table_definition deve vir antes de qualquer in_*/indexed_by/trigger_on_table
                 outras_u2 = [
-                    i for i, r in enumerate(u2)
+                    i
+                    for i, r in enumerate(u2)
                     if r["edge"] not in ("table_definition", "n_fields", "field_definition")
                 ]
                 if outras_u2:
@@ -2776,16 +2738,18 @@ class TestTrace:
                         f"de outras edges U2 (min idx={min(outras_u2)})"
                     )
 
-    def test_trace_tipo_override(
-        self, trace_project: Path, runner: CliRunner
-    ) -> None:
+    def test_trace_tipo_override(self, trace_project: Path, runner: CliRunner) -> None:
         """--tipo força quando auto-detect erra."""
         # SA1 vira tabela por default; com --tipo funcao, busca como função
         result = runner.invoke(
             app,
             [
-                "--root", str(trace_project),
-                "trace", "SA1", "--tipo", "funcao",
+                "--root",
+                str(trace_project),
+                "trace",
+                "SA1",
+                "--tipo",
+                "funcao",
             ],
         )
         assert result.exit_code == 0
@@ -2912,15 +2876,17 @@ class TestTrace:
             f"esperado sugestao find/grep. stderr={stderr!r}"
         )
 
-    def test_trace_invalid_universo_rejected(
-        self, trace_project: Path, runner: CliRunner
-    ) -> None:
+    def test_trace_invalid_universo_rejected(self, trace_project: Path, runner: CliRunner) -> None:
         """--universo com valor inválido sai com erro amigável."""
         result = runner.invoke(
             app,
             [
-                "--root", str(trace_project),
-                "trace", "U_MyCmp", "--universo", "abc",
+                "--root",
+                str(trace_project),
+                "trace",
+                "U_MyCmp",
+                "--universo",
+                "abc",
             ],
         )
         assert result.exit_code != 0
@@ -2936,51 +2902,44 @@ class TestQualidadeMetricas:
         src = tmp_path / "src"
         src.mkdir()
         # SimpleFn: CC=1, sem nesting
-        (src / "Simple.prw").write_bytes(
-            b'User Function SimpleFn(cArg)\n'
-            b'   Return Nil\n'
-        )
+        (src / "Simple.prw").write_bytes(b"User Function SimpleFn(cArg)\n   Return Nil\n")
         # ComplexFn: CC alta (5+), nesting 3+
         (src / "Complex.prw").write_bytes(
-            b'/*/{Protheus.doc} U_ComplexFn\nHelper.\n@type user function\n/*/\n'
-            b'User Function ComplexFn(cArg, nVal)\n'
-            b'   Local i, j\n'
+            b"/*/{Protheus.doc} U_ComplexFn\nHelper.\n@type user function\n/*/\n"
+            b"User Function ComplexFn(cArg, nVal)\n"
+            b"   Local i, j\n"
             b'   If cArg == "A"\n'
-            b'      For i := 1 To 10\n'
-            b'         If i % 2 == 0\n'
-            b'            For j := 1 To 5\n'
-            b'               If j > 3\n'
+            b"      For i := 1 To 10\n"
+            b"         If i % 2 == 0\n"
+            b"            For j := 1 To 5\n"
+            b"               If j > 3\n"
             b'                  ConOut("aa")\n'
-            b'               EndIf\n'
-            b'            Next j\n'
-            b'         EndIf\n'
-            b'      Next i\n'
+            b"               EndIf\n"
+            b"            Next j\n"
+            b"         EndIf\n"
+            b"      Next i\n"
             b'   ElseIf cArg == "B"\n'
             b'      ConOut("b")\n'
-            b'   EndIf\n'
-            b'Return Nil\n'
+            b"   EndIf\n"
+            b"Return Nil\n"
         )
         # CallerFn: chama SimpleFn 3x e ComplexFn 2x → hotspots
         (src / "Caller.prw").write_bytes(
-            b'User Function CallerFn()\n'
+            b"User Function CallerFn()\n"
             b'   U_SimpleFn("x")\n'
             b'   U_SimpleFn("y")\n'
             b'   U_SimpleFn("z")\n'
             b'   U_ComplexFn("A", 1)\n'
             b'   U_ComplexFn("B", 2)\n'
-            b'Return\n'
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
         return src
 
-    def test_metrics_lists_all_functions(
-        self, metrics_project: Path, runner: CliRunner
-    ) -> None:
+    def test_metrics_lists_all_functions(self, metrics_project: Path, runner: CliRunner) -> None:
         """metrics lista todas as funções com cc/loc/nesting."""
-        result = runner.invoke(
-            app, ["--root", str(metrics_project), "--format", "json", "metrics"]
-        )
+        result = runner.invoke(app, ["--root", str(metrics_project), "--format", "json", "metrics"])
         assert result.exit_code == 0, result.stderr
         rows = json.loads(result.stdout)["rows"]
         funcs = {r["funcao"]: r for r in rows}
@@ -2997,15 +2956,18 @@ class TestQualidadeMetricas:
         assert funcs["ComplexFn"]["has_doc"] is True
         assert funcs["SimpleFn"]["has_doc"] is False
 
-    def test_metrics_filter_min_cc(
-        self, metrics_project: Path, runner: CliRunner
-    ) -> None:
+    def test_metrics_filter_min_cc(self, metrics_project: Path, runner: CliRunner) -> None:
         """--min-cc 5 retorna só ComplexFn (SimpleFn CC=1, CallerFn CC=1)."""
         result = runner.invoke(
             app,
             [
-                "--root", str(metrics_project), "--format", "json",
-                "metrics", "--min-cc", "5",
+                "--root",
+                str(metrics_project),
+                "--format",
+                "json",
+                "metrics",
+                "--min-cc",
+                "5",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -3014,24 +2976,25 @@ class TestQualidadeMetricas:
         assert "ComplexFn" in funcs
         assert "SimpleFn" not in funcs
 
-    def test_metrics_sort_loc(
-        self, metrics_project: Path, runner: CliRunner
-    ) -> None:
+    def test_metrics_sort_loc(self, metrics_project: Path, runner: CliRunner) -> None:
         """--sort loc retorna ComplexFn primeiro (mais linhas)."""
         result = runner.invoke(
             app,
             [
-                "--root", str(metrics_project), "--format", "json",
-                "metrics", "--sort", "loc",
+                "--root",
+                str(metrics_project),
+                "--format",
+                "json",
+                "metrics",
+                "--sort",
+                "loc",
             ],
         )
         assert result.exit_code == 0, result.stderr
         rows = json.loads(result.stdout)["rows"]
         assert rows[0]["funcao"] == "ComplexFn"
 
-    def test_hotspots_method_dedup_warning(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_hotspots_method_dedup_warning(self, tmp_path: Path, runner: CliRunner) -> None:
         """v0.6.1 (bug #1): hotspots emite warning quando detecta múltiplas
         variáveis VAR:METODO compartilhando o mesmo método (provavelmente
         mesma classe acessada via vars diferentes — ex: TPrinter:Say via
@@ -3041,23 +3004,20 @@ class TestQualidadeMetricas:
         src.mkdir()
         # 3 fontes que chamam TPrinter:Say via vars com nomes diferentes
         (src / "FnA.prw").write_bytes(
-            b'User Function FnA()\n'
-            b'   Local oPrint := TPrinter():New()\n'
+            b"User Function FnA()\n"
+            b"   Local oPrint := TPrinter():New()\n"
             b'   oPrint:Say(1, "x")\n'
             b'   oPrint:Say(2, "y")\n'
-            b'Return\n'
+            b"Return\n"
         )
         (src / "FnB.prw").write_bytes(
-            b'User Function FnB()\n'
-            b'   Local oPrn := TPrinter():New()\n'
-            b'   oPrn:Say(1, "x")\n'
-            b'Return\n'
+            b'User Function FnB()\n   Local oPrn := TPrinter():New()\n   oPrn:Say(1, "x")\nReturn\n'
         )
         (src / "FnC.prw").write_bytes(
-            b'User Function FnC()\n'
-            b'   Local oPrinter := TPrinter():New()\n'
+            b"User Function FnC()\n"
+            b"   Local oPrinter := TPrinter():New()\n"
             b'   oPrinter:Say(1, "x")\n'
-            b'Return\n'
+            b"Return\n"
         )
         runner.invoke(app, ["--root", str(src), "init"])
         runner.invoke(app, ["--root", str(src), "ingest"])
@@ -3072,9 +3032,7 @@ class TestQualidadeMetricas:
             f"esperado warning mencionando :SAY no stderr. stderr={stderr!r}"
         )
 
-    def test_hotspots_ranks_simplefn_top(
-        self, metrics_project: Path, runner: CliRunner
-    ) -> None:
+    def test_hotspots_ranks_simplefn_top(self, metrics_project: Path, runner: CliRunner) -> None:
         """hotspots: SimpleFn chamada 3x, ComplexFn 2x → SimpleFn primeiro."""
         result = runner.invoke(
             app, ["--root", str(metrics_project), "--format", "json", "hotspots"]
@@ -3086,15 +3044,18 @@ class TestQualidadeMetricas:
         assert "SIMPLEFN" in top
         assert top["SIMPLEFN"] >= 3
 
-    def test_cobertura_doc_returns_pct(
-        self, metrics_project: Path, runner: CliRunner
-    ) -> None:
+    def test_cobertura_doc_returns_pct(self, metrics_project: Path, runner: CliRunner) -> None:
         """cobertura-doc: 1 de 3 funcs com doc = 33%."""
         result = runner.invoke(
             app,
             [
-                "--root", str(metrics_project), "--format", "json",
-                "cobertura-doc", "--groupby", "source_type",
+                "--root",
+                str(metrics_project),
+                "--format",
+                "json",
+                "cobertura-doc",
+                "--groupby",
+                "source_type",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -3108,25 +3069,23 @@ class TestQualidadeMetricas:
 
 
 class TestMissingDb:
-    def test_query_without_db_exits_2(
-        self, synthetic_project: Path, runner: CliRunner
-    ) -> None:
+    def test_query_without_db_exits_2(self, synthetic_project: Path, runner: CliRunner) -> None:
         # Sem init nem ingest, find deve falhar com saída amigável.
-        result = runner.invoke(
-            app, ["--root", str(synthetic_project), "find", "FATA050"]
-        )
+        result = runner.invoke(app, ["--root", str(synthetic_project), "find", "FATA050"])
         assert result.exit_code == 2
 
 
 class TestReindex:
-    def test_reindex_single_file(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_reindex_single_file(self, indexed_project: Path, runner: CliRunner) -> None:
         result = runner.invoke(
             app,
             [
-                "--root", str(indexed_project), "--format", "json",
-                "reindex", "FATA050.prw",
+                "--root",
+                str(indexed_project),
+                "--format",
+                "json",
+                "reindex",
+                "FATA050.prw",
             ],
         )
         assert result.exit_code == 0, result.stderr
@@ -3157,9 +3116,7 @@ class TestEditPrwCheck:
         assert payload["rows"][0]["detected_encoding"] == "utf-8"
 
     def test_missing_file_exits_2(self, tmp_path: Path, runner: CliRunner) -> None:
-        result = runner.invoke(
-            app, ["edit-prw", "check", str(tmp_path / "naoexiste.prw")]
-        )
+        result = runner.invoke(app, ["edit-prw", "check", str(tmp_path / "naoexiste.prw")])
         assert result.exit_code == 2
 
 
@@ -3169,9 +3126,7 @@ class TestEditPrwSave:
     ) -> None:
         fp = tmp_path / "foo.prw"
         fp.write_bytes("Função".encode("utf-8"))
-        result = runner.invoke(
-            app, ["--format", "json", "edit-prw", "save", str(fp)]
-        )
+        result = runner.invoke(app, ["--format", "json", "edit-prw", "save", str(fp)])
         assert result.exit_code == 0
         assert fp.read_bytes() == "Função".encode("cp1252")
         assert (tmp_path / "foo.prw.bak").exists()
@@ -3180,18 +3135,14 @@ class TestEditPrwSave:
     def test_no_backup_flag(self, tmp_path: Path, runner: CliRunner) -> None:
         fp = tmp_path / "foo.prw"
         fp.write_bytes("Função".encode("utf-8"))
-        result = runner.invoke(
-            app, ["edit-prw", "save", str(fp), "--no-backup"]
-        )
+        result = runner.invoke(app, ["edit-prw", "save", str(fp), "--no-backup"])
         assert result.exit_code == 0
         assert not (tmp_path / "foo.prw.bak").exists()
 
     def test_explicit_to_utf8(self, tmp_path: Path, runner: CliRunner) -> None:
         fp = tmp_path / "foo.prw"
         fp.write_bytes("Função".encode("cp1252"))
-        result = runner.invoke(
-            app, ["edit-prw", "save", str(fp), "--to", "utf-8", "--no-backup"]
-        )
+        result = runner.invoke(app, ["edit-prw", "save", str(fp), "--to", "utf-8", "--no-backup"])
         assert result.exit_code == 0
         assert fp.read_bytes() == "Função".encode("utf-8")
 
@@ -3214,7 +3165,7 @@ class TestEditPrwStageCommit:
         self, tmp_path: Path, runner: CliRunner
     ) -> None:
         fp = tmp_path / "foo.prw"
-        original_bytes = "User Function Foo()\n  ConOut(\"Função\")\nReturn".encode("cp1252")
+        original_bytes = 'User Function Foo()\n  ConOut("Função")\nReturn'.encode("cp1252")
         fp.write_bytes(original_bytes)
 
         result = runner.invoke(app, ["edit-prw", "stage", str(fp)])
@@ -3222,7 +3173,7 @@ class TestEditPrwStageCommit:
         # Após stage: bytes 0xC3 0xA7 (utf-8) em vez de 0xE7 (cp1252)
         staged = fp.read_bytes()
         assert b"\xc3\xa7" in staged  # 'ç' utf-8
-        assert b"\xe7" not in staged   # 'ç' cp1252 não está mais
+        assert b"\xe7" not in staged  # 'ç' cp1252 não está mais
 
         result2 = runner.invoke(app, ["edit-prw", "commit", str(fp)])
         assert result2.exit_code == 0, result2.output
@@ -3244,9 +3195,7 @@ class TestEditPrwStageCommit:
 class TestEditPrwClean:
     """v0.8.11 fix bug 4: edit-prw clean remove .bak acumulado."""
 
-    def test_clean_removes_baks_in_folder(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_clean_removes_baks_in_folder(self, tmp_path: Path, runner: CliRunner) -> None:
         (tmp_path / "a.prw.bak").write_bytes(b"old")
         (tmp_path / "b.tlpp.bak").write_bytes(b"old")
         (tmp_path / "c.txt.bak").write_bytes(b"unrelated - nao deve sumir")
@@ -3257,20 +3206,14 @@ class TestEditPrwClean:
         # .txt.bak não é de fonte ADVPL — preservado
         assert (tmp_path / "c.txt.bak").exists()
 
-    def test_clean_dry_run_keeps_files(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_clean_dry_run_keeps_files(self, tmp_path: Path, runner: CliRunner) -> None:
         (tmp_path / "a.prw.bak").write_bytes(b"x")
-        result = runner.invoke(
-            app, ["edit-prw", "clean", str(tmp_path), "--dry-run"]
-        )
+        result = runner.invoke(app, ["edit-prw", "clean", str(tmp_path), "--dry-run"])
         assert result.exit_code == 0
         assert (tmp_path / "a.prw.bak").exists()
         assert "dry-run" in result.output
 
-    def test_clean_empty_folder_no_error(
-        self, tmp_path: Path, runner: CliRunner
-    ) -> None:
+    def test_clean_empty_folder_no_error(self, tmp_path: Path, runner: CliRunner) -> None:
         result = runner.invoke(app, ["edit-prw", "clean", str(tmp_path), "--yes"])
         assert result.exit_code == 0
         assert "Nenhum .bak" in result.output
@@ -3550,7 +3493,11 @@ class TestMigrateTlppTodos:
             ["--root", str(synthetic_project), "migrate-tlpp", "todos"],
         )
         assert result.exit_code == 0
-        assert "nenhum" in result.stdout.lower() or "0" in result.stdout or "nenhum" in result.stderr.lower()
+        assert (
+            "nenhum" in result.stdout.lower()
+            or "0" in result.stdout
+            or "nenhum" in result.stderr.lower()
+        )
 
     def test_todos_lists_markers(
         self,
@@ -3558,8 +3505,7 @@ class TestMigrateTlppTodos:
         runner: CliRunner,
     ) -> None:
         (synthetic_project / "y.tlpp").write_text(
-            "// @plugadvpl-todo:namespace-infer revise manualmente\n"
-            "namespace x\n",
+            "// @plugadvpl-todo:namespace-infer revise manualmente\nnamespace x\n",
             encoding="utf-8",
         )
         result = runner.invoke(
@@ -3730,14 +3676,18 @@ class TestPouiComponentes:
 
     def test_filtra_po_table_mostra_p_columns(self, runner: CliRunner, tmp_path: Path) -> None:
         """poui-componentes po-table deve conter p-columns."""
-        result = runner.invoke(app, ["--root", str(tmp_path), "--format", "json", "poui-componentes", "po-table"])
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "--format", "json", "poui-componentes", "po-table"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.stdout)["rows"]
         bindings = {r["binding"] for r in data}
         assert "p-columns" in bindings
 
     def test_componente_inexistente_retorna_vazio(self, runner: CliRunner, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["--root", str(tmp_path), "--format", "json", "poui-componentes", "po-nao-existe"])
+        result = runner.invoke(
+            app, ["--root", str(tmp_path), "--format", "json", "poui-componentes", "po-nao-existe"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.stdout)["rows"]
         assert data == []
@@ -3757,9 +3707,7 @@ class TestPouiLintCmd:
             "<po-button p-fake='x'></po-button>", encoding="utf-8"
         )
         runner.invoke(app, ["--root", str(tmp_path), "ingest-poui", str(tmp_path)])
-        result = runner.invoke(
-            app, ["--root", str(tmp_path), "--format", "json", "poui-lint"]
-        )
+        result = runner.invoke(app, ["--root", str(tmp_path), "--format", "json", "poui-lint"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         rows = data["rows"] if isinstance(data, dict) else data
@@ -3787,15 +3735,11 @@ class TestPouiLintCmd:
         assert any("field" in r["alvo"] for r in rows)  # chave inexistente
         assert any("money" in r["mensagem"] for r in rows)  # valor fora do enum
 
-    def test_poui_lint_sem_findings_retorna_vazio(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_poui_lint_sem_findings_retorna_vazio(self, runner: CliRunner, tmp_path: Path) -> None:
         """poui-lint sem dados de ingest deve retornar lista vazia."""
         import json
 
-        result = runner.invoke(
-            app, ["--root", str(tmp_path), "--format", "json", "poui-lint"]
-        )
+        result = runner.invoke(app, ["--root", str(tmp_path), "--format", "json", "poui-lint"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         rows = data["rows"] if isinstance(data, dict) else data
@@ -3856,9 +3800,7 @@ class TestWriteEmptyAlert:
         )
         assert "mas 0x" not in (r.stderr or "")
 
-    def test_sem_alerta_quando_ha_write(
-        self, indexed_project: Path, runner: CliRunner
-    ) -> None:
+    def test_sem_alerta_quando_ha_write(self, indexed_project: Path, runner: CliRunner) -> None:
         # SC5 tem write clássico (RecLock) no synthetic_project -> sem alerta
         r = runner.invoke(app, ["--root", str(indexed_project), "tables", "SC5", "--mode", "write"])
         assert "mas 0x" not in (r.stderr or "")
@@ -3888,19 +3830,36 @@ class TestCatalogCommands:
         src, _ = proj_catalog
         r = runner.invoke(
             app,
-            ["--root", str(src), "--format", "json", "catalog", "regras", "--group-by", "ZT_TIPO", "--count"],
+            [
+                "--root",
+                str(src),
+                "--format",
+                "json",
+                "catalog",
+                "regras",
+                "--group-by",
+                "ZT_TIPO",
+                "--count",
+            ],
         )
         assert r.exit_code == 0
         assert '"count": 2' in r.stdout and '"ZT_TIPO": "1"' in r.stdout
 
-    def test_resolve_callers_cli(
-        self, proj_catalog: tuple[Path, Path], runner: CliRunner
-    ) -> None:
+    def test_resolve_callers_cli(self, proj_catalog: tuple[Path, Path], runner: CliRunner) -> None:
         src, _ = proj_catalog
         r = runner.invoke(
             app,
-            ["--root", str(src), "--format", "json", "catalog", "regras",
-             "--funcao-field", "ZT_FUNCAO", "--resolve-callers"],
+            [
+                "--root",
+                str(src),
+                "--format",
+                "json",
+                "catalog",
+                "regras",
+                "--funcao-field",
+                "ZT_FUNCAO",
+                "--resolve-callers",
+            ],
         )
         assert "ABCFN1.prw" in r.stdout
 
@@ -3908,7 +3867,9 @@ class TestCatalogCommands:
         self, proj_catalog: tuple[Path, Path], runner: CliRunner
     ) -> None:
         src, _ = proj_catalog
-        r = runner.invoke(app, ["--root", str(src), "catalog", "regras", "--filter", "DROP TABLE x"])
+        r = runner.invoke(
+            app, ["--root", str(src), "catalog", "regras", "--filter", "DROP TABLE x"]
+        )
         assert r.exit_code == 2
 
     def test_alias_inexistente_exit1(
@@ -3951,7 +3912,7 @@ def test_coletadb_version_mismatch_needs_force(tmp_path: Path, runner: CliRunner
     assert "--force" in (r.stderr + r.stdout)
     r2 = runner.invoke(app, ["--root", str(tmp_path), "coletadb", "--force"])
     assert r2.exit_code == 0, r2.stderr or r2.stdout
-    assert b'1.2.0' in (tmp_path / "coletadb.tlpp").read_bytes()
+    assert b"1.2.0" in (tmp_path / "coletadb.tlpp").read_bytes()
 
 
 def test_coletadb_unparseable_existing_shows_desconhecida(
@@ -3992,9 +3953,7 @@ class TestIngestExcludeCli:
 
         r0 = runner.invoke(app, ["--root", str(tmp_path), "init"])
         assert r0.exit_code == 0, r0.stderr or r0.stdout
-        r = runner.invoke(
-            app, ["--root", str(tmp_path), "ingest", "--exclude", "descontinuado/**"]
-        )
+        r = runner.invoke(app, ["--root", str(tmp_path), "ingest", "--exclude", "descontinuado/**"])
         assert r.exit_code == 0, r.stderr or r.stdout
         assert "ignorados" in (r.stderr + r.stdout)
 
@@ -4005,3 +3964,148 @@ class TestIngestExcludeCli:
         finally:
             conn.close()
         assert rows == {"A.prw"}
+
+
+class TestIngestRespectsDb:
+    """Bug fix: `ingest` deve respeitar `--db` (antes escrevia em <root>/.plugadvpl)."""
+
+    def test_ingest_writes_to_custom_db(
+        self, synthetic_project: Path, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        custom = tmp_path / "custom_idx.db"
+        runner.invoke(app, ["--root", str(synthetic_project), "--db", str(custom), "init"])
+        r = runner.invoke(app, ["--root", str(synthetic_project), "--db", str(custom), "ingest"])
+        assert r.exit_code == 0
+        # o índice custom deve estar populado...
+        conn = sqlite3.connect(custom)
+        try:
+            n = conn.execute("SELECT count(*) FROM fontes").fetchone()[0]
+        finally:
+            conn.close()
+        assert n > 0
+        # ...e o local default NÃO deve ter sido criado.
+        assert not (synthetic_project / ".plugadvpl" / "index.db").exists()
+
+
+class TestGroundingFragment:
+    """Fase 3 roadmap-ia: o fragment instrui o agente a emitir o bloco de claims."""
+
+    def test_fragment_has_claims_block_instruction(
+        self, synthetic_project: Path, runner: CliRunner
+    ) -> None:
+        runner.invoke(app, ["--root", str(synthetic_project), "init"])
+        content = (synthetic_project / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "plugadvpl-claims" in content
+
+
+class TestVerifyClaims:
+    """Fase 1 roadmap-ia: comando `verify-claims` (verificador determinístico)."""
+
+    def test_stdin_batch_returns_verdict_json(
+        self, indexed_project: Path, runner: CliRunner
+    ) -> None:
+        payload = json.dumps({"claims": [{"id": "c1", "kind": "function", "symbol": "FWLerExcel"}]})
+        result = runner.invoke(
+            app,
+            ["--root", str(indexed_project), "--format", "json", "verify-claims", "--stdin"],
+            input=payload,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "coverage" in data
+        by = {r["claim_id"]: r for r in data["results"]}
+        # FWLerExcel é alucinação clássica -> não existe no índice.
+        assert by["c1"]["status"] == "not_found"
+
+    def test_short_form_single_claim(self, indexed_project: Path, runner: CliRunner) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "--root",
+                str(indexed_project),
+                "--format",
+                "json",
+                "verify-claims",
+                "--kind",
+                "function",
+                "--symbol",
+                "FWLerExcel",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["results"][0]["status"] == "not_found"
+
+    def test_empty_stdin_is_graceful(self, indexed_project: Path, runner: CliRunner) -> None:
+        result = runner.invoke(
+            app,
+            ["--root", str(indexed_project), "--format", "json", "verify-claims", "--stdin"],
+            input="",
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["results"] == []
+
+
+class TestGenAplicadorSx:
+    """`gen-aplicador-sx` — gera .prw aplicador de SXs a partir de spec JSON."""
+
+    def test_gera_prw_de_spec_valido(self, tmp_path: Path, runner: CliRunner) -> None:
+        spec = tmp_path / "spec.json"
+        spec.write_text(
+            json.dumps(
+                {
+                    "numero": "099999",
+                    "sx3": [
+                        {
+                            "alias": "ZXX",
+                            "campo": "ZXX_COD",
+                            "tipo": "C",
+                            "tamanho": 6,
+                            "titulo": "Cod",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        out = tmp_path / "a099999.prw"
+        result = runner.invoke(app, ["gen-aplicador-sx", "--spec", str(spec), "--out", str(out)])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        assert out.exists()
+        conteudo = out.read_text(encoding="cp1252")
+        assert "User Function A099999" in conteudo
+
+    def test_example_imprime_spec_valido_e_geravel(self, runner: CliRunner) -> None:
+        # descoberta p/ IAs: --example imprime um spec pronto, sem precisar de --spec.
+        result = runner.invoke(app, ["gen-aplicador-sx", "--example"])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        spec = json.loads(result.stdout)
+        assert spec["numero"] and spec["sx3"]
+        gen = runner.invoke(app, ["gen-aplicador-sx", "--spec", "-"], input=result.stdout)
+        assert gen.exit_code == 0
+        assert "User Function A" in gen.stdout
+
+    def test_schema_imprime_chaves_por_tipo(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["gen-aplicador-sx", "--schema"])
+        assert result.exit_code == 0, result.stderr or result.stdout
+        sch = json.loads(result.stdout)
+        assert {"sx2", "sx3", "six", "sx6", "sx7", "sx1", "sxa", "sx5"} <= set(sch)
+
+    def test_sem_spec_nem_flag_erro_orienta(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["gen-aplicador-sx"])
+        assert result.exit_code == 2
+        assert "--example" in (result.stderr or result.stdout)
+
+    def test_spec_com_erro_de_validacao_sai_nao_zero(
+        self, tmp_path: Path, runner: CliRunner
+    ) -> None:
+        spec = tmp_path / "spec.json"
+        # falta 'campo' (obrigatório) -> erro de validação.
+        spec.write_text(
+            json.dumps({"numero": "099999", "sx3": [{"alias": "ZXX", "tipo": "C", "tamanho": 6}]}),
+            encoding="utf-8",
+        )
+        out = tmp_path / "a099999.prw"
+        result = runner.invoke(app, ["gen-aplicador-sx", "--spec", str(spec), "--out", str(out)])
+        assert result.exit_code != 0
+        assert "erro:" in (result.stderr or result.stdout)

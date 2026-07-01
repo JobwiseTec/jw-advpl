@@ -1,0 +1,7 @@
+{
+  "_note": "Baseline do eval harness (Fase 2 roadmap-ia). Atualize com run_eval --update-baseline quando o golden mudar deliberadamente. compare_baseline trava se faithfulness_avg/pass_rate cairem abaixo destes valores.",
+  "totals": {
+    "faithfulness_avg": 1.0,
+    "pass_rate": 1.0
+  }
+}

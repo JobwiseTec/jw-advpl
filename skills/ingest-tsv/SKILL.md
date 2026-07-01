@@ -26,7 +26,7 @@ cruza automatico pra habilitar o `--decode-cbox` no `catalog`.
 ## Execucao
 
 ```bash
-uvx plugadvpl@0.37.0 ingest-tsv $arquivo --as catalogo_regras
+uvx plugadvpl@0.44.0 ingest-tsv $arquivo --as catalogo_regras
 ```
 
 ## Proximos passos sugeridos

@@ -4,6 +4,99 @@ Todas as mudanças notáveis estão documentadas aqui, seguindo [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-06-18
+
+### Added
+
+- **`plugadvpl apply-patch` — aplica patch `.PTM` no RPO** via advpls (`patchApply`), com **backup**, **idempotência por hash** (não re-aplica o mesmo patch) e **rollback** granular/por batch. Para "aplica esse `.PTM`/pacote de correção TOTVS". Skill `apply-patch` + agente `advpl-patch-orchestrator`.
+- **`plugadvpl gera-script` — gera um script `.ps1`/`.sh` determinístico** de aplicação de patch (`.PTM`) + compilação de fontes, **pré-preenchido a partir de um servidor do registry**, para um operador humano rodar na base do cliente **sem plugadvpl nem IA** (extrai ZIP → `patchApply` em ordem → `defragRPO` → compila `.prw/.tlpp/.prx`). Mesma entrada → mesmos bytes. Flag **`--tq` (Troca Quente)**: 3ª fase que promove o RPO de compilação para o ambiente destino (copia o RPO para uma pasta datada no `apo` e repointa o `SourcePath` nos `appserver*.ini`). Skill `gera-script`.
+- **`plugadvpl dtc` — leitor/exporter de `.dtc` (FairCom c-tree ISAM)**: `dtc info` (parser nativo, sem deps extras) e `dtc export` para CSV/JSON/XLSX. O export usa `pandas`/`openpyxl`, disponíveis no **extra opcional** `pip install 'plugadvpl[dtc]'` (o CLI base segue leve; `dtc export` avisa se faltar o extra). Código vendorizado do projeto `dtcat` (MIT, atribuído em `NOTICE`/`LICENSES`). Skill `dtc`.
+- **Harness experimental de LLM local** (`experimental/`, fora do pacote distribuído) — PoC de geração/correção + especialista grounded sobre o índice. Não afeta o CLI nem os usuários do plugin.
+
+### Fixed
+
+- **Detecção de campo custom no SX reconhece o range completo de cliente (X/Y/Z)** — `_is_custom_field` marcava como custom só campos cujo nome (2ª parte, após `_`) começa com `X`; campos `*_Y*`/`*_Z*` (ex.: `A1_YBOLETO`, `A1_ZZPMAGI`) caíam erroneamente como standard. Agora reconhece **X, Y e Z**, alinhando com o detector de TABELA custom (`Z*`/`SZ*`/`Q*`) que o plugadvpl já usa.
+- **Detecção de encoding do SX agora é determinística** — a leitura dos CSVs de dicionário decidia o encoding com `chardet` primeiro, que confunde cp1252↔cp1250 em amostras curtas e corrompia acentos de títulos/descrições (ex.: `Descrição` → `Descriçăo`). Passa a seguir a mesma ordem determinística do parser de código (`_decode_bytes`): BOM → ASCII (→cp1252) → UTF-8 estrito → cp1252, com `chardet` só como último recurso.
+
+### Changed
+
+- **`lint` ordena os achados por severidade (graves no topo)** — `lint_query` ordenava por arquivo/linha; agora ordena `critical → error → warning → info` primeiro (depois arquivo/linha), pra que consumidores que truncam a lista (LLM/REST) não percam os achados graves no meio.
+
+## [0.43.2] - 2026-06-18
+
+### Added
+
+- **`gen-aplicador-sx` auto-descritível para IAs** — `--example` imprime um **spec JSON completo e válido** (cobre os 8 dicionários, pronto pra editar/pipar) e `--schema` imprime as **chaves aceitas por tipo** (JSON, derivado de `SX_COLS` → sempre em sync). O `--help` ganhou a estrutura do spec; `--spec` virou opcional (sem nada, o erro orienta para as flags). Fecha o furo de descoberta: uma IA no CLI cru (Codex/Copilot/Gemini ou só `--help`) agora descobre o formato do spec **sem depender da skill nem caçar exemplo no projeto**. Fluxo: `gen-aplicador-sx --example > spec.json` → editar → `--spec spec.json --out a.prw`.
+
+## [0.43.1] - 2026-06-17
+
+### Fixed
+
+- **`gen-aplicador-sx` — correções de fidelidade do dicionário, validadas contra registros reais aplicados no banco** (round de teste real: gerar → aplicar no Protheus → comparar com a base):
+  - **`X3_USADO`** (máscara de ativação por módulo): era `"x"*256` (sólido, comprimento errado) → o campo **não ativava**. Agora usa a máscara real de **115 chars** (`'x'` a cada 8 posições = todos os módulos) e é **sempre preenchida** (campo com `X3_USADO` vazio fica inativo); `usado:"todos"`/ausente → todos os módulos, máscara custom → respeitada.
+  - **SX1 (perguntas)**: pergunta **com opções** agora vira **radio** (`X1_GSC='1'`; antes ficava `'G'` = get livre, e as opções não funcionavam), com os labels em `X1_DEF0n` e o retorno em `MV_PARxx` pelo índice. `X1_VARIAVL` é C(6) legado (`MV_CHx`), **não** o `MV_PARxx` (que vem da ordem) — `maxlen` 10→6; `opcoes` aceita lista de labels.
+  - **SXA (pastas)**: `XA_ORDEM` é **C(1)** — `'01'` truncava para `'0'` no banco e o seek `XA_ALIAS+XA_ORDEM` nunca encontrava o registro → **re-inserção/duplicata** a cada execução. Agora o emit normaliza para dígito único e o seek faz `PadR(XA_ALIAS)`.
+  - **Validação de tamanho** passa a ser **warning** (não bloqueia a geração) exceto em campos identificadores (campo/alias/param/grupo), onde o limite é estrutural; `maxlen` de `X1_GRUPO`/`X1_VARIAVL`/`X1_VAR01..05` corrigidos para os tamanhos físicos reais.
+
+## [0.43.0] - 2026-06-16
+
+### Added
+
+- **`plugadvpl gen-aplicador-sx` — gerador determinístico de "aplicador de SXs"**: emite um `.prw` ADVPL **estruturalmente idêntico** (boilerplate byte-estável + `FSAtu*` por tipo) que aplica customizações de dicionário em **modo EXCLUSIVO** (`MyOpenSM0`/`RpcSetEnv`/`X31UpdTable`), no lugar de um `RecLock` ingênuo (que só grava o metadado e não materializa a coluna física via `X31UpdTable`/ALTER TABLE). A partir de um **spec JSON**, cobre os **8 dicionários** — SX2 (tabelas), SX3 (campos), SIX (índices), SX6 (params `MV_*`), SX7 (gatilhos), SX1 (perguntas), SXA (pastas), SX5 (genéricas) — cada campo com defaults seguros. Mesmo spec → **bytes idênticos** (travado por snapshot golden + teste de determinismo + o `.prw` emitido passa no próprio `lint`). Skill `gen-aplicador-sx` (ensina cada campo + monta o spec) + integração no agente `advpl-code-generator`. 100% determinístico, sem LLM no core; saída em cp1252.
+- **3 regras de lint de sintaxe ADVPL** (guard determinístico, issue #176): **`BP-009`** (warning) `Then` em condicional — ADVPL usa `If`/`EndIf` (regex ancorado em `If`/`ElseIf` p/ não pegar SQL `CASE WHEN THEN`); **`BP-010`** (warning) `EndFunction` — ADVPL fecha com `Return`; **`BP-011`** (info) identificador de função além do limite de 10 chars em `.prw` (User Function ≤ 8 pelo `U_`; Static/Main ≤ 10; `.tlpp` isento). Calibradas em base real: BP-009/010 = 0 falso-positivo; BP-011 = `info` (10-16% das funções excedem → advisory).
+
+## [0.42.0] - 2026-06-16
+
+### Added
+
+- **`plugadvpl mapear <codigo>` — dossiê determinístico de uma rotina + verificação** (issue #173). Reúne tudo que o índice sabe (`find`→`arch`→`callers`→`callees`): identidade, funções, tabelas (read/write/reclock/execauto) e grafo de chamadas; e confirma cada símbolo via `verify-claims`, distinguindo "tabela no código fora do SX2 (**cobertura**, não erro)" de símbolo ausente. 100% determinístico, **SEM LLM** — serve de fonte-de-verdade pra alimentar qualquer agente (Claude/Codex/Copilot/Gemini ou local). `--format md/json`, `--detalhe` expande o que cada user function interna chama. Productiza a "receita determinística como ferramenta" do PoC de harness local — a inteligência mora no índice, não no modelo. Nova skill `/plugadvpl:mapear` (72ª).
+
+## [0.41.0] - 2026-06-15
+
+### Added
+
+- **Dicionário SX completo — 9 colunas que faltavam** (migration 033): `tabelas.unico/modo_unico/modo_emp` (X2_UNICO/MODOUN/MODOEMP); `campos.ordem/inibrw/relacao` (X3_ORDEM/INIBRW/RELACAO — `relacao` corrige um gap: `inicializador`=X3_INIT, o X3_RELACAO era perdido em dumps modernos); `relacionamentos.usa_filial/vincula_filial/chave_estrangeira` (X9_USEFIL/VINFIL/CHVFOR). Cobre CSV (`ingest-sx`) e REST (`ingest-protheus`) — normalizadores compartilhados. Validado em **14 dicionários reais** (até ~11k tabelas/dict).
+- **`SX-012`** (warning): relacionamento SX9 (X9_DOM→X9_CDOM) apontando pra tabela custom (Z*/SZ*/Q*) inexistente no SX2 → órfão. Custom-only (padrão TOTVS não indexado → **0 falso-positivo em 14 dicts reais**). Warning (não error): config inerte, não quebra runtime; aparece em volume (~140/base de dívida real).
+- **`SX-013`** (info): inclusão (`RecLock('TBL', .T.)`) em tabela com chave única (X2_UNICO) sem `DbSeek`/`ExistCpo`/`GetSx8Num`/`MsExecAuto` no escopo → risco de duplicar chave. Function-local conservador (baixo ruído).
+- **Awareness X2_UNICO**: `tables --catalog <T>` expõe a chave única — no formato `table` (humano) no título, no **`md`** (formato do agente) como linha de stdout — pro codegen consultar antes de gravar e não duplicar.
+- **Guard de cobertura de índice no codegen**: skill `advpl-embedded-sql` (passo de índice SIX cruzando com `PERF-006`) + agent `advpl-code-generator` consideram cobertura de índice + X2_UNICO ao gerar SQL.
+
+### Changed
+
+- `tables --catalog` passa a retornar também `ordem`/`relacao`/`inibrw` (X3) por campo. Schema bump 32 → 33.
+
+## [0.40.0] - 2026-06-15
+
+### Added
+
+- **`plugadvpl verify-claims` — verificador determinístico (sound verifier) anti-alucinação** (roadmap-ia Fase 1). Recebe os símbolos que uma resposta afirmou (`function`/`table`/`field`/`param`/`call_edge`/`trigger`) e devolve um verdict por claim — `exists`/`not_found`/`relation_holds`/`relation_absent`/`unsupported_kind` — por set-membership exata contra o índice, com bloco de cobertura (`complete_kinds`) e confiança calibrada (cai em miss, não em hit). `not_found` é **mundo aberto** (não significa "alucinado"). `--stdin` (lote) + forma curta `--kind/--symbol`. Veredito ancorado em deep-research: o maior alavanca de qualidade é o verificador externo determinístico — que o índice já é.
+- **Fluxo de verificação grounded** (Fase 3): hook `Stop` (`hooks/stop-verify.mjs`) que, antes de o agente finalizar, extrai os símbolos afirmados num bloco `<plugadvpl-claims>` e roda `verify-claims`, **bloqueando só em `not_found` de alta confiança** (re-prompt cirúrgico, failure-silent, loop-guard). Instrução no fragment `CLAUDE.md`/`AGENTS.md` + skill `verify-claims` (71ª skill). Garantido no Claude Code; advisory nos demais agentes.
+- **Eval harness determinístico** (Fase 2, custo $0): faithfulness de símbolo (reusa `verify-claims`) + armadilhas (`must_not_mention`) + gate de regressão. Juiz LLM opt-in/offline.
+- **Routing-eval + lint de descrições de skill** (Fase 4): scorers top-1/set-F1 + gate de qualidade sobre as descrições (a `description` é o roteador). Sem roteador semântico/GNN.
+- Roadmap documentado em `docs/roadmap-ia/`. Validado em **4 bases ADVPL reais** (0 falso-positivo em símbolo real; alucinações `FW*`/`Ms*` pegas).
+
+### Changed
+
+- **Calibração de confiança de função no `verify-claims`**: `not_found` com prefixo de framework (`FW`/`MS`/`TC`/`PCO`/`AP`) → **alta** confiança (alega ser nativa mas não está no catálogo, ex.: `FWLerExcel`); prefixo `U_` → **baixa** (provável customer não-indexado); senão média. Faz o hook `Stop` pegar a classe #1 de alucinação (funções inventadas que se passam por nativas) — gap descoberto na demonstração end-to-end.
+
+### Fixed
+
+- **`plugadvpl ingest` agora respeita a flag global `--db`** — antes hardcodava `<root>/.plugadvpl/index.db`, ignorando `--db`; permite indexar uma base apontando o índice pra outro lugar sem poluir a pasta (`reindex` já respeitava).
+
+## [0.39.0] - 2026-06-14
+
+### Added
+
+- **`plugadvpl init` resolve o namespace real do plugin nos slash commands do fragment** — o `CLAUDE.md`/`AGENTS.md` hardcodava `/plugadvpl:arch` etc. Em forks/rebrands o Claude Code expõe os comandos sob `/<nome-do-plugin>:`, então o fragment apontava pra comando inexistente. Agora um placeholder `__SLASH_NS__` é resolvido por (1) env `PLUGADVPL_SLASH_NS`, (2) `name` do `.claude-plugin/plugin.json` vizinho, (3) fallback `plugadvpl`. Instalação oficial: **byte-idêntico** (segue `/plugadvpl:*`). (#153)
+- **Exemplo MVC clássico `.prw` na skill `advpl-mvc`** — `exemplos/ZEXPEDIDO.prw`, a contraparte ADVPL clássica (Static Functions, referência pelo nome do fonte) dos exemplos `.tlpp`: cadastro **master-detail** (capa ZX1 + itens ZX2) com `FWMVCMenu` + opção custom, `AddFields`/`AddGrid`/`SetRelation`, `SetPrimaryKey`/`SetUniqueLine`, validação de linha, hook `FWModelEvent` (`InTTS`/`AfterTTS`) e aprovação headless via `FWLoadModel`. O miolo é o mesmo do `.tlpp`; só a casca muda. (#160)
+
+### Changed
+
+- **Skill `advpl-mvc`: `SetProperty` para WHEN/VALID/INIT por código** — a skill só mostrava `SetProperty` para flags booleanas. Agora documenta que **WHEN/VALID/INIT são expressões** e precisam de `FWBuildFeature(STRUCT_FEATURE_*, "<expr>")` (sem o wrapper o `SetProperty` não toma efeito), com tabela booleano-vs-expressão. (#156)
+- **Skill `advpl-mvc`: checklist de geração MVC antes de entregar** — checklist pré-entrega (Model/View/Menu/Qualidade) que captura os erros clássicos de geração MVC: `SetPrimaryKey` não-vazio, hooks via `FWModelEvent` em vez de `bCommit`/`bTudoOk` descontinuados, `FWMVCMenu` no `.prw` vs `ADD OPTION` no `.tlpp`, cache de `GetMV`/`ExistBlock` antes do loop de grid. (#158)
+
+## [0.38.0] - 2026-06-11
+
 ### Added
 
 - **Codex CLI agora é first-class** — `plugadvpl init` instala as 70 skills como **skills nativas do Codex** em `.agents/skills/plugadvpl-*/SKILL.md` (diretório canônico do *open agent skills standard*; auto-discovery), replicadas em `.codex/skills/` (legado experimental) e, se `~/.agents/` já existir, em `~/.agents/skills/` (global, blindado — nunca cria o home). Cada `SKILL.md` ganha frontmatter `name: plugadvpl-<X>` + `description`, comandos `/plugadvpl:<X>` viram `uvx plugadvpl@<ver> <X>`, e links wiki `[[skill]]` viram `[[plugadvpl-skill]]` (transform compartilhado com Cursor/Copilot/Gemini). Antes o `init` só gerava `.codex/config.toml` + `AGENTS.md` — o Codex não recebia as skills (feedback de quem instalou o plugin no Codex).

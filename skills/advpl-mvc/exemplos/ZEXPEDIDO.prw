@@ -120,7 +120,9 @@ Return lOk
 
 // -----------------------------------------------------------------------------
 // Opcao custom de menu: aprova o pedido posicionado (ZX1_STATUS = '2').
-// Usa FWMVCRotAuto (headless) para gravar via o proprio model, sem UI.
+// Carrega o proprio model em UPDATE, troca o status e grava direto via
+// VldData()+CommitData() (sem reabrir a View). Para gravacao 100% headless a
+// partir de arrays (ex: batch/integracao) o caminho seria FWMVCRotAuto.
 // -----------------------------------------------------------------------------
 User Function ZEXAPROV()
     Local aArea   := GetArea()
