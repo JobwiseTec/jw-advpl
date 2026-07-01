@@ -61,10 +61,6 @@ jobs:
         plugadvpl/__main__.py
         plugadvpl/_skill_catalog.py
         plugadvpl/agent_doctor.py
-        plugadvpl/aplicador_sx/__init__.py
-        plugadvpl/aplicador_sx/schema.py
-        plugadvpl/aplicador_sx/emit.py
-        plugadvpl/apply_patch.py
         plugadvpl/catalog.py
         plugadvpl/cli.py
         plugadvpl/codex_config.py
@@ -83,10 +79,6 @@ jobs:
         plugadvpl/doc_writer.py
         plugadvpl/edit_prw.py
         plugadvpl/gemini_skills.py
-        plugadvpl/gera_script/__init__.py
-        plugadvpl/gera_script/emit.py
-        plugadvpl/gera_script/generate.py
-        plugadvpl/gera_script/schema.py
         plugadvpl/ignore.py
         plugadvpl/ingest.py
         plugadvpl/ingest_ini.py
@@ -94,7 +86,6 @@ jobs:
         plugadvpl/ingest_poui.py
         plugadvpl/ingest_rest.py
         plugadvpl/ingest_sx.py
-        plugadvpl/mapear.py
         plugadvpl/migrate_tlpp.py
         plugadvpl/migrate_tlpp_diff.py
         plugadvpl/migrate_tlpp_recipes/__init__.py
@@ -130,17 +121,6 @@ jobs:
         plugadvpl/scan.py
         plugadvpl/server_components.py
         plugadvpl/tq.py
-        plugadvpl/verify.py
-        plugadvpl/eval_harness.py
-        plugadvpl/dispatch_eval.py
-        plugadvpl/dtc/__init__.py
-        plugadvpl/dtc/cli.py
-        plugadvpl/dtc/doctor.py
-        plugadvpl/dtc/exporter.py
-        plugadvpl/dtc/faircom.py
-        plugadvpl/dtc/parser.py
-        plugadvpl/dtc/reader.py
-        plugadvpl/dtc/server.py
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v8.2.0
